@@ -1798,6 +1798,52 @@ export interface MoveJob {
  *  dock polls now rather than on its next idle beat. */
 export const MOVE_EVENT = "hud:move";
 
+export interface CouncilFinding {
+  id: string;
+  sev: "must" | "should" | "nit";
+  file: string;
+  line: number | null;
+  title: string;
+  by: string[];
+  state: "open" | "fixed" | "answered";
+  answer: string;
+  blocking?: boolean;
+  dismissed?: boolean;
+}
+export interface CouncilSeat {
+  state: "running" | "done" | "error" | "stopped" | "on" | "off" | "sign-in" | "not-allowed";
+  score: number | null;
+  summary: string;
+  error: string;
+}
+export interface CouncilRound { n: number; score: number | null; blocking: number }
+export interface CouncilBrief {
+  status: string;
+  reason: string;
+  round: number;
+  max_rounds: number;
+  bar: number;
+  score: number | null;
+  rounds: CouncilRound[];
+  seats: Record<string, CouncilSeat>;
+  findings: CouncilFinding[];
+  previous: CouncilFinding[];
+  stuck: { finding: CouncilFinding; rounds: number; answer: string } | null;
+  advice: CouncilFinding[];
+  fixed_total: number;
+  advice_sent: boolean;
+  elapsed: number;
+  material?: { commits: string[][]; files: number; add: number; del: number } | null;
+}
+export interface CouncilSettings {
+  bar: number;
+  max_rounds: number;
+  stop_early: boolean;
+  claude: boolean;
+  codex: boolean;
+  codex_projects: string[];
+}
+
 export const api = {
   state: () => req<DashState>("/local/state"),
   update: () => req<UpdateInfo>("/local/update"),
@@ -2608,3 +2654,11 @@ export function sessionStream(
   };
   return () => es.close();
 }
+
+export const council = (sid: string, full = false) =>
+  req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}${full ? "?full=1" : ""}`);
+export const councilAct = (sid: string, action: string, key?: string) =>
+  req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}`, { method: "POST", body: { action, key } });
+export const councilSettings = () => req<CouncilSettings>("/local/council/settings");
+export const saveCouncilSettings = (patch: Partial<CouncilSettings>) =>
+  req<CouncilSettings>("/local/council/settings", { method: "POST", body: patch });

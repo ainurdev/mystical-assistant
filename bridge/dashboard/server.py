@@ -435,6 +435,16 @@ class Handler(BaseHTTPRequestHandler):
         if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
             return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if path.startswith("/local/council/"):
+            from bridge import council
+            sid = path[len("/local/council/"):]
+            if sid == "settings":
+                return self._json(council.settings())
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "no such session"}, 404)
+            full = qs.get("full", ["0"])[0] == "1"
+            return self._json(council.brief(sid, _worktree_cwd(s.get("project"), s.get("branch")), full))
         if path == "/local/state":
             pd = state.project_dir(chat)
             return self._json({
@@ -1555,6 +1565,24 @@ class Handler(BaseHTTPRequestHandler):
             if act not in ("resume", "cancel"):
                 return self._json({"error": "action is resume or cancel"}, 400)
             return self._json({"ok": waits.resume(sid) if act == "resume" else waits.drop(sid)})
+        if path.startswith("/local/council/"):
+            from bridge import council
+            sid = path[len("/local/council/"):]
+            if sid == "settings":
+                return self._json(council.save_settings(body))
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "no such session"}, 404)
+            act = body.get("action")
+            try:
+                if act == "run":
+                    cwd = _worktree_cwd(s.get("project"), s.get("branch"))
+                    if cwd is None:
+                        return self._json({"error": "invalid project"}, 400)
+                    return self._json(council.start(s, cwd))
+                return self._json(council.act(s, act, body.get("key") or ""))
+            except ValueError as e:     # running | busy | nothing | action
+                return self._json({"error": str(e)}, 409)
         if path.startswith("/local/sessions/") and path.endswith(("/goal", "/goal/act")):
             from bridge import goals
             act_path = path.endswith("/goal/act")
