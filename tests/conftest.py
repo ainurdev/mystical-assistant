@@ -16,6 +16,8 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
+from urllib.error import URLError
 
 import pytest
 
@@ -69,7 +71,7 @@ os.environ["CLAUDE_BIN"] = os.path.join(tempfile.mkdtemp(), "no-real-claude")
 # SYN_SENT until killed. A connect to anything but loopback now fails at once,
 # and the test it happened in fails too, naming the host (_offline below).
 # shortcut: a thread a test leaves behind is blamed on the test running when it
-# connects; name the thread here if that ever misleads.
+# connects (the message names the thread); track threads per test if that misleads.
 _left: list = []
 _connect = socket.socket.connect
 
@@ -81,7 +83,8 @@ def _stay_local(sock, address):
     except ValueError:                                              # a name to resolve
         local = False
     if not local:
-        _left.append(f"{host}:{address[1]}")
+        who = threading.current_thread()
+        _left.append(f"{host}:{address[1]}" + ("" if who is threading.main_thread() else f" from thread {who.name}"))
         raise ConnectionRefusedError(f"tests stay off the network: {host}:{address[1]}")
     return _connect(sock, address)
 
@@ -119,6 +122,19 @@ _acp_tmp = tempfile.mkdtemp()
 acp_agents.ACCOUNTS_FILE = os.path.join(_acp_tmp, "agent-accounts.json")
 acp_agents.OPTIONS_FILE = os.path.join(_acp_tmp, "acp-options.json")
 acp_agents.HOMES = os.path.join(_acp_tmp, "agent-homes")
+
+# The Bot API never answers a test: the token above is fake, and the "waiting on
+# you" ping every question or approval card sends went to the real Telegram (13
+# tests on 2026-11-06). Set once and never undone, so a thread a test leaves
+# behind can't reach it either; tests that check what goes out patch urlopen.
+from bridge import telegram  # noqa: E402
+
+
+def _no_bot_api(*a, **k):
+    raise URLError("tests never reach the Bot API")
+
+
+telegram.urlopen = _no_bot_api
 
 # A profiles.json one test leaves behind would bind every later test's new
 # sessions to its first profile (profiles.default_profile), so each test gets
