@@ -310,6 +310,8 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
             return False
         if station == "build-here":
             texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
+        else:   # the diagnosis names the main checkout's paths: pin the fix to its worktree
+            texts = [f"/mattpocock-skills:tdd Work in {moved[1]} on branch {moved[0]}, and commit there."]
     if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
@@ -356,7 +358,8 @@ def _branch_off(session_id: str, sess: dict, flow: dict, prefix: str, chat_id) -
     try:
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)
         flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
-                                    flowbranch.flow_files(session_id, flow["at"]), slug)
+                                    flowbranch.flow_files(session_id, flow["at"]), slug,
+                                    f"wip: carry the {slug} investigation" if prefix == "fix" else "")
     except Exception as e:  # noqa: BLE001 — the step waits for the user instead
         print(f"[paths] {branch} stopped: {e}", file=sys.stderr)
         runner._notify(chat_id, f"Couldn't move this flow's files to {branch}: {e}. "  # noqa: SLF001

@@ -477,7 +477,7 @@ def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nexts
     monkeypatch.setattr(flowbranch, "ensure_feature_branch",
                         lambda s, slug, prefix: calls.append(("ensure", slug, prefix)) or ("feat/my-feature", "/wt"))
     monkeypatch.setattr(flowbranch, "carry_and_commit",
-                        lambda src, dst, files, slug: calls.append(("carry", src, dst, files, slug)) or True)
+                        lambda src, dst, files, slug, msg="": calls.append(("carry", src, dst, files, slug)) or True)
     paths.set_path("b1", "feature-here", "new", "claude")
     paths.step_done("b1", "t1")
     assert paths.continue_after_turn(_job("b1")) is True
@@ -666,7 +666,9 @@ def test_an_auto_fix_on_the_default_branch_moves_to_a_fix_worktree(repo_session,
     cwd = store.get_session(sid)["cwd"]
     assert cwd != main and _git(cwd, "rev-parse", "--abbrev-ref", "HEAD") == "fix/my-feature"
     assert os.path.isfile(os.path.join(cwd, "test_crash.py")) and _git(main, "rev-parse", "master") == master
-    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"
+    assert fake_queue.items[-1]["prompt"] == \
+        f"/mattpocock-skills:tdd Work in {cwd} on branch fix/my-feature, and commit there."
+    assert _git(cwd, "log", "-1", "--format=%s") == "wip: carry the my-feature investigation"
 
 
 def test_an_auto_fix_off_the_default_branch_stays_put(repo_session, fake_queue, nextstep_on):

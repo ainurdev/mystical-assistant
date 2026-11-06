@@ -143,7 +143,7 @@ def _pop(cwd: str, sha: str) -> tuple[bool, str]:
     return rc == 0, err.strip()
 
 
-def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
+def carry_and_commit(src: str, dst: str, files: list[str], slug: str, message: str = "") -> bool:
     """Move `files` from `src` to `dst` (stash push, then pop) and commit only
     them there. False when there is nothing to move; FlowBranchError when files
     existed but could not be carried or committed (they are put back in `src`).
@@ -193,7 +193,7 @@ def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
         raise FlowBranchError(f"git add failed: {err.strip()}")
     if git._run(dst, "diff", "--cached", "--quiet", "--", *rel)[0] == 0:  # noqa: SLF001
         return False   # already committed there: nothing of the flow's is left to commit
-    rc, out, err = git._run(dst, "commit", "-m", f"docs: decisions from the {slug} flow", "--", *rel, timeout=30)  # noqa: SLF001
+    rc, out, err = git._run(dst, "commit", "-m", message or f"docs: decisions from the {slug} flow", "--", *rel, timeout=30)  # noqa: SLF001
     if rc != 0:
         _log(f"commit failed: {(err or out).strip()}")
         raise FlowBranchError(f"git commit failed: {(err or out).strip()}")
