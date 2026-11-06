@@ -86,3 +86,109 @@ def test_save_settings_survives_bad_input():
     assert council.save_settings({"bar": -1e308})["bar"] == 1.0
     assert council.save_settings({"bar": 10**400})["bar"] == 1.0  # unchanged
     assert council.save_settings({"max_rounds": 10**400})["max_rounds"] == 10
+
+
+# --- seats ---------------------------------------------------------------
+import subprocess
+import threading
+
+from bridge import acp, acp_agents, native, runner
+
+_G = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+
+
+def _git(cwd, *a):
+    subprocess.run([*_G, *a], cwd=cwd, check=True, capture_output=True)
+
+
+def _clone(tmp_path):
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", "remote.git")
+    _git(tmp_path, "clone", "-q", "remote.git", "c")
+    c = tmp_path / "c"
+    (c / "a.txt").write_text("one\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "first"); _git(c, "push", "-q", "-u", "origin", "HEAD")
+    return c
+
+
+def test_material_reads_commits_and_uncommitted_changes(tmp_path):
+    c = _clone(tmp_path)
+    (c / "b.txt").write_text("two\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "second")
+    (c / "a.txt").write_text("one\nuncommitted line\n")
+    m = council.material(str(c))
+    assert len(m["commits"]) == 1 and m["commits"][0][1] == "second"
+    assert "uncommitted line" in m["diff"] and m["files"] >= 2
+
+
+def test_material_is_none_when_nothing_to_review(tmp_path):
+    assert council.material(str(_clone(tmp_path))) is None
+
+
+def test_material_caps_a_huge_diff(tmp_path):
+    c = _clone(tmp_path)
+    (c / "big.txt").write_text("x" * 200_000 + "\n")
+    (c / "small.txt").write_text("s\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "big")
+    m = council.material(str(c))
+    assert m["truncated"] and len(m["diff"]) <= council.DIFF_CAP
+    assert m["left_out"] == ["big.txt"] and "small.txt" in m["diff"]
+
+
+def test_review_prompt_carries_the_contract():
+    m = {"commits": [["abc", "msg"]], "untracked": ["n.py"], "diff": "DIFF", "truncated": True, "left_out": ["big.txt"]}
+    p = council.review_prompt(m, ["settled one"], ["answered one"])
+    assert p.startswith(native.INTERNAL_ONESHOT_TAG)
+    for bit in ('"score"', "must =", "settled one", "answered one", "abc msg", "n.py", "DIFF", "big.txt"):
+        assert bit in p
+
+
+def test_seat_claude_parses_or_reports(monkeypatch):
+    seen = {}
+    ret = [('```json\n{"score": 8}\n```', "s", 0.0, False)]
+    monkeypatch.setattr(runner, "run_blocking", lambda *a, **k: (seen.update(k), ret[0])[1])
+    r = council.seat_claude("p", "/tmp", 1, "slot2")
+    assert r["ok"] and r["score"] == 8.0
+    assert seen == dict(cwd="/tmp", timeout=900, skip_pack=True, permission_mode="plan",
+                        new_session=True, account_slot="slot2")
+    ret[0] = ("boom", "s", 0, True)
+    assert council.seat_claude("p", "/tmp", 1, None) == {"ok": False, "error": "boom"}
+    ret[0] = ("junk", "s", 0, False)
+    r = council.seat_claude("p", "/tmp", 1, None)
+    assert not r["ok"] and "no score" in r["error"]
+
+
+def test_seat_codex_times_out_and_denies_requests(monkeypatch):
+    stop, asked = threading.Event(), []
+    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
+    monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
+    monkeypatch.setattr(acp, "answer", lambda job, rid, allow: asked.append((rid, allow)))
+    monkeypatch.setattr(acp, "cancel", lambda job, grace: stop.set())
+
+    def hang(job, **kw):
+        job.awaiting["r1"] = {}
+        stop.wait(5)
+    monkeypatch.setattr(acp, "run_turn", hang)
+    assert council.seat_codex("p", "/tmp", timeout=0.3) == {"ok": False, "error": "timed out"}
+    assert ("r1", False) in asked
+
+    def fine(job, **kw):
+        job.result, job.status = '{"score": 9}', "done"
+    monkeypatch.setattr(acp, "run_turn", fine)
+    r = council.seat_codex("p", "/tmp", timeout=5)
+    assert r["ok"] and r["score"] == 9.0
+
+
+def test_seats_for(monkeypatch):
+    st = {"installed": True}
+    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
+    monkeypatch.setattr(acp_agents, "available", lambda: [{"id": "codex", **st}])
+    signed = {}
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: signed)
+    s, sess = dict(council.DEFAULTS, codex_projects=["p"]), {"project": "p"}
+    assert council.seats_for(sess, s) == {"claude": "on", "codex": "sign-in"}
+    signed["signed_in"] = True
+    assert council.seats_for(sess, s)["codex"] == "on"
+    st["installed"] = False
+    assert council.seats_for(sess, s)["codex"] == "sign-in"
+    assert council.seats_for({"project": "q"}, s)["codex"] == "not-allowed"
+    assert council.seats_for(sess, dict(s, codex=False, claude=False)) == {"claude": "off", "codex": "off"}

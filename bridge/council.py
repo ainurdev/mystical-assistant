@@ -16,19 +16,30 @@ Design choices (the why):
 - The fix turn objects to a wrong finding on its own line, "N. NO: <why>".
 - State is one JSON column, sessions.council, like sessions.goal.
 
+- Reviewers are read-only and get the diff in the prompt: Claude runs in plan
+  mode with no pack, Codex over ACP with every permission request denied. A
+  watchdog owns hangs, since ACP's session/prompt has no timeout of its own.
+- A diff over DIFF_CAP drops whole-file sections, never cuts one mid-file, and
+  names what it left out so the reviewer knows its view is partial.
+
 Not built: a chairman model, a push gate (RUN is the only start), a third
 reviewer, live updates over SSE, the Mini App and the bot.
 """
 import json
 import math
 import re
+import threading
+import time
+import types
 
-from . import store
+from . import acp, acp_agents, git, native, runner, store
 
 DEFAULTS = {"bar": 9.0, "max_rounds": 5, "stop_early": True,
             "claude": True, "codex": True, "codex_projects": []}
 SEATS = ("claude", "codex")
 NEAR = 3
+SEAT_TIMEOUT = 900
+DIFF_CAP = 150_000
 _SEV = ("must", "should", "nit")
 
 
@@ -162,3 +173,143 @@ def fix_prompt(c: dict) -> str:
 def answers(text: str) -> dict:
     return {int(m.group(1)): m.group(2).strip()
             for m in re.finditer(r"^[ \t]*(\d+)[.)][ \t]*NO\b(?:[ \t]*[:-][ \t]*|[ \t]+)(\S.*)$", text, re.M)}
+
+
+def material(cwd: str) -> "dict | None":
+    rc, head, _ = git._run(cwd, "rev-parse", "HEAD")
+    if rc != 0:
+        return None
+    head = head.strip()
+    base = ""
+    rc, _, _ = git._run(cwd, "rev-parse", "--verify", "-q", "@{upstream}")
+    cands = ["@{upstream}"] if rc == 0 else []
+    if not cands:
+        d = git.default_branch(cwd)
+        cands = [f"origin/{d}", d]
+    for c in cands:
+        rc, out, _ = git._run(cwd, "merge-base", "HEAD", c)
+        if rc == 0 and out.strip():
+            base = out.strip()
+            break
+    base = base or head     # shortcut: no base found reviews only uncommitted work
+    _, log, _ = git._run(cwd, "log", "--format=%h%x00%s", f"{base}..HEAD")
+    commits = [l.split("\0", 1) for l in log.splitlines() if "\0" in l]
+    _, diff, _ = git._run(cwd, "diff", base, timeout=60)
+    _, stat, _ = git._run(cwd, "diff", "--numstat", base, timeout=60)
+    nums = [l.split("\t", 2) for l in stat.splitlines() if l.count("\t") == 2]
+    _, un, _ = git._run(cwd, "ls-files", "--others", "--exclude-standard")
+    untracked = [u for u in un.splitlines() if u]
+    if not (commits or diff.strip() or untracked):
+        return None
+    kept, left_out, size = [], [], 0
+    for sec in re.split(r"(?m)^(?=diff --git )", diff):
+        if not sec:
+            continue
+        if size + len(sec) <= DIFF_CAP:
+            kept.append(sec)
+            size += len(sec)
+        else:
+            m = re.match(r"diff --git a/(.*?) b/", sec)
+            left_out.append(m.group(1) if m else "?")
+    return {"base": base, "head": head, "commits": commits, "files": len(nums),
+            "add": sum(int(n[0]) for n in nums if n[0].isdigit()),
+            "del": sum(int(n[1]) for n in nums if n[1].isdigit()),
+            "untracked": untracked, "diff": "".join(kept),
+            "truncated": bool(left_out), "left_out": left_out}
+
+
+def review_prompt(m: dict, settled: list, answered: list) -> str:
+    out = [native.INTERNAL_ONESHOT_TAG,
+           "You are a code reviewer. Rate the work below, which a push would send, "
+           "from 1 to 10 and list what is wrong.",
+           "Score: 10 = ship as is; 9 = nits only; 7-8 = should-fix issues; "
+           "5-6 = a must-fix; below 5 = several must-fix, or broken.",
+           "Severity: must = a real bug, data loss, a security hole or broken behaviour "
+           "you can point to at a line; should = worth fixing before the push; nit = taste.",
+           "Reply with ONLY this JSON, in a ```json block, and nothing after it:",
+           '{"score": n, "summary": "<one line, your words>", '
+           '"findings": [{"sev": "must|should|nit", "file": "<path>", "line": n, "title": "<what is wrong>"}]}']
+    if settled:
+        out += ["", "Settled by the user, do not raise:", *settled]
+    if answered:
+        out += ["", "The author answered these last round; raise one again only if the answer is wrong:",
+                *answered]
+    out += ["", "Commits:", *([f"{sha} {subj}" for sha, subj in m["commits"]] or ["(none)"])]
+    if m["untracked"]:
+        out += ["", "Untracked files (not in the diff; read them):", *m["untracked"]]
+    out += ["", "Diff:", m["diff"]]
+    if m["truncated"]:
+        out.append("The diff was cut for size. Left out, read these yourself: " + ", ".join(m["left_out"]))
+    return "\n".join(out)
+
+
+def _result(text: str, err: bool) -> dict:
+    r = None if err else parse_review(text or "")
+    if r:
+        return {"ok": True, **r}
+    return {"ok": False, "error": (text or "failed")[:300] if err else "no score in the reviewer's answer"}
+
+
+def seat_claude(prompt: str, cwd: str, chat_id: int, slot) -> dict:
+    text, _sid, _cost, err = runner.run_blocking(
+        chat_id, prompt, cwd=cwd, timeout=SEAT_TIMEOUT, skip_pack=True,
+        permission_mode="plan", new_session=True, account_slot=slot)
+    return _result(text, err)
+
+
+def _codex_acct() -> str:
+    """A hidden seat has no session agent: the first Codex account, else the CLI's own login."""
+    return next((a["id"] for a in acp_agents.accounts("codex")), "")
+
+
+class _Awaiting(dict):
+    def __call__(self, kind):     # acp calls job.awaiting(kind) when a card is raised
+        pass
+
+
+def seat_codex(prompt: str, cwd: str, timeout: float = SEAT_TIMEOUT) -> dict:
+    p, acct = acp_agents.preset("codex"), _codex_acct()
+    modes = acp_agents.options_for("codex", acct).get("mode") or []
+    ro = next((m["value"] for m in modes if "read" in m["value"].lower()), None)
+    job = types.SimpleNamespace(
+        events=[], pending=[], texts=[], todos=[], awaiting=_Awaiting(), awaited=[],
+        ctx_tokens=None, cost=None, result=None, error_msg=None, elapsed=None,
+        status="running", boot="starting", model=None, interrupted=False, timed_out=False,
+        agent_session_id=None, conn=None, turn=None, _interrupt_timer=None, needs_login=False)
+    job.started = job.last_at = time.time()
+    job.add = job.events.append
+    job.add_pending = job.pending.append
+    job.clear_pending = lambda: job.pending.clear()
+    done, cut = threading.Event(), []
+
+    def watch():
+        end = time.monotonic() + timeout
+        while not done.wait(0.1):
+            for rid in [c["request_id"] for c in list(job.pending)] + list(job.awaiting):
+                acp.answer(job, rid, False)
+            if time.monotonic() >= end:
+                cut.append(1)
+                acp.cancel(job, 5)
+                return
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        acp.run_turn(job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, acct), cwd=cwd,
+                     label=p["label"], login_hint=acp_agents.login_hint(p, acct),
+                     auth_method=acp_agents.auth_method(p, acct), text=prompt,
+                     agent_session_id=None, opts={"permission_mode": ro})
+    finally:
+        done.set()
+    if cut:
+        return {"ok": False, "error": "timed out"}
+    return _result(job.error_msg if job.status != "done" else job.result, job.status != "done")
+
+
+def seats_for(session: dict, s: dict) -> dict:
+    codex = "off"
+    if s["codex"]:
+        codex = "not-allowed"
+        if (session or {}).get("project") in s["codex_projects"]:
+            ready = any(a["id"] == "codex" and a["installed"] for a in acp_agents.available())
+            ok = ready and acp_agents.options_for("codex", _codex_acct()).get("signed_in") is True
+            codex = "on" if ok else "sign-in"
+    return {"claude": "on" if s["claude"] else "off", "codex": codex}
