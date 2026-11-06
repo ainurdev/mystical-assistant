@@ -4,7 +4,9 @@ import { rootRoute } from "./root";
 import { api } from "../lib/api";
 import { useSpentUsage } from "../lib/accounts";
 import { useChat } from "../lib/chat";
+import { useExperimental } from "../lib/multi";
 import { useState, type ReactNode } from "react";
+import { AgentToolsEntry } from "../components/agenttools/AgentToolsView";
 import { ThemeCards } from "../components/ThemePicker";
 import { useFoldsOpen } from "../lib/folds";
 import { CHAT_BGS, useChatBg } from "../lib/toolwidget";
@@ -65,6 +67,7 @@ function SystemPage() {
   const { sessionSlot } = useChat();
   const { usage, tag, who } = useSpentUsage(sessionSlot);
   const { data: state } = useQuery({ queryKey: ["state"], queryFn: () => api.getState() });
+  const experimental = useExperimental();
 
   return (
     <div className="space-y-5 pb-6">
@@ -93,6 +96,8 @@ function SystemPage() {
           </div>
         )}
       </div>
+
+      {experimental && <AgentToolsEntry />}
 
       <div className="space-y-2">
         <div className="sset-head">Theme</div>

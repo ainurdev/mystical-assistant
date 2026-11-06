@@ -1,4 +1,9 @@
 import { getInitData } from "./telegram";
+import {
+  scopeBody, scopeQuery,
+  type AgentToolsGrid, type DirListing, type HooksListing, type Level, type McpTool, type Rule, type RuleFields,
+  type RuleLogRow, type ToolScope,
+} from "./agenttools";
 
 // ---------------------------------------------------------------------------
 // API types (must match the backend contract exactly).
@@ -1038,4 +1043,38 @@ export const api = {
     request<{ skills: { key: string; name: string; on: boolean; conflict: boolean }[] }>(
       `/api/skill-share${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
 
+  // AGENT TOOLS (bridge/agent_tools.py, rules.py, hooks_config.py, mystical_dir.py). Hooks
+  // are only read: POST /api/hooks is a 403 here by design.
+  agentTools: (s: ToolScope) => request<AgentToolsGrid>(`/api/agent-tools?${scopeQuery(s)}`),
+  /** `on` null clears the level's pick, so the next level decides. */
+  toolPolicy: (s: ToolScope, level: Level, section: string, name: string, agent: string, on: boolean | null) =>
+    request<{ ok: boolean }>("/api/tool-policy", {
+      method: "POST", body: { ...scopeBody(s), level, section, name, agent, on },
+    }),
+  skillShareSet: (key: string, on: boolean, cwd?: string | null) =>
+    request<{ ok: boolean }>("/api/skill-share", { method: "POST", body: { key, on, cwd } }),
+  /** Starts the server if nothing has yet, so it can take a while. */
+  mcpTools: (name: string, cwd?: string | null) =>
+    request<{ tools: McpTool[] }>("/api/mcp-share/tools", { method: "POST", body: { name, cwd } }),
+  mcpToolSet: (name: string, tool: string, on: boolean, cwd?: string | null) =>
+    request<{ ok: boolean }>("/api/mcp-share", { method: "POST", body: { name, tool, on, cwd } }),
+  rules: (s: ToolScope) => request<{ rules: Rule[] }>(`/api/rules?${scopeQuery(s)}`),
+  /** `fields` replaces what the level holds, so a plain toggle has to send them too. */
+  ruleSet: (s: ToolScope, level: Level, id: string, on: boolean | null, fields: RuleFields) =>
+    request<{ ok: boolean; rules: Rule[] }>("/api/rules", {
+      method: "POST", body: { ...scopeBody(s), level, id, on, fields },
+    }),
+  rulesLog: (session?: string | null) =>
+    request<{ rows: RuleLogRow[] }>(`/api/rules/log${session ? `?session=${encodeURIComponent(session)}` : ""}`),
+  hooks: (s: ToolScope) => request<HooksListing>(`/api/hooks?${scopeQuery(s)}`),
+  mysticalDir: (s: ToolScope, sub?: string) =>
+    request<DirListing>(`/api/mystical-dir?${scopeQuery(s)}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}`),
+  mysticalRead: (s: ToolScope, path: string) =>
+    request<{ text: string }>(`/api/mystical-dir/read?${scopeQuery(s)}&path=${encodeURIComponent(path)}`),
+  mysticalDelete: (s: ToolScope, path: string, confirm: boolean) =>
+    request<{ ok: boolean }>("/api/mystical-dir/delete", { method: "POST", body: { ...scopeBody(s), path, confirm } }),
+  mysticalKeep: (s: ToolScope, path: string, on: boolean) =>
+    request<{ ok: boolean }>("/api/mystical-dir/keep", { method: "POST", body: { ...scopeBody(s), path, on } }),
+  mysticalClear: (s: ToolScope, days: number) =>
+    request<{ removed: number; freed: number }>("/api/mystical-dir/clear", { method: "POST", body: { ...scopeBody(s), days } }),
 };

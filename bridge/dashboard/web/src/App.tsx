@@ -137,6 +137,8 @@ import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
+import { MysticalHost } from "./components/hud/MysticalPanel";
+import { openMysticalPanel } from "./lib/mysticaldir";
 import { InspectorModal } from "./components/hud/InspectorModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
@@ -2148,6 +2150,8 @@ export function App() {
 
   // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
   // itself, as PLUGINS still lists the runs of a hidden folder or group.
+  const mysticalProjects = useMemo(() => projectGroups.filter((g) => g.rel.startsWith("/"))
+    .map((g) => ({ rel: g.rel, name: g.name })).sort((a, b) => a.name.localeCompare(b.name)), [projectGroups]);
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && inWs(g.rel));
 
   // Prompt state the session list flags, so work you left mid-flight is visible
@@ -2380,6 +2384,7 @@ export function App() {
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
             : undefined}
           edited={filesEdits.edited} editing={filesEdits.now}
+          onOpenMystical={experimental.enabled ? () => openMysticalPanel({ project: sessionProject, session: sessionProject ? null : selected?.id }) : undefined}
           onAddToPrompt={(path) => {
             // After whatever you were writing, as TURNS' reuse does, but inline.
             setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")} \`${path}\` ` : `\`${path}\` `);
@@ -3237,6 +3242,7 @@ export function App() {
             {toolsFor && (
               <ToolsModal
                 title={sessions.find((s) => s.id === toolsFor)?.title || "session"}
+                sessionId={toolsFor}
                 disabled={sessions.find((s) => s.id === toolsFor)?.disabled_tools ?? []}
                 onChange={(rules) => setSessionToolsFor(toolsFor, rules)}
                 onClose={() => setToolsFor(null)}
@@ -3245,8 +3251,11 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             <MoveDock />
             <PillHost />
+            {experimental.enabled && <MysticalHost projects={mysticalProjects} />}
             {settingsOpen && (
-              <SettingsModal cwd={selected?.cwd} host={host.host} port={location.port || "8790"} startTab={settingsTab}
+              <SettingsModal cwd={selected?.cwd} sessionId={selected?.id ?? null}
+                chatInfo={(id) => sessions.find((s) => s.id === id)}
+                host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
                 models={modelOpts}
                 onFeed={feed}

@@ -64,7 +64,7 @@ export const useMultiOn = (): boolean => useExperimental().enabled;
 
 /** A multi-agent call. A 409 "they're off" means another surface turned them off
  *  since this page last looked: re-read, so the UI goes away with the error. */
-async function call<T>(path: string, body?: unknown): Promise<T> {
+export async function multiCall<T>(path: string, body?: unknown): Promise<T> {
   try {
     return await req<T>(`/local/${path}`, body === undefined ? {} : { method: "POST", body });
   } catch (e) {
@@ -73,6 +73,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   }
 }
 
+const call = multiCall;
 const q = (v: string) => encodeURIComponent(v);
 
 export interface McpTool { name: string; sensitive: boolean; on: boolean }
