@@ -25,6 +25,7 @@ import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
+import { MARK } from "./CouncilPanel";
 import {
   api,
   type AccountInfo,
@@ -3232,12 +3233,13 @@ function ProjectsPage({ projects, current, onAccountsChanged, onOpenSkills }: {
  *  and the row shows what the bridge answered, which has clamped it. Codex's
  *  sign-in is ACCOUNTS ▸ AGENTS: the button deep-links there. */
 function Stepper({ label, text, onStep }: { label: string; text: string; onStep: (d: number) => void }) {
+  // The Type tab's size stepper (.tp-step). A span: the row's `> div` rule would stretch a div to half the row.
   return (
-    <div className="aim-vfield row" style={{ flexDirection: "row", gap: 0, padding: 0, width: "auto" }} role="group" aria-label={label}>
-      <button type="button" className="aim-xbtn" aria-label={`Lower ${label}`} onClick={() => onStep(-1)}>−</button>
-      <output style={{ minWidth: 44, textAlign: "center", font: "600 14px var(--f)", color: "var(--txb)" }} aria-live="polite">{text}</output>
-      <button type="button" className="aim-xbtn" aria-label={`Raise ${label}`} onClick={() => onStep(1)}>+</button>
-    </div>
+    <span className="tp-step" role="group" aria-label={label}>
+      <button type="button" aria-label={`Lower ${label}`} onClick={() => onStep(-1)}>−</button>
+      <output className="tp-val" style={{ minWidth: 40 }} aria-live="polite">{text}</output>
+      <button type="button" aria-label={`Raise ${label}`} onClick={() => onStep(1)}>+</button>
+    </span>
   );
 }
 
@@ -3277,7 +3279,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
   const free = s ? projects.groups.filter((g) => !s.codex_projects.includes(g.rel)) : [];
   return (
     <AimFold id="council" title="Council" secs={["COUNCIL"]} openSec={openSec} hint="reviews a session's work before origin"
-      count={s ? `${s.bar.toFixed(1)} · ${s.max_rounds} rounds · ${[s.claude && "Claude", s.codex && "Codex"].filter(Boolean).join(" + ") || "no reviewers"}` : null}
+      count={s ? `${s.bar.toFixed(1)} · ${s.max_rounds} rounds · ${[s.claude && "Claude", s.codex && codexIn && "Codex"].filter(Boolean).join(" + ") || "no reviewers"}` : null}
       right={<span className="aim-chip">NEW</span>}>
       {err && <div className="aim-xerr">{err}</div>}
       {s && (
@@ -3295,13 +3297,18 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
             <Switch on={s.stop_early} label="Stop early" onClick={() => void save((c) => ({ stop_early: !c.stop_early }))} />
           </div>
           <div className="aim-vfield">
-            <b>Reviewers</b>
-            <span>each reads the work fresh, in a session of its own</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <b>Reviewers</b>
+              <span>each reads the work fresh, in a session of its own</span>
+            </div>
             <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
-              <div><b>Claude</b><span>/code-review · every project</span></div>
+              <span className="cn-mk claude">{MARK.claude}</span>
+              {/* council.py seat_claude: its own rubric prompt in plan mode, on the session's login slot */}
+              <div><b>Claude</b><span>the session's own login · every project</span></div>
               <Switch on={s.claude} label="Claude reviews" onClick={() => void save((c) => ({ claude: !c.claude }))} />
             </div>
             <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
+              <span className="cn-mk codex">{MARK.codex}</span>
               <div>
                 <b>Codex</b>
                 <span>{codexIn ? "signed in" : codexIn === false ? "not signed in" : "sign in to use Codex"} · one sign-in with your ChatGPT plan</span>
@@ -3319,7 +3326,8 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
                     style={{ all: "unset", cursor: "pointer" }}>×</button>
                 </span>
               ))}
-              <select className="aim-sel" aria-label="Pick projects Codex may review" value="" style={{ width: "auto" }}
+              <select className="aim-sel" aria-label="Pick projects Codex may review" value=""
+                style={{ width: 150, height: 26, padding: "0 8px", fontSize: 12, color: "var(--acc)" }}
                 onChange={(e) => { const v = e.target.value; if (v) void save((c) => ({ codex_projects: [...c.codex_projects, v] })); }}>
                 <option value="">+ Pick projects</option>
                 {free.map((g) => <option key={g.rel} value={g.rel}>{g.name}</option>)}

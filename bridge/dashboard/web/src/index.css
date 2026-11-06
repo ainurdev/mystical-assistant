@@ -6748,7 +6748,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s ease-in-out infinite;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-acc2) 20%, transparent), 0 0 8px currentColor; }
 /* the scoreboard: one height in every state, so nothing under it moves */
-.cn-sb { flex: none; height: 230px; box-sizing: border-box; margin: 4px 12px 0; padding: 12px 12px 10px; display: flex; flex-direction: column;
+.cn-sb { flex: none; height: 230px; box-sizing: border-box; margin: 2px 12px 0; padding: 12px 12px 10px; display: flex; flex-direction: column;
   border-radius: var(--f-rad-l, 14px); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 34%, transparent);
   background: radial-gradient(260px 130px at 100% -15%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%), var(--card); }
 .cn-sb.ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 42%, transparent), 0 14px 30px -22px color-mix(in srgb, var(--ok) 80%, transparent);
@@ -6760,7 +6760,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-n { flex: none; min-width: 96px; font: 800 calc(var(--fsu) * 50)/.92 var(--f); letter-spacing: -1.6px; color: var(--txb); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cn-n small { margin-left: 3px; font: 800 var(--t14)/1 var(--f); letter-spacing: 0; color: var(--txl); }
 .cn-sb.ok .cn-n { color: var(--cn-ok2); } .cn-sb.ask .cn-n { color: var(--ask); } .cn-sb.idle .cn-n { color: var(--txg); }
-.cn-st { flex: 1; min-width: 0; padding-top: 1px; }
+.cn-st { flex: 1; min-width: 0; padding-top: 2px; }
+/* a block, not inline: the HUD's 24px line box sat it (and both lines) 5px low, and its ✓ moved it per state */
+.cn-st > .cn-pill { display: flex; width: fit-content; }
 .cn-l1 { margin-top: 8px; font: 800 var(--t13)/1.25 var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cn-l2 { margin-top: 3px; font: 600 var(--t11)/1.3 var(--f); color: var(--txm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* a column per round, climbing to the bar's dashed line (CouncilPanel H: 72px is a 10) */
@@ -6861,6 +6863,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-foot .cn-btn { height: 34px; font-size: var(--t125); }
 .cn-btn.grow { flex: 1; min-width: 0; }
 .cn-btn.sm { height: 24px; padding: 0 9px; font-size: var(--t11); }
+/* Send all rides the section label without growing it: every state's label row stays one height */
+.cn-lbl > .cn-btn { height: 20px; margin-block: -6px; }
 .cn-btn.pri { background: var(--acc); color: var(--acc-on); box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--acc) 90%, transparent); }
 .cn-btn.ask { background: var(--ask); color: var(--acc-on); }
 .cn-btn.soft { background: color-mix(in srgb, var(--acc) 14%, transparent); color: var(--cn-acc2); }

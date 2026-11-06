@@ -29,8 +29,8 @@ const SAY: Record<string, string> = {
 const NAME: Record<string, string> = { claude: "Claude", codex: "Codex" };
 const SEV = { must: "MUST", should: "SHOULD", nit: "NIT" } as const;
 const H = 72;   // px a 10 reaches in the chart
-// Claude's mark is simple-icons' (as the PROFILE chip's); Codex's is the mockup's hexagon prompt.
-const MARK: Record<string, ReactNode> = {
+// Claude's mark is simple-icons' (as the PROFILE chip's); Codex's is the mockup's hexagon prompt. Settings' Council fold wears them too.
+export const MARK: Record<string, ReactNode> = {
   claude: <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden dangerouslySetInnerHTML={{ __html: ICON_BODY["si:claude"] }} />,
   codex: (
     <svg viewBox="0 0 24 24" width={13} height={13} aria-hidden fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
@@ -278,11 +278,9 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
         {c.advice.length > 0 && (
           <>
             <div className="cn-lbl">LEFT AS ADVICE <span className="n">{c.advice.length}</span>
-              <span className="r">
-                <button className="cn-btn ghost sm" disabled={dis || c.advice_sent} onClick={() => void act("advice")}>
-                  <Send size={11} strokeWidth={2} />{c.advice_sent ? "Sent" : "Send all"}
-                </button>
-              </span>
+              <button className="cn-btn ghost sm r" disabled={dis || c.advice_sent} onClick={() => void act("advice")}>
+                <Send size={11} strokeWidth={2} />{c.advice_sent ? "Sent" : "Send all"}
+              </button>
             </div>
             <div className="cn-rows">
               {c.advice.map((f, i) => {
