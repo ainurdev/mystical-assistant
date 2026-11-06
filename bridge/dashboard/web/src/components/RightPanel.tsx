@@ -56,6 +56,9 @@ export interface PanelTab {
   // Something runs for this tab unasked (the GIT tab's auto-fetch): an orbit
   // around the icon, the user's own working-indicator shape.
   busy?: boolean;
+  // The tile's tone, said outright, over the one derived above (COUNCIL: the
+  // accent while a run goes, ok once it passed, ask once it stopped and waits on you).
+  tone?: "ok" | "ask" | "acc";
   // "session" | "project" | "you": a short rule where the rail moves from one
   // to the next, so you can see which tabs follow the session you open.
   group?: string;
@@ -275,7 +278,7 @@ export function RightPanel({
         {list.map((t, i) => {
           const on = open && t.id === current?.id;
           const word = t.alert ? "!" : t.ask ? "ASK" : t.badge || null;
-          const tone = t.alert ? "err" : t.ask ? "ask" : t.badge ? (t.low ? "warn" : "acc") : undefined;
+          const tone = t.tone ?? (t.alert ? "err" : t.ask ? "ask" : t.badge ? (t.low ? "warn" : "acc") : undefined);
           const key = i < 9 ? `  ⌥${i + 1}` : "";
           return (
             <Fragment key={t.id}>
