@@ -518,6 +518,7 @@ body {
 .dv-bar .ah { left: 50%; border-radius: 0 3px 3px 0; background: var(--acc); }
 .dv-bar em { position: absolute; top: 1px; font-style: normal; font-size: var(--t9); font-weight: 800; line-height: 1; color: var(--txl); }
 .dv-bar em.a { color: var(--acc); }
+.dv-bar:has(em.m)::after { display: none; } /* "merged" would sit on the track */
 .dv-bar em.m { left: 64px; font-weight: 600; color: var(--txd); }
 /* + Branch's field */
 .bnew { display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; padding: 0 6px 0 9px; height: 30px; border-radius: 8px;
