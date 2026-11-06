@@ -14,8 +14,14 @@ import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
+import { PromptText } from "../components/ChatImage";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
+import { AgentBar, type AgentTab } from "../components/AgentSwitch";
+import { AgentGrid } from "../components/AgentGrid";
+import { IncomingNote } from "../components/MultiRows";
+import { parseFrame, resumeLine } from "../lib/frame";
+import { providerName, useChannel } from "../lib/multi";
 import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
 
@@ -58,15 +64,44 @@ function TranscriptSkeleton() {
   );
 }
 
-function RunPage() {
+/** Who ran a turn, for its receipt. No runtime means default Claude, except on the live
+ *  turn, whose row may not be filled in yet. */
+function agentOfTurn(runtime: string | undefined, isActive: boolean, sessionAgent: string): string {
+  if (!runtime) return providerName(isActive ? sessionAgent : "claude");
+  if (runtime.startsWith("acp:")) return providerName(runtime.slice(4));
+  if (runtime.startsWith("opencode:")) return runtime.split(":")[1];
+  return "Claude";
+}
+
+/** Who ran a turn, on the line over its reply. */
+function runtimeLine(runtime: string, multi: boolean): string {
+  if (multi && runtime.startsWith("acp:")) return `\u25c7 ${providerName(runtime.slice(4))}`;
+  return runtime.startsWith("opencode:")
+    ? `⚡ free agent · ${runtime.split(":")[1]}`
+    : `⇄ account ${runtime.split(":")[1]}`;
+}
+
+function RunPage({ barKey }: { barKey: string }) {
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav, sessionAgent,
+    experimental, openBrief, openHelper,
   } = useChat();
   // Kimi, Codex…: the limit ladder and compaction are Claude's (the bridge refuses them).
   const onAgent = sessionAgent !== "claude";
+  // With the switch on, the capability table answers instead.
+  const caps = experimental ? openBrief?.caps : undefined;
+  const hasPolicy = caps ? caps.usage : !onAgent;
+  const hasContext = caps ? caps.compact : !onAgent;
+  const hasGoals = caps ? caps.goals : true;
+  const agentWord = caps ? (openBrief?.parent_session && openBrief.title) || providerName(sessionAgent) : "Claude";
+  // Opening a delegation row. Through a ref, so the callback that reaches every
+  // memoized RunStream never changes.
+  const openRef = useRef(openHelper);
+  openRef.current = openHelper;
+  const openAgent = useCallback((id: string) => openRef.current(id), []);
   // A cached session has its turns already, so this never fires for one; only a
   // transcript that is genuinely still coming gets a skeleton.
   const slowLoad = useLoadingPhase(loadingSession);
@@ -173,6 +208,7 @@ function RunPage() {
   // While a jump settles, scroll anchoring is off (see below). ponytail: a
   // deadline, not a "landed" signal — scrollToIndex doesn't report one.
   const jumpT = useRef(0);
+  const jumpPad = useRef(0);
   // The list sits below the chips/monitor block inside <main>; the virtualizer
   // needs that offset so row coordinates line up with real scroll positions.
   const [listOffset, setListOffset] = useState(0);
@@ -181,7 +217,8 @@ function RunPage() {
     if (!scrollEl || !list) return;
     setListOffset(list.getBoundingClientRect().top
       - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop);
-  }, [scrollEl, hasOlder, turns.length > 0]);
+    // The bar over the page appearing moves the list too.
+  }, [scrollEl, hasOlder, turns.length > 0, barKey]);
 
   const virtualizer = useVirtualizer({
     count: visibleTurns.length,
@@ -195,6 +232,10 @@ function RunPage() {
       ?? Math.min(20000, 80 + Math.min(visibleTurns[i].events.length, TURN_TAIL) * 20),
     overscan: 2,
     scrollMargin: listOffset,
+    // A jump lands clear of the bar floating over the list: a search hit in a prompt
+    // would otherwise land under it. Only while one settles, since a restored place is
+    // an offset from the row's own top.
+    scrollPaddingStart: experimental && Date.now() < jumpT.current ? jumpPad.current : 0,
     measureElement: (el) => {
       const h = el.getBoundingClientRect().height;
       const k = el.getAttribute("data-key");
@@ -216,6 +257,31 @@ function RunPage() {
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     !restoreTo.current && Date.now() > jumpT.current
     && item.start < (instance.scrollOffset ?? 0);
+
+  // An image in a message has its height only once it has loaded. The virtualizer's
+  // own observer would catch the row growing a frame later; asking now keeps the rows
+  // from overlapping for that frame. What it would never do is follow: this page follows
+  // new events, not growth, so while parked at the bottom a picture would push the
+  // latest out of view. load doesn't bubble, hence the capture.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const onLoad = (e: Event) => {
+      const img = e.target as Element;
+      if (!img.closest?.(".chat-img, .fg-media")) return;
+      const row = img.closest<HTMLElement>("[data-index]");
+      if (row) virtualizer.measureElement(row);
+      // The next frame: the list's height comes from the render that measure causes.
+      if (stick.current) requestAnimationFrame(() => toBottom());
+    };
+    list.addEventListener("load", onLoad, true);
+    // A clip shown with the answer has its height from its metadata, not a load.
+    list.addEventListener("loadedmetadata", onLoad, true);
+    return () => {
+      list.removeEventListener("load", onLoad, true);
+      list.removeEventListener("loadedmetadata", onLoad, true);
+    };
+  }, [virtualizer, toBottom]);
 
   keepPlace.current = () => {
     // Mid-restore the scrolling is ours, not yours — recording it would
@@ -268,6 +334,11 @@ function RunPage() {
         const i = visibleTurns.findIndex((t) => t.id === turnId);
         if (i < 0) return false;
         jumpT.current = Date.now() + 1000;
+        if (experimental && scrollEl) {
+          const bar = document.querySelector(".chead")?.getBoundingClientRect().bottom ?? 0;
+          jumpPad.current = Math.max(0, bar - scrollEl.getBoundingClientRect().top) + 8;
+          virtualizer.options.scrollPaddingStart = jumpPad.current;
+        }
         virtualizer.scrollToIndex(i, { align: "start" });
         stick.current = false;
         setParked(false);
@@ -275,7 +346,7 @@ function RunPage() {
       },
     };
     return () => { transcriptNav.current = null; };
-  }, [visibleTurns, virtualizer, transcriptNav]);
+  }, [visibleTurns, virtualizer, transcriptNav, experimental, scrollEl]);
 
   return (
     // OUTPUT STYLE is the whole session's idiom, not just its widgets — one
@@ -286,12 +357,12 @@ function RunPage() {
 
       {/* What this session is for, and what a usage limit does to it. */}
       <div className="flex items-center gap-1.5">
-        <GoalPill sessionId={sessionId} />
-        {!onAgent && <PolicyChip
+        {hasGoals && <GoalPill sessionId={sessionId} />}
+        {hasPolicy && <PolicyChip
           sessionId={sessionId}
           stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
         />}
-        {!onAgent && <ContextChip
+        {hasContext && <ContextChip
           sessionId={sessionId}
           tokens={sessions.find((s) => s.id === sessionId)?.ctx_tokens}
           window={sessions.find((s) => s.id === sessionId)?.ctx_window}
@@ -308,7 +379,7 @@ function RunPage() {
         <TranscriptSkeleton />
       ) : loadingSession ? null : (
         <div className="flex items-center justify-center gap-2 pt-10 text-center text-sm text-[var(--tg-hint)]">
-          Start a conversation with Claude.
+          Start a conversation with {agentWord}.
         </div>
       ))}
 
@@ -333,7 +404,14 @@ function RunPage() {
         const turn = visibleTurns[vi.index];
         const i = vi.index;
         const isActive = turn.jobId === activeTurn?.jobId;
-        const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
+        const working = isActive && turn.status === "running"
+          && !activeTurn.pending.some((p) => experimental || p.kind !== "secret");
+        // A turn another agent's message started: its prompt isn't your words.
+        const framed = experimental ? parseFrame(turn.prompt) : null;
+        const resumed = experimental ? resumeLine(turn.prompt) : null;
+        // Per turn, because a chat can change provider. No runtime means default
+        // Claude, except on the live turn, which may not have its row filled in yet.
+        const said = experimental && (turn.runtime ? turn.runtime.startsWith("acp:") : isActive && onAgent);
         return (
           <div
             key={vi.key}
@@ -347,6 +425,7 @@ function RunPage() {
           >
           {/* id: what a checkpoint scrolls to (CheckpointsSheet). */}
           <div id={`turn-${turn.id}`} className="turnbox space-y-2">
+            {framed && !framed.own && <IncomingNote from={framed.from} label={framed.label} body={framed.body} />}
             {/* user message */}
             <div className="pbub-row flex justify-end">
               <div className="max-w-[85%] space-y-1">
@@ -383,9 +462,10 @@ function RunPage() {
                     ))}
                   </div>
                 )}
-                {turn.prompt && (
+                {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
+                {turn.prompt && !resumed && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                    {turn.prompt}
+                    {experimental ? <PromptText text={framed ? framed.body : turn.prompt} /> : turn.prompt}
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}
@@ -407,9 +487,7 @@ function RunPage() {
                 />
                 {turn.runtime && (
                   <div className="text-[11px] text-[var(--tg-hint)]">
-                    {turn.runtime.startsWith("opencode:")
-                      ? `⚡ free agent · ${turn.runtime.split(":")[1]}`
-                      : `⇄ account ${turn.runtime.split(":")[1]}`}
+                    {runtimeLine(turn.runtime, experimental)}
                   </div>
                 )}
                 <RunStream
@@ -433,6 +511,10 @@ function RunPage() {
                   }
                   onWrite={setDraft}
                   ended={turn.status !== "running"}
+                  multi={experimental}
+                  said={said}
+                  agent={experimental ? agentOfTurn(turn.runtime ?? undefined, isActive, sessionAgent) : undefined}
+                  onOpenAgent={experimental ? openAgent : undefined}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
               </div>
@@ -469,7 +551,7 @@ function RunPage() {
       {sendError && (
         <Banner tone="error">
           {sendError.busy
-            ? "Claude is busy with another task."
+            ? `${agentWord} is busy with another task.`
             : sendError.unauthorized
               ? "Unauthorized"
               : "Failed to send."}
@@ -521,8 +603,35 @@ function RunPage() {
   );
 }
 
+/** The chat's screen. With agents under it, a bar picks between the transcript and
+ *  the grid. The transcript unmounts when you go, as it does for any other tab, and
+ *  comes back where you left it (lib/scrollmem). */
+function RunRoute() {
+  const { sessionId, experimental, openBrief } = useChat();
+  const [picked, setPicked] = useState<{ sid: string | null; tab: AgentTab }>({ sid: null, tab: "chat" });
+  // A tab belongs to the session you picked it in: opening a helper lands on its chat.
+  const asked = picked.sid === sessionId ? picked.tab : "chat";
+  const { data } = useChannel(sessionId, experimental, asked !== "chat");
+  const showTabs = experimental && !!data && (data.rows.length > 0 || data.messages.length > 0);
+  const tab: AgentTab = showTabs ? asked : "chat";
+  return (
+    <>
+      <AgentBar
+        tab={tab}
+        onTab={(t) => setPicked({ sid: sessionId, tab: t })}
+        showTabs={showTabs}
+        needs={data?.rows.filter((r) => r.needs).length ?? 0}
+        held={data?.messages.filter((m) => m.state === "held").length ?? 0}
+      />
+      {tab === "chat"
+        ? <RunPage barKey={`${showTabs}:${experimental && !!openBrief?.parent_session}`} />
+        : <AgentGrid tab={tab} />}
+    </>
+  );
+}
+
 export const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: RunPage,
+  component: RunRoute,
 });

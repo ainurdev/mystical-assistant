@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { rowMatches } from "./rowfilter.ts";
+
+const t = { type: "tool" };
+assert.ok(rowMatches("all", { type: "tool_done" }, undefined));
+assert.ok(rowMatches("failures", t, { is_error: true }));
+assert.ok(rowMatches("failures", t, { recovered: true }));
+assert.ok(!rowMatches("failures", t, {}));
+assert.ok(!rowMatches("failures", t, undefined));
+assert.ok(rowMatches("failures", { type: "log", error: true }, undefined));
+assert.ok(!rowMatches("failures", { type: "log" }, undefined));
+assert.ok(rowMatches("failures", { type: "checks", ok: false }, undefined));
+assert.ok(!rowMatches("failures", { type: "checks", ok: true }, undefined));
+assert.ok(rowMatches("failures", { type: "rule", decision: "blocked" }, undefined));
+assert.ok(!rowMatches("failures", { type: "rule", decision: "warned" }, undefined));
+assert.ok(rowMatches("edits", t, {}, "edit"));
+assert.ok(rowMatches("edits", t, {}, "write"));
+assert.ok(!rowMatches("edits", t, {}, "command"));
+assert.ok(rowMatches("pictures", t, { images: ["a"] }));
+assert.ok(!rowMatches("pictures", t, { images: [] }));
+assert.ok(rowMatches("messages", { type: "text", text: "x" }, undefined));
+assert.ok(rowMatches("messages", { type: "thinking", text: "x" }, undefined));
+assert.ok(!rowMatches("messages", { type: "thinking" }, undefined));
+assert.ok(rowMatches("rules", { type: "rule" }, undefined));
+assert.ok(!rowMatches("rules", t, {}));
+console.log("rowfilter.check: ok");

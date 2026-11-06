@@ -1,14 +1,21 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
-import { useChat } from "../lib/chat";
+import { readAsDataUrl, useChat } from "../lib/chat";
+import { primeChatImage } from "../lib/chatimg";
+import { insertAt } from "../lib/embeds";
 import { loginSlot, loginWindows, useAccounts } from "../lib/accounts";
-import { api, type EffortLevel, type ModelId, type Profile } from "../lib/api";
+import { api, type EffortLevel, type HandoffPreview, type ModelId, type Profile, type SlashCommand, type SwitchScope } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
+import { atQuery, insertName, isWholeName, rankNames } from "../lib/mention";
+import { providerName, useChannel } from "../lib/multi";
+import { HelpersRow } from "./HelpersRow";
+import { SwitchSheet } from "./SwitchSheet";
 import { Banner, Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
 import { ImageLightbox, MediaThumb, isFileUrl } from "./ImageLightbox";
+import { ComposerImages } from "./ComposerImages";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -50,9 +57,12 @@ function OptionRow({
   value,
   options,
   onPick,
+  locked,
 }: {
   label: string;
   value: string;
+  /** Why this can't be changed right now: greys the row and says so. */
+  locked?: string;
   // hint: a reading after the label (a profile's "5H 64% · WK 88% left");
   // note: a line under it (what the profile sets)
   options: { id: string; label: string; title?: string; hint?: ReactNode; note?: string }[];
@@ -62,6 +72,7 @@ function OptionRow({
   return (
     <div className="px-1 pb-1.5">
       <div className="px-1 py-1 text-[10px] tracking-[1.5px] text-muted-foreground">{label}</div>
+      {locked && <div className="px-1 pb-1 text-[11px] leading-snug text-amber-400">{locked}</div>}
       <div role="radiogroup" aria-label={label} className={`flex gap-1 ${stack ? "flex-col" : "flex-wrap"}`}>
         {options.map((o) => (
           <button
@@ -70,8 +81,9 @@ function OptionRow({
             role="radio"
             aria-checked={o.id === value}
             title={o.title}
+            disabled={!!locked}
             onClick={() => onPick(o.id)}
-            className={`rounded-lg border px-2 py-1.5 text-left text-xs transition-colors ${
+            className={`rounded-lg border px-2 py-1.5 text-left text-xs transition-colors disabled:opacity-40 ${
               o.id === value
                 ? "border-[var(--brand-soft)] text-[var(--brand-soft)]"
                 : "border-border text-foreground/70 active:opacity-70"
@@ -157,8 +169,18 @@ export function Composer() {
     sessionAgent,
     sessionSlot,
     sessionId,
+    experimental,
+    openBrief,
+    project,
   } = useChat();
   const onAgent = sessionAgent !== "claude";
+  // With the switch on the capability table answers what the agent's id used to.
+  const caps = experimental ? openBrief?.caps : undefined;
+  const canCompact = caps ? caps.compact : !onAgent;
+  const helperName = caps && openBrief?.parent_session ? openBrief.title || "this helper" : null;
+  const agentWord = !caps ? "Claude" : helperName ?? providerName(sessionAgent);
+  const channel = useChannel(sessionId, experimental);
+  const helpersCfg = experimental ? channel.data?.config ?? openBrief?.helpers : undefined;
   // Each PROFILE row says what its Claude login has left in each window; NO
   // PROFILE runs on the default login.
   const logins = useAccounts().data?.accounts;
@@ -200,7 +222,147 @@ export function Composer() {
   }, [draft]);
 
   const blocked = isRunning || pending.length > 0;
+
+  // --- picking a profile ---------------------------------------------------
+  // With the switch on, a provider change moves the chat's history, so it's asked
+  // about first (handoff.preview), and it can't happen during a turn.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [askSwitch, setAskSwitch] = useState<{ pid: string; preview: HandoffPreview } | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [switchErr, setSwitchErr] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => { setRefusal(null); setAskSwitch(null); setSwitchErr(null); }, [sessionId]);
+  const profileLock = !experimental ? undefined
+    : openBrief?.parent_session ? "A helper stays on the provider it was started on."
+    : isRunning ? "A turn is running. Change this after it finishes." : undefined;
+  async function choose(pid: string) {
+    if (!experimental) return void pickProfile(pid);
+    if (pid === profileId || !sessionId) return;
+    setRefusal(null);
+    try {
+      const preview = await api.handoffPreview(sessionId, pid);
+      if (preview.refusal) { setRefusal(preview.refusal); return; }
+      if (!preview.needs_dialog) { await pickProfile(pid); return; }
+      setSwitchErr(null);
+      setMenuOpen(false);
+      setAskSwitch({ pid, preview });
+    } catch (e) {
+      setRefusal(e instanceof Error ? e.message : "Couldn't check this switch.");
+    }
+  }
+  async function confirmSwitch(scope: SwitchScope) {
+    if (!askSwitch) return;
+    setSwitching(true);
+    setSwitchErr(null);
+    const done = await pickProfile(askSwitch.pid, scope);
+    setSwitching(false);
+    if (done) setAskSwitch(null);
+    else setSwitchErr("The switch didn't go through. Try again once this chat is idle.");
+  }
+
+  // --- @ profiles ----------------------------------------------------------
+  // Off the switch this list never opens, so an @ is plain text as it always was.
+  const [caret, setCaret] = useState(0);
+  const [atDismissed, setAtDismissed] = useState(false);
+  const at = experimental && profiles?.length ? atQuery(draft, caret) : null;
+  const atHits = at ? rankNames(profiles ?? [], at.q).slice(0, 6) : [];
+  const atOpen = !!at && !atDismissed && atHits.length > 0;
+  useEffect(() => { if (!at) setAtDismissed(false); }, [!!at]); // eslint-disable-line react-hooks/exhaustive-deps
+  function takeMention(name: string) {
+    if (!at) return;
+    const r = insertName(draft, at, caret, name);
+    setDraft(r.text);
+    setCaret(r.caret);
+    const el = taRef.current;
+    if (el) {
+      el.focus();
+      requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret));
+    }
+  }
+
+  // --- steering ------------------------------------------------------------
+  // In through the channel, addressed to whoever this session is: the Mini App has
+  // no steer route of its own, and channel._reach steers a busy agent. Text only.
+  const steerMode = caps?.steer === "native" || caps?.steer === "soft" ? caps.steer : null;
+  const [steerErr, setSteerErr] = useState<string | null>(null);
+  const [steering, setSteering] = useState(false);
+  async function steerNow() {
+    const text = draft.trim();
+    if (!text || !sessionId) return;
+    setSteering(true);
+    setSteerErr(null);
+    try {
+      await api.channelSend(sessionId, helperName ?? "main", text);
+      setDraft("");
+    } catch (e) {
+      setSteerErr(e instanceof Error ? e.message : "That didn't reach it. Your words are still here.");
+    } finally {
+      setSteering(false);
+    }
+  }
   const sendDisabled = blocked || draft.trim().length === 0;
+
+  // --- images in the chat ---------------------------------------------------
+  // SYSTEM ▸ Send images, set on the dashboard: an image is saved in the project at once
+  // and its markdown goes at the caret (bridge/chat_images.py). Asked when a file arrives,
+  // not polled, so a change there is simply right the next time. Anything that goes
+  // wrong asking, a 404 from an older bridge above all, means attachments.
+  const imgScope = { session: sessionId, project };
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+  const sessionNow = useRef(sessionId);
+  sessionNow.current = sessionId;
+  const [uploading, setUploading] = useState(0);
+  const [imgErr, setImgErr] = useState<string | null>(null);
+  useEffect(() => setImgErr(null), [sessionId]);
+  const inlineMode = () =>
+    qc.fetchQuery({ queryKey: ["chat-images"], queryFn: () => api.chatImagesMode(), staleTime: 5000, retry: false })
+      .then((r) => r.mode === "inline", () => false);
+  /** At the caret as it is now, not as it was when the upload started: you can go on
+   *  typing while it travels. Read off the element, so a caret in a blurred textarea
+   *  (the file picker took focus) still counts. */
+  function insertImage(md: string) {
+    const el = taRef.current;
+    const text = draftNow.current;
+    const r = insertAt(text, el?.selectionStart ?? text.length, el?.selectionEnd ?? text.length, md);
+    draftNow.current = r.text;
+    setDraft(r.text);
+    setCaret(r.caret);
+    if (el) requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret));
+  }
+  async function uploadImage(file: File) {
+    const from = sessionId;
+    setUploading((n) => n + 1);
+    try {
+      const got = await api.chatImageUpload(imgScope, await readAsDataUrl(file));
+      // The address means nothing in another chat's project.
+      if (sessionNow.current !== from) {
+        setImgErr("You changed chats before that image finished, so it isn't in this message.");
+        return;
+      }
+      primeChatImage(imgScope, got.path, file);
+      insertImage(got.markdown);
+    } catch (e) {
+      setImgErr(e instanceof Error ? e.message : "Couldn't save that image.");
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  }
+  /** A paste with text in it pastes the text natively as well: nothing here stops it.
+   *  In attachment mode a paste stays what it has always been here, which is text only. */
+  async function takeFiles(files: File[], picked: boolean) {
+    if (!files.length) return;
+    if (!(await inlineMode())) {
+      if (picked) await addAttachments(files);
+      return;
+    }
+    setImgErr(null);
+    const isImage = (f: File) => f.type.startsWith("image/");
+    const rest = files.filter((f) => !isImage(f));
+    if (rest.length) void addAttachments(rest);
+    // One at a time, so several land in the order you picked them.
+    for (const f of files.filter(isImage)) await uploadImage(f);
+  }
 
   // --- / commands ----------------------------------------------------------
   // A draft that is just `/word` opens the command list, as the CLI's input
@@ -213,11 +375,31 @@ export function Composer() {
   // No retries: a bridge still running pre-restart code 404s this, and the
   // list should say so now rather than after three backoffs.
   // Claude's commands and skills: an agent session's / runs none of them.
-  const cmdsQ = useQuery({ queryKey: ["commands"], queryFn: () => api.getCommands(), enabled: slashOn && !onAgent, retry: false });
-  const hits = slashQ === null || onAgent ? [] : rankCommands(cmdsQ.data?.commands ?? [], slashQ);
-  const slashOpen = slashOn && !onAgent && !slashDismissed && (hits.length > 0 || cmdsQ.isError);
+  const cmdsQ = useQuery({ queryKey: ["commands"], queryFn: () => api.getCommands(), enabled: slashOn && (!onAgent || !!caps), retry: false });
+  // On another agent with the switch on, / offers the skills shared with it, written
+  // the way it takes them (caps.skills_prefix: Kimi's is /skill:name).
+  const agentSkills = !!caps && onAgent;
+  const sharedQ = useQuery({
+    queryKey: ["skill-share", openBrief?.cwd ?? ""],
+    queryFn: () => api.skillShare(openBrief?.cwd),
+    enabled: slashOn && agentSkills,
+    retry: false,
+  });
+  const prefix = caps?.skills_prefix ?? "/";
+  const offered: SlashCommand[] = agentSkills
+    ? (sharedQ.data?.skills ?? []).filter((k) => k.on && !k.conflict).map((k) => ({
+        name: k.name,
+        description: cmdsQ.data?.commands.find((c) => c.name === k.name)?.description ?? "",
+        scope: "project" as const,
+      }))
+    : cmdsQ.data?.commands ?? [];
+  const slashBody = agentSkills ? slashQ?.replace(/^skill:/, "") ?? null : slashQ;
+  const slashUsable = !onAgent || agentSkills;
+  const hits = slashBody === null || !slashUsable ? [] : rankCommands(offered, slashBody);
+  const listFailed = agentSkills ? sharedQ.isError : cmdsQ.isError;
+  const slashOpen = slashOn && slashUsable && !slashDismissed && (hits.length > 0 || listFailed);
   function takeSlash(name: string) {
-    setDraft(`/${name} `);
+    setDraft(`${agentSkills ? prefix : "/"}${name} `);
     taRef.current?.focus();
   }
 
@@ -265,6 +447,22 @@ export function Composer() {
     >
       <UsageStrip slot={sessionSlot} />
 
+      {askSwitch && (
+        <SwitchSheet
+          preview={askSwitch.preview}
+          busy={switching}
+          error={switchErr && (profilesError ?? switchErr)}
+          onPick={(scope) => void confirmSwitch(scope)}
+          onCancel={() => setAskSwitch(null)}
+        />
+      )}
+      {helperName && (
+        <div className="mb-1.5 truncate px-1 text-[10px] tracking-[1px] text-[var(--brand-soft)]">
+          TALKING TO {helperName.toUpperCase()} · {providerName(sessionAgent).toUpperCase()}
+        </div>
+      )}
+      {steerErr && isRunning && <div className="mb-2"><Banner tone="error">{steerErr}</Banner></div>}
+
       {zoom && (
         <ImageLightbox
           src={zoom.src}
@@ -301,6 +499,25 @@ export function Composer() {
         </div>
       )}
 
+      {atOpen && (
+        <div className="mb-2 max-h-[40vh] overflow-y-auto rounded-xl border border-border bg-secondary/60" role="listbox" aria-label="Profiles">
+          {atHits.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={false}
+              // keep the keyboard up, like the command list
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => takeMention(p.name)}
+              className="flex min-h-[44px] w-full items-baseline gap-2 border-b border-border/60 px-3 py-2 text-left last:border-b-0 active:bg-secondary"
+            >
+              <span className="shrink-0 font-mono text-xs text-[var(--brand-soft)]">@{p.name}</span>
+              <span className="min-w-0 flex-1 truncate text-[10px] tracking-[.5px] text-muted-foreground">{describeProfile(p)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {slashOpen && (
         <div className="mb-2 max-h-[40vh] overflow-y-auto rounded-xl border border-border bg-secondary/60">
           {hits.length === 0 ? (
@@ -316,27 +533,38 @@ export function Composer() {
               onClick={() => takeSlash(c.name)}
               className="flex w-full items-baseline gap-2 border-b border-border/60 px-3 py-2 text-left last:border-b-0 active:bg-secondary"
             >
-              <span className="shrink-0 font-mono text-xs text-[var(--brand-soft)]">/{c.name}</span>
+              <span className="shrink-0 font-mono text-xs text-[var(--brand-soft)]">{agentSkills ? prefix : "/"}{c.name}</span>
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.description}</span>
             </button>
           ))}
         </div>
       )}
+      {imgErr && <div className="mb-2"><Banner tone="error">{imgErr}</Banner></div>}
+      {uploading > 0 && (
+        <div role="status" className="mb-1.5 px-1 text-[10px] tracking-wide text-[var(--muted-2)]">SAVING IMAGE…</div>
+      )}
+      {experimental && <ComposerImages draft={draft} setDraft={setDraft} scope={imgScope} />}
       <Textarea
         ref={taRef}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart); setImgErr(null); }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onPaste={(e) => { void takeFiles(Array.from(e.clipboardData.files), false); }}
         onKeyDown={(e) => {
+          if (e.key === "Escape" && atOpen) { e.preventDefault(); setAtDismissed(true); return; }
           if (e.key === "Escape" && slashOpen) { e.preventDefault(); setSlashDismissed(true); return; }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            if (atOpen && at && !isWholeName(atHits[0].name, at.q)) { takeMention(atHits[0].name); return; }
             // Enter completes the command unless it's already typed out — then
             // it sends, as `/compact` + Enter should.
             if (slashOpen && hits.length && !isExact(hits[0], slashQ!)) { takeSlash(hits[0].name); return; }
             void (blocked ? queue() : send());
           }
         }}
-        placeholder={blocked ? "Type the next one — it queues…" : "Message Claude…"}
+        placeholder={blocked
+          ? (steerMode && isRunning ? "Steer it now, or queue the next one…" : "Type the next one — it queues…")
+          : `Message ${agentWord}…`}
         rows={1}
         className="max-h-[168px] resize-none overflow-y-auto"
       />
@@ -344,6 +572,8 @@ export function Composer() {
         <div className="mt-1.5 px-1 text-[10px] tracking-wide text-[var(--muted-2)]">
           QUEUED PROMPTS SEND WHEN THE RUN ENDS
           {queued > 0 ? ` · ${queued} IN QUEUE` : ""}
+          {steerMode === "soft" && isRunning ? ` · A STEER REACHES ${agentWord.toUpperCase()} AT ITS NEXT STEP` : ""}
+          {steerMode && isRunning && draftAttachments.length > 0 ? " · QUEUE TO SEND FILES" : ""}
         </div>
       )}
 
@@ -354,7 +584,8 @@ export function Composer() {
           multiple
           className="hidden"
           onChange={(e) => {
-            void addAttachments(e.target.files);
+            // Copied first: clearing the input empties its FileList.
+            void takeFiles(Array.from(e.target.files ?? []), true);
             e.target.value = "";
           }}
         />
@@ -372,7 +603,7 @@ export function Composer() {
         {/* Model, effort and operating mode are one decision ("how should this
             run go?") and were three chips on their own row — now one chip that
             only spells out what you've overridden. */}
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger className={`${chipClass} min-w-0`} aria-label="Run settings">
             <Sparkles size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
             <span className="truncate">{settingsLabel}</span>
@@ -384,6 +615,7 @@ export function Composer() {
             className="max-h-[70vh] w-[min(23rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
           >
             {profilesError && <Banner tone="error">{profilesError}</Banner>}
+            {refusal && <Banner tone="error">{refusal}</Banner>}
             {profiles && (
               <>
                 <OptionRow
@@ -394,8 +626,15 @@ export function Composer() {
                     ...profiles.map((p) => ({ id: p.id, label: p.name, note: describeProfile(p),
                                               hint: leftOf(p.agent, p.account) })),
                   ]}
-                  onPick={(v) => void pickProfile(v)}
+                  onPick={(v) => void choose(v)}
+                  locked={profileLock}
                 />
+                {(!onAgent || helpersCfg) && <DropdownMenuSeparator />}
+              </>
+            )}
+            {helpersCfg && sessionId && (
+              <>
+                <HelpersRow sessionId={sessionId} config={helpersCfg} />
                 {!onAgent && <DropdownMenuSeparator />}
               </>
             )}
@@ -428,7 +667,7 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!onAgent && <Button
+        {canCompact && <Button
           type="button"
           variant="ghost"
           size="icon"
@@ -445,6 +684,17 @@ export function Composer() {
 
         {blocked ? (
           <>
+            {steerMode && isRunning && (
+              <button
+                type="button"
+                onClick={() => void steerNow()}
+                disabled={steering || draft.trim().length === 0 || draftAttachments.length > 0}
+                title={steerMode === "soft" ? "Reaches it at its next step" : "Folds into the running turn"}
+                className="h-10 shrink-0 border border-border-bright px-3 text-[11px] tracking-[1.5px] text-[var(--brand-soft)] active:opacity-70 disabled:opacity-40"
+              >
+                ⇄ STEER
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void queue()}

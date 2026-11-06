@@ -39,7 +39,7 @@ import time
 from collections import deque
 from itertools import count
 
-from bridge import acp_agents, config
+from bridge import acp_agents, config, experimental
 
 DEFER = object()    # on_request's "answered later" (a permission card)
 _UNSET = object()   # a request slot the agent never answered
@@ -308,6 +308,13 @@ class Turn:
         self.replaying = False           # a session/load replay: already in the transcript
         self.done = False                # the turn is ending: no new card, Stop or switch
         self.sid, self.options, self.modes = None, [], None
+        # Soft steering and paused cards (soft_steer, pause_for_card): what the
+        # next session/prompt on this connection says, and whether to cancel once
+        # no tool is open.
+        self.steers, self.answers = [], []
+        self.paused = self.want_cancel = self.closing = False
+        self.tool_after_text = False     # a tool ran after the last words: they aren't the answer
+        self.held_rows = {}              # toolCallId -> name, until its input is known
         # Guards the buffers, card creation and the done/interrupted flips: the
         # reader, the turn's end and Stop all touch them.
         self._lock = threading.RLock()
@@ -325,6 +332,7 @@ class Turn:
             if text:
                 self.job.texts.append(text)
                 self.job.add({"type": "text", "text": text})
+                self.tool_after_text = False
             self.text = self.thought = ""
             self.think_t0 = None
 
@@ -353,14 +361,25 @@ class Turn:
                 self.thought += c.get("text") or ""
         elif kind == "tool_call":
             self.flush()
+            self.tool_after_text = True
             tid, name = u.get("toolCallId"), u.get("title") or u.get("kind") or "tool"
             self.tools[tid] = (name, time.time(), u.get("kind"))
-            self._add({"type": "tool", "name": name, "id": tid, "summary": _summary(u)})
+            # Kimi Code streams the input as text and only states it (rawInput) in a later
+            # update, so a row written now could only say "Bash". It waits for that.
+            if (not experimental.enabled() or u.get("rawInput") or u.get("locations")
+                    or u.get("status") in ("completed", "failed")):
+                self._add(self._tool_row(tid, name, u))
+            else:
+                self.held_rows[tid] = name
             if u.get("status") in ("completed", "failed"):
                 self._done(tid, u)
         elif kind == "tool_call_update":
+            tid = u.get("toolCallId")
+            if tid in self.held_rows and (u.get("rawInput") or u.get("locations")
+                                          or u.get("status") in ("completed", "failed")):
+                self._add(self._tool_row(tid, self.held_rows.pop(tid), u))
             if u.get("status") in ("completed", "failed"):
-                self._done(u.get("toolCallId"), u)
+                self._done(tid, u)
         elif kind == "plan":
             job.todos = _mask([{"content": e.get("content"), "status": e.get("status"),
                                 "activeForm": e.get("content")}
@@ -373,6 +392,20 @@ class Turn:
                 job.cost = cost.get("amount")
         elif kind == "config_option_update":
             self.options = u.get("configOptions") or self.options
+
+    def _tool_row(self, tid, name, u):
+        ev = {"type": "tool", "name": name, "id": tid, "summary": _summary(u)}
+        raw = u.get("rawInput") if isinstance(u.get("rawInput"), dict) else {}
+        cmd = raw.get("command") or raw.get("cmd")
+        if cmd:
+            ev["detail"] = " ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd)
+        return ev
+
+    def flush_held_rows(self):
+        """Whatever still waits for its input goes now, in order: a card is about to name it."""
+        for tid, name in list(self.held_rows.items()):
+            self._add({"type": "tool", "name": name, "id": tid, "summary": name})
+        self.held_rows.clear()
 
     def _done(self, tid, u):
         _, t0, kind = self.tools.pop(tid, (None, 0.0, None))
@@ -395,6 +428,36 @@ class Turn:
         elif text:
             ev["stat"] = f"{len(text.splitlines())} lines"
         self._add(ev)
+        self.cancel_if_due()
+
+    def cancel_if_due(self):
+        """A soft steer or a paused card is waiting, and now nothing is running:
+        end the turn on this connection, which stays open for the next prompt.
+        Callers hold _lock, or are the reader thread inside on_notify's."""
+        if not self.want_cancel or self.tools or not self.sid:
+            return
+        if any(c.get("acp_rpc_id") is not None for c in self.job.pending):
+            return                          # a permission card is open: its tool isn't done
+        self.want_cancel = False
+        self.job.conn.notify("session/cancel", {"sessionId": self.sid})
+
+    def next_prompt(self):
+        """What to say next on this connection, or None when the turn is over.
+        Waits while a card is open: the turn is paused on the person."""
+        while True:
+            with self._lock:
+                if self.job.interrupted or self.job.conn._closed:
+                    self.closing = True
+                    return None
+                waiting = self.paused and any(c.get("gateway") for c in self.job.pending)
+                if not waiting:
+                    parts, self.answers, self.steers = self.answers + self.steers, [], []
+                    self.paused = self.want_cancel = False
+                    if parts:
+                        return "\n\n".join(parts)
+                    self.closing = True
+                    return None
+            time.sleep(0.2)
 
     def on_request(self, rid, method, params):
         if method != "session/request_permission":
@@ -403,6 +466,7 @@ class Turn:
             if self.job.interrupted or self.done:
                 return {"outcome": {"outcome": "cancelled"}}
             self.flush()
+            self.flush_held_rows()
             tc = params.get("toolCall") or {}
             name = tc.get("title") or self.tools.get(tc.get("toolCallId"), ("tool",))[0]
             card = _mask({"request_id": f"acp-{rid}", "kind": "permission", "tool_name": name,
@@ -469,11 +533,14 @@ def pick_option(options, allow):
 
 def _settle(job, card, allow, note=True) -> bool:
     """Answer one card: the agent's option for allow/deny, `cancelled` for
-    allow=None or when it offered no fitting option."""
+    allow=None or when it offered no fitting option. A gateway card has no agent
+    request behind it: it just goes (the turn is being stopped)."""
     try:
         job.pending.remove(card)
     except ValueError:
         return False                        # answered meanwhile (a click racing Stop)
+    if card.get("gateway"):
+        return True
     oid = None if allow is None else pick_option(card.get("options"), allow)
     job.conn.reply(card["acp_rpc_id"], {"outcome": {"outcome": "selected", "optionId": oid}
                                         if oid else {"outcome": "cancelled"}})
@@ -528,11 +595,13 @@ def _authenticate(conn, init, method, label):
     conn.request("authenticate", {"methodId": method}, 60)
 
 
-def _open(conn, turn, caps, cwd, sid, on_session):
+def _open(conn, turn, caps, cwd, sid, on_session, mcp_servers=()):
     """Open the turn's session: new, else resume (no replay), else load with
     its replay dropped. Returns (sid, response); the response is None when the
-    agent can do neither of the last two."""
-    params = {"cwd": cwd, "mcpServers": []}
+    agent can do neither of the last two. mcp_servers: what this session gets
+    from the bridge (bridge/gateway.py), passed again on every open because
+    each turn is a new process."""
+    params = {"cwd": cwd, "mcpServers": list(mcp_servers)}
     if not sid:
         res = conn.request("session/new", params, 120)
         if on_session:
@@ -551,7 +620,10 @@ def _open(conn, turn, caps, cwd, sid, on_session):
 
 def _finish(job, turn, stop):
     turn.flush()
+    turn.flush_held_rows()
     job.result = job.texts[-1] if job.texts else ""
+    if turn.tool_after_text and experimental.enabled():
+        job.result = ""                 # those words led to more work: not the answer
     if job.interrupted or stop == "cancelled":
         return _stopped(job)
     if stop == "refusal":
@@ -564,7 +636,8 @@ def _finish(job, turn, stop):
 
 
 def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, opts,
-             on_spawn=None, on_session=None, cache=None, auth_method=None) -> None:
+             on_spawn=None, on_session=None, cache=None, auth_method=None,
+             mcp_servers=()) -> None:
     """One prompt on a fresh agent process. Never raises: the job ends done,
     stopped or error, with every card answered and the process group gone.
     auth_method: the ACP authenticate id for a key account, None to skip."""
@@ -578,7 +651,7 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         init = conn.request("initialize", _INIT, 120)
         _authenticate(conn, init, auth_method, label)
         sid, res = _open(conn, turn, init.get("agentCapabilities") or {}, cwd,
-                         agent_session_id, on_session)
+                         agent_session_id, on_session, mcp_servers)
         if res is None:
             return _fail(job, f"{label} can't resume a session, so this one can't continue. "
                               "Start a new session.")
@@ -598,6 +671,11 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         stop = None if job.interrupted else conn.request(
             "session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": text}]},
             None).get("stopReason")
+        # A steer or a card's answer keeps the same connection and session going.
+        while (again := turn.next_prompt()) is not None:
+            turn.flush()
+            stop = conn.request("session/prompt", {
+                "sessionId": sid, "prompt": [{"type": "text", "text": again}]}, None).get("stopReason")
         _finish(job, turn, stop)
     except Exception as e:  # noqa: BLE001 - never raises
         turn.flush()
@@ -619,6 +697,44 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
             conn.close()
         if job._interrupt_timer:
             job._interrupt_timer.cancel()
+
+
+def soft_steer(job, text) -> bool:
+    """Steering, as near as ACP v1 allows. Once the running tool is done, the turn
+    is cancelled on this connection and the same session is prompted with `text`:
+    only the step the model was on is lost (see agent_caps). False when there is no
+    live turn to reach or it is already ending, so the caller queues instead."""
+    conn, turn = job.conn, job.turn
+    if conn is None or conn._closed or turn is None or not turn.sid:
+        return False
+    with turn._lock:
+        if turn.done or turn.closing or job.interrupted:
+            return False
+        turn.steers.append(text)
+        turn.want_cancel = True
+        turn.cancel_if_due()
+    return True
+
+
+def pause_for_card(job) -> bool:
+    """A gateway card is up, and an agent's MCP call can't wait for a person: end
+    the turn once the tool returns, and hold the connection until it is answered."""
+    conn, turn = job.conn, job.turn
+    if conn is None or conn._closed or turn is None or not turn.sid:
+        return False
+    with turn._lock:
+        if turn.done or turn.closing:
+            return False
+        turn.paused = turn.want_cancel = True
+    return True
+
+
+def card_answered(job, text) -> None:
+    """A paused card's answer: the next prompt on this connection."""
+    turn = job.turn
+    if turn is not None:
+        with turn._lock:
+            turn.answers.append(text)
 
 
 def answer(job, request_id, allow: bool) -> bool:

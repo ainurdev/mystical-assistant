@@ -3,22 +3,35 @@ import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
   Quote, Layers, Image as ImageIcon, Terminal, BookOpen, PencilLine, FilePlus2, Search, Globe,
-  Plug, Bot, Sparkles, Webhook, Logs, CircleX, Wrench, Circle, type LucideIcon,
+  Plug, Bot, Sparkles, Webhook, Logs, CircleX, Wrench, Circle, FlaskConical, Hammer, GitBranch, PackagePlus, Play, type LucideIcon,
 } from "lucide-react";
-import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
+import { api, type AnswerSelection, type CardAnswer, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { Markdown, type OpenFile } from "./Markdown";
 import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
+import { fmtTokens } from "../lib/week";
+import { useMultiOn } from "../lib/multistore";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { chapterStarts, kindsByPurpose, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES, type Mark } from "../lib/dossier";
+import { parseFrame } from "../lib/multi";
+import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchLine } from "./MultiRows";
+import { bashKind, testLine, testResult, type BashKind } from "../lib/bashkind";
+import { analyzeFailures } from "../lib/failures";
+import { isShowTool, lookedNotes, noteLine, proofsOf, withoutAnswered } from "../lib/pictures";
+import { receiptEmpty, receiptOf } from "../lib/receipt";
+import { clearReveal, revealKey, useRevealAsk } from "../lib/reveal";
+import { ROW_FILTERS, rowMatches, type RowFilter } from "../lib/rowfilter";
+import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./EvidenceRows";
+import { ProofBlock } from "./Proof";
+import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { nowOf } from "../lib/workstate";
@@ -61,7 +74,10 @@ const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
 type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
-  stat?: string; images?: string[]; clip?: Clip; sources?: WebSource[] };
+  stat?: string; images?: string[]; clip?: Clip; sources?: WebSource[];
+  /** It failed, and a later call of the same kind worked (lib/failures): `is_error`
+   *  is off for these, so every row reads it as ordinary work. */
+  recovered?: boolean };
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
@@ -151,6 +167,8 @@ const MARK_ICON: Record<Mark, LucideIcon> = {
   command: Terminal, read: BookOpen, edit: PencilLine, write: FilePlus2, search: Search,
   fetch: Globe, call: Plug, agent: Bot, skill: Sparkles, hook: Webhook, log: Logs,
   fail: CircleX, step: Wrench, note: Circle, think: Circle,
+  "p-tests": FlaskConical, "p-build": Hammer, "p-git": GitBranch, "p-install": PackagePlus, "p-run": Play,
+  "p-search": Search, "p-read": BookOpen, "p-other": Terminal,
 };
 function MarkIcon({ mark, size = 14 }: { mark: Mark; size?: number }) {
   const I = MARK_ICON[mark];
@@ -171,7 +189,9 @@ const kindTag = (name: string): string => {
 
 /** `full`: the command whole when `command` (the event's summary) is its first
  *  120 chars — the drawer shows, copies and re-runs that one. */
-type Cmd = { command: string; full?: string; done?: Done };
+type Cmd = { command: string; full?: string; done?: Done;
+  /** What it was for (lib/bashkind); absent with the experimental switch off. */
+  purpose?: BashKind };
 
 /** One command as a row of the ledger: the phrase it amounts to, and its output
  *  behind the chevron. Inside a run it wears no tag and no mark — the run's head
@@ -187,6 +207,7 @@ function CommandRow({
   autoOpen,
   tag,
   onRerun,
+  purpose,
 }: Cmd & {
   newest: boolean;
   animate: boolean;
@@ -205,21 +226,26 @@ function CommandRow({
   // A cut, not a cross-fade: two legible strings on one row is worse than any
   // hard swap, and staggering them blanks the row instead.
   const said = cmdAbstract(command);
+  // A recovered failure keeps its exit code, as a fact rather than an alarm.
+  const exitTone = done?.recovered ? "var(--txl)" : "var(--err)";
+  const tests = purpose === "tests" ? testLine(testResult(out)) : "";
 
   return (
     <ActionRow
       tier={failed ? "mark" : "reach"}
       shape={tag ? "term" : undefined}
       accent="var(--acc)"
-      tag={tag}
-      mark={tag ? "command" : undefined}
+      tag={tag && purpose && purpose !== "other" ? purpose.toUpperCase() : tag}
+      mark={tag ? (purpose ? `p-${purpose}` : "command") : undefined}
       animate={animate}
       running={running}
       error={failed}
       startOpen={autoOpen && (running || failed || newest)}
       stat={
         <>
-          {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
+          {tests ? <span style={{ color: /failed/.test(tests) && !done?.recovered ? "var(--err)" : /failed/.test(tests) ? "var(--txl)" : "var(--ok)" }}>{tests}</span> : null}
+          {done?.recovered ? <span className="ma-recovered">recovered</span> : null}
+          {exit && <span style={{ color: exitTone }}>EXIT {exit[1]}</span>}
           {slow(done?.ms) ? <span>{dur(done?.ms)}</span> : null}
           {lines > 0 && <span>{lines} line{lines === 1 ? "" : "s"}</span>}
         </>
@@ -235,7 +261,7 @@ function CommandRow({
                 />
                 {lines > 0 ? <DrawerText text={out} error={failed} /> : null}
                 <DrawerFoot>
-                  {exit ? <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span> : null}
+                  {exit ? <span style={{ color: exitTone }}>EXIT {exit[1]}</span> : null}
                   {done?.ms ? <span>{dur(done.ms)}</span> : null}
                   {lines > 0 ? <span>{lines} LINES</span> : null}
                 </DrawerFoot>
@@ -244,6 +270,7 @@ function CommandRow({
           : undefined
       }
     >
+      {purpose && !tag && purpose !== "other" ? <span className="ma-purp">{purpose}</span> : null}
       {said ? (
         <>
           <span className="font-sans group-hover/act:hidden">{said}</span>
@@ -287,6 +314,7 @@ function TerminalGroup({
         command={cmds[0].command}
         full={cmds[0].full}
         done={cmds[0].done}
+        purpose={cmds[0].purpose}
         tag="BASH"
         newest
         animate={animate}
@@ -314,6 +342,7 @@ function TerminalGroup({
           command={c.command}
           full={c.full}
           done={c.done}
+          purpose={c.purpose}
           newest={k === cmds.length - 1}
           animate={animate}
           autoOpen={autoOpen}
@@ -800,7 +829,21 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  paint containment clips anything past the plate); the cat draws as a row
  *  inside the plate instead of under the turn; STATUS would only say what the
  *  line already does, so the line stands in for it. */
-function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, children }: {
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, children, purposes, looked, filtered, filterCounts, reveal = 0 }: {
+  /** What the zone's commands were for (lib/bashkind): its chips count these
+   *  instead of "commands". Absent with the experimental switch off, as are the
+   *  next four. */
+  purposes?: BashKind[];
+  /** These pictures were only looked at (lib/pictures): the strip says so, with
+   *  what the agent made of its newest ones, when it has said.
+   *  ponytail: one strip, so one note; each picture's own is in the lightbox. A zone
+   *  that looked at several things in turn may want a strip per note. */
+  looked?: { note: string };
+  /** The rows for a filter other than all, and how many each would keep (lib/rowfilter). */
+  filtered?: (f: RowFilter) => ReactNode[];
+  filterCounts?: () => Record<RowFilter, number>;
+  /** Changes when a row in here was asked for: open, unfiltered. */
+  reveal?: number;
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
@@ -887,6 +930,25 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // revisit with those.
   const [cap, setCap] = useState(Infinity);
   const anims = useRef<Animation[]>([]);
+  // ponytail: the bar sits at the top of the rows, not pinned with the header, so deep in
+  // a long zone you scroll back up to it; pin it (it'd need its own sticky offset under
+  // the header and a chapter's line) if that turns out to be how it's used.
+  // The filter (lib/rowfilter). Picking one keeps the header where it is, and going
+  // back to all puts you back where you were: the zone's list can be thousands of
+  // pixels shorter under a filter, and the page would otherwise clamp you far away.
+  const [filter, setFilter] = useState<RowFilter>("all");
+  const allTop = useRef<number | null>(null);
+  useEffect(() => { if (reveal) { setOpen(true); setFilter("all"); setCap(Infinity); } }, [reveal]);
+  const pickFilter = (f: RowFilter) => {
+    const h = head.current, sc = h?.closest<HTMLElement>(".mscroll");
+    if (f === filter) return;
+    const y = h?.getBoundingClientRect().top ?? 0, wasPinned = pinned;
+    if (filter === "all") allTop.current = sc?.scrollTop ?? null;
+    flushSync(() => setFilter(f));
+    if (!sc || !h) return;
+    if (f === "all" && allTop.current != null) sc.scrollTop = allTop.current;
+    else sc.scrollTop += (wasPinned ? h.parentElement!.getBoundingClientRect().top : h.getBoundingClientRect().top) - y;
+  };
   const toggle = (b: HTMLButtonElement) => {
     const f = fold.current, sc = b.closest<HTMLElement>(".mscroll");
     const y = b.getBoundingClientRect().top, was = f?.getBoundingClientRect();
@@ -1006,7 +1068,9 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         </span>
         <span className="dwork-l2">
           <span className="dwork-kinds" title={words} aria-label={words}>
-            {kindsOf(cats, notes).map((k) => <KindChip key={k.m} m={k.m} n={k.n} />)}
+            {(purposes ? kindsByPurpose(cats, purposes, notes) : kindsOf(cats, notes)).map((k) => (
+              <KindChip key={k.m} m={k.m} n={k.n} title={k.m.startsWith("p-") ? `${k.n} · ${k.m.slice(2)}` : undefined} />
+            ))}
           </span>
         </span>
         <span className="dwork-right">
@@ -1029,16 +1093,42 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         {ind || pics.length ? (
           <div className="dwork-part" data-leaving={open && motion ? "" : undefined} hidden={open && !motion}>
             {!open ? ind : null}
-            {pics.length ? <ShotRow pics={pics} shut={!open} label={picsWord} onOpen={setZoom} /> : null}
+            {pics.length && looked ? (
+              <div className="ma-looked">
+                <div className="ma-looked-lab">Looked at {picsWord}</div>
+                <div className="ma-looked-body">
+                  <ShotRow pics={pics} shut={!open} label={`Looked at ${picsWord}`} onOpen={setZoom} />
+                  {looked.note ? <p className="ma-looked-note">{looked.note}</p> : null}
+                </div>
+              </div>
+            ) : pics.length ? <ShotRow pics={pics} shut={!open} label={picsWord} onOpen={setZoom} /> : null}
           </div>
         ) : null}
         {open || motion ? (
           <div className="dwork-part" data-leaving={open ? undefined : ""}>
-            <div className="dwork-body">{children.slice(0, cap)}</div>
+            {open && filterCounts && steps ? <ZoneFilter at={filter} counts={filterCounts()} onPick={pickFilter} /> : null}
+            {filter === "all" || !filtered ? <div className="dwork-body">{children.slice(0, cap)}</div> : (() => {
+              const kept = filtered(filter);
+              return kept.length ? <div className="dwork-body">{kept}</div> : <p className="ma-zf-none">Nothing in this work is one of those.</p>;
+            })()}
             {open ? ind : null}
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The filter over an open zone's rows. A choice with nothing to show is off, not gone,
+ *  so the row doesn't reflow as the work grows. */
+function ZoneFilter({ at, counts, onPick }: { at: RowFilter; counts: Record<RowFilter, number>; onPick: (f: RowFilter) => void }) {
+  return (
+    <div className="ma-zf" role="group" aria-label="Filter this work">
+      {ROW_FILTERS.map(({ f, label }) => (
+        <button key={f} type="button" aria-pressed={at === f} disabled={!counts[f] && at !== f} onClick={() => onPick(f)}>
+          {label}{f !== "all" && counts[f] ? <i>{counts[f]}</i> : null}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1051,7 +1141,9 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
  *  so you know which part you are in. While the turn runs, its last chapter is
  *  live and opens by itself, and shuts when the next one takes over, unless you
  *  opened or shut it by hand. */
-function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
+function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows, reveal = 0 }: {
+  /** Changes when a row in here was asked for: it opens. */
+  reveal?: number;
   n: number;
   /** When its first step landed, epoch seconds. */
   at?: number;
@@ -1068,6 +1160,7 @@ function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
   const [open, setOpen] = useState(live);
   const byHand = useRef(false);
   useEffect(() => { if (!byHand.current) setOpen(live); }, [live]);
+  useEffect(() => { if (reveal) { byHand.current = true; setOpen(true); } }, [reveal]);
   const h12 = useClock12();
   const body = useRef<HTMLDivElement>(null);
   const toggle = (b: HTMLButtonElement) => {
@@ -1119,7 +1212,11 @@ function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
  *  it went; unless you opened or shut it by hand. COLLAPSE STEPS off mounts
  *  every stretch open. Hovering the tally peeks at its steps (its title, drawn
  *  by NativeTips). Work with no words before it gets a row of its own. */
-function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows }: {
+function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows, purposes, reveal = 0 }: {
+  /** What its commands were for: the tally says so, as the zone's chips do. */
+  purposes?: BashKind[];
+  /** Changes when a row in here was asked for: it opens. */
+  reveal?: number;
   /** The words, wearing the tally they're given; null draws the tally on a row of its own. */
   words: ((tally: ReactNode) => ReactNode) | null;
   /** What the work ran, by kind, and how much of it failed. None: words alone. */
@@ -1184,13 +1281,14 @@ function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows 
     return () => clearTimeout(t);
   }, [pulse]);
   useEffect(() => () => glide.current?.cancel(), []);
+  useEffect(() => { if (reveal) { byHand.current = true; setShown(true); setBuilt(true); } }, [reveal]);
   const toggle = () => { byHand.current = true; fold(!shown); };
   const what = [stepsTitle(cats), failed ? `${failed} failed` : ""].filter(Boolean).join(" · ");
   const tally = cats.length ? (
     <button type="button" className="wtally" onClick={toggle} aria-expanded={shown} aria-label={what}
       title={[what, ...peek].join("\n")}
       data-err={failed ? "" : undefined} data-live={live ? "" : undefined} data-pulse={pulse ? "" : undefined}>
-      {kindsOf(cats, 0).map((k) => (
+      {(purposes ? kindsByPurpose(cats, purposes, 0) : kindsOf(cats, 0)).map((k) => (
         <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
       ))}
       {failed ? <span className="dwork-k" data-m="fail"><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
@@ -2202,7 +2300,7 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
 
 type RespondFn = (
   requestId: string,
-  opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[] },
 ) => void | Promise<boolean | void>;
 
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
@@ -2231,8 +2329,24 @@ export const RunStream = memo(function RunStream({
   compact = false,
   view = null,
   askDocked = false,
+  saidTier = false,
+  sessionId,
+  turnNo,
+  runtime,
+  elapsed,
 }: {
+  /** The session it's in, for what a card reads back (a report). */
+  sessionId?: string | null;
+  /** Its place in the chat, 1-based, said in the lightbox. */
+  turnNo?: number;
+  /** Who ran it (lib/agents runtimeBadge) and how long it took, for its receipt. */
+  runtime?: string | null;
+  elapsed?: number | null;
   events: TimedEvent[];
+  /** A non-Claude agent's turn with the experimental switch on: its interim notes
+   *  are addressed to you, so in DOSSIER they sit outside the WORK zone (lib/dossier
+   *  zonesWithSaid). Other languages draw them in the flow already. */
+  saidTier?: boolean;
   pending?: PendingRequest[];
   onRespond?: RespondFn;
   /** The open ask sits on the prompt box (AskDock): a live card is a marker here. */
@@ -2291,6 +2405,12 @@ export const RunStream = memo(function RunStream({
   );
   // T+ for SIGNAL LOG's gutter. Every other language ignores `data-t`, so this
   // costs one subtraction per row and nothing else.
+  // Everything new in this file (pictures by kind, the receipt, purposes, failures that
+  // matter, the filter, the bridge tools' rows) reads this: with the switch off the
+  // transcript draws exactly what it did. DOSSIER only: the other style is previews.
+  const multiOn = useMultiOn();
+  const dossier = toolStyle === "dossier";
+  const mx = multiOn && dossier;
   const clockAt = (e: TimedEvent): string | undefined => {
     if (turnStarted == null || e.at == null) return undefined;
     const s = Math.max(0, e.at - turnStarted);
@@ -2307,16 +2427,24 @@ export const RunStream = memo(function RunStream({
   // A card still waiting on you draws at the turn's foot (lib/segments atFoot).
   const waiting = (i: number) => {
     const e = events[i];
-    return (e.type === "question" || e.type === "permission") && pendingIds.has(e.request_id);
+    return (e.type === "question" || e.type === "permission" || e.type === "secret_request") && pendingIds.has(e.request_id);
   };
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
   const answeredAt = new Map<string, number | undefined>();
   const toolDone = new Map<string, Done>();
+  const secretGiven = new Map<string, boolean>();
   for (const e of events) {
+    if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") { permResolved.set(e.request_id, e.behavior); answeredAt.set(e.request_id, e.at); }
     if (e.type === "question_answered") { qAnswered.set(e.request_id, e.answers); answeredAt.set(e.request_id, e.at); }
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
+  }
+  // A failure a later call made good reads as ordinary work everywhere below; the
+  // filter's "failures" still finds it. One nothing made good is said by the receipt.
+  if (mx) for (const id of analyzeFailures(events).recovered) {
+    const d = toolDone.get(id);
+    if (d) toolDone.set(id, { ...d, is_error: false, recovered: true });
   }
   // Turns recorded before tool events carried ids can't be paired, so they read
   // as finished commands instead of stuck carets.
@@ -2334,14 +2462,21 @@ export const RunStream = memo(function RunStream({
   // knows only its own); fine while the upload dir prunes a whole turn at once.
   const shots: Shown[] = [];
   const shotsOf = new Map<number, Shown[]>();
+  /** A tool whose pictures are shown to you (lib/pictures), once it has come back with them. */
+  const showAt = (i: number): boolean => {
+    const e = events[i];
+    return mx && e?.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
+  };
+  const turnWord = [turnNo ? `turn ${turnNo}` : "", turnStarted ? hhmm(turnStarted) : ""].filter(Boolean).join(" · ");
   const addShots = (ev: number, call: string, about: string, paths: string[] = [], clip?: Clip, at?: number) => {
-    const own = paths.map((p, i) => ({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at }));
+    const meta = mx ? { tool: toolKind(call) === "mcp" ? mcpParts(call).tool : call, turn: turnWord } : {};
+    const own: Shown[] = paths.map((p, i) => ({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at, ...meta }));
     shots.push(...own);
     shotsOf.set(ev, own);
   };
   events.forEach((e, i) => {
     if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
-    else if (e.type === "tool") { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
+    else if (e.type === "tool" && !showAt(i)) { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
   });
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
@@ -2361,7 +2496,7 @@ export const RunStream = memo(function RunStream({
   // groups by server, so two servers in a row stay two cards.
   const groupKey = (i: number): string | null => {
     const e = events[i];
-    if (e.type !== "tool") return null;
+    if (e.type !== "tool" || showAt(i)) return null;
     if (e.name === "Bash") return "bash";
     // Edits group too, and their card merges them by file — a run of them is
     // the same file over and over far more often than it is many files.
@@ -2378,21 +2513,41 @@ export const RunStream = memo(function RunStream({
   // A picture is the result, so a run that came back with one is drawn in the
   // flow with the words — a shut STEPS fold would hide it. The whole run goes:
   // its head draws every member, and a member left behind would head an empty fold.
-  const inFlow = (i: number) =>
+  const pictureRun = (i: number) =>
     (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
+  /** What leaves the work while the turn runs: a figure, a report, a clip. A finished
+   *  turn gathers them by its answer, and its work closes back up into one zone. */
+  const shownLive = (i: number) => {
+    const t = events[i].type;
+    return !ended && (t === "figure" || t === "report" || showAt(i));
+  };
+  // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
+  // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
+  const inFlow = (i: number) => {
+    if (!mx) return pictureRun(i);
+    const t = events[i].type;
+    if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
+    return !showAt(i) && t !== "figure" && t !== "report" && pictureRun(i);
+  };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
   // event, so its final text keeps rendering as text.
+  // A turn can hold several results: a background agent's wake-up carries on in the
+  // same process and turn. Only the last is the answer; the rest read as updates.
+  const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
-  const dossier = toolStyle === "dossier";
+  const resultTexts = new Set(multiOn ? events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : []))
+    : resultText ? [resultText] : []);
   // A native session emits no result event, so its closing words are a plain
   // `text`. DOSSIER still has to draw them as the answer — the answer is half of
   // tier 1 — so in a finished turn with no result, the last text that nothing
   // but bookkeeping follows is it.
   const finalText = (() => {
     if (!dossier || !ended || resultText || unfinished) return -1;
+    // A stopped turn's last words were on the way somewhere: not its answer.
+    if (saidTier && events.some((e) => e.type === "stopped")) return -1;
     for (let j = events.length - 1; j >= 0; j--) {
       const t = events[j].type;
       if (t === "text") return (events[j] as { text?: string }).text ? j : -1;
@@ -2401,6 +2556,49 @@ export const RunStream = memo(function RunStream({
     return -1;
   })();
 
+  // What the agent shows you, less what its answer already draws (lib/pictures), and
+  // what it made of the ones it only looked at, which the lightbox says too.
+  const answerText = lastResult >= 0 ? (events[lastResult] as { result?: string }).result ?? "" : finalText >= 0 ? (events[finalText] as { text?: string }).text ?? "" : "";
+  const proofs = mx ? withoutAnswered(proofsOf(events), answerText) : [];
+  const looked = mx ? lookedNotes(events, (t) => resultTexts.has(t.trim()) || (finalText >= 0 && t === (events[finalText] as { text?: string }).text)) : null;
+  if (looked) shotsOf.forEach((own, i) => {
+    const note = looked.get(i);
+    if (note) for (const s of own) s.caption = noteLine(note);
+  });
+
+  // A row asked for, by a failure's "show" or by a search: every fold on the way opens,
+  // and it wears an anchor (revealKey) for the scroll to land on.
+  const [reveal, setReveal] = useState<{ i: number; n: number } | null>(null);
+  const revealAt = (i: number) => {
+    const fold = headOf.get(i) ?? (folds.has(i) ? i : undefined);
+    if (fold !== undefined) setOpenFolds((s) => new Set(s).add(fold));
+    setReveal((r) => ({ i: groupOf.get(i) ?? i, n: (r?.n ?? 0) + 1 }));
+  };
+  const revealId = (i: number) => ckId(turnId, revealKey(i, (events[i] as { seq?: number } | undefined)?.seq));
+  const revealAsk = useRevealAsk(turnId);
+  useEffect(() => {
+    if (!revealAsk || !mx) return;
+    const i = events.findIndex((e) => (e as { seq?: number }).seq === revealAsk.seq);
+    if (i < 0) return;   // its events aren't here yet
+    clearReveal(revealAsk);
+    // The answer's streamed copy draws nothing: the answer is what it was asking for.
+    const e = events[i];
+    const copy = e.type === "text" && resultTexts.has(e.text.trim());
+    revealAt(copy ? events.findIndex((r) => r.type === "result" && (r.result ?? "").trim() === e.text.trim()) : i);
+  }, [revealAsk, allEvents.length, mx]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!reveal) return;
+    const id = revealId(reveal.i);
+    let tries = 0, raf = 0;
+    const look = () => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ block: "start" });
+      else if (++tries < 30) raf = requestAnimationFrame(look);
+    };
+    raf = requestAnimationFrame(look);
+    return () => cancelAnimationFrame(raf);
+  }, [reveal?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // A turn that ends on an AskUserQuestion emits no result event, so the prose
   // explaining the card used to render as bare text while every other answer got
   // the RESULT box. This is the text that belongs to the card below it.
@@ -2408,7 +2606,7 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log") continue;
+          || t === "thinking" || t === "log" || t === "rule" || t === "checks" || t === "secret_answered") continue;
       return t === "question";
     }
     return false;
@@ -2421,7 +2619,7 @@ export const RunStream = memo(function RunStream({
   const wearsPause = (j: number): boolean => {
     const e = events[j];
     if (e?.type === "thinking") return !!e.text && !slow(e.ms);
-    return e?.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)
+    return e?.type === "text" && !!e.text && !resultTexts.has(e.text.trim())
       && !(asksNext(j) || (dossier && j === finalText));
   };
   const pauseAt = (j: number): number => {
@@ -2433,14 +2631,20 @@ export const RunStream = memo(function RunStream({
    *  tool_done pairing all key off position in the full array. DOSSIER's
    *  stretches (WorkStretch) ask for parts of one: `tail` is worn after a
    *  note's or a thought's last word, "pics" is a picture call's pictures alone
-   *  (the strip under the words), "bare" its row without them (the open work). */
-  const renderEvent = (i: number, part?: "pics" | "bare", tail?: ReactNode): ReactNode => {
+   *  (the strip under the words), "bare" its row without them (the open work),
+   *  "solo" one call as a row of its own, out of the run it's in, for a filter. */
+  const renderEvent = (i: number, part?: "pics" | "bare" | "solo", tail?: ReactNode): ReactNode => {
+    const node = drawEvent(i, part, tail);
+    if (reveal?.i !== i || part === "pics" || node === null || node === undefined) return node;
+    return <div key={i} id={revealId(i)} className="ma-reveal">{node}</div>;
+  };
+  const drawEvent = (i: number, part?: "pics" | "bare" | "solo", tail?: ReactNode): ReactNode => {
     const event = events[i];
     switch (event.type) {
       case "text": {
         const text = event.text;
         if (!text) return null;
-        if (resultText && text.trim() === resultText) return null;
+        if (resultTexts.has(text.trim())) return null;
         if (asksNext(i) || (dossier && i === finalText))
           return (
             <FinalResult
@@ -2475,10 +2679,16 @@ export const RunStream = memo(function RunStream({
         );
       }
       case "tool": {
+        const solo = part === "solo";
+        // Shown to you and the turn still running: drawn large, here, as it lands.
+        if (!part && shownLive(i)) {
+          const item = proofs.find((p) => p.i === i);
+          return item ? <ProofBlock key={i} items={[item]} all={proofs} turn={turnWord} /> : null;
+        }
         const head = headOf.get(i);
-        if (head !== undefined && !openFolds.has(head)) return null;
+        if (!solo && head !== undefined && !openFolds.has(head)) return null;
         const fold = folds.get(i);
-        if (fold && !openFolds.has(i))
+        if (!solo && fold && !openFolds.has(i))
           return (
             <FoldedChips
               key={i}
@@ -2487,8 +2697,8 @@ export const RunStream = memo(function RunStream({
             />
           );
         const done = doneOf(event);
-        if (groupOf.has(i)) return null; // drawn by the run's head
-        const run = groups.get(i) ?? [i];
+        if (!solo && groupOf.has(i)) return null; // drawn by the run's head
+        const run = solo ? [i] : groups.get(i) ?? [i];
         // What structure the run's results carried, if any. Null keeps the
         // plain row — which is every tool without a table entry. Built from
         // the whole run rather than this event: the head draws the group's
@@ -2501,7 +2711,8 @@ export const RunStream = memo(function RunStream({
         // Every style draws its widget now: PLAIN, the one that opted out
         // of them, has no column on the sheet and was replaced by a fifth
         // look (lib/toolwidget TOOL_STYLES).
-        const media = spec ? (
+        // A clip that's proof draws with the answer: in the work it's only its row.
+        const media = showAt(i) && !solo ? null : spec ? (
           <div className="zx ml-[var(--rail)]">
             <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={galleryAt(i)} />
           </div>
@@ -2552,6 +2763,7 @@ export const RunStream = memo(function RunStream({
                 command: (events[j] as { summary: string }).summary,
                 full: (events[j] as { detail?: string }).detail,
                 done: doneOf(events[j]),
+                purpose: mx ? bashKind((events[j] as { detail?: string }).detail ?? (events[j] as { summary: string }).summary) : undefined,
               }))}
               animate={animate}
               autoOpen={openResults}
@@ -2656,27 +2868,65 @@ export const RunStream = memo(function RunStream({
         );
       case "tool_done":
         return null;
-      case "steer":
+      case "figure": {
+        if (!mx || ended) return null;
+        const item = proofs.find((p) => p.i === i);
+        return item ? <ProofBlock key={i} items={[item]} all={proofs} turn={turnWord} /> : null;
+      }
+      case "checks":
+        return mx ? <ChecksRow key={i} ev={event} /> : null;
+      case "rule":
+        return mx ? <RuleRow key={i} ev={event} /> : null;
+      case "report":
+        return mx && !ended ? <ReportCard key={i} ev={event} session={sessionId} /> : null;
+      case "secret_request": {
+        if (!mx) return null;
+        const live = !!onRespond && pendingIds.has(event.request_id);
+        return (
+          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+            {live && askDocked ? <AskMarker kind="secret" topic={event.name} />
+              : live ? <SecretCard ev={event} onRespond={(id, opts) => onRespond?.(id, opts)} />
+              : <SecretRecord name={event.name} why={event.why} given={secretGiven.get(event.request_id)} stale={ended} />}
+          </div>
+        );
+      }
+      case "secret_answered":
+        return null;
+      case "switch":
+        return <SwitchLine key={i} to={event.to} from={event.from} turns={event.turns} whole={event.whole} />;
+      case "delegation":
+        return <DelegationRow key={i} sessionId={event.session_id} name={event.name} brief={event.brief}
+          agent={event.agent} profile={event.profile} write={event.write} />;
+      case "merge":
+        return <MergeLine key={i} name={event.name} state={event.state} />;
+      case "steer": {
+        // A ⇄ steer is the channel delivering another agent's message, not you.
+        const frame = parseFrame(event.text);
+        if (frame && frame.kind !== "user")
+          return <div key={i} id={ckId(turnId, steerKey(i))} className="scroll-mt-[94px]"><IncomingNote frame={frame} at={event.at} /></div>;
         // Sent into this turn while it was already running — still you, so it
         // reads the way your prompt does (lib/dossier TOP_TYPES keeps it out of
         // the work), between the work it interrupted and the work it caused.
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
-            <PromptBubble steer text={event.text} at={event.at}>
+            <PromptBubble steer text={frame ? frame.body : event.text} at={event.at}>
               {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={galleryAt(i)} />}
             </PromptBubble>
           </div>
         );
+      }
       case "result":
         return (
           <FinalResult
             key={i}
             result={event.result}
+            update={lastResult >= 0 && i !== lastResult}
             // A stored event knows when it landed; a live one doesn't carry
             // `at` yet, so the turn's own start plus its wall time says it.
             at={event.at ?? (turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined)}
-            elapsed={event.elapsed}
-            tokens={tokens}
+            // The receipt says these once the turn is over.
+            elapsed={mx && ended ? undefined : event.elapsed}
+            tokens={mx && ended ? null : tokens}
             isError={event.is_error}
             animate={animate}
             idKey={`${turnId}:${i}`}
@@ -2829,16 +3079,20 @@ export const RunStream = memo(function RunStream({
   const topAt = (i: number): boolean => {
     const e = events[i];
     if (e.type === "text") return i === finalText || asksNext(i);
+    if (mx && (e.type === "secret_request" || shownLive(i))) return true;
     return TOP_TYPES.has(e.type);
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
   // A step is what a zone's figure counts: a note or thought with words, a
   // hook, a tool call.
-  const isStep = (e: RunEvent) => ((e.type === "thinking" || e.type === "text") && !!e.text) || e.type === "log" || e.type === "tool";
+  const isStep = (e: RunEvent) => ((e.type === "thinking" || e.type === "text") && !!e.text) || e.type === "log" || e.type === "tool"
+    || (mx && (e.type === "checks" || e.type === "rule"));
   /** What a stretch of the work holds, for a WORK zone's header and a chapter's line. */
   const tally = (zsegs: Seg[]) => {
     const cats: StepCat[] = [];
     const pics: Pic[] = [];
+    const purposes: BashKind[] = [];
+    let lastPic = -1;
     let notes = 0, steps = 0, failed = 0, out = 0, said = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     let live: Extract<TimedEvent, { type: "tool" }> | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
@@ -2848,17 +3102,20 @@ export const RunStream = memo(function RunStream({
       // the agent's newest words, one line, for the live line to quote between steps
       if (e.type === "thinking" || e.type === "text") { if (e.text) { notes++; said = e.text.trim().split("\n")[0].replace(/`|\*\*/g, ""); } }
       else if (e.type === "log") { cats.push("log"); if (e.error) failed++; }
+      else if (e.type === "checks") purposes.push("tests");
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
         cats.push(c);
+        if (mx && e.name === "Bash") purposes.push(bashKind(e.detail ?? e.summary));
         if (!d) { out++; live = e; openAt = e.at; }
         else if (d.is_error) failed++;
-        for (const p of d?.images ?? []) pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) });
+        if (!showAt(i)) for (const p of d?.images ?? []) { lastPic = i; pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) }); }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
     const secs = first != null && last != null ? last - first : 0;
-    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "" };
+    const lookNote = noteLine(looked?.get(lastPic) ?? "");
+    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "", purposes, lookNote };
   };
   /** A chapter's name: the note it opens on (lib/dossier cuts there), else
    *  the first words or call in it — one line, without the code ticks. */
@@ -2873,13 +3130,19 @@ export const RunStream = memo(function RunStream({
    *  and work that is nothing else stays where it is, a bare icon on the spine. */
   const workOf = (zsegs: Seg[]) => {
     const cats: StepCat[] = [];
+    const purposes: BashKind[] = [];
     let failed = 0;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.type === "log") { if (e.src !== "hook" || e.error) { cats.push("log"); if (e.error) failed++; } }
-      else if (e.type === "tool") { const d = doneOf(e); cats.push(catOf(e, d)); if (d?.is_error) failed++; }
+      else if (e.type === "tool") {
+        const d = doneOf(e);
+        cats.push(catOf(e, d));
+        if (d?.is_error) failed++;
+        if (mx && e.name === "Bash") purposes.push(bashKind(e.detail ?? e.summary));
+      }
     }
-    return { cats, failed };
+    return { cats, failed, purposes };
   };
   /** A line per step a stretch ran, for its tally's peek: what its row would
    *  say, a failure marked, the first eight and then how many more. */
@@ -2904,6 +3167,18 @@ export const RunStream = memo(function RunStream({
     return out.length > 8 ? [...out.slice(0, 8), `+ ${out.length - 8} more`] : out;
   };
   const rowOf = (seg: Seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg));
+  const holds = (zsegs: Seg[], i: number) => zsegs.some((s) => s.idx.includes(i));
+  /** One event through a filter (lib/rowfilter). The answer's streamed copy draws nothing, so it isn't a message. */
+  const keeps = (f: RowFilter, i: number): boolean => {
+    const e = events[i];
+    if (e.type === "text" && resultTexts.has((e.text ?? "").trim())) return false;
+    const d = e.type === "tool" ? doneOf(e) : undefined;
+    return rowMatches(f, e, d, e.type === "tool" ? catOf(e, d) : undefined);
+  };
+  /** A filter's rows are single rows, in order: the words and runs they'd otherwise
+   *  hang under are what it's filtering out. */
+  const keptRows = (zsegs: Seg[], f: RowFilter): ReactNode[] =>
+    zsegs.flatMap((s) => s.idx.filter((i) => keeps(f, i)).map((i) => renderEvent(i, "solo"))).filter((r) => r !== null && r !== undefined);
   /** A zone's rows, or a chapter's (DOSSIER only): the agent's words, each
    *  wearing the work it led to (lib/dossier stretchesOf, WorkStretch). A
    *  picture call is work too, but its pictures stay out, under the words.
@@ -2912,13 +3187,13 @@ export const RunStream = memo(function RunStream({
     stretchesOf(zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type !== "tool")).flatMap(({ words, work }, k, all) => {
       const head = words < 0 ? undefined : zsegs[words];
       const w = work.map((j) => zsegs[j]);
-      const { cats, failed } = workOf(w);
+      const { cats, failed, purposes } = workOf(w);
       const i = head?.idx[0], e = i === undefined ? undefined : events[i];
       // A note or a thought that draws wears the tally; anything else (a device
       // run's divider, the answer's streamed copy, which draws nothing) keeps
       // its own row, and the tally gets one of its own.
       const wears = !!e && ((e.type === "thinking" && !!e.text)
-        || (e.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)));
+        || (e.type === "text" && !!e.text && !resultTexts.has(e.text.trim())));
       const quiet = !cats.length;
       return [
         head && !wears ? rowOf(head) : null,
@@ -2931,6 +3206,8 @@ export const RunStream = memo(function RunStream({
             peek={quiet ? [] : peekOf(w)}
             live={live && k === all.length - 1}
             defaultOpen={foldsOpen}
+            purposes={mx ? purposes : undefined}
+            reveal={reveal && holds(w, reveal.i) ? reveal.n : 0}
             pics={quiet ? [] : w.filter((s) => s.kind === "prose").map((s) => renderEvent(s.idx[0], "pics")).filter((p) => p !== null)}
             rows={() => w.map((s) => (s.kind === "prose" ? renderEvent(s.idx[0], "bare") : stepsFold(s)))}
           />
@@ -2946,7 +3223,7 @@ export const RunStream = memo(function RunStream({
     return `z${start}`;
   };
   const workZone = (zsegs: Seg[], lastZone: boolean) => {
-    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span } = tally(zsegs);
+    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span, purposes, lookNote } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
@@ -2959,10 +3236,10 @@ export const RunStream = memo(function RunStream({
     // while open (lib/dossier chapterStarts); a chapter opens on a note.
     const starts = chapterStarts(
       zsegs.map((s) => s.idx.filter((i) => isStep(events[i])).length),
-      zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type === "text"),
+      // With the notes in their own tier, a thought is what's left to open a chapter on.
+      zsegs.map((s) => s.kind === "prose" && (events[s.idx[0]].type === "text" || (saidTier && events[s.idx[0]].type === "thinking"))),
     );
-    const rows = !starts.length ? rowsOf(zsegs, !!state) : starts.map((at, k) => {
-      const segs = zsegs.slice(at, starts[k + 1]);
+    const chapter = (segs: Seg[], k: number, count: number, build: () => ReactNode[]) => {
       const c = tally(segs);
       return (
         <WorkChapter
@@ -2970,18 +3247,40 @@ export const RunStream = memo(function RunStream({
           n={k + 1}
           at={c.first}
           title={titleOf(segs)}
-          steps={c.steps}
+          steps={count < 0 ? c.steps : count}
           span={c.span}
           failed={c.failed}
           pics={c.pics.length}
           live={!!state && k === starts.length - 1}
-          rows={() => rowsOf(segs, !!state && k === starts.length - 1)}
+          rows={build}
+          reveal={reveal && holds(segs, reveal.i) ? reveal.n : 0}
         />
       );
+    };
+    const rows = !starts.length ? rowsOf(zsegs, !!state) : starts.map((at, k) => {
+      const segs = zsegs.slice(at, starts[k + 1]);
+      return chapter(segs, k, -1, () => rowsOf(segs, !!state && k === starts.length - 1));
     });
+    // A filter keeps the chapters of a long zone, less the ones with nothing left, and a
+    // chapter still builds its rows only while open: the cost stays what it was.
+    const filtered = !mx ? undefined : (f: RowFilter): ReactNode[] => !starts.length ? keptRows(zsegs, f) : starts.flatMap((at, k) => {
+      const segs = zsegs.slice(at, starts[k + 1]);
+      const n = segs.reduce((t, s) => t + s.idx.filter((i) => keeps(f, i)).length, 0);
+      return n ? [chapter(segs, k, n, () => keptRows(segs, f))] : [];
+    });
+    const filterCounts = !mx ? undefined : () => {
+      const c = {} as Record<RowFilter, number>;
+      for (const { f } of ROW_FILTERS) c[f] = f === "all" ? steps : zsegs.reduce((t, s) => t + s.idx.filter((i) => keeps(f, i)).length, 0);
+      return c;
+    };
     return (
       <WorkZone
         key={zoneKey(zsegs[0].start)}
+        purposes={mx ? purposes : undefined}
+        looked={mx ? { note: lookNote } : undefined}
+        filtered={filtered}
+        filterCounts={filterCounts}
+        reveal={reveal && holds(zsegs, reveal.i) ? reveal.n : 0}
         cats={cats}
         notes={notes}
         steps={steps}
@@ -3004,7 +3303,25 @@ export const RunStream = memo(function RunStream({
     );
   };
 
-  const zones = dossier ? zonesOf(segs, isTop) : [];
+  // An interim note on an agent's turn: words with something to read that aren't
+  // the answer, and not the streamed copy of a result, which draws nothing.
+  const isNote = (seg: Seg): boolean => {
+    const e = events[seg.idx[0]];
+    return seg.kind === "prose" && e.type === "text" && !!e.text && !resultTexts.has(e.text.trim());
+  };
+  const zones = !dossier ? [] : saidTier ? zonesWithSaid(segs, isTop, isNote) : zonesOf(segs, isTop);
+  // The last note of a turn that left no answer says so.
+  const lastSaid = zones.reduce((m, z, i) => (z.kind === "said" ? i : m), -1);
+  const ending = saidTier && !unfinished ? noteEnding(events.map((e) => e.type), ended, !!resultText || finalText >= 0) : null;
+  const said = (z: { segs: Seg[] }, i: number) => {
+    const { latest, older } = splitSaid(z.segs);
+    return (
+      <SaidTier key={`said${z.segs[0].start}`} count={z.segs.length} ending={i === lastSaid ? ending : null}
+        reveal={reveal && holds(z.segs, reveal.i) ? reveal.n : 0}
+        latest={latest ? renderEvent(latest.idx[0]) : null}
+        older={() => older.map((s) => renderEvent(s.idx[0]))} />
+    );
+  };
   // Each zone's pictures, for every event in it: a lightbox opened in a WORK
   // zone (or on a steer) pages through those, never another zone's.
   const zoneShots = new Map<number, Shown[]>();
@@ -3022,8 +3339,23 @@ export const RunStream = memo(function RunStream({
   // DOSSIER, under one WORK zone per stretch (lib/dossier).
   const rows = dossier
     ? zones.map((z, i) =>
-        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
+        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : z.kind === "said" ? said(z, i) : workZone(z.segs, i === zones.length - 1))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  // What a finished turn did, by its answer: what it showed you, then its receipt.
+  if (mx && ended) {
+    const receipt = unfinished ? null : receiptOf(events, { elapsed, tokens, runtime, started: turnStarted });
+    const reports = events.flatMap((e, i) => (e.type === "report" ? [<ReportCard key={`rep${i}`} ev={e} session={sessionId} />] : []));
+    const answerZone = zones.reduce((m, z, k) => {
+      const j = z.kind === "top" ? z.segs[0].idx[0] : -1;
+      return j >= 0 && (j === lastResult || j === finalText) ? k : m;
+    }, -1);
+    rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
+      <Fragment key="turn-end">
+        {proofs.length ? <ProofBlock items={proofs} turn={turnWord} /> : null}
+        {reports}
+        {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
+      </Fragment>);
+  }
   // DOSSIER: with no zone to carry it, the card is there anyway, live and
   // empty, its line saying what the turn waits on (the boot step). It is keyed
   // as the zone the next event opens, in the same list, so that zone is this
@@ -3155,8 +3487,11 @@ export function FinalResult({
   onQuote,
   view,
   askDocked = false,
+  update = false,
 }: {
   result: string;
+  /** An earlier result in a turn that went on after it: a progress update, not the answer. */
+  update?: boolean;
   /** Epoch seconds the answer landed, for the clock in the meta row. */
   at?: number;
   elapsed?: number;
@@ -3201,7 +3536,7 @@ export function FinalResult({
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
-  const [open, setOpen] = useState(land || lines <= RESULT_FOLD_LINES);
+  const [open, setOpen] = useState(update ? lines <= 3 : land || lines <= RESULT_FOLD_LINES);
   return (
     // `--tone` rather than four inline colours: the answer is the loudest thing
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
@@ -3212,16 +3547,16 @@ export function FinalResult({
       <RailNode />
       <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
         <div className="res-head">
-          <span className="res-lab">{label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          <span className="res-lab">{update ? "UPDATE" : label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {drawn && view?.job.kind && <span className="res-kind"><JobTag job={view.job} /></span>}
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
               <span title="wall time">{wall(elapsed)}</span>
             )}
-            {typeof tokens === "number" && tokens > 0 && (
+            {!update && typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">
-                {tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}K`} TOK
+                {fmtTokens(tokens)} TOK
               </span>
             )}
           </span>

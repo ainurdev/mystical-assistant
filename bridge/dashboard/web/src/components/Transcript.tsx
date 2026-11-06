@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AccountInfo, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
+import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -17,7 +17,10 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, type LimitLive } from "./LimitCard";
-import { limitNudge } from "../lib/limit";
+import { limitNudge, resumeNudge } from "../lib/limit";
+import { parseFrame, promptLabel } from "../lib/multi";
+import { useMultiOn } from "../lib/multistore";
+import { IncomingNote } from "./MultiRows";
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
 // leadCommand), checked against the project's command list: read once per
@@ -155,7 +158,7 @@ export function AgentRail() {
 
 type Respond = (
   requestId: string,
-  opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[] },
 ) => void;
 
 /** One turn, exactly as it has always rendered — prompt bubble, attachments,
@@ -164,9 +167,13 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, prev, next, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins, agentSession, sessionId,
 }: {
   turn: Turn;
+  /** The session it's in, for what a card has to read back (a report). */
+  sessionId?: string | null;
+  /** The session runs on another agent: its running turn may not carry a runtime yet. */
+  agentSession?: boolean;
   /** The turn before it, whose run your prompt's tag compares against. */
   prev?: Turn;
   /** The turn after it: a usage limit's receipt says how the work went on. */
@@ -217,6 +224,14 @@ function TurnBlock({
   // stretch of work (data-limit / data-cont in index.css).
   const limitHit = turn.outcome?.code === "limit";
   const nudge = limitNudge(turn.prompt);
+  const resumed = useMultiOn() ? resumeNudge(turn.prompt) : null;
+  // ⇄: the channel handing this turn another agent's words (lib/multi parseFrame).
+  const frame = parseFrame(turn.prompt);
+  // Notes get their own tier only on another agent's turn, whatever the session
+  // runs on now: a chat that switched keeps its Claude turns as they were.
+  const multiOn = useMultiOn();
+  const saidTier = multiOn && (turn.runtime ? turn.runtime.startsWith("acp:")
+    : turn.status === "running" && !!agentSession);
   const events = useMemo(() => {
     if (!limitHit) return turn.events;
     // The CLI's sentence comes as the error result, and often as a text event too.
@@ -233,14 +248,16 @@ function TurnBlock({
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
-      data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge ? "" : undefined}
-      data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
+      data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || resumed ? "" : undefined}
+      data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
         style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-        {turn.prompt && !nudge && (
+        {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
+        {turn.prompt && !nudge && !resumed && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
-              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} />}
+              : frame && frame.kind !== "user" ? <IncomingNote frame={frame} at={turn.started} />
+              : <PromptBubble text={frame ? frame.body : turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -277,6 +294,11 @@ function TurnBlock({
               working={working}
               hud={hud}
               view={view}
+              saidTier={saidTier}
+              sessionId={sessionId}
+              turnNo={promptIdx + 1}
+              runtime={turn.runtime}
+              elapsed={turn.elapsed}
             />
           )}
         </div>
@@ -308,6 +330,7 @@ export interface TranscriptNav {
 }
 
 export function Transcript({
+  agentSession,
   turns,
   activeId,
   boot,
@@ -338,6 +361,8 @@ export function Transcript({
   limit,
   logins = NO_LOGINS,
 }: {
+  /** The session runs on another agent (TurnBlock). */
+  agentSession?: boolean;
   turns: Turn[];
   activeId: string | null;
   /** What the live turn is waiting on before its first token, or null. */
@@ -595,6 +620,8 @@ export function Transcript({
         limit={row.turn.id === turns[turns.length - 1]?.id ? limit : null}
         logins={logins}
         isActive={row.turn.id === activeId}
+        sessionId={sessionKey}
+        agentSession={agentSession}
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}

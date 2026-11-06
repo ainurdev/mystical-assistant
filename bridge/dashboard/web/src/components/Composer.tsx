@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound } from "lucide-react";
+import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
@@ -18,6 +18,13 @@ import { Tip } from "./ui/Tip";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
+import { HelpersRow } from "./HelpersRow";
+import { rankProfiles, skillQuery, STEER_SOFT_WORDS, type Caps, type HelperConfig } from "../lib/multi";
+import { multi as multiApi } from "../lib/multistore";
+import { chatImagesInline, uploadChatImage, useChatImages } from "../lib/chatimages";
+import { isInlineImage } from "../lib/embeds";
+
+const STILL_SAVING = "An image is still saving. Send again in a moment.";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -360,6 +367,20 @@ type RunProps<M extends string> = {
   overrides?: string[]; // the knobs set by hand over the session's profile (OverrideDot)
 };
 
+/** What the composer does differently with Settings ▸ Experimental on. null/absent
+ *  while it's off: then every check below reads as it always did. */
+export interface ComposerMulti {
+  /** What the open session's agent can do; it stands in for "is this Claude?". */
+  caps?: Caps;
+  /** The chat's helper limits, live. Absent where helpers can't run (a job, a share). */
+  helpers?: HelperConfig;
+  onHelpers?: (patch: Partial<HelperConfig>) => Promise<unknown>;
+  /** The profile names `@` offers. */
+  profileNames: string[];
+  /** The session's folder, for which skills are shared here. */
+  cwd?: string | null;
+}
+
 /** The effort's row: Claude's ladder, or the agent's own list, an unset one
  *  reading AGENT DEFAULT. */
 function effortRow(effort: string, agent?: AgentPickers | null): { id: string; label: string } {
@@ -394,7 +415,9 @@ function RunTrigger<M extends string>({ open, onToggle, model, modelOpts, perm, 
   );
 }
 
-function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides, profile }: RunProps<M> & {
+function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides, profile, extra }: RunProps<M> & {
+  /** A row under the three: the chat's helper limits (HelpersRow). */
+  extra?: ReactNode;
   onModel: (m: M) => void;
   onPerm: (p: string) => void;
   onEffort: (e: EffortLevel | "") => void;
@@ -460,6 +483,7 @@ function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts,
           </div>
         </div>
       )}
+      {extra}
     </div>
   );
 }
@@ -468,8 +492,10 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask,
+  dock, ask, multi,
 }: {
+  /** Multi-agent chats (ComposerMulti). */
+  multi?: ComposerMulti | null;
   disabled: boolean;
   running: boolean;
   // What you've typed, owned by the session it's for — switching sessions swaps
@@ -547,7 +573,7 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued" | "helpers">("");
   // The run sheet stays open across picks, so it takes a dialog's Esc as well
   // as a click away; the other drops close on their pick.
   useEffect(() => {
@@ -578,6 +604,14 @@ export function Composer({
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
+  // Images on their way into the text (SYSTEM ▸ Send images: In the chat).
+  useChatImages();
+  const [embedErr, setEmbedErr] = useState<string | null>(null);
+  const [uploads, setUploads] = useState(0);
+  const uploadsRef = useRef(0);
+  const uploadOrder = useRef<Promise<unknown>>(Promise.resolve());
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
 
   useEffect(() => {
     if (injectNonce) {
@@ -597,6 +631,7 @@ export function Composer({
   // first mount) so you can start typing immediately without clicking in.
   useEffect(() => {
     taRef.current?.focus();
+    setEmbedErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -640,8 +675,12 @@ export function Composer({
   // Escape dismisses the `@` you're on, not mentions in general: the next `@`
   // sits at a different index and opens normally.
   const [dismissed, setDismissed] = useState(-1);
-  const mention = tree.length ? mentionAt(text, caret) : null;
-  const hits = mention ? rankPaths(tree, mention.q) : [];
+  const profileNames = multi?.profileNames ?? [];
+  const mention = tree.length || profileNames.length ? mentionAt(text, caret) : null;
+  // `@` names a file, or with multi-agent chats on, a profile to run a helper on.
+  const agentHits = mention ? rankProfiles(profileNames, mention.q) : [];
+  const fileHits = mention && tree.length ? rankPaths(tree, mention.q) : [];
+  const hits = [...agentHits.map((n) => `@${n}`), ...fileHits];
   // A query that matches nothing closes the list rather than showing an empty
   // box — you're writing an email address or a handle, not picking a file.
   const mentionOpen = !!mention && hits.length > 0 && mention.start !== dismissed;
@@ -705,17 +744,35 @@ export function Composer({
   // The list is Claude's (.claude/skills, commands, plugins, CLI builtins): an
   // agent session's / would run none of them, so it gets no list.
   const onAgent = !!agentPick;
+  // ...unless shared skills reach it (Settings ▸ Experimental): then the list is those,
+  // each inserted the way that agent spells a skill (caps.skills_prefix), plus /goal
+  // where the agent has goals, which the bridge handles before the agent hears it.
+  const skillPrefix = onAgent ? multi?.caps?.skills_prefix : undefined;
+  const noList = onAgent && !skillPrefix;
+  const goals = !!multi?.caps?.goals;
+  const cwd = multi?.cwd;
   useEffect(() => {
     if (!slashOn) setSlashDismissed(false);
-    if (onAgent || (!slashOn && !leadsSlash)) return;
+    if (noList || (!slashOn && !leadsSlash)) return;
     let live = true;
-    void api.commands(project)
-      .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
+    void (skillPrefix
+      ? Promise.all([api.commands(project), multiApi.skillShare(cwd)]).then(([c, s]) => {
+          const about = new Map(c.commands.map((x) => [x.name, x.description]));
+          const out: SlashCommand[] = s.skills.filter((x) => x.on && !x.conflict).map((x) => ({
+            name: x.name, description: about.get(x.name) ?? "", scope: x.scope === "project" ? "project" : "user",
+          }));
+          return goals ? [...out, { name: "goal", description: "Set what this chat is for; the loop works toward it", scope: "builtin" as const }] : out;
+        })
+      : api.commands(project).then((r) => r.commands))
+      .then((list) => { if (live) { setCmds(list); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [slashOn, leadsSlash, project, onAgent]);
-  const shits = slash && !onAgent ? rankCommands(cmds, slash.q) : [];
-  const slashOpen = !!slash && !onAgent && !slashDismissed && (shits.length > 0 || cmdsStale);
+  }, [slashOn, leadsSlash, project, noList, skillPrefix, goals, cwd]);
+  const slashQ = slash ? (skillPrefix ? skillQuery(slash.q, skillPrefix) : slash.q) : "";
+  const shits = slash && !noList ? rankCommands(cmds, slashQ) : [];
+  const slashOpen = !!slash && !noList && !slashDismissed && (shits.length > 0 || cmdsStale);
+  /** What picking a command writes: a skill as its agent spells it. */
+  const cmdText = (c: SlashCommand) => (skillPrefix && c.scope !== "builtin" ? `${skillPrefix}${c.name}` : `/${c.name}`);
   useEffect(() => { setSlashPick(0); }, [slash?.q]);
   const slashListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -735,9 +792,9 @@ export function Composer({
       return true;
     }
     const pick = shits[slashPick] ?? shits[0];
-    if (e.key === "Tab" || (e.key === "Enter" && !isExact(pick, slash!.q))) {
+    if (e.key === "Tab" || (e.key === "Enter" && !isExact(pick, slashQ))) {
       e.preventDefault();
-      splice(slash!, `/${pick.name}`);
+      splice(slash!, cmdText(pick));
       return true;
     }
     return false;
@@ -780,9 +837,56 @@ export function Composer({
     if (e.key === "ArrowUp") return step(-1);
   }
 
+  /** An image going in the text: saved now, its markdown landing where it was pasted.
+   *  They upload at once but land in the order they came, whichever answers first. A
+   *  failure says why and puts nothing in. */
+  function embedFile(f: File) {
+    const id = taRef.current?.holdSpot();
+    if (id == null) return;
+    const session = sessionId;
+    const scope = { session, project };
+    setEmbedErr(null);
+    uploadsRef.current++;
+    setUploads(uploadsRef.current);
+    const saved = new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("Couldn't read that image."));
+      r.readAsDataURL(f);
+    }).then((data) => uploadChatImage(data, scope));
+    const before = uploadOrder.current;
+    uploadOrder.current = saved.then((r) => ({ md: r.markdown, err: null as string | null }),
+      (e: Error) => ({ md: null, err: e.message || "The image didn't save." }))
+      .then(async (out) => {
+        await before;
+        // The box holds another chat's draft now: this one's text isn't there to go into.
+        if (sessionRef.current !== session) {
+          taRef.current?.dropSpot(id);
+          setEmbedErr(out.err ?? "The chat changed before the image went in. It's saved in the project's .mystical/images.");
+        } else if (out.md === null) {
+          taRef.current?.dropSpot(id);
+          setEmbedErr(out.err);
+        } else {
+          taRef.current?.fillSpot(id, out.md);
+        }
+        uploadsRef.current--;
+        setUploads(uploadsRef.current);
+        // Nothing left to wait for, so "send again" no longer applies.
+        if (uploadsRef.current === 0) setEmbedErr((m) => (m === STILL_SAVING ? null : m));
+      });
+  }
+
+  /** Sending now would leave out an image still on its way into the text. */
+  function stillSaving() {
+    setEmbedErr(uploadsRef.current ? STILL_SAVING : null);
+    return uploadsRef.current > 0;
+  }
+
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;
+    const inline = chatImagesInline();
     Array.from(files).forEach((f) => {
+      if (inline && isInlineImage(f.type)) { embedFile(f); return; }
       const r = new FileReader();
       // The name rides in the data URL, so a .csv reaches the upload dir as a
       // .csv instead of being guessed into a .png the model can't read.
@@ -806,6 +910,7 @@ export function Composer({
       .filter((f): f is File => f !== null);
   }
   function submit() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (ask?.send) {
       // The ask clears the box itself: a stepper hands it the next page's note.
@@ -821,6 +926,7 @@ export function Composer({
   // Land the text — and anything in the attachment tray — in the turn that's
   // already running.
   function steer() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (!t || !onSteer) return;
     onSteer(t, images);
@@ -833,6 +939,7 @@ export function Composer({
   // turn. It sits with them rather than in the verb tier because it *is* the
   // send gesture — the verbs are commands that stand on their own.
   function design() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (!t) return;
     onSend(`/design-first ${t}`, images);
@@ -1031,6 +1138,7 @@ export function Composer({
       disabled={!(text.trim() || (ask.ready && !ask.needsText))} title="Answer what's docked above (Enter)">
       {ask.label}</button>
   );
+  const softSteer = multi?.caps?.steer === "soft";
   const actions = (withDesign: boolean) => askBtn ? (
     <>
       {running && (
@@ -1060,8 +1168,10 @@ export function Composer({
       {withDesign && designBtn}
       {onSteer && (
         <button className="act-alt caps" onClick={steer} disabled={!text.trim()}
-          title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
-          Steer <SteerIcon /></button>
+          title={softSteer
+            ? `STEER — ${agentPick?.label.toLowerCase() ?? "this agent"} takes this ${STEER_SOFT_WORDS}: the running tool finishes, then it reads your message and carries on (falls back to queueing if the run just ended)`
+            : "STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)"}>
+          Steer <SteerIcon />{softSteer && <span className="ma-soft">{STEER_SOFT_WORDS}</span>}</button>
       )}
       <button className="act-pri queue caps" onClick={submit} disabled={disabled || !text.trim()}
         title="QUEUE — run this prompt after the current turn (Enter)">
@@ -1075,6 +1185,20 @@ export function Composer({
     </>
   );
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
+  const helpersRow = multi?.helpers && multi.onHelpers
+    ? <HelpersRow config={multi.helpers} onChange={multi.onHelpers} /> : null;
+  // DEFAULT has no run sheet to hold that row, so it gets a chip of its own.
+  const helpersChip = helpersRow && (
+    <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+      <button className="drop-btn ma-helpers-chip" aria-expanded={openDrop === "helpers"} title="Helpers and their limits for this chat"
+        onClick={() => setOpenDrop((d) => (d === "helpers" ? "" : "helpers"))}>
+        <span className="ctrl-fld"><Users size={12} /></span>
+        <span className="drop-val">{multi?.helpers?.helpers}</span>
+        <span style={{ color: "var(--txl)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
+      </button>
+      {openDrop === "helpers" && <div className="ma-helpers-pop">{helpersRow}</div>}
+    </div>
+  );
 
   // Pieces the compact shells arrange (.mystical/design-drafts/prompt-box):
   // every row the composer can show, as one node each, placed by TABS and
@@ -1142,6 +1266,15 @@ export function Composer({
       ))}
     </div>
   );
+  const embedNote = (embedErr || uploads > 0) && (
+    embedErr
+      ? <div className="ma-set-err" role="alert" style={{ marginTop: 0, marginBottom: 6, display: "flex", gap: 8, alignItems: "baseline" }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{embedErr}</span>
+          <button type="button" onClick={() => setEmbedErr(null)} aria-label="Dismiss"
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "inherit", padding: 0, fontFamily: "inherit", fontSize: "inherit", lineHeight: 1 }}>×</button>
+        </div>
+      : <div className="ma-set-note" role="status" style={{ marginTop: 0, marginBottom: 6 }}>saving image…</div>
+  );
   const settingsChips = (right: boolean) => (<>{profileDrop(right)}{ponyDrop(right)}</>);
   const runTrigger = (
     <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
@@ -1154,7 +1287,7 @@ export function Composer({
         <RunSheet model={model} modelOpts={modelOpts} onModel={onModel}
           perm={perm} permOpts={permOpts} onPerm={onPerm}
           effort={effort} onEffort={onEffort}
-          agent={agentPick} overrides={overrides} profile={bound} />
+          agent={agentPick} overrides={overrides} profile={bound} extra={helpersRow} />
       )}
       {rsearch !== null && (
         <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
@@ -1200,12 +1333,12 @@ export function Composer({
               key={c.name}
               type="button"
               data-on={i === slashPick ? 1 : 0}
-              onMouseDown={(e) => { e.preventDefault(); splice(slash!, `/${c.name}`); }}
+              onMouseDown={(e) => { e.preventDefault(); splice(slash!, cmdText(c)); }}
               onMouseEnter={() => setSlashPick(i)}
               title={c.description}
               style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === slashPick ? "var(--acc)" : "transparent"}`, background: i === slashPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === slashPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
             >
-              <span style={{ flex: "none", color: "var(--acc)" }}>/{c.name}</span>
+              <span style={{ flex: "none", color: "var(--acc)" }}>{cmdText(c)}</span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--txl)" }}>{c.description}</span>
               <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{c.scope === "builtin" ? "CLI" : c.scope.toUpperCase()}</span>
             </button>
@@ -1222,8 +1355,8 @@ export function Composer({
               onMouseEnter={() => setMentionPick(i)}
               style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
             >
-              <FileIcon name={p} size={14} />
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>{p}</span>
+              {p.startsWith("@") ? <UserRound size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none", color: "var(--acc)" }} /> : <FileIcon name={p} size={14} />}
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: p.startsWith("@") ? "ltr" : "rtl", textAlign: "left" }}>{p}</span>
             </button>
           ))}
         </div>
@@ -1236,7 +1369,9 @@ export function Composer({
     <MarkdownInput
       ref={taRef}
       value={text}
-      commands={onAgent ? [] : cmds}
+      imageSession={sessionId}
+      imageProject={project}
+      commands={noList ? [] : cmds}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       onKeyDown={(e) => {
@@ -1284,6 +1419,7 @@ export function Composer({
     composer === "console" ? (
       <>
         {dock}
+        {embedNote}
         {attachRow}
         <div {...boxProps} className="cmdbox pb-cmd">
           {pfx}
@@ -1306,6 +1442,7 @@ export function Composer({
       <>
         <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
         {dock}
+        {embedNote}
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           {attachRow}
@@ -1377,6 +1514,7 @@ export function Composer({
           ))}
         </div>
       )}
+      {embedNote}
       {/* image attachments */}
       {attachRow && <div style={{ marginBottom: 9 }}>{attachRow}</div>}
 
@@ -1429,6 +1567,7 @@ export function Composer({
                 onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             )}
             {ponyDrop(false)}
+            {helpersChip}
           </div>
           {/* One verb list, rendered twice: inline across the row, and inside
               the ··· popover the container query swaps in once the row runs out

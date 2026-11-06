@@ -74,7 +74,8 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted:
             return False
-        if (job.runtime or "").startswith("acp:"):
+        from bridge import experimental
+        if (job.runtime or "").startswith("acp:") and not experimental.enabled():
             return False              # no goals MCP on an agent: it could never mark the goal done
         from bridge import waits
         if waits.waiting(sid):        # it waits on another session; its wake-up is the next turn
@@ -88,6 +89,8 @@ def continue_after_turn(job, effort=None) -> bool:
         store.set_goal(sid, goal)
         sess = store.get_session(sid) or {}
         text = _NUDGE.format(objective=goal["objective"])
+        if (job.runtime or "").startswith("acp:"):
+            text = text.replace("UpdateGoal", "update_goal")   # the gateway's name for it
         queue_manager.enqueue(
             sid, text=text, prompt=text, images=[], model=None,
             effort=effort, permission_mode=None,

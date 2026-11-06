@@ -21,6 +21,9 @@ export function AgentsPill({
   const [open, setOpen] = useState<boolean | string>(false);
   const [hov, setHov] = useState(false);
   const [data, setData] = useState<AgentsInfo | null>(null);
+  // Whose roster `data` is: opened from a sidebar row, the modal waits for the
+  // session it was opened on instead of drawing the last one's agents under it.
+  const [dataFor, setDataFor] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const runningRef = useRef(running);
   runningRef.current = running;
@@ -33,6 +36,8 @@ export function AgentsPill({
         const d = await api.agents(sessionId);
         if (!live) return;
         setData(d);
+        setDataFor(sessionId);
+        setOpen((o) => (typeof o === "string" && d.total === 0 ? false : o));  // nothing to open it on
         setRoster(d);            // the transcript's AGENT plates read it (lib/subagents)
         if (live && (runningRef.current || d.running > 0)) {
           setTimeout(poll, 1500);
@@ -120,7 +125,7 @@ export function AgentsPill({
           </>
         )}
       </button>
-      {open && (
+      {open && dataFor === sessionId && (
         <AgentsModal
           sessionId={sessionId}
           agents={data.agents}

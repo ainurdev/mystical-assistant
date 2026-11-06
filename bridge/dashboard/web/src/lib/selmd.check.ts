@@ -35,6 +35,15 @@ eq(md(h("div", { class: "md-admonition" }, h("div", { class: "md-admonition-labe
   "> [!NOTE]\n> careful", "admonition");
 eq(md(h("p", {}, "a"), h("hr", {}), h("p", {}, "b")), "a\n\n---\n\nb", "rule between paragraphs");
 
+// An image copies back as what was written, whichever way it's drawn (MdImage's data-md),
+// not as the file route's URL or the "not found" line.
+eq(md(h("p", {}, "a ", h("span", { "data-md": "![x](<a b.png>)" }, h("button", {}, h("img", { src: "/local/chat-images/file?path=a%20b.png", alt: "x" }))), " b")),
+  "a ![x](<a b.png>) b", "a drawn image");
+eq(md(h("p", {}, h("span", { "data-md": "![](gone.png)" }, "image not found: gone.png"))),
+  "![](gone.png)", "a missing image");
+eq(md(h("p", {}, h("span", { "data-md": "![t](https://x.y/p.png)" }, h("a", { href: "https://x.y/p.png" }, "t")))),
+  "![t](https://x.y/p.png)", "a remote image drawn as a link");
+
 console.log("selmd ok");
 
 // The copy glyph (CopyBtn in components/Markdown.tsx) is icon-only so that a

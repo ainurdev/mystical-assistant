@@ -2,7 +2,7 @@ import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript, TurnOutcome
 
 export interface PendingRequest {
   request_id: string;
-  kind: "permission" | "question";
+  kind: "permission" | "question" | "secret";
   tool_name: string;
   summary?: string;
   questions?: Question[];
@@ -57,7 +57,7 @@ function tokensOf(st: StoreTurn): number | null {
 export function derivePending(events: TimedEvent[]): PendingRequest[] {
   const resolved = new Set<string>();
   for (const e of events) {
-    if (e.type === "permission_resolved" || e.type === "question_answered")
+    if (e.type === "permission_resolved" || e.type === "question_answered" || e.type === "secret_answered")
       resolved.add(e.request_id);
   }
   const out: PendingRequest[] = [];
@@ -66,6 +66,8 @@ export function derivePending(events: TimedEvent[]): PendingRequest[] {
       out.push({ request_id: e.request_id, kind: "permission", tool_name: e.tool_name, summary: e.summary });
     else if (e.type === "question" && !resolved.has(e.request_id))
       out.push({ request_id: e.request_id, kind: "question", tool_name: "AskUserQuestion", questions: e.questions });
+    else if (e.type === "secret_request" && !resolved.has(e.request_id))
+      out.push({ request_id: e.request_id, kind: "secret", tool_name: "request_secret", summary: e.name });
   }
   return out;
 }

@@ -6,7 +6,7 @@ import {
   api,
   AUTH_REQUIRED,
   TOKEN,
-  type AnswerSelection,
+  type CardAnswer,
   type DashState,
   type EffortLevel,
   type EnrichedSession,
@@ -28,7 +28,15 @@ import {
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
-import { agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
+import { agentLabel, agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
+import { latestActivity } from "./lib/multi";
+import { multi, useExperimental, useHelperBrief, useTreeWant, type HandoffPreview } from "./lib/multistore";
+import { OPEN_SUBAGENT, type OpenSubagent } from "./lib/multiopen";
+import { openAgent } from "./lib/subagents";
+import type { MainCard } from "./components/AgentGrid";
+import type { ComposerMulti } from "./components/Composer";
+import { TalkingPill } from "./components/MultiRows";
+import { SwitchDialog } from "./components/SwitchDialog";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, turnRows } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
@@ -78,10 +86,12 @@ import { watchWco } from "./lib/wco";
 import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
 import { WorkspaceButton } from "./components/hud/WorkspaceButton";
 import { chatToMarkdown } from "./lib/chatmd";
+import { ChatImagesScope } from "./lib/chatimages";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
 import { AskDock, type AskMode } from "./components/AskDock";
 import { docked } from "./lib/askdock";
+import { requestReveal, revealKey } from "./lib/reveal";
 import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
@@ -127,6 +137,8 @@ import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
+import { MysticalHost } from "./components/hud/MysticalPanel";
+import { openMysticalPanel } from "./lib/mysticaldir";
 import { InspectorModal } from "./components/hud/InspectorModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
@@ -417,7 +429,17 @@ export function App() {
   const setModel = (m: ModelId) => pickRun(m, permMode, effort, "model");
   const setPermMode = (p: string) => pickRun(model, p, effort, "permission_mode");
   const setEffort = (e: EffortLevel | "") => pickRun(model, permMode, e, "effort");
-  const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  // Multi-agent chats: the switch, and the brief of an open helper, which is no row
+  // in `sessions` (a helper lists under its chat, never as a chat of its own).
+  const experimental = useExperimental();
+  const multiOn = experimental.enabled;
+  const openHelper = useHelperBrief(sessionId, sessions, multiOn);
+  const selected = sessions.find((s) => s.id === sessionId) ?? openHelper;
+  const chatId = selected?.parent_session ?? sessionId;
+  useTreeWant("open", chatId ? [chatId] : [], true);
+  const briefOf = (id: string) => sessions.find((s) => s.id === id) ?? (openHelper?.id === id ? openHelper : undefined);
+  // The profile picker's provider change, waiting on its dialog (SwitchDialog).
+  const [switching, setSwitching] = useState<{ sid: string; pid: string; preview: HandoffPreview } | null>(null);
   // The open session runs on another agent: its pickers are that agent's own
   // options (lib/agents), and this device's Claude picks never reach it.
   const agentPick = agentPickers(selected?.agent, selected?.account, acp);
@@ -870,6 +892,10 @@ export function App() {
           openSession(was.id, false, false);
           if (asked && was.id === asked) revealWorkspace(was);
         }
+        // A helper is in no list, so a link naming one (a notification) asks for it.
+        if (asked && was?.id !== asked) {
+          multi.brief(asked).then((r) => { if (r.session.parent_session) openSession(asked, false, false); }, () => {});
+        }
         // Nothing to reopen (or the list never landed) — say so, or the intro
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
@@ -881,8 +907,9 @@ export function App() {
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
-    if (sessionId) rememberOpen(sessionId);
-  }, [sessionId]);
+    // A helper isn't in the list a reload reopens from: its chat is what comes back.
+    if (sessionId) rememberOpen(selected?.parent_session ?? sessionId);
+  }, [sessionId, selected?.parent_session]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1351,12 +1378,39 @@ export function App() {
   async function pickProfile(pid: string) {
     const sid = sessionIdRef.current;
     if (!sid) return;
+    // With multi-agent chats on, a change that moves history asks first. A change
+    // that doesn't (a Claude account, or a chat with no turns yet) goes straight
+    // through as it always did, so a refusal only speaks when it would apply.
+    if (multiOn) {
+      try {
+        const preview = await multi.handoff(sid, pid);
+        if (preview.needs_dialog) {
+          if (preview.refusal) notify("error", preview.refusal);
+          else setSwitching({ sid, pid, preview });
+          return;
+        }
+      } catch (e) {
+        // Switched off a moment ago, or the bridge is older: bind as before, whose
+        // own answer is the one to show. Anything else is a real failure.
+        if (!/^(not found|HTTP 404)$|experimental features are off/i.test((e as Error).message)) {
+          notify("error", `Couldn't check that switch: ${(e as Error).message}`);
+          return;
+        }
+      }
+    }
     try {
       const { session } = await api.setSessionProfile(sid, pid);
       setSessions((prev) => prev.map((s) => (s.id === sid ? session : s)));
     } catch (e) {
       notify("error", (e as Error).message);
     }
+  }
+  // SEND WHOLE CHAT / LAST 5 TURNS: the dialog shows a failure itself, so this throws.
+  async function confirmSwitch(scope: "whole" | "recent") {
+    if (!switching) return;
+    const { session } = await api.setSessionProfile(switching.sid, switching.pid, scope);
+    setSessions((prev) => prev.map((s) => (s.id === switching.sid ? session : s)));
+    setSwitching(null);
   }
   // The PROFILE menu's pin: the profile new sessions get, bridge-wide (what
   // SETTINGS ▸ AI & PROFILES' MAKE DEFAULT sets), then the list again so the
@@ -1452,8 +1506,22 @@ export function App() {
       openSession((e as CustomEvent<string>).detail);
       toChat();
     };
+    // A Claude subagent's sidebar row: its session, then AGENTS on it (AgentsPill
+    // waits for that session's roster).
+    const openSub = (e: Event) => {
+      const { session, agent } = (e as CustomEvent<OpenSubagent>).detail;
+      setSettingsOpen(false);
+      const same = sessionIdRef.current === session;
+      openSession(session);
+      toChat();
+      window.setTimeout(() => openAgent(agent), same ? 0 : 80);
+    };
     window.addEventListener("hud:open-session", open);
-    return () => window.removeEventListener("hud:open-session", open);
+    window.addEventListener(OPEN_SUBAGENT, openSub);
+    return () => {
+      window.removeEventListener("hud:open-session", open);
+      window.removeEventListener(OPEN_SUBAGENT, openSub);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openSession and toChat read refs and setters only
   }, []);
 
@@ -1507,7 +1575,8 @@ export function App() {
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
     const goalCmd = /^\/goal\b\s*([\s\S]*)$/.exec(text.trim());
-    if (goalCmd) {
+    // An agent with no goals (caps.goals): the words go to it as written.
+    if (goalCmd && briefOf(sid)?.caps?.goals !== false) {
       try {
         const { goal } = await api.setGoal(sid, goalCmd[1].trim());
         setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
@@ -1521,14 +1590,16 @@ export function App() {
     // The prompt's own session decides the project too — `opts.project` covers a
     // session just created, which this render's `sessions` doesn't know about.
     const project = opts?.project
-      ?? sessions.find((s) => s.id === sid)?.project
+      ?? (briefOf(sid)?.project || undefined)
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
     // The composer's picks are the open session's agent's (lib/agents sendPicks):
     // anywhere else they'd be refused or mean nothing, so the session runs on its own.
-    const targetAgent = opts?.newAgent ?? sessions.find((s) => s.id === sid)?.agent;
-    const knobs = sendPicks(targetAgent, agentPick?.agent, opts?.newAgent !== undefined);
+    const targetAgent = opts?.newAgent ?? briefOf(sid)?.agent;
+    // A helper's mode was narrowed for it (bridge/channel.py _helper_mode), and this
+    // browser doesn't know its picks: its next turn runs on its own, never on these.
+    const knobs = sendPicks(targetAgent, agentPick?.agent, opts?.newAgent !== undefined) && !briefOf(sid)?.parent_session;
     // No model or mode: a queued prompt runs on the session's when it starts,
     // so a pick made while it waits still applies. Resolves whether the prompt
     // got into the queue; a miss says so here.
@@ -1696,7 +1767,7 @@ export function App() {
     toChat();
   }
 
-  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string }): Promise<false | { noted?: boolean }> {
+  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string }): Promise<false | { noted?: boolean }> {
     if (!active) return false;
     let res: { noted?: boolean };
     try { res = await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
@@ -2075,10 +2146,12 @@ export function App() {
   // rather than by HIDE, which PLUGINS deliberately ignores.
   const ws = useWorkspaces();
   const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
-  const sidebarSessions = useMemo(() => sessions.filter((s) => inWs(jobGroup(s))), [sessions, inWs]);
+  const sidebarSessions = useMemo(() => sessions.filter((s) => !s.parent_session && inWs(jobGroup(s))), [sessions, inWs]);
 
   // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
   // itself, as PLUGINS still lists the runs of a hidden folder or group.
+  const mysticalProjects = useMemo(() => projectGroups.filter((g) => g.rel.startsWith("/"))
+    .map((g) => ({ rel: g.rel, name: g.name })).sort((a, b) => a.name.localeCompare(b.name)), [projectGroups]);
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && inWs(g.rel));
 
   // Prompt state the session list flags, so work you left mid-flight is visible
@@ -2110,7 +2183,8 @@ export function App() {
   }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags, showKinds, pins]);
 
   // The open session's working tree — its worktree branch when it has one.
-  const sessionProject = selected?.project ?? activeProject;
+  // A helper whose chat isn't in the list has no project of its own to report.
+  const sessionProject = (selected?.parent_session && !selected.project ? null : selected?.project) ?? activeProject;
   const sessionBranch = selected?.branch;
   // What the session wrote, for FILES' ✦ marks, relative to the tree FILES shows:
   // the worktree its shell moved into, else its run dir.
@@ -2310,6 +2384,7 @@ export function App() {
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
             : undefined}
           edited={filesEdits.edited} editing={filesEdits.now}
+          onOpenMystical={experimental.enabled ? () => openMysticalPanel({ project: sessionProject, session: sessionProject ? null : selected?.id }) : undefined}
           onAddToPrompt={(path) => {
             // After whatever you were writing, as TURNS' reuse does, but inline.
             setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")} \`${path}\` ` : `\`${path}\` `);
@@ -2415,13 +2490,44 @@ export function App() {
   }, [state?.models, model, !!agentPick]);
   // The open session's profile, which the pickers read through (runPicks).
   const boundProfile = profiles?.profiles.find((p) => p.id === selected?.profile_id) ?? null;
+  // The chat behind the open session, for its main-agent card and a helper's path back.
+  const chatBrief = chatId ? sessions.find((s) => s.id === chatId) : undefined;
+  const chatStatus = chatId ? statusMap.get(chatId) : undefined;
+  const gridMain: MainCard | null = multiOn && chatId ? {
+    id: chatId, title: chatBrief?.title || "chat",
+    provider: !chatBrief?.agent || chatBrief.agent === "claude" ? "Claude" : agentLabel(chatBrief.agent),
+    account: chatBrief?.account || undefined,
+    state: chatStatus?.state === "working" || chatStatus?.state === "awaiting" ? "running" : "idle",
+    needs: chatStatus?.state === "awaiting",
+    since: chatStatus?.since,
+    // Only the chat's own transcript is on hand to read this from.
+    activity: chatId === sessionId ? latestActivity(turns[turns.length - 1]?.events ?? []) : "",
+  } : null;
+  const steerable = !agentPick || !!selected?.caps?.steer;
+  const composerMulti: ComposerMulti | null = !multiOn ? null : {
+    caps: selected?.caps,
+    // A job or a teammate's read-only session never starts a helper.
+    helpers: selected && !isJob(selected) && !isReadOnly(selected.origin) ? selected.helpers ?? experimental.defaults : undefined,
+    onHelpers: async (patch) => {
+      if (!sessionId) return;
+      try {
+        const { config } = await multi.chatConfig(sessionId, patch);
+        setSessions((prev) => prev.map((s) => (s.id === (selected?.parent_session ?? sessionId) ? { ...s, helpers: config } : s)));
+      } catch (e) {
+        notify("error", (e as Error).message);
+        throw e;
+      }
+    },
+    profileNames: profiles?.profiles.map((p) => p.name) ?? [],
+    cwd: selected?.cwd,
+  };
   // The open session's picks load when it opens and follow the 5s session poll
   // when another device changes them — or its profile is edited. Keyed on the
   // values, so a poll that left before a pick made here can't put the old one back.
   useEffect(() => {
     if (!selected) return;
-    const r = runPicks(selected, agentPick ? NO_PICKS
-                       : { model: settings.model, perm: settings.perm, effort: settings.effort }, boundProfile);
+    const r = runPicks(selected, agentPick || selected.parent_session ? NO_PICKS
+                       : { model: settings.model, perm: settings.perm, effort: settings.effort }, selected.parent_session ? null : boundProfile);
     setModelState(r.model);
     setPermState(r.perm);
     setEffortState(r.effort as EffortLevel | "");
@@ -2864,6 +2970,8 @@ export function App() {
   );
 
   return (
+    // An image address in any Markdown under here resolves against the open chat.
+    <ChatImagesScope session={sessionId} project={sessionProject}>
     <div className="flex h-full flex-col" style={{ background: "var(--panel3)", position: "relative" }}>
       {settings.scanlines && <div className="crt" />}
       {settings.sweep && <div className="sweep" />}
@@ -2935,6 +3043,11 @@ export function App() {
                 activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
+                onJumpTo={(id, seq) => {
+                  if (seq != null) requestReveal(id, seq);
+                  void jumpTo(id, seq != null ? revealKey(0, seq) : undefined);
+                }}
+                gridMain={gridMain}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
@@ -3015,6 +3128,11 @@ export function App() {
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.
                         <div className="pillstrip">
+                          {sessionId && selected?.parent_session && (
+                            <TalkingPill sessionId={sessionId} name={selected.title || "helper"}
+                              provider={selected.agent === "claude" ? "Claude" : selected.agent ? agentLabel(selected.agent) : undefined}
+                              chatTitle={gridMain?.title || "its chat"} onBack={() => openSession(selected.parent_session!)} />
+                          )}
                           {sessionId && cameBack[sessionId] && <BackPill text={cameBack[sessionId]} />}
                           <AgentsPill sessionId={sessionId} running={running} hud={settings} />
                           <GoalPill
@@ -3038,7 +3156,9 @@ export function App() {
                       ) : undefined}
                       ask={dock ? askMode : null} model={model} models={composerModels} usage={spentUsage} effort={effort}
                       accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
-                      profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
+                      // A helper stays on the provider it was started on.
+                      profiles={profilesAvailable && !selected?.parent_session ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
+                      multi={composerMulti}
                       defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
@@ -3048,20 +3168,22 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                      // An agent turn can't be steered (the bridge refuses): SEND queues instead.
-                      onSteer={agentPick ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
+                      // An agent turn can't be steered unless the bridge says this one can
+                      // (caps.steer, Settings ▸ Experimental): SEND queues instead.
+                      onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
-                      onSteerQueued={agentPick ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
+                      onSteerQueued={!steerable ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
                       project={sessionProject}
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
-                        : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…` : undefined}
+                        : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…`
+                        : selected?.parent_session ? `message ${selected.title || "this helper"}…` : undefined}
                     />
                     )}
                   </>
@@ -3120,6 +3242,7 @@ export function App() {
             {toolsFor && (
               <ToolsModal
                 title={sessions.find((s) => s.id === toolsFor)?.title || "session"}
+                sessionId={toolsFor}
                 disabled={sessions.find((s) => s.id === toolsFor)?.disabled_tools ?? []}
                 onChange={(rules) => setSessionToolsFor(toolsFor, rules)}
                 onClose={() => setToolsFor(null)}
@@ -3128,8 +3251,11 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             <MoveDock />
             <PillHost />
+            {experimental.enabled && <MysticalHost projects={mysticalProjects} />}
             {settingsOpen && (
-              <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
+              <SettingsModal cwd={selected?.cwd} sessionId={selected?.id ?? null}
+                chatInfo={(id) => sessions.find((s) => s.id === id)}
+                host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
                 models={modelOpts}
                 onFeed={feed}
@@ -3170,6 +3296,10 @@ export function App() {
             {/* every plain title="" in here, drawn in the HUD's own type */}
             <NativeTips />
             <AskDialog />
+            {switching && (
+              <SwitchDialog preview={switching.preview} running={running && sessionId === switching.sid}
+                onSend={confirmSwitch} onCancel={() => setSwitching(null)} />
+            )}
             {sendWhat && (
               <TeamSendSheet what={sendWhat.what} to={sendWhat.to} teammates={teammates} outbox={team?.outbox ?? []}
                 onClose={() => setSendWhat(null)}
@@ -3192,5 +3322,6 @@ export function App() {
         <BootIntro theme={settings.theme} scanlines={settings.scanlines} intro={settings.intro} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
+    </ChatImagesScope>
   );
 }

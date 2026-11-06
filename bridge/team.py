@@ -137,6 +137,10 @@ _FIELDS = {
     "error": ("message",),
     "divider": ("text",),
     "steer": ("text",),
+    # Multi-agent chats (bridge/channel.py, bridge/handoff.py): who ran what.
+    "switch": ("from", "to"),
+    "delegation": ("name", "brief", "agent", "profile"),
+    "merge": ("name", "state"),
 }
 
 _lock = threading.RLock()
@@ -344,8 +348,33 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
         pics.append((names[path], real))
         return names[path]
 
+    def in_text(prompt: str) -> "tuple[str, list]":
+        """The images written into a prompt (bridge/chat_images.py) become pictures the
+        share carries, and the address, which means nothing on another machine, leaves."""
+        from bridge import chat_images
+        carried = []
+        for addr in chat_images.embeds(prompt):
+            real = chat_images.resolve(addr, chat_images.root_of(s.get("cwd")))
+            if not pictures or not real or os.path.getsize(real) > _PIC_MAX or len(pics) >= _PICS:
+                continue
+            with open(real, "rb") as f:
+                ext = _img_ext(f.read(16))
+            if ext:
+                names[real] = names.get(real) or f"pic-{len(pics) + 1}{ext}"
+                if (names[real], real) not in pics:
+                    pics.append((names[real], real))
+                carried.append(names[real])
+        return chat_images.EMBED.sub("", prompt).strip(), carried
+
     home, budget = _home(), [0]
-    turns, redacted = _pack_turns(t, picture, home, budget)
+    from bridge import experimental
+    turns, redacted = _pack_turns(t, picture, home, budget, in_text if experimental.enabled() else None)
+    # A chat's helpers go with it, after its own turns and labelled by who ran them.
+    for m in store.members_of(session_id):
+        name, _ = redact((m.get("title") or "helper")[:_TITLE_MAX])
+        more, n = _pack_turns(store.transcript(m["id"]), picture, home, budget)
+        redacted += n
+        turns += [{**x, "prompt": f"[helper: {name}] {x.get('prompt') or ''}"} for x in more]
     title, n = redact((s.get("title") or "Session")[:_TITLE_MAX])
     redacted += n
     thread = thread_of(session_id)
@@ -366,7 +395,7 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
             "earlier": {"from": earlier["from"].get("name"), "turns": len(earlier["turns"])} if earlier else None}
 
 
-def _pack_turns(t: dict, picture, home: "str | None", budget: list) -> "tuple[list, int]":
+def _pack_turns(t: dict, picture, home: "str | None", budget: list, embed=None) -> "tuple[list, int]":
     """A transcript's turns as a share carries them: each prompt redacted, each event through
     the whitelist, at most _EVENTS_MAX events across everything packed (`budget`), the newest
     turns first: in a long session they are what an update is about."""
@@ -384,11 +413,14 @@ def _pack_turns(t: dict, picture, home: "str | None", budget: list) -> "tuple[li
                 events.append(clean)
                 budget[0] += 1
                 redacted += n
-        prompt, n = redact((turn.get("prompt") or "")[:_TEXT_MAX])
+        raw, carried = turn.get("prompt") or "", []
+        if embed:
+            raw, carried = embed(raw)   # images in the text travel as this turn's pictures
+        prompt, n = redact(raw[:_TEXT_MAX])
         redacted += n
         turns.append({"prompt": _tilde(prompt, home), "at": turn.get("started"), "model": turn.get("model"),
                       "effort": turn.get("effort"), "status": turn.get("status"),
-                      "attachments": [p for p in (picture(a) for a in turn.get("attachments") or []) if p],
+                      "attachments": carried + [p for p in (picture(a) for a in turn.get("attachments") or []) if p],
                       "events": events})
     return turns[::-1], redacted
 

@@ -1,4 +1,9 @@
 import { getInitData } from "./telegram";
+import {
+  scopeBody, scopeQuery,
+  type AgentToolsGrid, type DirListing, type HooksListing, type Level, type McpTool, type Rule, type RuleFields,
+  type RuleLogRow, type ToolScope,
+} from "./agenttools";
 
 // ---------------------------------------------------------------------------
 // API types (must match the backend contract exactly).
@@ -97,7 +102,118 @@ export interface SessionBrief {
   // in flight's (a fallback handover moves it off the profile's), else the one
   // its next turn takes. null = it runs on another agent. Absent from an older bridge.
   slot?: number | null;
+  // Multi-agent chats (bridge _multi_brief): all absent while the EXPERIMENTAL
+  // switch is off, so a client keeps its old rules. A helper is opened from its
+  // transcript row, which has none of the brief's fields (lib/multi withHelperFields).
+  caps?: AgentCaps;
+  helpers?: HelpersConfig;
+  parent_session?: string | null; // set on a helper: the chat it works under
+  member?: MemberInfo | null; // a helper's facts (store.parse_member)
 }
+
+/** What this session's agent can do (bridge/agent_caps.py). The UI reads this
+ *  instead of asking whether the agent is Claude. */
+export interface AgentCaps {
+  steer: "native" | "soft" | string;
+  ask: string;
+  block: boolean;
+  system_prompt: boolean;
+  subagents: string;
+  usage: boolean;
+  compact: boolean;
+  tools_switch: boolean;
+  goals: boolean;
+  duplicate: boolean;
+  skills_prefix: string;
+}
+
+/** A chat's helper limits (channel.config_for). Apply live; lowering one stops nothing. */
+export interface HelpersConfig {
+  helpers: "off" | "ask" | "auto";
+  max_agents: number;
+  max_hops: number;
+  per_account: number;
+  held: boolean;
+}
+
+export interface MemberInfo {
+  name?: string;
+  write?: boolean;
+  brief?: string;
+  state?: string;
+  agent?: string;
+  account?: string;
+  started?: number;
+}
+
+export interface ExperimentalState {
+  enabled: boolean;
+  defaults: Partial<HelpersConfig>;
+}
+
+/** One agent under a chat (bridge/agent_tree.py): a helper Mystical started
+ *  (`member`), Claude's own subagent or workflow step (`subagent`), or another
+ *  provider's sub-agent we can only see exists (`opaque`, detail false). */
+export interface TreeRow {
+  key: string;
+  kind: "member" | "subagent" | "opaque";
+  name: string;
+  provider: string;
+  account?: string;
+  model?: string | null;
+  status: string;
+  needs: boolean;
+  detail: boolean;
+  session_id?: string;
+  agent_id?: string;
+  workflow?: string | null;
+  started?: number | null;
+  updated?: number | null;
+  owner?: string;
+  activity?: string;
+  write?: boolean;
+  brief?: string;
+  conflict?: boolean;
+  merged?: boolean;
+  has_copy?: boolean;
+}
+
+export interface ChannelMessage {
+  id: string;
+  chat: string;
+  sender: string;
+  recipient: string;
+  kind: string;
+  body: string;
+  state: "queued" | "held" | "delivered" | "read" | "dropped" | string;
+  at: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface ChannelView {
+  config: HelpersConfig;
+  messages: ChannelMessage[];
+  chat: string; // the parent chat's id, also when asked for a helper
+  rows: TreeRow[];
+}
+
+/** What the provider-switch dialog shows (handoff.preview). */
+export interface HandoffPreview {
+  needs_dialog: boolean;
+  from: string;
+  to: string;
+  resumes: boolean;
+  turns: number;
+  tokens: number;
+  with_tools: number;
+  budget: number;
+  fits: boolean;
+  recent: number;
+  refusal: string | null;
+}
+
+export type SwitchScope = "whole" | "recent";
+export type MergeAction = "merge" | "discard" | "undo" | "review";
 
 /** Which half of the picker a settings POST was for: the only half a running
  *  turn is switched to (the pair is saved either way; effort waits for the
@@ -255,7 +371,26 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // Multi-agent chats. A provider switch took effect on this turn (handoff.consume);
+  // a helper started (channel.start); a writer's copy merged, conflicted, went back
+  // out or was thrown away (channel.merge & co).
+  | { type: "switch"; from: string; to: string; turns: number; whole: boolean }
+  | { type: "delegation"; session_id: string; name: string; brief: string; agent: string;
+      profile?: string | null; write?: boolean }
+  | { type: "merge"; name: string; state: string; session_id?: string }
+  // The Mystical tools (bridge/gateway_tools.py). A picture shown to you: `images` are
+  // absolute paths served by /api/attachment. A recorded test run; a Markdown file
+  // presented as a card, its path relative to the project; a request for a key, and
+  // whether one was given (never its value). `rule`: bridge/rules.py fired.
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
+      passed: number | null; failed: number | null; skipped: number | null;
+      new: string[]; known: string[]; log: string; tail: string }
+  | { type: "report"; path: string; title: string; summary?: string; bytes?: number }
+  | { type: "secret_request"; request_id: string; name: string; why: string }
+  | { type: "secret_answered"; request_id: string; given: boolean }
+  | { type: "rule"; rule: string; decision: string; tool?: string; why?: string };
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -269,10 +404,12 @@ export type PermissionMode =
 
 export interface PendingRequest {
   request_id: string;
-  kind: "permission" | "question";
+  kind: "permission" | "question" | "secret";
   tool_name: string;
   summary?: string;
   questions?: Question[];
+  /** A card a Mystical tool put up rather than Claude Code (bridge/gateway.py). */
+  gateway?: boolean;
 }
 
 export interface RunStatus {
@@ -286,10 +423,15 @@ export interface RunStatus {
   session_id?: string;
 }
 
+/** What a secret card answers with. `answers: []` declines. */
+export interface SecretAnswer {
+  value: string;
+}
+
 export interface RespondBody {
   request_id: string;
   behavior?: "allow" | "deny";
-  answers?: AnswerSelection[];
+  answers?: (AnswerSelection | SecretAnswer)[];
   cursor?: number;
 }
 
@@ -368,7 +510,8 @@ export type AgentInfo = {
   started_at: number;
   updated_at: number;
 };
-export type AgentsInfo = { running: number; total: number; agents: AgentInfo[] };
+export type AgentsInfo = { running: number; total: number; agents: AgentInfo[];
+  workflows?: { run_id: string; agents: AgentInfo[] }[] };
 export type AgentActivityEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; summary: string };
@@ -575,6 +718,11 @@ export class ApiError extends Error {
   }
 }
 
+export type ChatImagesMode = "attachment" | "inline";
+/** Which chat an image address is relative to: its session, or for a chat that doesn't
+ *  exist yet, the project it will start in. */
+export interface ChatImageScope { session?: string | null; project?: string | null }
+
 // ---------------------------------------------------------------------------
 // Core fetch wrapper — same-origin, relative URLs, injects init data header.
 // ---------------------------------------------------------------------------
@@ -764,10 +912,10 @@ export const api = {
   profiles: () => request<ProfilesInfo>("/api/profiles"),
   /** Bind (or "" unbind) a session's profile. A 409 means it already ran on
    *  another agent. */
-  setSessionProfile: (id: string, profileId: string) =>
+  setSessionProfile: (id: string, profileId: string, scope?: SwitchScope) =>
     request<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/api/session/profile", {
       method: "POST",
-      body: { session_id: id, profile_id: profileId },
+      body: { session_id: id, profile_id: profileId, ...(scope ? { scope } : {}) },
     }),
 
   runStatus: (jobId: string, cursor: number) =>
@@ -811,10 +959,122 @@ export const api = {
 
   agents: (sessionId: string) =>
     request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),
-  agentActivity: (sessionId: string, agentId: string, cursor: number) =>
+  agentActivity: (sessionId: string, agentId: string, cursor: number, workflow?: string | null) =>
     request<AgentActivity>(
       `/api/agents/activity?session=${encodeURIComponent(sessionId)}` +
-        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
+        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
+        (workflow ? `&workflow=${encodeURIComponent(workflow)}` : ""),
     ),
 
+  // Images in the chat (bridge/chat_images.py). Not behind the experimental switch. The
+  // setting is changed on the dashboard; a bridge older than it 404s, which reads as
+  // the attachments it has always had.
+  chatImagesMode: () =>
+    request<{ mode: ChatImagesMode }>("/api/chat-images").catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) return { mode: "attachment" as const };
+      throw e;
+    }),
+  chatImageUpload: (scope: ChatImageScope, data: string) =>
+    request<{ path: string; markdown: string }>("/api/chat-images/upload", {
+      method: "POST",
+      body: { ...(scope.session ? { session_id: scope.session } : { project: scope.project }), data },
+    }),
+  /** An image in a message, as an object URL, for the same reason as attachmentUrl. The
+   *  caller (lib/chatimg) keeps it and revokes it. */
+  chatImageUrl: async (scope: ChatImageScope, address: string) => {
+    const where = scope.session
+      ? `session=${encodeURIComponent(scope.session)}`
+      : `project=${encodeURIComponent(scope.project ?? "")}`;
+    let res: Response;
+    try {
+      res = await fetch(`/api/chat-images/file?path=${encodeURIComponent(address)}&${where}`, {
+        headers: { "X-Telegram-Init-Data": getInitData() },
+      });
+    } catch {
+      throw new ApiError(0, "Network error");
+    }
+    if (!res.ok) throw new ApiError(res.status, "image not found");
+    return URL.createObjectURL(await res.blob());
+  },
+
+  // Multi-agent chats (bridge/multi_api.py). All but the first answer 409 while the
+  // switch is off; a bridge older than them 404s every one.
+  experimental: () => request<ExperimentalState>("/api/experimental"),
+  /** Words said in one chat, with the turn each is in (bridge/chat_search.in_chat). */
+  chatSearch: (session: string, q: string) =>
+    request<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(
+      `/api/chat-search?session=${encodeURIComponent(session)}&q=${encodeURIComponent(q)}`),
+  /** A `report` event's Markdown file. */
+  chatReport: (session: string, path: string) =>
+    request<{ text: string }>(
+      `/api/chat-report?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}`),
+  agentTrees: (ids: string[]) =>
+    request<{ trees: Record<string, TreeRow[]> }>(`/api/tree?ids=${ids.map(encodeURIComponent).join(",")}`),
+  channel: (sessionId: string) =>
+    request<ChannelView>(`/api/channel?session=${encodeURIComponent(sessionId)}`),
+  handoffPreview: (sessionId: string, profileId: string) =>
+    request<HandoffPreview>(`/api/session/handoff?session=${encodeURIComponent(sessionId)}` +
+      `&profile=${encodeURIComponent(profileId)}`),
+  setChatConfig: (sessionId: string, config: Partial<HelpersConfig>) =>
+    request<{ ok: boolean; config: HelpersConfig }>("/api/chat/config", {
+      method: "POST", body: { session_id: sessionId, config },
+    }),
+  channelSend: (sessionId: string, to: string, text: string) =>
+    request<{ ok: boolean; message: ChannelMessage }>("/api/channel/send", {
+      method: "POST", body: { session_id: sessionId, to, text },
+    }),
+  channelHold: (sessionId: string, held: boolean) =>
+    request<{ ok: boolean; config: HelpersConfig }>("/api/channel/hold", {
+      method: "POST", body: { session_id: sessionId, held },
+    }),
+  channelEdit: (sessionId: string, id: string, edit: { body?: string; drop?: boolean }) =>
+    request<{ ok: boolean }>("/api/channel/edit", {
+      method: "POST", body: { session_id: sessionId, id, ...edit },
+    }),
+  channelStop: (sessionId: string) =>
+    request<{ ok: boolean; stopped: number }>("/api/channel/stop", {
+      method: "POST", body: { session_id: sessionId },
+    }),
+  channelMerge: (sessionId: string, name: string, action: MergeAction) =>
+    request<{ ok: boolean; text: string }>("/api/channel/merge", {
+      method: "POST", body: { session_id: sessionId, name, action },
+    }),
+  skillShare: (cwd?: string | null) =>
+    request<{ skills: { key: string; name: string; on: boolean; conflict: boolean }[] }>(
+      `/api/skill-share${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
+
+  // AGENT TOOLS (bridge/agent_tools.py, rules.py, hooks_config.py, mystical_dir.py). Hooks
+  // are only read: POST /api/hooks is a 403 here by design.
+  agentTools: (s: ToolScope) => request<AgentToolsGrid>(`/api/agent-tools?${scopeQuery(s)}`),
+  /** `on` null clears the level's pick, so the next level decides. */
+  toolPolicy: (s: ToolScope, level: Level, section: string, name: string, agent: string, on: boolean | null) =>
+    request<{ ok: boolean }>("/api/tool-policy", {
+      method: "POST", body: { ...scopeBody(s), level, section, name, agent, on },
+    }),
+  skillShareSet: (key: string, on: boolean, cwd?: string | null) =>
+    request<{ ok: boolean }>("/api/skill-share", { method: "POST", body: { key, on, cwd } }),
+  /** Starts the server if nothing has yet, so it can take a while. */
+  mcpTools: (name: string, cwd?: string | null) =>
+    request<{ tools: McpTool[] }>("/api/mcp-share/tools", { method: "POST", body: { name, cwd } }),
+  mcpToolSet: (name: string, tool: string, on: boolean, cwd?: string | null) =>
+    request<{ ok: boolean }>("/api/mcp-share", { method: "POST", body: { name, tool, on, cwd } }),
+  rules: (s: ToolScope) => request<{ rules: Rule[] }>(`/api/rules?${scopeQuery(s)}`),
+  /** `fields` replaces what the level holds, so a plain toggle has to send them too. */
+  ruleSet: (s: ToolScope, level: Level, id: string, on: boolean | null, fields: RuleFields) =>
+    request<{ ok: boolean; rules: Rule[] }>("/api/rules", {
+      method: "POST", body: { ...scopeBody(s), level, id, on, fields },
+    }),
+  rulesLog: (session?: string | null) =>
+    request<{ rows: RuleLogRow[] }>(`/api/rules/log${session ? `?session=${encodeURIComponent(session)}` : ""}`),
+  hooks: (s: ToolScope) => request<HooksListing>(`/api/hooks?${scopeQuery(s)}`),
+  mysticalDir: (s: ToolScope, sub?: string) =>
+    request<DirListing>(`/api/mystical-dir?${scopeQuery(s)}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}`),
+  mysticalRead: (s: ToolScope, path: string) =>
+    request<{ text: string }>(`/api/mystical-dir/read?${scopeQuery(s)}&path=${encodeURIComponent(path)}`),
+  mysticalDelete: (s: ToolScope, path: string, confirm: boolean) =>
+    request<{ ok: boolean }>("/api/mystical-dir/delete", { method: "POST", body: { ...scopeBody(s), path, confirm } }),
+  mysticalKeep: (s: ToolScope, path: string, on: boolean) =>
+    request<{ ok: boolean }>("/api/mystical-dir/keep", { method: "POST", body: { ...scopeBody(s), path, on } }),
+  mysticalClear: (s: ToolScope, days: number) =>
+    request<{ removed: number; freed: number }>("/api/mystical-dir/clear", { method: "POST", body: { ...scopeBody(s), days } }),
 };

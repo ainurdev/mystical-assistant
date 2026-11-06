@@ -2,7 +2,7 @@
 // Guards the one thing long-session performance rests on: mergeDelta must hand
 // back the SAME turn objects it was given when a poll brings nothing new for
 // them, so the memoized RunStream can skip re-rendering past turns.
-import { mergeDelta } from "./chat.ts";
+import { derivePending, mergeDelta } from "./chat.ts";
 import type { StoreEvent, StoreTurn, Transcript } from "./api.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -68,4 +68,12 @@ console.log("all mergeDelta identity checks passed");
   ok(again === loaded, "the same outline sent again is no change either");
   const moved = mergeDelta(loaded, tx([{ ...storeTurn("a", 0), sum: { ...sum, answer: "Shipped." }, elapsed: 42 }], []));
   ok(moved[0].sum?.answer === "Shipped.", "a new outline replaces the old");
+}
+
+// A secret waits like a question, and its answer retires it.
+{
+  const asked = derivePending([{ type: "secret_request", request_id: "gw-1", name: "K", why: "w" }]);
+  if (asked.length !== 1 || asked[0].kind !== "secret" || asked[0].request_id !== "gw-1") throw new Error("a secret request is pending");
+  if (derivePending([{ type: "secret_request", request_id: "gw-1", name: "K", why: "w" }, { type: "secret_answered", request_id: "gw-1", given: false }]).length) throw new Error("answered, it isn't");
+  console.log("ok - a secret is pending until answered");
 }

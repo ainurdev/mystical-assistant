@@ -30,6 +30,9 @@ export function fragmentMd(n: Node, depth = 0): string {
   if (n.nodeType === 11) return inner(n, depth);
   if (n.nodeType !== 1) return "";
   const el = n as Element;
+  // An image in the message, in whatever state it's drawn: what was written (MdImage).
+  const written = el.getAttribute("data-md");
+  if (written !== null) return written;
   const kids = () => inner(el, depth);
   switch (el.tagName) {
     case "BR": return "\n";

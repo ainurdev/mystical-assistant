@@ -30,10 +30,10 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
-                    git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, team, tgask, tgtopics,
-                    transcript_jsonl, waits)
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, chat_images, config, devserver,
+                    experimental, git, inspector, integrations, ladder, limits, machine,
+                    native_activity, notices, profiles, pubsub, relevance, state, store, team,
+                    tgask, tgtopics, transcript_jsonl, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send
 
@@ -187,6 +187,16 @@ _HIDDEN_BROWSER_NOTE = (
     "machine — no `open <url>`, no headed launches; the user is working in front of it.")
 
 
+_EXPERIMENTAL_NOTE = (
+    "Keep .mystical/ tidy: .mystical/scratch/ for throwaway scripts and probes, .mystical/docs/ for reports and "
+    "Markdown written to be read, .mystical/drafts/ for design drafts and mockups. .mystical/images/ holds the "
+    "pictures in the user's messages: leave it alone.\n\n"
+    "To show the user a picture as proof, call show_image from the mystical MCP server with a one-line caption "
+    "saying what it proves, or compare_images for a before and after. A picture you only read to check something "
+    "stays in your work log, out of their way. run_checks runs the tests and records the result against known "
+    "failures; drive_page replaces writing a browser script; find_tools lists the rest.")
+
+
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
     session that gets it), then the graph pack.
@@ -195,7 +205,10 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
+    # With the switch on: where things go, and the tools for showing proof. One cache rewrite
+    # when it's turned on, then as byte-stable as the rest.
+    extra = _EXPERIMENTAL_NOTE if experimental.enabled() else ""
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, extra,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
                          rivendell, graph.strip()) if p]
     return "\n\n".join(parts)
@@ -372,7 +385,8 @@ def claude_bin() -> str:
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
+def _mcp_config(claude_session_id: str, extra: "dict | None" = None,
+                gateway: "dict | None" = None) -> str:
     """Path to the --mcp-config file for the bridge's own tool servers, plus any
     external servers this session left switched on. PYTHONPATH pins the repo root
     so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
@@ -403,6 +417,7 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
                           "args": ["-m", "bridge.goal_mcp"], "env": env},
                 "verify": {"command": sys.executable,
                            "args": ["-m", "bridge.verify_mcp"], "env": env},
+                **({"mystical": gateway} if gateway else {}),    # bridge/gateway.py
             }}, f)
     except BaseException:
         shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
@@ -527,7 +542,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
-              autocompact: str | None = None) -> list[str]:
+              autocompact: str | None = None, gateway: "dict | None" = None,
+              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -575,7 +591,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
             # below (an interactive one too: start_streaming_job's skip_pack)
             # still take MCP off entirely.
             extra, strict = _external_mcp(disabled_tools, cwd)
-            cmd += ["--mcp-config", _mcp_config(claude_session_id, extra)]
+            cmd += ["--mcp-config", _mcp_config(claude_session_id, extra, gateway)]
             if strict:
                 cmd.append("--strict-mcp-config")
                 if disabled_tools is None:
@@ -624,6 +640,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         hooks["Stop"] = [{"hooks": [{"type": "command", "command": ask}]}]
     if rv_note:
         hooks.update(_push_gate(cwd or state.project_dir(chat_id)) or {})
+    for event, rows in (rule_hooks or {}).items():
+        hooks[event] = hooks.get(event, []) + rows       # bridge/rules.py, beside ours
     if hooks:
         cmd += ["--settings", json.dumps({"hooks": hooks})]
     if skip_pack and not (permission_mode and not interactive):
@@ -656,6 +674,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # as ON is the UI lying.
         cmd.append("--strict-mcp-config")
         disabled_tools = []
+    if policy_denied:
+        disabled_tools = [*(disabled_tools or []), *[r for r in policy_denied if r not in (disabled_tools or [])]]
     if disabled_tools:
         # Bare tool/server names, so a switched-off tool leaves the model's
         # context entirely rather than being offered and then refused.
@@ -793,6 +813,8 @@ class Job:
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.refusal: str | None = None   # set before spawn: the bound profile can't run (see profiles.refusal)
+        self.prefix = ""                  # leads the prompt, unseen in the transcript: a provider switch's history
+        self.gateway_token: "str | None" = None   # this run's reach into bridge/gateway.py
         self.runtime: str | None = None   # 'claude:<slot>' or 'acp:<agent>'; None = the default Claude login
         self.model: str | None = None     # what the child runs on; a live switch moves it
         # Our set_model / set_permission_mode requests the CLI hasn't answered
@@ -928,6 +950,10 @@ class Job:
                 return False
             self.pending = [p for p in self.pending if p["request_id"] != request_id]
 
+        if entry.get("gateway"):
+            from bridge import gateway          # a Mystical tool's card: nothing of Claude's waits on it
+            gateway.answer_card(self, entry, answers)
+            return True
         if entry["kind"] == "question":
             resp = {"behavior": "deny",
                     "message": _format_answers(entry.get("questions", []), answers or [])}
@@ -1113,6 +1139,15 @@ class AcpJob(Job):
     takes_notes = False
 
     def respond(self, request_id, *, behavior="allow", message=None, answers=None):
+        card = next((p for p in list(self.pending) if p.get("request_id") == request_id), None)
+        if card is not None and card.get("gateway"):
+            from bridge import gateway
+            # Answered before the card goes: the paused turn watches for it to go,
+            # and must find the answer waiting.
+            gateway.answer_card(self, card, answers)
+            with self._lock:
+                self.pending = [p for p in self.pending if p.get("request_id") != request_id]
+            return True
         return acp.answer(self, request_id, behavior == "allow")
 
     def set_run_settings(self, model=None, permission_mode=None):
@@ -1189,15 +1224,23 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
     process. Same job either way — nothing to clean up.
 
     An agent turn (AcpJob) can't take one: ACP has no mid-turn message, so the
-    client queues instead.
+    client queues instead. With the EXPERIMENTAL switch on it can come close
+    (acp.soft_steer): the running tool finishes, the turn is cancelled, and the same
+    session is prompted with this.
     """
     with _jobs_lock:
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
+    if isinstance(job, AcpJob) and experimental.enabled():
+        if not acp.soft_steer(job, chat_images.note(text, job.cwd) + _with_images(text, image_paths)):
+            return False
+        job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
+        return True
     if job is None or job.proc is None or isinstance(job, AcpJob):
         return False
     if not job._write_stdin({"type": "user", "message": {"role": "user",
-                                                         "content": _with_images(text, image_paths)}}):
+                                                         "content": chat_images.note(text, job.cwd)
+                                                         + _with_images(text, image_paths)}}):
         return False
     job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
     return True
@@ -1520,7 +1563,11 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
     `request_id` the card it belongs to, so a button answers that card only."""
     what = "has a question" if kind == "question" else "needs your approval"
     job = get_job(job_id) if job_id else None
-    _notify(chat_id, f"❓ Claude {what} — {_session_label(session_id)}",
+    who = "Claude"
+    if experimental.enabled() and session_id:
+        from bridge import handoff           # lazy: it imports profiles, as this does
+        who = handoff.label(profiles.effective(store.get_session(session_id))["agent"])
+    _notify(chat_id, f"❓ {who} {what} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"),
             kind="question" if kind == "question" else "approve", sid=session_id,
             body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None,
@@ -1577,6 +1624,10 @@ def _announce_end(job) -> None:
     """A turn that ended by itself: WAITING when it ended on WaitForSession (it
     wakes on its own), else DONE or FAILED; then wake whoever waited on it."""
     chat = None if job.tg_live else job.chat_id     # None: the bell only (_notify)
+    from bridge import channel                      # lazy: channel reaches this module
+    if channel.quiet_ping(job.store_session_id) and job.status != "error":
+        waits.target_ended(job)   # a helper's turn, or a chat waiting on helpers: no ping yet
+        return
     if w := waits.get(job.store_session_id or ""):
         notify_waiting(chat, job.store_session_id, w["title"])
     else:
@@ -2263,6 +2314,7 @@ def _handle_event(job: Job, d: dict):
                                            job.read_paths.pop(rid, None))
                 if (clip := _save_result_file(job.id, rid, name, b.get("content"))):
                     imgs = imgs + [clip]
+                    _telegram_shown(job, clip, name)
                     # Only on the event that actually carries a file: a panel
                     # with nothing to sit beside is not worth streaming.
                     if (meta := job.clip_meta.pop(rid, None)) is not None:
@@ -2405,6 +2457,16 @@ def _clip_chapters(content) -> list:
 
 
 _MCP_FILE_BYTES = 64 * 1024 * 1024  # one clip or attachment, on disk
+
+
+def _telegram_shown(job: "Job", path: str, name: "str | None") -> None:
+    """A picture the agent showed you reaches a chat started on Telegram; one it only read
+    to look at doesn't. On its own thread: an upload must not hold the stream up."""
+    if not (job.tg_live and experimental.enabled() and (mimetypes.guess_type(path)[0] or "").startswith("image/")):
+        return
+    from bridge import telegram as tg
+    threading.Thread(target=tg.send_photo, args=(job.chat_id, path), daemon=True,
+                     kwargs={"thread": tgtopics.thread_for(job.chat_id, job.store_session_id)}).start()
 
 
 def _save_result_file(job_id: str, rid: str, name: "str | None",
@@ -2575,6 +2637,72 @@ def _watchdog(job: Job, proc) -> None:
             return
 
 
+def gateway_hook_env(job: Job) -> dict:
+    from bridge import gateway
+    return gateway.hook_env(job.gateway_token) if job.gateway_token else {}
+
+
+def _agent_extras(job: AcpJob, sess: dict, cwd: str, env: dict, prompt: str) -> "tuple[str, list]":
+    """With the EXPERIMENTAL switch on, what an agent turn gets beyond its prompt: the
+    gateway, Mystical's instructions (when due), shared skills and the Rivendell push
+    check. Returns (the prompt to send, MCP servers). Best-effort: on any failure the
+    turn still runs, with the same two notes it always had when it's a first turn."""
+    from bridge import gateway, prompt_pack, pushgate, skill_share
+    tools: set = set()
+    servers: list = []
+    try:
+        skill_share.sync(cwd)
+        if gateway.eligible(sess) and job.store_session_id:
+            job.gateway_token = gateway.issue(job.store_session_id)
+            servers = [gateway.acp_server(job.gateway_token)]
+            tools = gateway.tool_names(sess)
+            env.update(gateway.hook_env(job.gateway_token))      # bridge/rules.py's managed hooks
+    except Exception as e:  # noqa: BLE001
+        print(f"[runner] agent gateway: {e!r}", file=sys.stderr)
+    rivendell_on = "list_rivendell_tasks" in tools
+    if rivendell_on:
+        try:
+            env.update(pushgate.env(cwd))
+        except Exception as e:  # noqa: BLE001 - the gate never blocks a turn
+            print(f"[runner] push gate: {e!r}", file=sys.stderr)
+    text = job.prefix + prompt
+    if prompt_pack.needs_pack(sess):
+        graph = "\n\n".join(p for p in (_graph_pack_for(job.chat_id, cwd), _dream_pack_for(job.chat_id, cwd)) if p)
+        text = prompt_pack.wrap(prompt_pack.agent_pack(sess, cwd, tools, graph=graph, rivendell=rivendell_on,
+                                                       extra=(_MYSTICAL_NOTE, _PUSH_NOTE)), text)
+        prompt_pack.sent(sess["id"])
+    return text, servers
+
+
+def _multi_agent_turn_start(job: Job, session: dict, cwd: str, model: "str | None", prompt: str) -> None:
+    """The EXPERIMENTAL switch's part of starting a turn: a provider switch's history
+    and its row, and a direct prompt to a helper going on the channel's log."""
+    from bridge import channel, handoff
+    try:
+        job.prefix, row = handoff.consume(session, cwd, model, job.id)
+        if row:
+            job.add(row)
+        channel.note_direct_prompt(session, prompt)
+    except Exception as e:  # noqa: BLE001 - never blocks a turn
+        print(f"[runner] multi-agent start: {e!r}", file=sys.stderr)
+
+
+def _multi_agent_turn_end(job: Job) -> None:
+    """...and of ending one. On its own thread: it can start the next agent's turn."""
+    from bridge import channel, handoff, prompt_pack
+    try:
+        if job.gateway_token:
+            from bridge import gateway
+            gateway.revoke(job.gateway_token)
+        if job.store_session_id and job.status == "done":
+            handoff.finished(job.store_session_id)
+        if job.store_session_id and (job.runtime or "").startswith("acp:"):
+            prompt_pack.note_context(job.store_session_id, job.ctx_tokens)
+        channel.on_turn_end(job)
+    except Exception as e:  # noqa: BLE001
+        print(f"[runner] multi-agent end: {e!r}", file=sys.stderr)
+
+
 def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
                  model: "str | None", effort: "str | None",
                  permission_mode: "str | None") -> None:
@@ -2591,19 +2719,26 @@ def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
     job.boot = f"starting {p['label']}"
     _ensure_mystical(cwd)
     agent_sid = (sess or {}).get("agent_session_id")
+    env = acp_agents.env_for(p, job.acp_account)
+    text = (_with_images(prompt, image_paths) if agent_sid
+            else _MYSTICAL_NOTE + "\n\n" + _PUSH_NOTE + "\n\n" + _with_images(prompt, image_paths))
+    mcp_servers: list = []
+    if experimental.enabled() and sess:
+        text, mcp_servers = _agent_extras(job, sess, cwd, env, _with_images(prompt, image_paths))
+    acct = job.acp_account or ""
     acp.run_turn(
-        job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, job.acp_account), cwd=cwd,
+        job, argv=acp_agents.argv(p), env=env, cwd=cwd,
         label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
         auth_method=acp_agents.auth_method(p, job.acp_account),
-        text=(_with_images(prompt, image_paths) if agent_sid
-              else _MYSTICAL_NOTE + "\n\n" + _PUSH_NOTE + "\n\n" + _with_images(prompt, image_paths)),
+        text=text, mcp_servers=mcp_servers,
         agent_session_id=agent_sid,
         opts={"model": model, "permission_mode": permission_mode, "effort": effort},
         on_spawn=lambda conn: threading.Thread(target=_watchdog, args=(job, conn),
                                                daemon=True).start(),
         # Never claude_session_id: Claude-only readers must not follow an agent's id.
-        on_session=lambda sid: job.store_session_id and store.set_session_field(
+        on_session=lambda sid: job.store_session_id and (store.set_session_field(
             job.store_session_id, "agent_session_id", sid),
+            experimental.enabled() and store.set_native_id(job.store_session_id, agent, acct, sid)),
         cache=lambda opts, modes, models: acp_agents.remember_options(
             agent, job.acp_account, opts, modes, models))
 
@@ -2623,7 +2758,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if (job.runtime or "").startswith("acp:"):
             _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)
             return
-        full_prompt = _with_images(prompt, image_paths)
+        full_prompt = job.prefix + _with_images(prompt, image_paths)
+        gateway_def, rule_hooks, policy_denied = None, None, None
+        if experimental.enabled() and job.store_session_id and not job.skip_pack:
+            from bridge import gateway, rules, tool_policy
+            sess_row = store.get_session(job.store_session_id)
+            if gateway.eligible(sess_row):
+                job.gateway_token = gateway.issue(job.store_session_id)
+                gateway_def = gateway.server_def(job.gateway_token)
+                rule_hooks = rules.claude_hooks(sess_row)
+                policy_denied = tool_policy.claude_denied(sess_row.get("project"), sess_row)
         # The gap before the first token is two waits, and an empty stream makes
         # both read as a hang. Name whichever one we are actually in: the health
         # check only blocks while the cache is still cold (see toolsets.warm).
@@ -2636,13 +2780,19 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # On for this turn only — the session's own toggles are not written.
             denied = [r for r in (store.default_disabled_tools() if denied is None else denied)
                       if r != f"mcp__{job.mcp_on}"]
+        if policy_denied is not None and denied:
+            # A chat-level ON in Agent Tools beats the chat's own off switch and the default list.
+            from bridge import tool_policy
+            denied = [r for r in denied if tool_policy.lookup(
+                "tool", r, "claude", sess_row.get("project"), sess_row)[0] is not True]
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None,
-                        skip_pack=job.skip_pack)
+                        skip_pack=job.skip_pack, gateway=gateway_def, rule_hooks=rule_hooks,
+                        policy_denied=policy_denied)
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
@@ -2651,7 +2801,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, bufsize=1,
-                                    env=_run_env(ponytail, job.account_slot))
+                                    env={**_run_env(ponytail, job.account_slot),
+                                         **(gateway_hook_env(job) if rule_hooks else {})})
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -2798,6 +2949,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 except Exception:  # noqa: BLE001 — never let the queue break a run
                     pass
         job.exited.set()
+        if experimental.enabled() and not restart_killed:
+            threading.Thread(target=_multi_agent_turn_end, args=(job,), daemon=True).start()
         # job.model, not `model`: a live switch (Job.set_run_settings) moves it,
         # and the resume and a limit park must run what the turn ended on, not
         # what it started on.
@@ -3010,7 +3163,13 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
+        if experimental.enabled():
+            from bridge import timed_waits      # same rule for wait_for
+            timed_waits.drop(session["id"])
         _ensure_journal_thread()
+        if experimental.enabled() and not refusal:
+            _multi_agent_turn_start(job, session, cwd, model, prompt)
+        job.prefix += chat_images.note(prompt, cwd)
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,
                                ponytail),

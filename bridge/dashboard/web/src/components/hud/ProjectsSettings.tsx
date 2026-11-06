@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUpRight, ChevronRight, Diamond, EyeOff, GitBranch, GraduationCap, PanelLeft, Pencil, Puzzle, Search, Shapes,
-  SquareTerminal, UserRound, WandSparkles, Waypoints, X, type LucideIcon,
+  SquareTerminal, UserRound, Users, WandSparkles, Waypoints, X, type LucideIcon,
 } from "lucide-react";
 import { api, type AccountInfo, type InstalledSkill, type PickResult } from "../../api";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
@@ -15,6 +15,8 @@ import { StyleButton, StylePane, StyleScan, StyleStrip, useStyleRows } from "./L
 import { useAiFeatures } from "../../lib/ai";
 import { takeSettingsFocus } from "../../lib/opensettings";
 import { showStyle, useStyle } from "../../lib/stylerun";
+import { multi, useMultiOn } from "../../lib/multistore";
+import { useStickyObj } from "../../lib/prefs";
 
 /* SETTINGS ▸ Projects: every repo the bridge can run in, as a list on the left
    and the one you picked on the right (.mystical/design-drafts/projects-tab, B).
@@ -135,6 +137,26 @@ export function ProfilePick({ value, profiles, logins, onPick, lg, emptyLabel, d
 
 
 /** One setting of the picked project: what it is, a line on what it does, its control. */
+/** The profile a helper here runs on when nobody names one (experimental). */
+function HelperProfileField({ rel, profiles, logins }: { rel: string; profiles: ProfilesInfo; logins: AccountInfo[] }) {
+  const on = useMultiOn();
+  const [picked, setPicked] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (on) multi.projectHelperOf(rel).then((r) => setPicked(r.profile_id), () => {});
+  }, [on, rel]);
+  if (!on) return null;
+  const pick = (id: string) => {
+    setError(null);
+    multi.projectHelper(rel, id).then(() => setPicked(id), (e: Error) => setError(e.message));
+  };
+  return (
+    <Field icon={Users} label="Helper profile" hint={error ?? "what a helper here runs on, unless you or the main agent name one"}>
+      <ProfilePick value={picked} profiles={profiles} logins={logins} emptyLabel="Same as the chat" onPick={pick} />
+    </Field>
+  );
+}
+
 function Field({ icon: Icon, label, hint, children }: { icon: LucideIcon; label: string; hint: ReactNode; children: ReactNode }) {
   return (
     <div className="prj-field">
@@ -459,6 +481,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                 <button type="button" className="ps-btn ps-sm" onClick={() => setPicked([])}>Clear</button>
               </div>
               <div className="prj-tiles">{chosen.map((rel) => <ProjectTile key={rel} project={rel} />)}</div>
+              {repo && profiles && <HelperProfileField rel={g.rel} profiles={profiles} logins={logins} />}
               <Field icon={PanelLeft} label="In the sidebar"
                 hint={`${chosen.filter((rel) => !hidden[rel]).length} shown · ${chosen.filter((rel) => hidden[rel]).length} hidden`}>
                 <span className="prj-acts">

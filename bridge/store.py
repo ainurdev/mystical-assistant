@@ -130,6 +130,26 @@ CREATE TABLE IF NOT EXISTS notices (
 );
 CREATE INDEX IF NOT EXISTS ix_notices_at ON notices(at);
 CREATE INDEX IF NOT EXISTS ix_notices_subject ON notices(subject, id);
+CREATE TABLE IF NOT EXISTS channel_messages (
+  id         TEXT PRIMARY KEY,
+  chat       TEXT NOT NULL,
+  sender     TEXT NOT NULL,
+  recipient  TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  meta       TEXT NOT NULL DEFAULT '{}',
+  state      TEXT NOT NULL DEFAULT 'queued',
+  at         REAL NOT NULL,
+  delivered_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_channel_chat ON channel_messages(chat, at);
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  session_id TEXT NOT NULL,
+  agent      TEXT NOT NULL,
+  account    TEXT NOT NULL DEFAULT '',
+  native_id  TEXT NOT NULL,
+  PRIMARY KEY (session_id, agent, account)
+);
 
 """
 
@@ -268,6 +288,13 @@ def init() -> None:
                 c.execute(f"ALTER TABLE turns ADD COLUMN {col} TEXT")
         # (Old DBs may carry a dead last_auto_resume column from the retired
         # auto-resume cooldown — harmless, never read.)
+        # Multi-agent chats (bridge/channel.py): a helper's link to its chat and
+        # what it is, a chat's own limits, a provider switch waiting for its turn.
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(sessions)").fetchall()}
+        for col in ("parent_session", "member", "chat_config", "handoff"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_parent ON sessions(parent_session)")
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
         # are claimed — flipped to 'error' AND returned for auto-resume — by
         # claim_orphaned_turns(), which the startup recovery step calls.
@@ -371,7 +398,8 @@ LIST_MAX_AGE_SECS = 30 * 86400
 
 def list_sessions(chat_id: int, project: str, include_archived: bool = False,
                   max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
-    q = f"SELECT {_COLS} FROM sessions WHERE chat_id=? AND project=?"
+    # A helper (bridge/channel.py) lists under its chat, never as a chat of its own.
+    q = f"SELECT {_COLS} FROM sessions WHERE chat_id=? AND project=? AND parent_session IS NULL"
     params: list = [chat_id, project]
     if not include_archived:
         q += " AND archived=0"
@@ -395,7 +423,7 @@ def latest_session(chat_id: int, project: str) -> dict | None:
 def list_sessions_all(chat_id: int, include_archived: bool = False,
                       max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
     """Every session for a chat across all projects (dashboard sidebar tree)."""
-    q = f"SELECT {_COLS} FROM sessions WHERE chat_id=?"
+    q = f"SELECT {_COLS} FROM sessions WHERE chat_id=? AND parent_session IS NULL"
     params: list = [chat_id]
     if not include_archived:
         q += " AND archived=0"
@@ -461,7 +489,8 @@ def set_run_settings(session_id: str, model: "str | None" = None,
                   (model, permission_mode, session_id))
 
 
-_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id", "agent_session_id"}
+_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id", "agent_session_id",
+                   "chat_config", "handoff"}
 
 
 def set_session_field(session_id: str, field: str, value: "str | None") -> None:
@@ -671,8 +700,9 @@ def delete_session(session_id: str) -> None:
     the asker's code."""
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
-        for table in ("events", "turns", "shares"):
+        for table in ("events", "turns", "shares", "agent_sessions"):
             c.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
+        c.execute("DELETE FROM channel_messages WHERE chat=?", (session_id,))
         c.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         c.execute("COMMIT")
 
@@ -952,8 +982,8 @@ def archive(session_id: str, archived: bool = True) -> None:
         c.execute(
             "UPDATE sessions SET archived=?, updated=?, "
             "lifecycle=CASE WHEN ?=1 THEN COALESCE(lifecycle,'done') ELSE NULL END "
-            "WHERE id=?",
-            (1 if archived else 0, time.time(), 1 if archived else 0, session_id))
+            "WHERE id=? OR parent_session=?",   # a chat's helpers go with it
+            (1 if archived else 0, time.time(), 1 if archived else 0, session_id, session_id))
 
 
 def latest_turn_id(session_id: str) -> "str | None":
@@ -1202,7 +1232,7 @@ def history(chat_id: int, include_archived: bool = False,
          "COALESCE(MAX(t.started), s.updated) AS last_activity, "
          "GROUP_CONCAT(DISTINCT t.model) AS models "
          "FROM sessions s LEFT JOIN turns t ON t.session_id = s.id "
-         "WHERE s.chat_id=?")
+         "WHERE s.chat_id=? AND s.parent_session IS NULL")
     params: list = [chat_id]
     if not include_archived:
         q += " AND s.archived=0"
@@ -1455,3 +1485,133 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
     return {"session": s, "turns": turns, "events": events, "next_cursor": next_cursor}
 
 
+# ---------------------------------------------------------------------------
+# Multi-agent chats (bridge/channel.py, bridge/handoff.py)
+# ---------------------------------------------------------------------------
+
+def parse_json(raw: "str | None") -> dict:
+    """A JSON object column; {} for anything else."""
+    try:
+        v = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+def parse_member(raw: "str | None") -> "dict | None":
+    return parse_json(raw) or None
+
+
+def create_member(chat: dict, *, name: str, cwd: str, profile_id: "str | None",
+                  permission_mode: "str | None", member: dict) -> dict:
+    """A helper's session under `chat`: a real session, in the same project and
+    chat, that the lists leave out. Its title is what the sidebar calls it."""
+    s = create_session(chat["chat_id"], chat["project"], origin="helper", cwd=cwd,
+                       permission_mode=permission_mode, profile_id=profile_id)
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET parent_session=?, member=?, title=?, title_source='manual' "
+                  "WHERE id=?", (chat["id"], json.dumps(member), name, s["id"]))
+    return get_session(s["id"])
+
+
+def members_of(chat_id: str) -> list:
+    """The helpers of a chat, oldest first."""
+    with closing(_connect()) as c:
+        rows = c.execute(f"SELECT {_COLS} FROM sessions WHERE parent_session=? ORDER BY created",
+                         (chat_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def member_counts(ids: list) -> dict:
+    """chat id -> how many helpers it has, for a list of chats."""
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    with closing(_connect()) as c:
+        rows = c.execute(f"SELECT parent_session, COUNT(*) AS n FROM sessions "
+                         f"WHERE parent_session IN ({marks}) GROUP BY parent_session", ids).fetchall()
+    return {r["parent_session"]: r["n"] for r in rows}
+
+
+def set_member(session_id: str, member: dict) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET member=? WHERE id=?", (json.dumps(member), session_id))
+
+
+def add_channel_message(msg: dict) -> None:
+    with closing(_connect()) as c:
+        c.execute("INSERT INTO channel_messages(id,chat,sender,recipient,kind,body,meta,state,at) "
+                  "VALUES(?,?,?,?,?,?,?,?,?)",
+                  (msg["id"], msg["chat"], msg["sender"], msg["recipient"], msg["kind"],
+                   msg.get("body") or "", json.dumps(msg.get("meta") or {}), msg["state"], msg["at"]))
+
+
+def set_channel_state(mid: str, state: str, delivered_at: "float | None" = None) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE channel_messages SET state=?, delivered_at=COALESCE(?, delivered_at) "
+                  "WHERE id=?", (state, delivered_at, mid))
+
+
+def set_channel_body(mid: str, body: str) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE channel_messages SET body=? WHERE id=?", (body, mid))
+
+
+def _channel_row(r) -> dict:
+    d = dict(r)
+    d["meta"] = parse_json(d.get("meta"))
+    return d
+
+
+def channel_messages(chat: str, limit: int = 200, states: tuple = ()) -> list:
+    """A chat's channel, oldest first: its newest `limit`."""
+    q = "SELECT * FROM channel_messages WHERE chat=?"
+    params: list = [chat]
+    if states:
+        q += f" AND state IN ({','.join('?' * len(states))})"
+        params += list(states)
+    q += " ORDER BY at DESC, rowid DESC LIMIT ?"
+    with closing(_connect()) as c:
+        rows = c.execute(q, params + [limit]).fetchall()
+    return [_channel_row(r) for r in reversed(rows)]
+
+
+def waiting_channel_chats() -> list:
+    """Chats holding a message still to deliver: boot's catch-up."""
+    with closing(_connect()) as c:
+        return [r["chat"] for r in c.execute(
+            "SELECT DISTINCT chat FROM channel_messages WHERE state='queued'").fetchall()]
+
+
+def set_native_id(session_id: str, agent: str, account: str, native_id: str) -> None:
+    with closing(_connect()) as c:
+        c.execute("INSERT OR REPLACE INTO agent_sessions(session_id,agent,account,native_id) "
+                  "VALUES(?,?,?,?)", (session_id, agent, account or "", native_id))
+
+
+def native_id(session_id: str, agent: str, account: str) -> "str | None":
+    with closing(_connect()) as c:
+        r = c.execute("SELECT native_id FROM agent_sessions WHERE session_id=? AND agent=? AND account=?",
+                      (session_id, agent, account or "")).fetchone()
+    return r["native_id"] if r else None
+
+
+def turns_of(session_id: str) -> list:
+    """A session's turns, oldest first, with what a history needs."""
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(
+            "SELECT id, seq, prompt, status, started, runtime, model FROM turns "
+            "WHERE session_id=? ORDER BY started, seq", (session_id,)).fetchall()]
+
+
+def events_of_turn(session_id: str, turn_id: str) -> list:
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT type, payload FROM events WHERE session_id=? AND turn_id=? "
+                         "ORDER BY seq", (session_id, turn_id)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            out.append({**json.loads(r["payload"]), "type": r["type"]})
+        except (ValueError, TypeError):
+            pass
+    return out

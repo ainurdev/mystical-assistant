@@ -95,7 +95,7 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
           <div className="min-w-0">
             {cmd && <CmdSeg name={cmd.name} desc={cmd.desc} />}
             {/* Rendered as the same markdown the composer let you write it in. */}
-            <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : wake ? text.slice(2) : text}</Markdown>
+            <Markdown breaks typed={!wake && !who} className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : wake ? text.slice(2) : text}</Markdown>
             {children}
           </div>
         </div>

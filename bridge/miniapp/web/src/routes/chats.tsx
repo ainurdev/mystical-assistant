@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BellRing, ChevronDown, ChevronLeft, ChevronRight, FolderOpen, FolderTree, History, Plus, Puzzle, Search, SquarePen, X,
 } from "lucide-react";
 import { rootRoute } from "./root";
-import { api, type ProjectMark, type SessionBrief, type SessionState } from "../lib/api";
+import { api, type ProjectMark, type SessionBrief, type SessionState, type TreeRow } from "../lib/api";
+import { asSort, type AgentSort } from "../lib/agentrows";
 import { useChat } from "../lib/chat";
 import { usePersistentState } from "../lib/persistentState";
 import { telegramBack } from "../lib/telegram";
 import { FolderNavigator } from "../components/FolderNavigator";
 import { SurfaceBadge } from "../components/SurfaceBadge";
+import { AgentTree } from "../components/AgentTree";
+import { SubagentModal } from "../components/SubagentModal";
 import { Skeleton } from "../components/ui";
 
 /* CHATS — the dashboard's sidebar as a screen of its own (its
@@ -58,6 +61,7 @@ const SV: Record<SessionState, { lane: Lane; c: string; fill: boolean; t: string
 const IDLE_CAP = 8; // ATTENTION's idle tail, folded
 const PROJ_ROWS = 3; // a project's chats before "N more"
 const HIST_CAP = 40; // HISTORY rows before "show more"
+const TREE_IDS = 40; // chats one /api/tree call answers for (agent_tree.MAX_IDS)
 
 /** When a chat was started: rows at rest hold their place while turns start and
  *  end, and one at work goes over them (`lift`; the dashboard's sidebar sorts
@@ -126,7 +130,7 @@ function Tile({ rel, name, mark }: { rel: string; name: string; mark?: ProjectMa
 
 function ChatsPage() {
   const navigate = useNavigate();
-  const { sessionId, selectSession, openSessionInProject, newChatIn } = useChat();
+  const { sessionId, selectSession, openSessionInProject, newChatIn, openHelper, experimental, openBrief } = useChat();
   const [mode, setMode] = usePersistentState<Mode>("ma-side-mode", "projects");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set()); // projects showing every chat
@@ -151,7 +155,29 @@ function ChatsPage() {
   const back = () => void navigate({ to: "/" });
   useEffect(() => telegramBack(back), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const view = (s: SessionBrief) => SV[status[s.id]?.state ?? "idle"] ?? SV.idle;
+  // ---- Each chat's agents, while this screen is up and the switch is on. The ids
+  // are read per poll, not keyed on: the list reshuffles as often as the status does,
+  // and a new key would blank every fold. The chats on screen go first, the rest fill
+  // up to the route's limit, so a helper that needs you can lift a chat out of a fold.
+  const treeIds = useRef<string[]>([]);
+  const [hasIds, setHasIds] = useState(false);
+  const treesQ = useQuery({
+    queryKey: ["agent-trees"],
+    queryFn: () => api.agentTrees(treeIds.current),
+    enabled: experimental && hasIds,
+    retry: false,
+    refetchInterval: 4000,
+  });
+  const trees: Record<string, TreeRow[]> = (experimental && treesQ.data?.trees) || {};
+  const [savedSort, setSort] = usePersistentState<AgentSort>("miniapp:agent-sort:v1", "attention");
+  const sort = asSort(savedSort);
+  const [subagent, setSubagent] = useState<TreeRow | null>(null);
+  // In a helper, it's the chat it works under that keeps its fold open.
+  const openChatId = openBrief?.parent_session ?? sessionId;
+
+  const raw = (s: SessionBrief) => SV[status[s.id]?.state ?? "idle"] ?? SV.idle;
+  // A helper waiting on you is the chat waiting on you: it's where you'd look.
+  const view = (s: SessionBrief) => (raw(s).lane !== "ask" && trees[s.id]?.some((r) => r.needs) ? SV.awaiting : raw(s));
   // A turn the bridge holds (a filled dot) is a touch happening now, so a chat at
   // work never sits under one that finished. Not native "working": it lasts 3 s
   // after each write, so a terminal chat lifted on it would bounce mid-turn.
@@ -160,8 +186,8 @@ function ChatsPage() {
   // A chat that never ran has no title yet: an abandoned draft is noise in
   // every list but its own (the open one, or one that's somehow live).
   const sessions = useMemo(() => (all.data?.sessions ?? []).filter((s) =>
-    s.title || s.id === sessionId || view(s).lane !== "idle"),
-  [all.data, sessionId, status]); // eslint-disable-line react-hooks/exhaustive-deps
+    !s.parent_session && (s.title || s.id === sessionId || view(s).lane !== "idle")),
+  [all.data, sessionId, status, treesQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const needle = q.trim().toLowerCase();
   const hit = (s: SessionBrief) => !needle
@@ -184,10 +210,29 @@ function ChatsPage() {
     back();
   }
 
-  const row = (s: SessionBrief, showProj: boolean) => (
-    <Row key={s.id} s={s} v={view(s)} on={s.id === sessionId} proj={showProj ? nameOf(s.project) : ""}
-      tint={marks[s.project]?.color || hashTint(s.project)} label={status[s.id]?.label ?? null} onOpen={openChat} />
-  );
+  function openAgent(chat: SessionBrief, r: TreeRow) {
+    if (r.kind === "subagent") { setSubagent(r); return; }
+    if (!r.session_id) return;
+    openHelper(r.session_id, chat.project);
+    back();
+  }
+
+  // Every row this render draws, which is what the tree query asks about first.
+  const drawn: string[] = [];
+  const row = (s: SessionBrief, showProj: boolean) => {
+    drawn.push(s.id);
+    const agents = trees[s.id];
+    return (
+      <Fragment key={s.id}>
+        <Row s={s} v={view(s)} on={s.id === sessionId} proj={showProj ? nameOf(s.project) : ""}
+          tint={marks[s.project]?.color || hashTint(s.project)} label={status[s.id]?.label ?? null} onOpen={openChat} />
+        {agents?.length ? (
+          <AgentTree rows={agents} sort={sort} onSort={setSort} openId={sessionId}
+            stay={s.id === openChatId} onOpen={(r) => openAgent(s, r)} />
+        ) : null}
+      </Fragment>
+    );
+  };
 
   // ---- PROJECTS: each repo with its chats, newest started first.
   const groups = useMemo(() => {
@@ -213,8 +258,15 @@ function ChatsPage() {
   ];
   const m: Mode = mode === "plugins" && !plugins.length ? "projects" : mode;
 
+  // Runs after the render that filled `drawn`.
+  useEffect(() => {
+    treeIds.current = [...new Set([...drawn, ...sessions.map((s) => s.id)])].slice(0, TREE_IDS);
+    setHasIds(treeIds.current.length > 0);
+  });
+
   return (
     <div className="sb pb-6">
+      {subagent && <SubagentModal row={subagent} onClose={() => setSubagent(null)} />}
       <div className="sb-top">
         <button type="button" onClick={back} className="sb-back" aria-label="Back to the chat">
           <ChevronLeft size={18} aria-hidden />

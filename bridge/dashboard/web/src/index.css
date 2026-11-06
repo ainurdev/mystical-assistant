@@ -1208,6 +1208,42 @@ input {
 }
 .rv-peek .md-copy { display: none; }
 @media (hover: none) { .md-copy { opacity: 1; } }
+
+/* An image written into a message (MdImage): inline, so several sit side by side where
+   they were put; capped, so a screenshot doesn't take the whole transcript. The height
+   stays auto over the width/height a seen image carries, so a narrow column keeps its ratio. */
+.md-img { display: inline-block; vertical-align: bottom; max-width: 100%; margin: 0.25em 0.45em 0.25em 0; }
+.md-img img { display: block; max-width: 100%; max-height: 280px; height: auto; border: 1px solid var(--border); }
+.md-img button { max-width: 100%; }
+.md-img button:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
+.md-img button:hover img { border-color: var(--acc); }
+.md-img-missing { display: block; font-size: var(--t95); line-height: 1.6; color: var(--txd); overflow-wrap: anywhere; }
+
+/* The address behind an image in the composer (EmbedPopover). */
+.embed-pop {
+  position: fixed; z-index: 60; width: min(340px, calc(100vw - 16px)); padding: 10px 11px;
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--acc) 26%, transparent); background: var(--panel3);
+  box-shadow: 0 -8px 24px rgba(0,0,0,.35); font-family: 'JetBrains Mono', monospace; outline: none;
+}
+.embed-pop-img { display: block; max-width: 100%; max-height: 200px; align-self: flex-start; border: 1px solid color-mix(in srgb, var(--acc) 16%, transparent); }
+.embed-pop-key { display: flex; flex-direction: column; gap: 4px; font-size: var(--t9); letter-spacing: 1px; color: var(--txd); }
+.embed-pop-in {
+  width: 100%; padding: 5px 7px; background: transparent; color: var(--txb); outline: none;
+  border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent);
+  font-family: inherit; font-size: var(--t115); letter-spacing: 0;
+}
+.embed-pop-in:focus { border-color: var(--acc); }
+.embed-pop-foot { display: flex; align-items: center; gap: 10px; }
+.embed-pop-st { flex: 1; min-width: 0; font-size: var(--t10); line-height: 1.4; color: var(--txd); overflow-wrap: anywhere; }
+.embed-pop-st[data-s="found"] { color: var(--ok); }
+.embed-pop-st[data-s="missing"], .embed-pop-st[data-s="invalid"] { color: var(--warn); }
+.embed-pop-rm {
+  appearance: none; flex: none; cursor: pointer; padding: 3px 8px; background: transparent; color: var(--txd);
+  border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent);
+  font-family: inherit; font-size: var(--t9); letter-spacing: 1px;
+}
+.embed-pop-rm:hover, .embed-pop-rm:focus-visible { color: var(--err); border-color: var(--err); outline: none; }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-16); }
 /* A table is columns, so it is ruled rather than gridded: a border on every
    cell turns five rows into graph paper and buries the one thing worth seeing.
@@ -4209,12 +4245,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .isle-pill { border-radius: 999px !important; }
 [data-fam] .isle > div:last-child > * { transition: opacity .2s ease; }
 [data-fam] .isle-glass {
-  background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
+  /* Enough ink that transcript text passing under can't be read through the title. */
+  background: color-mix(in srgb, var(--panel) 82%, transparent) !important;
   backdrop-filter: blur(14px) saturate(1.2) !important;
   transition: background-color .2s ease;
 }
 [data-fam] .isle button:first-child > span { font-family: var(--ui-font); }
-[data-fam] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-fam] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
 [data-fam] .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
 [data-fam] .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
 [data-fam] .np-meta { height: 20px !important; }

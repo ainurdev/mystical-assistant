@@ -123,7 +123,7 @@ function ClearDialog({ title, about, lines, after = [], start, stays, warn, onCl
 }
 
 /** SETTINGS ▸ System, above Bridge. */
-export function StorageSection() {
+export function StorageSection({ onOpenMystical }: { onOpenMystical?: () => void }) {
   const [scan, setScan] = useState<StorageScan | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [more, setMore] = useState(false);
@@ -207,7 +207,15 @@ export function StorageSection() {
   const kept = p?.kept.filter((k) => k.name !== ".gitignore") ?? [];
   return (
     <Section title="STORAGE">
-      <div style={CARD} className="stg">{body}</div>
+      <div style={CARD} className="stg">
+        {onOpenMystical && (
+          <div className="stg-mystical">
+            <span>One project&apos;s <code>.mystical</code> folder by kind, one thing at a time.</span>
+            <button type="button" className="ps-btn" onClick={onOpenMystical}>Open .mystical…</button>
+          </div>
+        )}
+        {body}
+      </div>
       {p && (
         <ClearDialog key={p.project} title={`Clear ${projectName(p.project)}'s Mystical files?`}
           about={<>What its sessions left behind: scratch, drafts and screenshots in <code>.mystical/</code>, and the pictures its turns took. Untick what you still use.</>}
