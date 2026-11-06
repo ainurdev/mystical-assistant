@@ -838,6 +838,29 @@ def test_boot_opens_the_merge_a_restart_cut_before_its_session(make_set):
     assert len(_merges(s)) == 2 and s.state["merge_session"] and s.state["status"] == "merging"
 
 
+def test_racing_boots_open_one_merge_session(make_set, monkeypatch):
+    import threading
+    s = make_set({"01": None})
+    s.finish("01")
+    tickets.save(s.folder, {**s.state, "merge_session": ""})
+    before = len(_merges(s))
+    gate, real = threading.Barrier(2), tickets.load
+
+    def load(folder):
+        st = real(folder)
+        if st.get("status") == "merging" and not st.get("merge_session"):
+            try:
+                gate.wait(0.5)   # both boots read "no merge session" before either acts
+            except threading.BrokenBarrierError:
+                pass
+        return st
+    monkeypatch.setattr(tickets, "load", load)
+    ts = [threading.Thread(target=tickets.boot) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join(10) for t in ts]
+    assert len(_merges(s)) == before + 1
+
+
 def test_boot_judges_a_merge_turn_that_ended_unheard(make_set):
     s = make_set({"01": None})
     s.finish("01")

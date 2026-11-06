@@ -706,16 +706,20 @@ def retry(folder: str, n: str) -> str:
         return _rerun(folder, st, n)
 
 
-def _boot_merge(folder: str, st: dict) -> None:
+def _boot_merge(folder: str) -> None:
     """A merging set after a restart: no merge session yet (cut between the two saves)
-    opens one; an idle, unparked one is judged as at its turn end (no turn: never began)."""
-    sid = st.get("merge_session")
-    if not sid:
-        if _on():
-            with _build:
+    opens one; an idle, unparked one is judged as at its turn end (no turn: never began).
+    Loaded and acted on under _build, so overlapping boots never open two."""
+    with _build:
+        st = load(folder)
+        if st.get("status") != "merging":
+            return
+        sid = st.get("merge_session")
+        if not sid:
+            if _on():
                 save(folder, {**st, "status": "building"})   # start_merge opens one only from building
                 start_merge(folder)
-        return
+            return
     if not store.running_turn_id(sid) and sid not in limits.parked():
         _merge_end(sid, (store.last_turn(sid) or {}).get("status") or "error")
 
@@ -730,7 +734,7 @@ def boot() -> None:
         folder = r.get("folder")
         try:
             if isinstance(folder, str) and load(folder).get("status") == "merging":
-                _boot_merge(folder, load(folder))
+                _boot_merge(folder)
             if not isinstance(folder, str) or load(folder).get("status") != "building":
                 continue
             with _build:
