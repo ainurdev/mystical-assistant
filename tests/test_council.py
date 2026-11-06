@@ -78,6 +78,8 @@ def test_dismissing_one_lineless_finding_leaves_the_others():
     must, nit = m
     assert must["id"] != nit["id"]
     assert council.blocking(m, ["claude"], [nit["id"]]) == [must]
+    zero = council.merge({"claude": {"score": 6, "findings": [{"sev": "nit", "file": "a.py", "line": 0, "title": "Z"}]}})
+    assert zero[0]["id"] == "a.py:0"                                  # line 0 is a line, as _at prints it
 
 
 def test_answers_do_not_cross_lines():
@@ -263,6 +265,7 @@ def test_material_survives_latin1_bytes(tmp_path):
 
 # --- the loop ------------------------------------------------------------
 import os
+import time
 from types import SimpleNamespace
 
 from bridge import goals, notices, paths, queue_manager, state, tickets, waits
@@ -385,11 +388,14 @@ def test_restart_marks_a_live_looking_run_stopped(rig):
     old = f"{os.getpid()}:1"
     running = {"claude": {"state": "running", "score": None, "summary": "", "error": ""}}
     store.set_council(rig.sid, {"status": "reviewing", "pid": os.getpid(), "boot": old, "round": 2,
-                                "rounds": [], "seats": running})
+                                "rounds": [], "seats": running, "since": time.time(), "bar": 9.0})
     c = council.get(rig.sid)
     assert c["status"] == "stopped" and "restart" in c["reason"]
     assert store.get_council(rig.sid)["status"] == "stopped"          # saved
     assert c["seats"]["claude"]["state"] == "stopped"                 # no spinner on a dead round
+    assert rig.kinds == ["council_stopped"] and len(rig.woke) == 1    # said once, its waiters woken
+    council.get(rig.sid)
+    assert rig.kinds == ["council_stopped"] and len(rig.woke) == 1
     store.set_council(rig.sid, {"status": "fixing", "boot": old, "item": "gone", "round": 1, "rounds": []})
     c = council.get(rig.sid)
     assert c["status"] == "stopped" and "restart" in c["reason"]

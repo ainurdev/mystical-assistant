@@ -179,7 +179,7 @@ def merge(by_seat: dict) -> list:
                     break
             else:
                 # A line-less finding's id carries its title (same() tells them apart by it), so siding against one leaves the rest.
-                fid = f"{f['file']}:{f['line']}" if f["line"] else f"{f['file']}:0:{f['title'].lower()}"
+                fid = f"{f['file']}:{f['line']}" if f["line"] is not None else f"{f['file']}:0:{f['title'].lower()}"
                 out.append({"id": fid, "sev": f["sev"],
                             "file": f["file"], "line": f["line"], "title": f["title"],
                             "by": [seat], "state": "open", "answer": ""})
@@ -472,6 +472,7 @@ def _settle(sid: str) -> "dict | None":
             c.get("status") == "reviewing"
             or c.get("status") == "fixing" and _queued(sid, c.get("item")) is None):
         store.set_council(sid, _stop(c, "interrupted by a restart"))
+        _spawn(_ended, sid, dict(c))    # its notice and wake, as any stop sends; off _lock
     return c
 
 
@@ -518,7 +519,7 @@ def start(session: dict, cwd: str) -> dict:
     if _busy(get(sid)):
         raise ValueError("busy")
     try:
-        if material(cwd) is None:
+        if counts(cwd) is None:
             raise ValueError("nothing")
     except RuntimeError:
         pass                        # a git failure is the round's to report, as its stop reason
