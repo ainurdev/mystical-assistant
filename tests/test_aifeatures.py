@@ -77,7 +77,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
                          "learn", "dream", "ponytail", "graph",
                          "rvtrack", "changelog", "logostyle",
                          "router", "autopick", "nextstep",
-                         "smartzone", "grillcards", "ticketruns"}
+                         "smartzone", "grillcards", "ticketruns", "ticketapprove"}
 
 
 def test_state_carries_the_parent_of_a_sub_switch():
@@ -107,7 +107,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
                "LOGO_STYLE_AI": "1",
                "ROUTER_ENABLE": "0", "ROUTER_AUTO": "1",
                "ROUTER_NEXT": "1", "ROUTER_ZONE": "1",
-               "GRILL_CARDS": "0", "TICKET_RUNS": "0"}
+               "GRILL_CARDS": "0", "TICKET_RUNS": "0", "TICKET_APPROVE": "0"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"

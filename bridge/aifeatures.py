@@ -223,6 +223,15 @@ FEATURES = (
               "at once, and a ticket waits until the ones blocking it are done. When the last "
               "one is done, one session merges them all onto the feature branch. Off, the "
               "path stops once the ticket files are written."},
+    {"key": "ticketapprove", "env": "TICKET_APPROVE", "label": "APPROVE BEFORE BUILD",
+     "parent": "ticketruns",
+     "hint": "tickets wait for your tap before any session starts",
+     "cost": "no extra call",
+     "tokens": "0",
+     "about": "Off, BUILD starts as soon as /to-tickets has written the tickets (the skill is "
+              "meant to ask you first, but can skip it). On, the set shows its breakdown in "
+              "the TICKETS tab and waits for Approve & build before any branch, worktree or "
+              "session is made."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",
      "hint": "marks 150k tokens and offers /compact first past it",

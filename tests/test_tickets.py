@@ -208,7 +208,7 @@ class BuiltSet:
         monkeypatch.setattr(tickets, "_path", lambda: os.path.join(root, "ticketsets.json"))
 
     def switch(self, on):
-        self.mp.setattr(aifeatures, "enabled", lambda key: key in ({"router", "ticketruns"} if on else {"router"}))
+        self.mp.setattr(aifeatures, "enabled", lambda key: key in ({"router", "ticketruns"} | ({"ticketapprove"} if on == "approve" else set()) if on else {"router"}))
 
     def build(self):
         return tickets.start_build(self.flow)
@@ -683,7 +683,7 @@ def test_get_tickets_lists_sets_with_live_ticket_status(make_set, monkeypatch):
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)
     h._get_api("/local/tickets", {})
     (one,) = box["obj"]["sets"]
-    assert one["folder"] == s.folder and one["merged"] == 2 and one["status"] == "building"
+    assert one["folder"] == s.folder and one["merged"] == 0 and one["status"] == "building"
     assert one["tickets"]["01"]["session"] == "running"
 
 
@@ -916,3 +916,50 @@ def test_a_rebuilt_set_stays_with_the_path_it_was_written_for(make_set, monkeypa
     _write(s.folder, "05", "T05")
     assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "Building."}
     assert s.state["flow_at"] == at
+
+
+# --- APPROVE BEFORE BUILD ------------------------------------------------------
+
+def test_approve_before_build_waits_and_starts_nothing(make_set):
+    s = make_set({"01": None, "02": "#01"}, on="approve")
+    assert s.state["status"] == "approve" and s.starts == [] and s.adds == []
+    assert {t["status"] for t in s.state["tickets"].values()} == {"queued"}
+    assert s.state["feature_branch"] == "" and tickets.sets()
+    assert _git(s.main, "branch", "--format=%(refname:short)") == "master"
+    assert s.build() == "" and s.state["status"] == "approve"   # asked again: still waiting, still nothing started
+
+
+def test_approve_builds(make_set):
+    s = make_set({"01": None, "02": "#01"}, on="approve")
+    assert tickets.approve(s.folder) == ""
+    assert s.state["status"] == "building" and s.state["feature_branch"] and s.running() == ["01"]
+    assert tickets.approve(s.folder) == "x is already building"
+
+
+def test_approve_endpoint_validates(make_set, tmp_path):
+    s = make_set({"01": None}, on="approve")
+    assert _dpost("/local/tickets/approve", {"folder": str(tmp_path)})["code"] == 404
+    assert _dpost("/local/tickets/approve", {"folder": s.folder}, chat=2)["code"] == 404
+    assert _dpost("/local/tickets/approve", {"folder": s.folder})["obj"] == {"text": "Building."}
+    assert s.state["status"] == "building"
+
+
+def test_boot_leaves_an_approve_set_alone(make_set):
+    s = make_set({"01": None}, on="approve")
+    tickets.boot()
+    assert s.state["status"] == "approve" and s.starts == []
+
+
+def test_approve_off_builds_at_once(make_set):
+    s = make_set({"01": None})
+    assert s.state["status"] == "building" and s.running() == ["01"]
+
+
+def test_merged_counts_only_done_tickets(make_set):
+    s = make_set({"01": None, "02": None})
+    assert tickets.merged_count(s.state) == 0           # fresh branches sit at the feature tip
+    s.finish("01")
+    st = s.state
+    assert tickets.merged_count(st) == 0                # done, not merged
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    assert tickets.merged_count(s.state) == 1

@@ -1443,12 +1443,17 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
-        if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build"):
+        if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build", "/local/tickets/approve"):
             from bridge import tickets
             folder = body.get("folder")
             if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()} \
                     or (store.get_session(tickets.load(folder).get("parent_session") or "") or {}).get("chat_id") != chat:
                 return self._json({"error": "not a registered ticket set"}, 404)
+            if path == "/local/tickets/approve":
+                try:
+                    return self._json({"text": tickets.approve(folder) or "Building."})
+                except Exception as e:  # noqa: BLE001
+                    return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
             if path == "/local/tickets/build":   # a stopped set, once what stopped it is fixed
                 try:
                     return self._json({"text": tickets.start_build(tickets.load(folder).get("parent_session") or "",

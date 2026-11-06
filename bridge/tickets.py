@@ -56,6 +56,12 @@ is marked done once the last ticket is, so FLOW shows it running while tickets b
 and the step after MERGE is RETRO. One lock serializes tick and every set.json write, since
 turn ends arrive on several threads at once; it is held across git and session
 creation, which takes seconds only when tickets are starting.
+
+APPROVE BEFORE BUILD (`ticketapprove`) is the user's choice to trust the skill or not:
+/to-tickets is meant to quiz the user before it ends, but can skip it. On, start_build
+parses and validates the tickets, saves the set as `approve` and stops: no feature
+branch, carry or worktree. approve() (the Approve & build tap) does the rest. boot()
+and tick() leave an `approve` set alone.
 """
 
 import json
@@ -282,7 +288,8 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
     with _build:
         old = load(folder)
         was = old.get("status")
-        if was not in (None, "stopped"):
+        wait = aifeatures.enabled("ticketapprove")   # APPROVE BEFORE BUILD: stop at the breakdown
+        if was not in (None, "stopped", "approve"):
             return f"{slug} is already {was}"
         # flow_at: the flow's path this set builds for, kept when a stopped set builds again;
         # a new path in that session since is left alone (mark_done, advance)
@@ -295,9 +302,8 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             order(tks)
             if not tks:
                 raise TicketError(f"no tickets in {folder}")
-            st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, slug)
-            flowbranch.carry_and_commit(co, st["feature_checkout"],
-                                        flowbranch.flow_files(flow_session_id, since), slug)
+            if not wait:
+                _branch(st, sess, flow_session_id, since)
         except Exception as e:  # noqa: BLE001 — a cycle, a missing blocker or git: nothing starts
             st.update(status="stopped", error=str(e))
             save(folder, st)
@@ -307,8 +313,39 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         st["tickets"] = {t.n: {"status": "queued", "title": t.title, "path": t.path,
                                "blocked_by": list(t.blocked_by), "branch": f"tk/{slug}-{t.n}",
                                "worktree": "", "session_id": "", "base": ""} for t in tks}
+        if wait:
+            st["status"] = "approve"
         save(folder, st)
         register(folder, sess.get("project") or "", slug)
+        if not wait:
+            tick(folder)
+    return ""
+
+
+def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
+    """The feature branch and what the flow wrote so far carried onto it."""
+    st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, st["slug"])
+    flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
+                                flowbranch.flow_files(flow_session_id, since), st["slug"])
+
+
+def approve(folder: str) -> str:
+    """The user's tap on a set waiting in `approve`: branch, carry, then build as
+    start_build would have. "" once building, else why not."""
+    with _build:
+        st = load(folder)
+        if st.get("status") != "approve":
+            return f"{st.get('slug') or 'the set'} is already {st.get('status')}"
+        sid = st["parent_session"]
+        try:
+            _branch(st, store.get_session(sid) or {}, sid, st.get("flow_at") or 0)
+        except Exception as e:  # noqa: BLE001 — git: nothing starts
+            st.update(status="stopped", error=str(e))
+            save(folder, st)
+            notices.emit("tickets", sid, body=f"BUILD stopped: {e}")
+            return str(e)
+        st["status"] = "building"
+        save(folder, st)
         tick(folder)
     return ""
 
@@ -511,9 +548,10 @@ def _merged(st: dict) -> set:
 
 
 def merged_count(st: dict) -> int:
-    """How many ticket branches the feature branch already holds."""
+    """How many done tickets' branches the feature branch already holds (a fresh
+    branch sits at the feature tip, so it counts as merged to git)."""
     have = _merged(st)
-    return sum(t["branch"] in have for t in (st.get("tickets") or {}).values())
+    return sum(t["status"] == "done" and t["branch"] in have for t in (st.get("tickets") or {}).values())
 
 
 def summaries() -> list:

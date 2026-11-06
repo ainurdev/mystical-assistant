@@ -194,6 +194,9 @@ ROUTER_ZONE = os.environ.get("ROUTER_ZONE", "1").lower() \
 # TICKETS (bridge/tickets.py) starts sessions by itself, so it ships OFF as well.
 TICKET_RUNS = os.environ.get("TICKET_RUNS", "0").lower() \
     not in ("0", "false", "no", "")
+# APPROVE BEFORE BUILD: tickets wait for a tap before any session starts. Off = trust the skill.
+TICKET_APPROVE = os.environ.get("TICKET_APPROVE", "0").lower() \
+    not in ("0", "false", "no", "")
 GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
     not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------
