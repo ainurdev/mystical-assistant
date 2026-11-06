@@ -91,6 +91,7 @@ class PreviewQueue:
         self._path = persist_path
         self._lock = threading.RLock()
         self._q: dict = {}                     # sid -> {"items": [...], "paused": bool, "rev": int}
+        self._cut: dict = {}                   # turn id a restart cut -> the item that sent it (adopt)
         if persist_path:
             self._load()
 
@@ -185,6 +186,20 @@ class PreviewQueue:
                 it.elapsed = elapsed
             self._advance(sid, b)
             self._touch(sid, b)
+
+    def adopt(self, sid: str, turn_id: str, job_id: str) -> bool:
+        """Boot recovery carried on `turn_id`, the turn a restart cut, as `job_id`.
+        The item that sent that turn follows the new run instead of being sent
+        again when it ends: one prompt, one turn."""
+        with self._lock:
+            b = self._q.get(sid)
+            item_id = self._cut.pop(turn_id, None)
+            it = next((x for x in b["items"] if x.id == item_id and x.status == "queued"), None) if b else None
+            if it is None:
+                return False
+            it.status, it.job_id, it.started = "running", job_id, time.time()
+            self._touch(sid, b)
+            return True
 
     def kick(self) -> None:
         """Boot: start what a restart left queued. A prompt enqueued while the
@@ -404,7 +419,10 @@ class PreviewQueue:
                 except TypeError:
                     continue  # stale schema — drop the item, keep the rest
                 if it.status == "running":
-                    # The job died with the server; re-queue so it runs again.
+                    # The job died with the server; re-queue so it runs again,
+                    # unless boot recovery carries its turn on (adopt).
+                    if it.job_id:
+                        self._cut[it.job_id] = it.id
                     it.status = "queued"
                     it.job_id = None
                     it.started = None
@@ -494,6 +512,10 @@ def sessions():
 
 def owns_session(sid):
     return get().owns_session(sid)
+
+
+def adopt(sid, turn_id, job_id):
+    return get().adopt(sid, turn_id, job_id)
 
 
 def pause(sid):

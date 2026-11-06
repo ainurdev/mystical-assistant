@@ -71,6 +71,8 @@ def recover(*, run=None, notify=None) -> int:
             continue
         if job is None:
             continue                                  # session busy (shouldn't happen at boot)
+        # A queued prompt sent the cut turn: it follows this run, or the queue would send it again.
+        queue_manager.adopt(sid, t["turn_id"], getattr(job, "id", job))
         count += 1
         notices.emit("resumed", sid, body="A restart interrupted it. Resuming where it left off.")
         try:
