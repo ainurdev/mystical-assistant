@@ -52,13 +52,14 @@ def on() -> bool:
 
 PACK_TEXT = "\n".join([
     "Skill paths. Matt Pocock's skills are loaded as /mattpocock-skills:<name>.",
-    "When a prompt has no /command in front, first decide whether one of these paths fits it:",
-    "- feature: a new feature or idea. Start grill-with-docs.",
+    "On a prompt with no /command in front, before anything else (a tool call, a file read, a question), decide whether one of these paths fits it:",
+    "- feature: a new feature or idea, however small (a new command, function, option or behaviour). Start grill-with-docs.",
     "- bug: something broken, failing, empty or slow, or a question why something is broken. Start diagnosing-bugs.",
     "- refactor: tangled code or architecture work. Start improve-codebase-architecture.",
     "- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a same-named skill from another plugin.",
-    "If one fits, call SetPath with the path and a one-line why, then start its skill with the Skill tool.",
-    "If none fits (a plain question, a small edit, a chat reply), just answer and start nothing.",
+    "If one fits, your first tool call is the Skill tool with that skill (mattpocock-skills:<name>). Don't explore, diagnose, build or ask questions before it: the skill does that. Don't wait for SetPath either: it is a deferred tool, so once the skill has started, load it with ToolSearch and call it with the path and a one-line why.",
+    "A path's skill comes before the skills and modes this session injects: start it instead of superpowers brainstorming or systematic-debugging, and don't skip it for ponytail's smallest change or for a clarifying question (a grill asks those).",
+    "If none fits (a question about how the code works, an edit spelled out exactly like a rename, a chat reply), just answer or do it, and start nothing.",
     'If the message begins "No path for this message.", start nothing.',
     'When you finish a step of a path and need nothing more from the user, call StepDone. After a grill, pass choice "here" if the work fits this one session, or "tickets" if it needs several. Never call StepDone while waiting on the user.',
 ])
