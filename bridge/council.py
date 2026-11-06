@@ -17,8 +17,10 @@ Design choices (the why):
 - State is one JSON column, sessions.council, like sessions.goal.
 
 - Reviewers are read-only and get the diff in the prompt: Claude runs in plan
-  mode with no pack, Codex over ACP with every permission request denied. A
-  watchdog owns hangs, since ACP's session/prompt has no timeout of its own.
+  mode with no pack, Codex over ACP with every permission request denied, in a
+  read-only mode its live session must take before the prompt goes (run_turn's
+  "must"), never the default it falls back to. A watchdog owns hangs, since
+  ACP's session/prompt has no timeout of its own.
 - A diff over DIFF_CAP drops whole-file sections, never cuts one mid-file, and
   names what it left out so the reviewer knows its view is partial.
 
@@ -332,8 +334,8 @@ class _Awaiting(dict):
 
 
 def _read_only_mode(acct) -> "str | None":
-    """Codex's cached read-only mode id. acp.Turn.apply shrugs off a mode the agent
-    doesn't list and runs in its default, which may write, so no id means no run."""
+    """Codex's cached read-only mode id, or None: no run. The cache only names it;
+    the seat's run_turn must apply it on the live session or sends no prompt."""
     modes = acp_agents.options_for("codex", acct).get("mode") or []
     return next((m["value"] for m in modes if "read" in m["value"].lower()), None)
 
@@ -375,7 +377,7 @@ def _seat_codex(prompt: str, cwd: str, timeout: float) -> dict:
         acp.run_turn(job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, acct), cwd=cwd,
                      label=p["label"], login_hint=acp_agents.login_hint(p, acct),
                      auth_method=acp_agents.auth_method(p, acct), text=prompt,
-                     agent_session_id=None, opts={"permission_mode": ro})
+                     agent_session_id=None, opts={"permission_mode": ro, "must": ("permission_mode",)})
     finally:
         done.set()
     if cut:

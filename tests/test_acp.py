@@ -398,3 +398,19 @@ def test_stop_lands_when_a_setsid_child_keeps_stdout_open(tmp_path):
         assert not t.is_alive() and job.types()[-1] == "stopped"
     finally:
         os.kill(helper, 9)
+
+
+# Council final review #1: a knob the turn can't run without.
+
+def test_a_must_knob_the_session_will_not_take_fails_before_the_prompt(tmp_path):
+    """A read-only reviewer: the agent's default mode may write, so no prompt goes."""
+    ro = {"permission_mode": "read-only", "must": ("permission_mode",)}
+    job, log = _run(tmp_path, {"turn": []}, opts=ro)              # the live session offers no such mode
+    assert job.status == "error" and "wouldn't switch to mode 'read-only'" in job.error_msg
+    assert "session/prompt" not in [m.get("method") for m in _sent(log)]
+    job, log = _run(tmp_path, {"turn": []}, opts={"permission_mode": "read-only"})   # no must: as before
+    assert job.status == "done" and "session/prompt" in [m.get("method") for m in _sent(log)]
+    modes = {"currentModeId": "auto", "availableModes": [{"id": "auto"}, {"id": "read-only"}]}
+    job, log = _run(tmp_path, {"modes": modes, "turn": []}, opts=ro)
+    methods = [m.get("method") for m in _sent(log)]
+    assert job.status == "done" and methods.index("session/set_mode") < methods.index("session/prompt")

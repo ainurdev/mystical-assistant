@@ -216,7 +216,17 @@ def test_seat_codex_needs_a_read_only_mode_and_passes_it(monkeypatch):
     assert not r["ok"] and "no read-only mode" in r["error"] and not called
     monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
     assert council.seat_codex("p", "/tmp")["ok"]
-    assert called[0]["opts"]["permission_mode"] == "read-only"
+    assert called[0]["opts"] == {"permission_mode": "read-only", "must": ("permission_mode",)}
+
+
+def test_the_read_only_mode_is_picked_from_the_cached_list(monkeypatch):
+    modes = {"mode": [{"value": "auto"}, {"value": "full-access"}, {"value": "Read-Only"}]}
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: modes)
+    assert council._read_only_mode("") == "Read-Only"                   # noqa: SLF001
+    modes["mode"] = [{"value": "auto"}, {"value": "full-access"}]
+    assert council._read_only_mode("") is None                          # noqa: SLF001
+    del modes["mode"]                                                    # never tested: no list at all
+    assert council._read_only_mode("") is None                          # noqa: SLF001
 
 
 def test_seats_never_raise(monkeypatch):
