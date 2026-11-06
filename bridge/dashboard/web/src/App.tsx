@@ -95,7 +95,6 @@ import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
-import { ringWindow } from "./lib/usagering";
 import { stepRow, TurnsPanel } from "./components/hud/TurnsPanel";
 import { FlowPanel } from "./components/hud/FlowPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
@@ -2508,7 +2507,7 @@ export function App() {
       badge: usageWin && usageWin.left < 25 ? `${usageWin.left}%` : null, low: true,
       hint: usageWin ? `${usageWin.left}% of the ${usageWin.tag === "WK" ? "week" : "5-hour window"} left · refills in ${fmtReset(usageWin.resets_at)}` : undefined,
       render: () => (
-        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} win={ringWindow(loginWindows(spender), Date.now())} />
+        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} />
       ),
     },
   ];

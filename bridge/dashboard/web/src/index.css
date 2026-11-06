@@ -6547,38 +6547,42 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 
 /* === USAGE TAB =================================================================
    The right rail's USAGE panel (hud/UsagePanel, drafts/usage-rail): the GIT
-   tab's bones (.gp root, .gp-fold folds) plus these and the UsageRing hero. */
-.us-sub { display: flex; flex-direction: column; gap: 3px; margin: 8px 2px 0; font: 400 var(--t105)/1.35 var(--f); color: var(--txd); }
-.us-sub b { font: 500 var(--t105)/1 var(--m); color: var(--txh); }
-.us-sub em { font-style: normal; }
+   tab's bones (.gp root, .gp-fold folds) plus these and the WeekGrid. */
+/* YOUR WEEK: day x hour grid. Cells are the accent at a strength set inline;
+   empty ones are faint, future ones fainter, this hour is outlined. */
+.lbl2 { display: flex; align-items: center; gap: 6px; padding: 8px 12px 6px; font: 800 var(--t95)/1 var(--f); letter-spacing: 1.4px; color: var(--txl); }
+.lbl2 .r { margin-left: auto; letter-spacing: .2px; font-weight: 700; }
+.us-went { padding-top: 16px; }
+.wg { margin: 2px 12px 0; }
+.wg-hrs { position: relative; height: 12px; margin-left: 18px; font: 700 var(--t85)/1 var(--f); color: var(--txl); }
+.wg-hrs span { position: absolute; transform: translateX(-50%); }
+.wg-row { display: flex; align-items: center; gap: 2px; margin-bottom: 3px; }
+.wg-row b { flex: none; width: 16px; font: 800 var(--t9)/1 var(--f); color: var(--txl); }
+.wg-row.today b { color: var(--txb); }
+.wg-row i { flex: 1; min-width: 0; height: 15px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.wg-row i.fut { background: color-mix(in srgb, var(--txl) 6%, transparent); }
+.wg-row i.now { box-shadow: 0 0 0 1.5px var(--txb) inset, 0 0 8px var(--acc); }
+.wg-scale { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin: 8px 12px 0; font: 700 var(--t95)/1 var(--f); color: var(--txl); }
+.wg-scale i { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.us-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 12px 0; }
+.us-cards > div { min-width: 0; height: 52px; box-sizing: border-box; padding: 9px; border-radius: 10px; background: var(--card); box-shadow: inset 0 0 0 1px var(--l2); }
+.us-cards b { display: block; font: 800 var(--t16)/1 var(--f); color: var(--txb); }
+.us-cards small { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--t95)/1.2 var(--f); color: var(--txl); }
+.us-stack { display: flex; height: 12px; gap: 2px; margin: 0 12px; border-radius: 4px; overflow: hidden; }
+.us-stack i { min-width: 3px; }
+.us-lg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin: 9px 12px 12px; }
+.us-lg button { appearance: none; border: 0; background: none; padding: 0; height: 16px; min-width: 0; display: flex; align-items: center; gap: 6px; text-align: left; font: 700 var(--t11)/1 var(--f); color: var(--txm); cursor: pointer; }
+.us-lg button:disabled { cursor: default; }
+.us-lg button:not(:disabled):hover { color: var(--txh); }
+.us-lg i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.us-lg span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us-lg b { margin-left: auto; flex: none; color: var(--txb); }
 /* the week */
 .us-seg { display: flex; border: 1px solid var(--l2); border-radius: var(--r); overflow: hidden; }
 .us-seg button { appearance: none; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10)/1 var(--f); padding: 4px 8px; cursor: pointer; }
 .us-seg button[aria-pressed="true"] { background: var(--wash); color: var(--txb); }
 .rh .us-seg { flex: none; }
 .rh .us-seg button { padding: 3px 6px; font-size: var(--t9); }
-.us-today { display: flex; align-items: center; gap: 6px; margin: 10px 2px 0; font: 400 var(--t105)/1.3 var(--f); color: var(--txd); }
-.us-today b { font: 500 var(--t105)/1 var(--m); color: var(--txh); }
-/* projects */
-.us-plist { padding: 4px 0 2px; }
-.us-prow { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 3px; align-items: center; padding: 7px 12px 8px; }
-.us-prow[role="button"] { cursor: pointer; }
-.us-prow[role="button"]:hover, .us-prow:focus-visible { background: var(--wash); outline: 0; }
-.us-prow .ptile { width: 20px; height: 20px; margin: 0; border-radius: 5px; font-size: 8.5px; grid-row: span 2; align-self: start; }
-.us-pn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t12)/1.25 var(--f); color: var(--txh); }
-.us-pt { font: 500 var(--t115)/1 var(--m); color: var(--txb); text-align: right; }
-.us-pm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t10)/1.2 var(--f); color: var(--txl); }
-.us-ps { font: 400 var(--t10)/1 var(--m); color: var(--txl); text-align: right; }
-.us-pbar { grid-column: 2 / 4; height: 3px; margin-top: 3px; border-radius: min(2px, var(--r)); overflow: hidden; background: color-mix(in oklab, var(--txl) 14%, transparent); }
-.us-pbar > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--pc, var(--acc)) 80%, var(--acc)); }
-.us-wt { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 4px; margin-top: 5px; padding-left: 9px; border-left: 1px solid var(--l2); }
-.us-wt > div { display: flex; align-items: center; gap: 5px; font: 400 var(--t10)/1.2 var(--m); color: var(--txd); }
-.us-wt svg { flex: none; color: var(--purple); }
-.us-wt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.us-wt em { margin-left: auto; font-style: normal; color: var(--txm); }
-.us-more { display: block; width: 100%; text-align: left; padding: 7px 12px 9px 41px; border: 0; background: transparent; cursor: pointer;
-  font: 400 var(--t105)/1 var(--f); color: var(--txl); }
-.us-more:hover { color: var(--txh); }
 /* stopped turns, tokens */
 .us-kv { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; row-gap: 7px; align-items: center; padding: 10px 12px 12px; }
 .us-kv > div { display: contents; }
@@ -7757,28 +7761,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tr-send .tr-n { color: var(--acc); font-weight: 700; }
 .tr-send:hover .tr-av, .tr-send:focus-visible .tr-av { background: color-mix(in srgb, var(--acc) 18%, transparent); }
 .tr-cap { height: 14px; margin-top: 4px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* UsageRing: the Usage hero. Amber is the 5-hour window, accent the week's days. */
-.ur-total { margin-left: auto; flex: none; font-size: calc(var(--fsu) * 15); line-height: 1; font-weight: 800; color: var(--txb); }
-.ur { display: flex; align-items: flex-start; gap: 14px; margin-top: 4px; height: 82px; }
-.ur-ring { position: relative; flex: none; width: 60px; height: 60px; }
-.ur-trk { fill: none; stroke: color-mix(in srgb, var(--txl) 22%, transparent); stroke-width: 5; }
-.ur-arc { fill: none; stroke: var(--warn); stroke-width: 5; stroke-linecap: round; }
-.ur-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
-.ur-in b { font-size: var(--t13); font-weight: 800; color: var(--txb); }
-.ur-in i { font-style: normal; font-size: var(--t8); letter-spacing: .02em; color: var(--txl); }
-.ur-rs { position: absolute; left: 50%; transform: translateX(-50%); top: 64px; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
-.ur-col { flex: 1; min-width: 0; height: 74px; display: flex; flex-direction: column; justify-content: flex-end; gap: 5px; }
-.ur-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; align-items: end; }
-.ur-bars > button { appearance: none; border: 0; background: none; padding: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-.ur-bars > button:disabled { cursor: default; }
-.ur-bars i { display: block; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--acc) 38%, transparent); }
-.ur-bars em { font-style: normal; font-size: var(--t9); font-weight: 600; text-align: center; color: var(--txl); }
-.ur-bars .on i, .ur-bars .pick i { background: var(--acc); }
-.ur-bars .on em, .ur-bars .pick em { color: var(--txb); }
-.ur-bars .pick i { box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 30%, transparent); }
-.ur-bars .dim i { opacity: .45; }
-.ur-cap { font-size: var(--t9); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.us-cap .us-sub { display: block; }
 
 /* FLOW tab: the path map hero, then the steps under it. Colours are tokens only;
    the pulse is the shared rhpulse, which .rh switches off under reduced motion. */
