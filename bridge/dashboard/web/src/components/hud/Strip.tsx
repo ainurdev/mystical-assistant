@@ -6,6 +6,7 @@ import { capDate } from "../../lib/capdate";
 import { zoneTag, zoneTime } from "../../lib/almanac";
 import { useClock12 } from "../../lib/surfaces";
 import type { WorldClock } from "../../lib/theme";
+import { HOME_TOP } from "../../lib/home";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
 import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
 
@@ -33,7 +34,7 @@ import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } fro
 
 // The chat header's 40px row plus its 1px rule, so a cap's bottom line sits
 // level with the header's (border-box: the border is inside the height).
-const CAP_H = 41;
+export const CAP_H = 41;
 const CAP_LINE = "1px solid color-mix(in srgb, var(--acc) 14%, transparent)";
 const CAP_IN = "enterDown .55s cubic-bezier(.2,.8,.2,1) both";
 
@@ -42,6 +43,10 @@ export interface StripProps {
   weather: Weather;
   accounts: AccountInfo[]; // every login, for the Almanac's limit resets
   clocks: WorldClock[]; // the world clocks (HudSettings.clocks)
+  /** HOME is open and draws the time and weather big: the cap keeps its bell
+   *  and the Almanac, and only the two readouts step aside. */
+  hideClock?: boolean;
+  openAlmanac?: number; // nonce — HOME's big clock bumps it to open the Almanac
 }
 
 /** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
@@ -181,9 +186,12 @@ function FoldButton({ onClick }: { onClick: () => void }) {
 
 /** Right column cap: the cluster over the panel, the gear over the rail.
  *  Collapsed there are no children — the column is the rail's 48px alone. */
-export function RightCap({ onOpenSettings, children, railTop }: {
+export function RightCap({ onOpenSettings, children, railTop, sky }: {
   onOpenSettings: () => void;
   children?: ReactNode;
+  /** HOME is open: the cap's left half wears the top of HOME's sky, with no
+   *  rule under it, so the cap and the tab read as one (HomePanel). */
+  sky?: string;
   /** The Linux window: its close button takes the gear's cell, which then
    *  runs into the rail with no rule under it (the gear moves into the rail). */
   railTop?: ReactNode;
@@ -193,9 +201,10 @@ export function RightCap({ onOpenSettings, children, railTop }: {
     // position + z-index lift the cap's stacking context (its entry animation
     // makes one) above the panel under it, which would otherwise cover the
     // clock's popovers.
-    <div className="rcap wco-bar" data-bare={children ? undefined : ""} style={{ position: "relative", zIndex: 40, display: "flex", minWidth: 0, height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="rcap wco-bar" data-bare={children ? undefined : ""} data-home={sky ? "" : undefined} style={{ position: "relative", zIndex: 40, display: "flex", minWidth: 0, height: CAP_H, borderBottom: sky ? 0 : CAP_LINE, animation: CAP_IN }}>
       {children && (
-        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)",
+          ...(sky && { backgroundImage: sky, backgroundSize: `100% ${CAP_H + HOME_TOP}px`, backgroundPosition: "0 0", backgroundRepeat: "no-repeat" }) }}>
           {children}
         </div>
       )}
@@ -208,7 +217,7 @@ export function RightCap({ onOpenSettings, children, railTop }: {
           {railTop}
         </div>
       ) : (
-      <div style={{ width: 48, flex: "none", marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
+      <div style={{ width: 48, flex: "none", marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border)", background: "var(--panel3)", ...(sky && { borderBottom: CAP_LINE }) }}>
         <button
           onClick={onOpenSettings}
           title="dashboard settings"
@@ -244,11 +253,18 @@ export function RightCap({ onOpenSettings, children, railTop }: {
 /** The clock & weather, the pinned world clocks, the bell: one row that sits
  *  wherever App puts it (RightCap, or the chat header while the right panel is
  *  collapsed). */
-export function Strip({ clock, weather, accounts, clocks }: StripProps) {
+export function Strip({ clock, weather, accounts, clocks, hideClock, openAlmanac }: StripProps) {
   const [clockHover, setClockHover] = useState(false);
   const [open, setOpen] = useState(false);
   const h12 = useClock12();
   const anchorRef = useRef<HTMLSpanElement>(null);
+  // Compared, not truth-tested: on a remount, a nonce bumped an hour ago would reopen it.
+  const asked = useRef(openAlmanac);
+  useEffect(() => {
+    if (openAlmanac === asked.current) return;
+    asked.current = openAlmanac;
+    setOpen(true);
+  }, [openAlmanac]);
 
   // It closes on a press anywhere outside the clock and its drop-down; Esc is the
   // Almanac's own, since there it first leaves the year view.
@@ -285,7 +301,8 @@ export function Strip({ clock, weather, accounts, clocks }: StripProps) {
       <span ref={anchorRef} data-ctx-type="surface" style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 1 auto", minWidth: 0 }}>
         {/* The one big readout. At t17 it outranks the chat's t14 title —
             chosen over a quieter split, 2026-09-11. */}
-        <button {...toggle} title="the Almanac: calendar, weather, limit resets, world clocks" {...clockHov} style={{ ...bare, gap: 4, height: 26 }}>
+        <button {...toggle} title="the Almanac: calendar, weather, limit resets, world clocks" {...clockHov} aria-hidden={hideClock || undefined}
+          style={{ ...bare, gap: 4, height: 26, ...(hideClock && { visibility: "hidden" }) }}>
           <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t17)", color: "var(--txb)", letterSpacing: ".4px" }}>
             {clockMini}
           </span>
@@ -294,7 +311,7 @@ export function Strip({ clock, weather, accounts, clocks }: StripProps) {
           )}
         </button>
         {/* The date window beside it is the same handle. */}
-        <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, ...(hideClock && { visibility: "hidden" }) }} aria-hidden={hideClock || undefined}>
           <button
             className="wx capdate"
             {...toggle}

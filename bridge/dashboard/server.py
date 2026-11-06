@@ -550,6 +550,10 @@ class Handler(BaseHTTPRequestHandler):
             midnight = datetime.datetime.now().replace(
                 hour=0, minute=0, second=0, microsecond=0).timestamp()
             return self._json(store.today(chat, midnight))
+        if path == "/local/wins":
+            # HOME's spine: what shipped today, the stretches worked, the gaps away.
+            from bridge import wins
+            return self._json(wins.today(chat))
         if path == "/local/report":
             # back=1 → the completed week (what the Monday push covers).
             return self._json(report.weekly(chat, back=_qs_int(qs, "back") or 0))
