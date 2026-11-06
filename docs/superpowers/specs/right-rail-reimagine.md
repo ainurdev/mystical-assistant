@@ -21,8 +21,9 @@ user's theme (OSGILIATH, Nunito, compact); the build must use theme tokens, neve
 
 - **Cap clock:** the time (as today, 12/24h setting kept) followed by a date window: line 1 = weekday + day + month
   in caps (`THURSDAY 5 NOV`), line 2 = `<weather cond, lowercase> · <temp>° · <city>` (`rain · 11° · Yerevan`). The
-  city is the first comma part of `weather.loc`, title-cased. No temperature-only readout any more. The clock menu and
-  the clock & weather popover are unchanged. Narrow widths: line 2 truncates with an ellipsis; the date line never
+  city is the first comma part of `weather.loc`, title-cased. No temperature-only readout any more. A click opens the
+  Almanac (GLOSSARY.md; the clock menu and the CLOCK & WEATHER popover are gone, their settings live in SETTINGS ▸
+  APPEARANCE ▸ CLOCK & WEATHER), and the pinned world clocks keep their place between the date window and the bell. Narrow widths: line 2 truncates with an ellipsis; the date line never
   wraps.
 - **Named rail:** every tile shows its icon and, under it, a short name in caps: TURNS, FILES, GIT, BRANCH, LEARN,
   TASKS (Rivendell), TEAM, USAGE (FLOW when the skill-paths tab lands). A tab that wants you prints its readout in the
