@@ -21,7 +21,7 @@ import { FRAME, RULE } from "./TurnsPanel";
 
 const STALE = /^(HTTP 404|not found)$/i;     // a bridge from before the council
 const SAY: Record<string, string> = {
-  running: "The session is running. Run the council when its turn ends.",
+  running: "The session is running. Try again when its turn ends.",
   busy: "The council is already running.",
   nothing: "Nothing to review: no commits or changes ahead of origin.",
   action: "The council has moved on, so that can't be done now.",
@@ -92,6 +92,11 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   const [sent, setSent] = useState<Set<string>>(() => new Set());     // advice sent one at a time
   const [prevOpen, setPrevOpen] = useState(false);
   const [nonce, setNonce] = useState(0);                              // bumped: read now
+  // Bumped on both sides of every move. The server is threaded and brief() takes
+  // its snapshot before a full read's git runs, so a read begun before a move
+  // ends can answer after it with the state from before (Send all live again,
+  // a side taken undone). Only a read begun after the move may land.
+  const gen = useRef(0);
   const tell = useRef(onBrief);
   tell.current = onBrief;
   const on = live(c);
@@ -104,23 +109,29 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   };
   useEffect(() => {
     if (!sid) return;
-    let alive = true;
+    let alive = true, t = 0;
     // `full` runs git, so only while no run moves; a run that moves is read lightly and often.
-    const read = () => api.council(sid, !on).then((b) => { if (alive) land(b); }, (e: Error) => { if (alive) setFail(e.message); });
-    void read();
-    const t = window.setInterval(read, on ? 3000 : 15000);
-    return () => { alive = false; window.clearInterval(t); };
+    // The next read is set when this one ends, so a slow full read never stacks a second git run.
+    const read = () => {
+      const g = gen.current;
+      api.council(sid, !on)
+        .then((b) => { if (alive && g === gen.current) land(b); }, (e: Error) => { if (alive && g === gen.current) setFail(e.message); })
+        .finally(() => { if (alive) t = window.setTimeout(read, on ? 3000 : 15000); });
+    };
+    read();
+    return () => { alive = false; window.clearTimeout(t); };
   }, [sid, on, nonce]);
 
   const act = async (action: string, key?: string) => {
     if (!sid) return;
     setDoing(action);
+    gen.current++;
     try {
       land(await api.councilAct(sid, action, key));
     } catch (e) {
       const m = (e as Error).message;
       notify("error", STALE.test(m) ? "Restart the bridge to use the council." : SAY[m] ?? m);
-    } finally { setDoing(""); }
+    } finally { gen.current++; setDoing(""); }   // no await between the answer and here: no read lands in between
   };
   const n = c?.material?.commits.length ?? 0;
   // GIT's push (GitPanel sync("push")): the same call on the same project and branch.
@@ -335,7 +346,11 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
     </>
   ) : c.status === "stopped" ? (
     <>
-      <button className="cn-btn ask grow" disabled={dis} onClick={() => void act("more")}><RotateCw size={13} />2 more rounds</button>
+      {/* it may read at once, so like RUN it waits for the session's turn (council.act refuses too) */}
+      <button className="cn-btn ask grow" disabled={dis || busy} title={busy ? "Waits for this session's turn to end." : undefined}
+        onClick={() => void act("more")}>
+        <RotateCw size={13} />2 more rounds
+      </button>
       {pushBtn("Push anyway", "ghost")}
     </>
   ) : (

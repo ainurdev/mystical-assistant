@@ -111,7 +111,7 @@ import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/R
 import { arrange } from "./lib/rail";
 import { GitPanel } from "./components/hud/GitPanel";
 import { CouncilPanel } from "./components/hud/CouncilPanel";
-import { hero as councilHero, railTile } from "./lib/council";
+import { hero as councilHero, railTile, tileKey } from "./lib/council";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
@@ -2257,21 +2257,26 @@ export function App() {
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
-  // Held by session, so a switch never shows the last one's; the panel hands its
-  // own reads here too, so a tap there moves the tile at once.
+  // Held by session, so a switch never shows the last one's. While the tab is
+  // open its panel reads the run and hands each read up (onBrief), so this poll
+  // rests: one poller, not two. A read that changes nothing on the rail
+  // (lib/council tileKey) keeps the brief held, so it doesn't re-render App.
   const [councilOf, setCouncilOf] = useState<{ sid: string; c: CouncilBrief } | null>(null);
   const council = councilOf && councilOf.sid === sessionId ? councilOf.c : null;
   const councilLive = council?.status === "reviewing" || council?.status === "fixing";
+  const councilOpen = settings.rightOpen && settings.rightTab === "council";
+  const keepCouncil = (sid: string, c: CouncilBrief) =>
+    setCouncilOf((p) => (p && p.sid === sid && tileKey(p.c) === tileKey(c) ? p : { sid, c }));
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || councilOpen) return;
     let live = true;
     const tick = () => api.council(sessionId)
-      .then((c) => { if (live) setCouncilOf({ sid: sessionId, c }); })
+      .then((c) => { if (live) keepCouncil(sessionId, c); })
       .catch(() => { /* a bridge from before the council: the tile stays calm */ });
     void tick();
     const id = setInterval(tick, councilLive ? 3000 : 15000);
     return () => { live = false; clearInterval(id); };
-  }, [sessionId, councilLive]);
+  }, [sessionId, councilLive, councilOpen]);
   const councilTile = railTile(council);
 
   // Auto-fetch (/design-first auto-fetch): behind is only as true as the last
@@ -2484,9 +2489,10 @@ export function App() {
       icon: <Scale {...RAIL} />, ownScroll: true,
       badge: councilTile.badge, tone: councilTile.tone, busy: councilTile.busy,
       render: () => (
-        <CouncilPanel key={sessionId ?? ""} sid={sessionId} project={sessionProject} branch={sessionBranch}
+        // The session's own project, never activeProject: its push must not land in another repo.
+        <CouncilPanel key={sessionId ?? ""} sid={sessionId} project={selected?.project ?? null} branch={sessionBranch}
           busy={running || openWorking} initial={council}
-          onBrief={(c) => { if (sessionId) setCouncilOf({ sid: sessionId, c }); }}
+          onBrief={(c) => { if (sessionId) keepCouncil(sessionId, c); }}
           onOpenChat={() => { toChat(); jumpToBottom(); }}
           onSend={(text) => void send(text, [], { force: true })}
           onPushed={() => setGitNonce((n) => n + 1)} />

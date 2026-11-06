@@ -50,6 +50,7 @@ def test_settings_clamp_and_round_trip():
     s = council.save_settings({"bar": 12, "max_rounds": 0, "codex_projects": ["/a", 3], "junk": 1})
     assert s["bar"] == 10.0 and s["max_rounds"] == 1 and s["codex_projects"] == ["/a"] and "junk" not in s
     assert council.save_settings({"bar": 8.7, "max_rounds": 5})["bar"] == 8.5
+    store.set_setting("council", None)          # the test DB is shared: leave the defaults for the next test
 
 def test_store_council_column_round_trip():
     sid = store.create_session(555, "/counciltest", origin="dashboard")["id"]
@@ -86,6 +87,7 @@ def test_save_settings_survives_bad_input():
     assert council.save_settings({"bar": -1e308})["bar"] == 1.0
     assert council.save_settings({"bar": 10**400})["bar"] == 1.0  # unchanged
     assert council.save_settings({"max_rounds": 10**400})["max_rounds"] == 10
+    store.set_setting("council", None)          # the test DB is shared: leave the defaults for the next test
 
 
 # --- seats ---------------------------------------------------------------
@@ -449,6 +451,18 @@ def test_more_after_a_stall_sends_the_fix_first(rig):
     b = council.act(rig.session, "more")
     assert b["status"] == "fixing" and b["max_rounds"] == 7 and b["round"] == 2
     assert rig.queued[-1]["prompt"].startswith("[council 2/7] 6.9 of 9.0")
+
+
+def test_more_waits_for_the_session_turn(rig, monkeypatch):
+    """2 more rounds can start a review at once, so like RUN it never does mid-turn."""
+    rig.claude, rig.codex = [_said(7.0), _said(7.0)], [_said(7.0), _said(7.0)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j1"))                               # round 2 didn't raise it: stopped
+    monkeypatch.setattr(state, "is_running", lambda sid: True)
+    with pytest.raises(ValueError, match="running"):
+        council.act(rig.session, "more")
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and c["max_rounds"] == 5 and c["round"] == 2
 
 
 def test_a_round_stopped_while_seats_read_is_dropped(rig, monkeypatch):

@@ -633,6 +633,8 @@ def after_turn(job) -> bool:
 def act(session: dict, action: str, key: str = "") -> dict:
     """A tap in the tab: stop | more | side | fix | advice."""
     sid = session["id"]
+    if action == "more" and state.is_running(sid):
+        raise ValueError("running")     # it may read at once, and like RUN never mid-turn
     with _lock:
         c, then = _act(sid, action, key)
     if then == "round":

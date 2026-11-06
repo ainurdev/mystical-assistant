@@ -2,7 +2,7 @@
 // How the COUNCIL tab reads a run: the rail tile, the chart's columns, the two
 // pass rules and the hero's pill (design: council-tab, A · SCOREBOARD).
 import type { CouncilBrief, CouncilRound } from "../api.ts";
-import { columns, hero, railTile, rules } from "./council.ts";
+import { columns, hero, railTile, rules, tileKey } from "./council.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -33,6 +33,14 @@ eq(railTile(brief({ status: "stopped", round: 1, reason: "you stopped it" })), {
 eq(railTile(idle), { busy: false }, "idle: a calm tile");
 eq(railTile(null), { busy: false }, "no brief yet: a calm tile");
 
+// --- when App re-renders for the tile ---------------------------------------------
+ok(tileKey(running) === tileKey({ ...running, elapsed: 999, findings: running.previous, material: null }),
+  "a poll where only the clock, the rows or the material moved keeps App's brief");
+ok(tileKey(running) !== tileKey({ ...running, round: 4 }), "a new round re-renders");
+ok(tileKey(running) !== tileKey({ ...running, status: "stopped" }), "a new status re-renders");
+ok(tileKey({ ...running, seats: { claude: { state: "running", score: null, summary: "", error: "" } } })
+  !== tileKey({ ...running, seats: { claude: { state: "done", score: 8, summary: "", error: "" } } }), "a seat that finished re-renders");
+
 // --- the chart's columns --------------------------------------------------------
 eq(columns(running).map((c) => c.cls), ["", "", "now", "left", "left"], "round 3 of 5 under review");
 eq(columns(running).map((c) => c.v), [6.4, 8.1, null, null, null], "scores where a round has run");
@@ -44,6 +52,16 @@ eq(columns(brief({ status: "fixing", round: 2, rounds: rounds(6.4, 8.1) })).map(
   "fixing: no column is being read");
 eq(columns(brief({ status: "reviewing", round: 6, max_rounds: 7, rounds: rounds(6, 7, 7.5, 8, 8) })).length, 7,
   "2 more rounds widen the chart");
+// A round stopped before it scored is never kept, and 2 more rounds go on from round + 1:
+// R1 6.4, Stop in R2, more, R3 8.1. Columns go by round number, not by place in `rounds`.
+const gap = [{ n: 1, score: 6.4, blocking: 1 }, { n: 3, score: 8.1, blocking: 1 }];
+eq(columns(brief({ status: "reviewing", round: 4, max_rounds: 7, rounds: gap, score: 8.1 })).map((c) => [c.v, c.cls]),
+  [[6.4, ""], [null, "left"], [8.1, ""], [null, "now"], [null, "left"], [null, "left"], [null, "left"]],
+  "a round that never scored stays empty, and R3's score sits under R3");
+eq(columns(brief({ status: "stopped", round: 3, max_rounds: 7, rounds: gap, score: 8.1 })).map((c) => c.cls),
+  ["", "left", "stall", "left", "left", "left", "left"], "the stall lands on the last round that scored, by its number");
+eq(columns(brief({ status: "stopped", round: 6, max_rounds: 5, rounds: [{ n: 6, score: 8, blocking: 1 }] })).length, 6,
+  "a round numbered past max_rounds still gets its column");
 
 // --- the pass rules -------------------------------------------------------------
 eq(rules(brief({ status: "reviewing", round: 3, score: 8.1, rounds: [{ n: 1, score: 6.4, blocking: 2 }, { n: 2, score: 8.1, blocking: 1 }] })),

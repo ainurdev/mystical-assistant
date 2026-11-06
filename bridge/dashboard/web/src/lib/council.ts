@@ -17,18 +17,31 @@ export function railTile(c: CouncilBrief | null): { badge?: string; tone?: "ok" 
   return { busy: false };
 }
 
+/** What the rail tile and its tooltip read off a brief (railTile, hero's pill), plus
+ *  the seats. App keeps the brief it holds while this stays put, so a poll that
+ *  changes nothing on the rail (a run's `elapsed` ticking) doesn't re-render App. */
+export function tileKey(c: CouncilBrief): string {
+  return JSON.stringify([c.status, c.round, c.max_rounds, c.score, c.reason, c.rounds.length,
+    Object.entries(c.seats).map(([k, s]) => `${k}:${s.state}`)]);
+}
+
 /** A column per round the run may use: scored, being read (now), the last of a
- *  passed run (pass) or a stopped one (stall), or not run yet (left). */
+ *  passed run (pass) or a stopped one (stall), or with no score (left). Found by
+ *  round number: a round stopped before it scored is never kept, and 2 more
+ *  rounds go on from the next number, so `rounds` can skip one. */
 export function columns(c: CouncilBrief): { n: string; v: number | null; cls: "" | "now" | "pass" | "stall" | "left" }[] {
-  const ran = c.rounds.length;
-  return Array.from({ length: Math.max(c.max_rounds, ran) }, (_, i) => ({
-    n: `R${i + 1}`,
-    v: c.rounds[i]?.score ?? null,
-    cls: c.status === "reviewing" && i + 1 === c.round ? "now"
-      : i >= ran ? "left"
-      : i < ran - 1 ? ""
-      : c.status === "passed" ? "pass" : c.status === "stopped" ? "stall" : "",
-  }));
+  const last = c.rounds[c.rounds.length - 1];
+  return Array.from({ length: Math.max(c.max_rounds, last?.n ?? 0) }, (_, i) => {
+    const r = c.rounds.find((x) => x.n === i + 1);
+    return {
+      n: `R${i + 1}`,
+      v: r?.score ?? null,
+      cls: c.status === "reviewing" && i + 1 === c.round ? "now"
+        : !r ? "left"
+        : r !== last ? ""
+        : c.status === "passed" ? "pass" : c.status === "stopped" ? "stall" : "",
+    };
+  });
 }
 
 /** The two pass rules on the last round that scored: the average reaches the
