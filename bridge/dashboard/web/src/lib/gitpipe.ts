@@ -51,3 +51,37 @@ export function pipe(sync: PipeSync, changed: number, hasUpstream: boolean, unch
     : "Nothing to push";
   return { stations, flows, action, push, say };
 }
+
+/** The delivery tracker's view of a Pipe: where the work is (`at`: 0 Mac, 1 committed, 2 origin; -1 = landed),
+ *  one sentence, the next hop, and three stops. Real counts come in as `n` (stations carry a capped string). */
+export type Stop = { key: "mac" | "branch" | "origin"; label: string; value: string; tone: "acc" | "ok" | "warn" | "dim" };
+export type Track = { say: string; next: string; at: -1 | 0 | 1 | 2; stops: Stop[] };
+
+export function counts(sync: PipeSync) {
+  return {
+    up: sync.kind === "diverged" ? sync.ahead ?? 0 : sync.kind === "ahead" || sync.kind === "publish" ? sync.n ?? 0 : 0,
+    down: sync.kind === "diverged" ? sync.behind ?? 0 : sync.kind === "behind" ? sync.n ?? 0 : 0,
+  };
+}
+
+export function track(p: Pipe, n: { changed: number; up: number; down: number }): Track {
+  const a = p.action;
+  const at = a ? ({ Commit: 0, Publish: 1, Pull: 2 } as const)[a.verb] : -1;
+  const origin = p.stations[2];
+  const next = !a ? ""
+    : a.verb === "Commit" ? `next hop: commit ${files(n.changed)}${n.up && !n.down ? `, then publish ${commits(n.up)}` : ""}`
+    : `next hop: ${a.verb.toLowerCase()} ${commits(a.n)}`;
+  const say = n.changed ? "Your work is still on this Mac"
+    : n.up && !n.down ? "Committed, not on origin yet"
+    : p.say;
+  const stops: Stop[] = [
+    { key: "mac", label: "On this Mac", value: n.changed ? files(n.changed) : "clean", tone: n.changed ? "acc" : "ok" },
+    { key: "branch", label: "Committed", value: n.up ? commits(n.up) : "in sync", tone: n.up ? "acc" : "ok" },
+    {
+      key: "origin", label: "On origin",
+      value: origin.sub === "not pushed" ? "not pushed" : n.down ? `${n.down} new` : origin.sub === "not checked" ? "not checked" : "up to date",
+      tone: n.down ? "warn" : origin.sub === "not pushed" || origin.sub === "not checked" ? "dim" : "ok",
+    },
+  ];
+  return { say, next, at, stops };
+}

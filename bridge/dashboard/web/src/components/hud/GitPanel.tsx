@@ -3,7 +3,7 @@ import {
   Check, ChevronDown, ChevronRight, Ellipsis, FileDiff, LoaderCircle, Minus,
   Plus, RefreshCw, RotateCcw, SquarePen, TriangleAlert, X,
 } from "lucide-react";
-import { api, type GitFile, type GitStatus } from "../../api";
+import { api, type GitCommit, type GitFile, type GitStatus } from "../../api";
 import { CommitGraph } from "../CommitGraph";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { askConfirm } from "../ui/Ask";
@@ -18,14 +18,18 @@ import { syncOf } from "../../lib/gitsync";
 import { divergedDraft, pushFailedDraft } from "../../lib/pushfailed";
 import { ago } from "../../lib/surfaces";
 import { TaskLine } from "./TaskChip";
-import { GitPipe } from "./GitPipe";
+import { GitTracker } from "./GitTracker";
+import { TabKick } from "./TabKick";
+import { counts, pipe, track } from "../../lib/gitpipe";
+import { unpushed } from "../../lib/gitgraph";
 
 /* GIT — the right rail's one git tab, and the dashboard's only git status
-   (the header's git icon went, 2026-10-18): a repo header (branch, ⟳ fetch),
-   the PIPE hero (Mac -> branch -> origin, how fresh that is, and the one move
-   the state allows), then two folds in VS Code's Source Control shape.
-   CHANGES is the working tree with the commit box; GRAPH is the commit graph
-   (CommitGraph). Each fold remembers whether it is open.
+   (the header's git icon went, 2026-10-18): a kicker (branch, how fresh, ⟳
+   fetch), the DELIVERY TRACKER (your work as a parcel: Mac -> committed ->
+   origin, and the one move the state allows), then IN THE PARCEL (the working
+   tree with the commit box), WAITING TO SHIP (the commits origin hasn't got)
+   and, behind its "Graph ›", the commit graph (CommitGraph). The first and last
+   remember whether they are open.
    The working tree comes from App's per-worktree status poll (sessionGit), so
    the header, the rail badge and the list read the same answer; an op here
    bumps that poll (onGitChanged) instead of running a second one. The commit
@@ -66,6 +70,7 @@ type Op = { kind: OpKind; n: number; phase: "busy" }
 const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish refused", pull: "Pull failed", fetch: "Fetch failed" };
 
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
+const WAIT_ROWS = 6;
 const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const MOD = /Mac|iP/.test(navigator.platform) ? "⌘" : "Ctrl+";
@@ -162,7 +167,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const [ctx, setCtx] = useState<{ x: number; y: number; path: string; staged: boolean } | null>(null);
   // Folds remember being closed — open is the default, so the flag is inverted.
   const [chClosed, setChClosed] = useStickyFlag("git-changes-closed");
-  const [grClosed, setGrClosed] = useStickyFlag("git-graph-closed");
+  const [grOpen, setGrOpen] = useStickyFlag("git-graph-open");   // off by default: the tracker's list is the short answer
   const [branchOnly, setBranchOnly] = useStickyFlag("git-graph-branch-only");
   const [nonce, setNonce] = useState(0);   // the graph re-reads on ⟳
   const ready = git !== null;
@@ -174,7 +179,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const behind = git?.behind ?? 0;
   // Whatever can resize the hero's strip below it, the CHANGES fold or the branch pill.
   const rdRef = useGlide<HTMLDivElement>("readout", "height", !ready, [git, op]);
-  const chRef = useGlide<HTMLDivElement>("changes", "height", !ready, [git, note, chClosed, grClosed]);
+  const chRef = useGlide<HTMLDivElement>("changes", "height", !ready, [git, note, chClosed, grOpen]);
   const brRef = useGlide<HTMLSpanElement>("branch", "width", false, [branchName]);
 
   async function commit() {
@@ -189,6 +194,27 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   }
 
   const s = syncOf(git);
+  const { up, down } = counts(s);
+  // The commits a push would send, for WAITING TO SHIP. Re-read when their count
+  // or a sync op moves. shortcut: with no upstream (nothing to diff against) it is
+  // the newest `up` commits along HEAD's first parent; upgrade to a server-side rev-list.
+  const [waiting, setWaiting] = useState<GitCommit[]>([]);
+  useEffect(() => {
+    if (!project || !up) { setWaiting([]); return; }
+    let live = true;
+    void api.gitLog(project, 200, branch || undefined).then((r) => {
+      if (!live) return;
+      const out = unpushed(r.commits, git?.upstream || undefined);
+      let list = r.commits.filter((c) => out.has(c.sha));
+      if (!list.length) {
+        const by = new Map(r.commits.map((c) => [c.sha, c]));
+        let c = r.commits.find((x) => x.refs.some((f) => f === "HEAD" || f.startsWith("HEAD -> ")));
+        for (; c && list.length < up; c = by.get(c.parents[0])) list.push(c);
+      }
+      setWaiting(list);
+    }).catch(() => { if (live) setWaiting([]); });
+    return () => { live = false; };
+  }, [project, branch, up, git?.upstream, nonce]);
   useEffect(() => {
     if (op?.phase !== "done") return;
     const t = setTimeout(() => setOp(null), 4000);
@@ -351,9 +377,8 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       if (onHandOff && project) onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind));
     } else void sync(verb === "Pull" ? "pull" : s.kind === "publish" ? "publish" : "push", n);
   }
-  const right = fetching ? "checking origin…"
-    : autoErr ? <>couldn't reach origin <button disabled={busy} onClick={() => void fetchNow()}>retry</button></>
-    : unchecked ? "not checked" : when;
+  // The kicker's short form of how fresh this is (the full words are in the title).
+  const right = fetching ? "checking…" : autoErr ? "offline" : unchecked ? "not checked" : !t ? "" : t === "now" ? "just now" : `${t} ago`;
   // Only a running push or pull locks the hero: Commit just opens the message box, and an auto-fetch is no reason to wait.
   const syncing = op?.phase === "busy" && op.kind !== "fetch";
   const pushy = op?.kind === "push" || op?.kind === "publish";
@@ -448,27 +473,27 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     </div>
   );
 
-  const bothOpen = !chClosed && !grClosed;
-
-  return (
+    return (
     <div className="panel gp" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div className="gp-head">
-        <span className="gp-title">GIT</span>
-        {branchName && (
+      <TabKick name="GIT"
+        chip={branchName && (
           <span ref={brRef} className="gp-branch" title={branchName}><i>⎇</i><Roll slot="branch" v={branchName} /></span>
         )}
-        <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy || fetching}
-          title={s.kind === "none" ? "refresh" : "fetch from origin, then re-read"} onClick={() => void fetchNow()}>
-          <RefreshCw size={13} />
-        </button>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
+        tools={<>
+          {ready && right && <span className="gt-when" title={when || undefined}>{right}</span>}
+          <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy || fetching}
+            title={s.kind === "none" ? "refresh" : "fetch from origin, then re-read"} onClick={() => void fetchNow()}>
+            <RefreshCw size={13} />
+          </button>
+        </>} />
 
-      {project && (!ready || s.kind !== "none") && (
-        <GitPipe sync={s} changed={changed.size} hasUpstream={!!git?.upstream} unchecked={unchecked} busy={syncing}
-          where={git?.upstream && git.upstream !== `origin/${branchName}` ? git.upstream : undefined}
-          loading={!ready} right={ready ? right : undefined} onAction={heroAct} />
-      )}
+      {project && (!ready || s.kind !== "none") && (() => {
+        const p = pipe(s, changed.size, !!git?.upstream, unchecked, git?.upstream && git.upstream !== `origin/${branchName}` ? git.upstream : undefined);
+        return (
+          <GitTracker t={track(p, { changed: changed.size, up, down })} p={p} loading={!ready} busy={syncing} onAction={heroAct}
+            title={p.action?.verb === "Pull" && s.kind === "diverged" ? `Opens a session to bring origin's ${p.action.n} commits in` : undefined} />
+        );
+      })()}
       {project && (
         <div ref={rdRef} className="gp-rdw">
           {(!ready || s.kind !== "none") && (
@@ -481,15 +506,15 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         </div>
       )}
 
-      {/* Both open: CHANGES takes its content up to half the panel, GRAPH the
-          rest. One closed: the other takes everything, and a closed GRAPH's
-          head sits at the foot, the way VS Code's panes stack. */}
-      <div ref={chRef} className="gp-fold" style={{ flex: chClosed ? "none" : grClosed ? "1 1 0" : "0 1 auto", maxHeight: bothOpen ? "52%" : undefined }}>
-        <div className="gp-fh" role="button" aria-expanded={!chClosed} onClick={() => setChClosed((v) => !v)}>
+      {/* IN THE PARCEL takes its content up to half the panel; WAITING TO SHIP is
+          short and sits under it; the graph, once opened, takes what is left. */}
+      <div ref={chRef} className="gp-fold gt-fold" style={{ flex: chClosed ? "none" : "0 1 auto", maxHeight: "50%" }}>
+        <div className="gp-fh gt-lbl" role="button" aria-expanded={!chClosed} onClick={() => setChClosed((v) => !v)}>
           {chClosed ? <ChevronRight size={12} strokeWidth={2} /> : <ChevronDown size={12} strokeWidth={2} />}
-          <b>Changes</b>
+          <b>IN THE PARCEL</b>
           {changed.size > 0 && <em>{changed.size}</em>}
           <span className="gp-acts" onClick={(e) => e.stopPropagation()}>
+            {changed.size > 0 && <span className="gt-fig"><i>+{files.reduce((n, f) => n + f.add, 0)}</i><i>−{files.reduce((n, f) => n + f.del, 0)}</i></span>}
             {unstaged.length > 0 && (
               <button className="gp-ib" disabled={busy} title="stage all"
                 onClick={() => void gitOp("stage", unstaged.map((f) => f.path))}><Plus size={13} /></button>
@@ -500,8 +525,32 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             )}
           </span>
         </div>
-        {!chClosed && (
+        {!chClosed && (<>
           <div className="mscroll gp-body">
+            {!project ? <div className="gp-empty">No session selected.</div>
+              : !ready ? (skel ? (
+                <div className="swapin" style={{ padding: "4px 12px" }} aria-label="Reading the working tree" aria-busy>
+                  {[62, 78, 51, 70, 44].map((w, i) => (
+                    <Skeleton key={i} className="h-[13px] rounded-none"
+                      style={{ width: `${w}%`, marginBottom: 5, background: "color-mix(in srgb, var(--acc) 13%, transparent)" }} />
+                  ))}
+                </div>
+              ) : null)
+              : !git.is_repo ? <div className="gp-empty swapin">Not a git repository.</div>
+              : !changed.size ? <div className="gp-empty swapin">Working tree clean.</div>
+              : (
+                <div className="swapin">
+                  {/* Groups only once the index holds something; otherwise the
+                      rows sit flat and the fold's count is the group. */}
+                  {staged.length > 0 && group("STAGED", staged, true)}
+                  {staged.map((f) => row(f, true))}
+                  {staged.length > 0 && unstaged.length > 0 && group("UNSTAGED", unstaged, false)}
+                  {unstaged.map((f) => row(f, false))}
+                </div>
+              )}
+          </div>
+          {/* Below the scrolling list, so the message box never scrolls away. */}
+          <>
             {project && (
               <div className="cbox gp-cbox">
                 <textarea ref={msgRef} value={msg} onChange={(e) => setMsg(e.target.value)} rows={2}
@@ -527,34 +576,33 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             {note && (
               <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>
             )}
-            {!project ? <div className="gp-empty">No session selected.</div>
-              : !ready ? (skel ? (
-                <div className="swapin" style={{ padding: "4px 12px" }} aria-label="Reading the working tree" aria-busy>
-                  {[62, 78, 51, 70, 44].map((w, i) => (
-                    <Skeleton key={i} className="h-[13px] rounded-none"
-                      style={{ width: `${w}%`, marginBottom: 5, background: "color-mix(in srgb, var(--acc) 13%, transparent)" }} />
-                  ))}
-                </div>
-              ) : null)
-              : !git.is_repo ? <div className="gp-empty swapin">Not a git repository.</div>
-              : !changed.size ? <div className="gp-empty swapin">Working tree clean.</div>
-              : (
-                <div className="swapin">
-                  {/* Groups only once the index holds something; otherwise the
-                      rows sit flat and the fold's count is the group. */}
-                  {staged.length > 0 && group("STAGED", staged, true)}
-                  {staged.map((f) => row(f, true))}
-                  {staged.length > 0 && unstaged.length > 0 && group("UNSTAGED", unstaged, false)}
-                  {unstaged.map((f) => row(f, false))}
-                </div>
-              )}
-          </div>
-        )}
+          </>
+        </>)}
       </div>
 
-      <div className="gp-fold" style={{ flex: grClosed ? "none" : "1 1 0" }}>
-        <div className="gp-fh" role="button" aria-expanded={!grClosed} onClick={() => setGrClosed((v) => !v)}>
-          {grClosed ? <ChevronRight size={12} strokeWidth={2} /> : <ChevronDown size={12} strokeWidth={2} />}
+      <div className="gp-fold gt-fold" style={{ flex: "0 1 auto", maxHeight: grOpen ? "34%" : undefined }}>
+        <div className="gp-fh gt-lbl" style={{ cursor: "default" }}>
+          <b>WAITING TO SHIP</b>
+          {up > 0 && <em>{up}</em>}
+          <span className="gp-acts">
+            <button className="gt-go" aria-expanded={grOpen} onClick={() => setGrOpen((v) => !v)}>
+              Graph{grOpen ? <ChevronDown size={11} strokeWidth={2.4} /> : <ChevronRight size={11} strokeWidth={2.4} />}
+            </button>
+          </span>
+        </div>
+        <div className="mscroll gp-body">
+          {waiting.slice(0, WAIT_ROWS).map((c) => (
+            <div key={c.sha} className="gt-wrow" title={c.subject}><i /><span>{c.subject}</span><em>{ago(c.ts)}</em></div>
+          ))}
+          {up > WAIT_ROWS && <button className="gt-wrow" onClick={() => setGrOpen(true)}><span>+{up - WAIT_ROWS} more</span></button>}
+          {!up && ready && <div className="gt-none">Nothing waiting to ship.</div>}
+        </div>
+      </div>
+
+      {grOpen && (
+      <div className="gp-fold" style={{ flex: "1 1 0" }}>
+        <div className="gp-fh" role="button" aria-expanded onClick={() => setGrOpen(false)}>
+          <ChevronDown size={12} strokeWidth={2} />
           <b>Graph</b>
           <span className="gp-acts" onClick={(e) => e.stopPropagation()}>
             <button className="gp-filter" title={branchOnly ? "showing this branch — click for every branch" : "showing every branch — click for this branch only"}
@@ -563,15 +611,14 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             </button>
           </span>
         </div>
-        {!grClosed && (
-          <div className="mscroll gp-body">
-            {project ? (
-              <CommitGraph project={project} branch={branchOnly ? branchName || undefined : undefined}
-                upstream={git?.upstream} ahead={ahead} behind={behind} nonce={nonce} />
-            ) : <div className="gp-empty">No session selected.</div>}
-          </div>
-        )}
+        <div className="mscroll gp-body">
+          {project ? (
+            <CommitGraph project={project} branch={branchOnly ? branchName || undefined : undefined}
+              upstream={git?.upstream} ahead={ahead} behind={behind} nonce={nonce} />
+          ) : <div className="gp-empty">No session selected.</div>}
+        </div>
       </div>
+      )}
 
       {ctx && (
         <ContextMenu ctx={{ x: ctx.x, y: ctx.y, type: ctx.path ? "file" : "folder", id: ctx.path, label: ctx.path || "all changes" }}
