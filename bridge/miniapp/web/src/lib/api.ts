@@ -386,6 +386,8 @@ export type RunEvent =
   // whether one was given (never its value). `rule`: bridge/rules.py fired.
   | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string; ref?: string }
   | DataEv
+  // show_design: a board the agent made (bridge/design_board.py), and its PREVIEW DESIGN button.
+  | { type: "design"; board: string; title: string; pages: string[]; ref?: string }
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
       passed: number | null; failed: number | null; skipped: number | null;
       new: string[]; known: string[]; log: string; tail: string }

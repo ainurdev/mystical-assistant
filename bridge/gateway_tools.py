@@ -104,6 +104,20 @@ DATA = {"name": "show_data", "description": (
         "items": {"type": "array", "items": {"type": "object"}, "description":
                   "stats: [{label, value, format: number|money|percent|text, currency, delta, note}]. "
                   "diagram, timeline: [{date, label, note, state: done|now|next}], in the order to show."}}}}
+DESIGN = {"name": "show_design", "description": (
+    "Show a designed page or pages to the user: it puts a PREVIEW DESIGN button in the chat, which opens the chat beside "
+    "the live page, where they can point, draw, comment, tweak and remix. Use it for any UI you design, as self-contained "
+    "HTML. When a design request is open, first show three rough directions as three pages, say how they differ, and ask "
+    "which way to go; skip that for a small change or when the direction is set. Pass file to point at an HTML file, then "
+    "keep editing that file: the user watches edits land, so don't call this again unless pages change. No network in "
+    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Their comments arrive "
+    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui and "
+    "critique_design (use them before saying a design is done) and grab_style."),
+    "inputSchema": {"type": "object", "required": ["title"], "properties": {
+        "title": {"type": "string", "description": "What's being designed."},
+        "board": {"type": "string", "description": "The board id, to add to or update one. Default: made from the title."},
+        "pages": {"type": "array", "items": {"type": "object"}, "description":
+                  "[{name, file or html, direction}]. direction says in a few words what this one is going for."}}}}
 COMPARE = _t("compare_images", "Show a before and an after side by side, with one caption saying what changed.",
              {"before": _IMG, "after": _IMG, "caption": _S}, ["before", "after", "caption"])
 CHECKS = _t("run_checks", "Run this project's tests or checks and record the result in the chat, compared with "
@@ -156,9 +170,20 @@ RECORD = _t("record", "Record a page to a video and put it in the chat. Returns 
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, DATA, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, DESIGN, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
-EXTRA_ALL = (COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
+DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
+                    "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
+INSPECT = _t("inspect_ui", "Open a page at phone and desktop width and get measured facts: overflow, contrast, tap targets, broken "
+             "images, fonts and sizes in use, hand-typed colours, plus screenshots. Use before saying a design is done.",
+             {"board": _S, "page": _S, "url": _S}, [])
+CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's page by a model that didn't make it: scores and "
+              "fixes. It takes a minute or two: if it says it's running, call again. Fix what's right, and tell the user what you skipped.",
+              {"board": _S, "page": _S, "fresh": {"type": "boolean", "description": "Ask again after your changes."}}, ["board"])
+GRAB_STYLE = _t("grab_style", "Read a public page's fonts, sizes, colours, radii and spacing, with a screenshot, as a direction "
+                "to work from when the user says \"like this\". Don't copy its code or content.",
+                {"url": _S, "note": _S}, ["url"])
+EXTRA_ALL = (DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
 # the session by its Claude id, so an agent session has nothing to send.
 EXTRA_AGENT = (WAIT_SESSION, SCREENSHOT, RECORD)
@@ -257,6 +282,81 @@ def _show_data(s: dict, job, a: dict) -> dict:
     if notes:
         said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
     return _text(said)
+
+
+def _design_root(s: dict) -> str:
+    root = chat_images.root_of(s.get("cwd"))
+    if not root:
+        raise OSError("This chat has no project folder.")
+    return root
+
+
+def _show_design(s: dict, job, a: dict) -> dict:
+    """A board, and the button that opens it (bridge/design_board.py)."""
+    from bridge import design_board
+    if job is None:
+        return _text("No turn is running to show this in.", error=True)
+    try:
+        meta = design_board.put(_design_root(s), s.get("cwd"), a)
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    ref = _next_ref(job)
+    job.add({"type": "design", "board": meta["id"], "title": meta["title"], "pages": [p["name"] for p in meta["pages"]], "ref": ref})
+    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"])
+    return _text(f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). Edit these files and the user sees it live:\n{files}\n"
+                 f"Ask which direction, and let them comment. {_placing(ref)}")
+
+
+def _design_context(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit
+    try:
+        return _text(design_audit.context(_design_root(s)))
+    except OSError as e:
+        return _text(str(e), error=True)
+
+
+def _inspect_ui(s: dict, job, a: dict) -> dict:
+    import base64
+    from bridge import design_audit, design_board
+    try:
+        facts, shots = design_audit.inspect(_design_root(s), a)
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    blocks = [{"type": "text", "text": facts}]
+    for sh in shots:
+        with open(sh, "rb") as f:
+            blocks.append({"type": "image", "data": base64.b64encode(f.read()).decode(), "mimeType": "image/png"})
+        shutil.rmtree(os.path.dirname(sh), ignore_errors=True)
+    return {"content": blocks}
+
+
+def _critique_design(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit, design_board
+    try:
+        got = design_audit.critique(_design_root(s), a, s["chat_id"])
+        # Long enough for most reviews, short of the MCP timeout.
+        deadline = time.time() + 40
+        while got["state"] == "running" and time.time() < deadline:
+            time.sleep(2)
+            got = design_audit.critique(_design_root(s), {k: v for k, v in a.items() if k != "fresh"}, s["chat_id"])
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    if got["state"] == "running":
+        return _text("Still reviewing. Call this again in a moment.")
+    if got["state"] == "failed":
+        return _text(got.get("error") or "The review failed.", error=True)
+    return _text(json.dumps({k: got.get(k) for k in ("scores", "verdict", "fixes")}, ensure_ascii=False, indent=1))
+
+
+def _grab_style(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit
+    try:
+        out, code = design_audit.reference(_design_root(s), {"url": a.get("url"), "note": a.get("note")})
+    except OSError as e:
+        return _text(str(e), error=True)
+    if code != 200:
+        return _text(out.get("error") or "Couldn't read it.", error=True)
+    return _text(json.dumps(out["reference"], ensure_ascii=False, indent=1))
 
 
 def _show_image(s: dict, job, a: dict) -> dict:
@@ -622,7 +722,8 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "design_context": _design_context,
+    "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,
     "request_secret": _request_secret, "screenshot": _screenshot, "record": _record,

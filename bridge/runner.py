@@ -197,7 +197,10 @@ _EXPERIMENTAL_NOTE = (
     "failures; drive_page replaces writing a browser script; find_tools lists the rest.\n\n"
     "Whatever you're talking about, when you'd write a list of numbers or a table, like coverage by folder or a "
     "comparison, call show_data from the mystical MCP server instead: it draws a live chart, sheet with progress "
-    "bars, kanban board, flowchart or timeline in the chat. Keep your reply to what stands out.")
+    "bars, kanban board, flowchart or timeline in the chat. Keep your reply to what stands out.\n\n"
+    "For UI you design, read design_context (find_tools), then call show_design from the mystical MCP server: the user "
+    "sees it live and can point, draw and comment on it. If the request is open, show three rough directions first and "
+    "ask which way to go. Run inspect_ui and critique_design before calling a design done.")
 
 
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:

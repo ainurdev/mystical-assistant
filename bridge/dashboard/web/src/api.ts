@@ -273,6 +273,8 @@ export type RunEvent =
   | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string; ref?: string }
   // show_data: a sheet, chart, board or figures (lib/dataview.ts, bridge/data_views.py).
   | DataEv
+  // show_design: a board the agent made (bridge/design_board.py), and its PREVIEW DESIGN button.
+  | { type: "design"; board: string; title: string; pages: string[]; ref?: string }
   // run_checks. A count the runner's output didn't show is null. `new`: failures not on
   // the project's known list; `known`: the ones that are. `log` is relative to the project.
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number; passed: number | null;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Bookmark,
+import { Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
@@ -115,6 +115,7 @@ import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SavedViews } from "./components/SavedViews";
+import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -434,6 +435,31 @@ export function App() {
   // in `sessions` (a helper lists under its chat, never as a chat of its own).
   const experimental = useExperimental();
   const multiOn = experimental.enabled;
+  // The design-chat view: the chat beside a board. Left panes step aside, the transcript and the
+  // composer stay exactly where they are, so a turn in progress carries on. ?design= opens it.
+  const [designBoard, setDesignBoard] = useState<string | null>(() => new URLSearchParams(location.search).get("design"));
+  const [designChat, setDesignChat] = useState(() => {
+    const saved = Number(localStorage.getItem("design-chat-width"));
+    return saved >= 320 ? saved : 480;
+  });
+  useEffect(() => {
+    const open = (e: Event) => setDesignBoard((e as CustomEvent<{ board: string }>).detail.board);
+    window.addEventListener("mystical:design", open);
+    return () => window.removeEventListener("mystical:design", open);
+  }, []);
+  const resizeDesign = (e: React.PointerEvent<HTMLDivElement>) => {
+    const bar = e.currentTarget;
+    bar.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const w = Math.max(320, Math.min(window.innerWidth - 420, ev.clientX));
+      setDesignChat(w);
+      localStorage.setItem("design-chat-width", String(Math.round(w)));
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); bar.removeEventListener("pointerup", up); };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up);
+  };
+  const inDesign = multiOn && !!designBoard;
   const openHelper = useHelperBrief(sessionId, sessions, multiOn);
   const selected = sessions.find((s) => s.id === sessionId) ?? openHelper;
   const chatId = selected?.parent_session ?? sessionId;
@@ -2429,6 +2455,11 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // What agents designed in this project (components/DesignPane).
+    ...(multiOn ? [{
+      id: "design", label: "Design", icon: <Palette {...RAIL} />, scope: "project" as const,
+      render: () => <DesignBoards />,
+    }] : []),
     // What you pressed SAVE on in this project's chats (components/SavedViews).
     ...(multiOn ? [{
       id: "views", label: "Saved views", icon: <Bookmark {...RAIL} />, scope: "project" as const,
@@ -3019,10 +3050,10 @@ export function App() {
             <div
               className="hudgrid grid min-h-0 flex-1"
               data-rbare={settings.rightOpen ? undefined : ""}
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
+              style={{ gridTemplateColumns: inDesign ? `0 ${designChat}px 7px minmax(0,1fr)` : shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
-              <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
+              <div className="shellcol flex min-h-0 min-w-0 flex-col" hidden={inDesign} style={{ display: inDesign ? "none" : undefined, borderRight: "1px solid var(--border)" }}>
                 <Brand folded={!settings.leftOpen} onFold={toggleLeft}
                   workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
@@ -3202,6 +3233,15 @@ export function App() {
                   the body and unmounts the panel (which stops its polling). The
                   cap rides on top: the cluster over the panel, the gear over
                   the rail. */}
+              {inDesign && designBoard ? (
+                <>
+                  <div className="dg-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" onPointerDown={resizeDesign} />
+                  <DesignPane key={designBoard} board={designBoard} onClose={() => setDesignBoard(null)}
+                    chrome={isLinuxApp() ? <LinuxClose /> : undefined}
+                    // Into the running turn when there is one, the way the composer's SEND does.
+                    onSend={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }} />
+                </>
+              ) : (
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>
                 <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
                   {settings.rightOpen && strip}
@@ -3219,6 +3259,7 @@ export function App() {
                   </>}
                 />
               </div>
+              )}
 
             </div>
 

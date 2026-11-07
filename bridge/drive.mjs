@@ -97,6 +97,7 @@ for (const s of spec.steps || []) {
   } else if (s.eval) {
     const r = await send("Runtime.evaluate", { expression: String(s.eval), awaitPromise: true, returnByValue: true });
     out.log.push(`eval: ${JSON.stringify(r.result?.value ?? r.exceptionDetails?.exception?.description ?? null)}`.slice(0, 800));
+    (out.evals ??= []).push(r.result?.value ?? null);
   } else if (s.shot !== undefined) {
     await shot(String(s.shot));
   }

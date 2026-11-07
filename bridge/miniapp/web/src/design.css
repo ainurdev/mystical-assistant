@@ -1,0 +1,94 @@
+/* The design-chat view (components/DesignPane.tsx). The chrome wears the theme; what's inside the
+   frame is the design and wears its own. The same file is in both apps. */
+.dg, .dg-editor, .dg-card { --dg-face: var(--ui-font, var(--page-font, var(--font-sans, inherit))); --dg-r: var(--prad, 0px); font-family: var(--dg-face); color: var(--tx); }
+.dg *, .dg-editor *, .dg-card * { box-sizing: border-box; }
+.dg { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--canvas); }
+.dg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--panel); font-size: var(--t115, 11.5px); }
+.dg-grow { flex: 1; }
+.dg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; min-width: 28px; padding: 3px 7px; appearance: none; background: none; border: 1px solid var(--border); border-radius: var(--dg-r); color: var(--txm); font: inherit; font-size: var(--t115, 11.5px); cursor: pointer; }
+.dg-btn:hover:not(:disabled), .dg-btn:focus-visible { color: var(--txb); border-color: var(--border-bright); outline: none; }
+.dg-btn:disabled { opacity: 0.45; cursor: default; }
+.dg-btn[aria-checked="true"], .dg-btn[aria-pressed="true"] { color: var(--acc); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.dg-group { display: inline-flex; gap: 2px; }
+.dg-danger { color: var(--err); border-color: var(--err); }
+.dg-wide { width: 100%; margin-top: 8px; }
+.dg select, .dg-editor select, .dg input[type="text"], .dg input[type="url"], .dg textarea, .dg-editor textarea { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; font-size: var(--t115, 11.5px); min-height: 28px; padding: 3px 6px; min-width: 0; }
+.dg select:focus, .dg input:focus, .dg textarea:focus, .dg-editor textarea:focus { outline: none; border-color: var(--border-bright); }
+.dg-page select { max-width: 240px; color: var(--txb); }
+.dg-live { color: var(--txd); font-variant-numeric: tabular-nums; }
+.dg-said { color: var(--txm); }
+.dg-main { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
+.dg-stage { flex: 1; position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; background: color-mix(in srgb, var(--txl) 12%, var(--canvas)); overflow: hidden; }
+.dg-sheet { position: relative; flex: 1; width: 100%; max-width: 100%; min-height: 0; background: #fff; }
+.dg-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.dg-before { pointer-events: none; }
+.dg-split { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--acc); pointer-events: none; }
+.dg-tag { position: absolute; top: 8px; padding: 2px 7px; font-size: var(--t105, 10.5px); color: #fff; background: rgba(0, 0, 0, 0.65); border-radius: 4px; pointer-events: none; }
+.dg-slider { position: absolute; left: 0; right: 0; bottom: 8px; width: calc(100% - 24px); margin: 0 12px; }
+.dg-note { padding: 6px 10px; width: 100%; font-size: var(--t115, 11.5px); color: var(--txb); background: var(--panel); border-bottom: 1px solid var(--border); }
+.dg-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--panel); font-size: var(--t115, 11.5px); }
+.dg-show { position: absolute; right: 8px; bottom: 8px; padding: 5px 10px; background: var(--panel); border: 1px solid var(--border-bright); border-radius: var(--dg-r); color: var(--txb); font: inherit; font-size: var(--t115, 11.5px); cursor: pointer; }
+.dg-tabs { display: flex; flex-wrap: nowrap; gap: 0 1px; padding: 4px 4px 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.dg-tabs button { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 5px 6px; color: var(--txd); font: inherit; cursor: pointer; }
+.dg-tabs button[aria-selected="true"] { color: var(--txb); border-bottom-color: var(--acc); }
+.dg-tabs .dg-hide { margin-left: auto; font-size: 15px; }
+.dg-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
+.dg-empty { margin: 0 0 8px; line-height: 1.5; color: var(--txd); }
+.dg-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.dg-list li { display: flex; align-items: flex-start; gap: 2px; border-bottom: 1px solid color-mix(in srgb, var(--txl) 22%, transparent); }
+.dg-list li[data-sent] { opacity: 0.6; }
+.dg-item { flex: 1; min-width: 0; display: flex; gap: 8px; padding: 7px 2px; appearance: none; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dg-item:hover { color: var(--txb); }
+.dg-n { flex: none; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #e8703a; color: #fff; font-size: 10px; font-weight: 600; }
+.dg-what { min-width: 0; line-height: 1.4; color: var(--txb); overflow-wrap: anywhere; }
+.dg-what em { color: var(--txd); font-style: normal; }
+.dg-what small { display: block; color: var(--txd); font-size: var(--t105, 10.5px); }
+.dg-drop { flex: none; margin-top: 5px; padding: 3px; appearance: none; background: none; border: 0; color: var(--txd); cursor: pointer; }
+.dg-drop:hover { color: var(--err); }
+.dg-note-in { display: block; width: 100%; resize: vertical; margin-bottom: 8px; }
+.dg-send { min-height: 30px; padding: 4px 11px; appearance: none; border: 1px solid var(--acc); border-radius: var(--dg-r); background: var(--acc); color: var(--acc-on, var(--canvas)); font: inherit; font-size: var(--t115, 11.5px); font-weight: 500; cursor: pointer; }
+.dg-panel > .dg-send, .dg-remix > .dg-send, .dg-critic > .dg-send { width: 100%; }
+.dg-send:disabled { opacity: 0.45; cursor: default; }
+.dg-chip { min-height: 26px; padding: 2px 8px; appearance: none; background: none; border: 1px solid var(--border-bright); border-radius: var(--dg-r); color: var(--txb); font: inherit; cursor: pointer; }
+.dg-pick { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.dg-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: var(--txm); }
+.dg-field span { flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-field input, .dg-field select { flex: 1; width: 100%; }
+.dg-field input[type="color"] { min-height: 26px; padding: 1px; background: none; border: 1px solid var(--border); border-radius: var(--dg-r); }
+.dg-about { margin: 0 0 10px; color: var(--txb); overflow-wrap: anywhere; }
+.dg-tweaks h5 { margin: 14px 0 6px; font: inherit; color: var(--txd); }
+.dg-verdict { margin: 0 0 10px; line-height: 1.5; color: var(--txb); }
+.dg-score { display: grid; grid-template-columns: 76px 1fr 18px; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--txm); text-transform: capitalize; }
+.dg-score b { font-weight: 500; color: var(--txb); text-align: right; }
+.dg-track { display: block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 22%, transparent); overflow: hidden; }
+.dg-track i { display: block; height: 100%; background: var(--acc); }
+.dg-fixes { margin: 10px 0; padding-left: 18px; line-height: 1.45; color: var(--txm); }
+.dg-fixes li { margin-bottom: 6px; }
+.dg-fixes b { display: block; font-weight: 500; color: var(--txb); }
+.dg-refs form { display: flex; gap: 5px; }
+.dg-refs form input { flex: 1; }
+.dg-file { position: relative; }
+.dg-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.dg-ref { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 22%, transparent); }
+.dg-ref b { flex: 1 1 100%; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.dg-ref small { flex: 1; color: var(--txd); }
+.dg-editor { position: fixed; z-index: 9600; width: 288px; padding: 9px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: var(--dg-r); box-shadow: 0 12px 44px var(--shadow-pop, rgba(0, 0, 0, 0.45)); font-size: var(--t12, 12px); }
+.dg-editor small { display: block; margin-bottom: 5px; color: var(--txd); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-editor textarea { display: block; width: 100%; resize: vertical; }
+.dg-editor > div { display: flex; align-items: center; gap: 5px; margin-top: 7px; }
+.dg-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--prad, 0px); font-size: var(--t12, 12px); }
+.dg-card-text { flex: 1 1 160px; min-width: 0; }
+.dg-card-text b { display: block; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.dg-card-text small { display: block; margin-top: 2px; color: var(--txd); overflow-wrap: anywhere; }
+.dg-boards { padding: 8px 10px; }
+.dg-resize { width: 7px; cursor: col-resize; background: var(--border); touch-action: none; }
+.dg-resize:hover, .dg-resize:active { background: var(--acc); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 720px) {
+  .dg-main { flex-direction: column; }
+  .dg-side { flex: 0 0 42%; border-left: 0; border-top: 1px solid var(--border); }
+  .dg-close span { display: none; }
+  .dg-btn { min-height: 36px; min-width: 36px; }
+  .dg-sheet { width: 100% !important; }
+}
+.dg-phone { position: fixed; inset: 0; z-index: 9000; background: var(--canvas); }

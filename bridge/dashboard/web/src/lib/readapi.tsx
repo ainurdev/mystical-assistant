@@ -44,3 +44,10 @@ export async function sendFile(name: string, blob: Blob, caption: string): Promi
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   await req("/local/saved-views/send", { method: "POST", body: { name, caption, data: btoa(bin) } });
 }
+
+/** The design view's routes (bridge/multi_api.py _post_design). */
+export const designCall = <T,>(session: string, path: string, body: Record<string, unknown> = {}) =>
+  req<T>(`/local/chat/${path}`, { method: "POST", body: { session_id: session, ...body } });
+
+export const uploadImage = async (session: string, data: string) =>
+  (await req<{ path: string }>("/local/chat-images/upload", { method: "POST", body: { session_id: session, data } })).path;

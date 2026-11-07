@@ -53,7 +53,9 @@ SHOW = (
     "picture you only read to check something stays in your work log, out of their way. Use run_checks to run "
     "tests, drive_page instead of writing a browser script, and find_tools for the rest. Whatever you're "
     "talking about, when you'd write a list of numbers or a table, like coverage by folder or a comparison, call "
-    "show_data instead: it draws a live chart, sheet with progress bars, kanban board, flowchart or timeline in the chat.")
+    "show_data instead: it draws a live chart, sheet with progress bars, kanban board, flowchart or timeline in the chat. For UI "
+    "you design, read design_context, then call show_design: the user sees it live and can comment on it. If the "
+    "request is open, show three rough directions first and ask which way to go.")
 
 HELPERS = (
     "Mystical can start another agent for you, on any provider, with the delegate "

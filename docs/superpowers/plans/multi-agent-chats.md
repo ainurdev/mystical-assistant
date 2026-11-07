@@ -283,6 +283,17 @@ Run through the whole build, as a regression suite written before workstream 2:
 - A live Kimi smoke per workstream that touches it.
 - `bridge-eyes` screenshots of the tree, grid and picker on dashboard and Mini App.
 
+## Designing with an agent (added after the second round)
+
+`show_design` puts a PREVIEW DESIGN button on the turn. It opens the design-chat view: the chat in
+a resizable pane beside the page, in a sandboxed frame with no network but Google Fonts. Pages live
+in `.mystical/design/<board>/`, and the view polls, so an agent's edits appear live and versions
+build up for before and after. You can comment, draw, tweak values, remix directions, ask an
+independent critic and keep references. Comments go to the agent as one message naming the elements.
+`design_context`, `inspect_ui`, `critique_design` and `grab_style` sit behind find_tools. Agents are
+told to show three rough directions when a design request is open. Taste memory is deliberately
+not built yet: `.mystical/design/refs/` is what you choose to keep, by hand.
+
 ## Where views go, and what charts can say (added after the second round)
 
 A finished turn draws what it showed above its answer. An agent can place a view or picture

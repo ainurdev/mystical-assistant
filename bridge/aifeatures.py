@@ -82,6 +82,13 @@ FEATURES = (
      "about": "Select words in an agent's message and press Explain. It answers in a "
               "popover from that message alone, and adds nothing to the chat. Nothing "
               "runs until you press it. Part of the experimental chats."},
+    {"key": "design_critic", "env": "DESIGN_CRITIC_ENABLE", "label": "DESIGN CRITIC",
+     "hint": "an independent review of a design, scored against your references",
+     "cost": "1 sonnet call per review",
+     "tokens": "~50k tokens",
+     "about": "Press Critique in the design view, or an agent asks for one. A separate "
+              "model that can only read looks at the page at phone and desktop width and "
+              "scores it. Nothing runs unless asked. Part of the experimental chats."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",

@@ -32,6 +32,7 @@ import { ROW_FILTERS, rowMatches, type RowFilter } from "../lib/rowfilter";
 import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./EvidenceRows";
 import { ProofBlock } from "./Proof";
 import { AnswerParts, DataView } from "./DataView";
+import { DesignCard } from "./DesignPane";
 import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
@@ -2521,7 +2522,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && (t === "figure" || t === "report" || t === "data" || showAt(i));
+    return !ended && (t === "figure" || t === "report" || t === "data" || t === "design" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2529,7 +2530,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -2569,6 +2570,7 @@ export const RunStream = memo(function RunStream({
   if (named.size) {
     events.forEach((e, i) => {
       if (e.type === "data" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DataView ev={e} />);
+      if (e.type === "design" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DesignCard board={e.board} title={e.title} pages={e.pages} />);
     });
     for (const p of proofs) {
       if (named.has(refOfEvent(p.i))) placedViews.set(refOfEvent(p.i), <ProofBlock items={[p]} all={proofs} />);
@@ -2895,6 +2897,8 @@ export const RunStream = memo(function RunStream({
         return mx ? <RuleRow key={i} ev={event} /> : null;
       case "data":
         return mx && !ended ? <DataView key={i} ev={event} /> : null;
+      case "design":
+        return mx && !ended ? <DesignCard key={i} board={event.board} title={event.title} pages={event.pages} /> : null;
       case "report":
         return mx && !ended ? <ReportCard key={i} ev={event} session={sessionId} /> : null;
       case "secret_request": {
@@ -3376,7 +3380,9 @@ export const RunStream = memo(function RunStream({
       </Fragment>);
     // What it showed comes first, then the answer that talks about it.
     const above = proofs.filter((p) => !named.has(refOfEvent(p.i)));
-    const dataAbove = events.flatMap((e, i) => (e.type === "data" && !named.has(e.ref ?? "") ? [<DataView key={`data${i}`} ev={e} />] : []));
+    const dataAbove = events.flatMap((e, i) => (named.has((e as { ref?: string }).ref ?? "") ? []
+      : e.type === "data" ? [<DataView key={`data${i}`} ev={e} />]
+      : e.type === "design" ? [<DesignCard key={`design${i}`} board={e.board} title={e.title} pages={e.pages} />] : []));
     if (above.length || dataAbove.length) {
       rows.splice(answerZone >= 0 ? answerZone : rows.length, 0,
         <Fragment key="turn-shown">

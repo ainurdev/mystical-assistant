@@ -142,6 +142,7 @@ _FIELDS = {
     "delegation": ("name", "brief", "agent", "profile"),
     "merge": ("name", "state"),
     "data": ("view", "title", "caption", "source", "as_of"),   # its title; the rows stay here
+    "design": ("board", "title"),
 }
 
 _lock = threading.RLock()

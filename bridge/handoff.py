@@ -79,6 +79,8 @@ def _turn_block(s: dict, t: dict, *, tools: bool) -> str:
             words.append(line)
         elif k == "tool_done" and tools and e.get("output"):
             words.append("```\n" + str(e["output"])[-_TOOL_OUT:] + "\n```")
+        elif k == "design" and e.get("title"):
+            words.append(f"- showed the design {e['title']} (board {e.get('board')})")
         elif k == "data":
             from bridge import data_views
             try:
