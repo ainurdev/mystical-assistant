@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.parse
 
-from bridge import aifeatures, chat_images, design_board, native, runner
+from bridge import aifeatures, chat_images, design_board, design_system, native, runner
 
 _DRIVE_S = 45
 REFS = os.path.join(".mystical", "design", "refs")
@@ -282,6 +282,12 @@ def context(root: str) -> str:
     else:
         parts.append("No DESIGN.md here. Once a direction is approved, offer to write a short one: tokens, type, "
                      "spacing, what it should feel like and what to avoid.")
+    parts += design_system.linked_context(root)
+    imported = os.path.join(root, design_system.IMPORT_DIR)
+    if os.path.isdir(imported):
+        names = sorted(n for n in os.listdir(imported) if os.path.isdir(os.path.join(imported, n)))
+        if names:
+            parts.append(f"Design systems imported into this project, in {design_system.IMPORT_DIR}/: " + ", ".join(names))
     files = _tracked(root)
     tokens: dict = {}
     for f in [x for x in files if x.endswith((".css", ".scss")) and "node_modules" not in x][:40]:

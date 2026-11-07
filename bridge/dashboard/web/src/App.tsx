@@ -2479,7 +2479,8 @@ export function App() {
     // What agents designed in this project (components/DesignPane).
     ...(multiOn ? [{
       id: "design", label: "Design", icon: <Palette {...RAIL} />, scope: "project" as const,
-      render: () => <DesignBoards />,
+      // A little scrolling of its own, like the other tabs. Files open in the editor beside it.
+      render: () => <DesignBoards view={openFileRef} onAsk={(text) => { void send(text, [], { force: true }); }} />,
     }] : []),
     // What you pressed SAVE on in this project's chats (components/SavedViews).
     ...(multiOn ? [{

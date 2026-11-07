@@ -13,7 +13,7 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, experimental,
+from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
@@ -90,9 +90,21 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
             return design_audit.critique(root, {"board": body.get("board"), "page": body.get("page"), "fresh": body.get("fresh") is True}, chat_id), 200
         if path == "chat/design-reference":
             return design_audit.reference(root, body)
+        if path == "chat/design-system":
+            return design_system.discover(root, s), 200
+        if path == "chat/design-system-preview":
+            return design_system.preview(root, body)
+        if path == "chat/design-system-create":
+            return design_system.create(root, body)
+        if path == "chat/design-system-link":
+            return design_system.link(root, body)
+        if path == "chat/design-system-unlink":
+            return design_system.unlink(root, body)
+        if path == "chat/design-system-import":
+            return design_system.import_(root, body)
         if path == "chat/design-references":
             return {"references": design_audit.references(root)}, 200
-    except (design_board.Refused, ValueError) as e:
+    except (design_board.Refused, design_system.Refused, ValueError) as e:
         return {"error": str(e)}, 400
     except OSError as e:
         return {"error": f"Couldn't do that: {e}"}, 500

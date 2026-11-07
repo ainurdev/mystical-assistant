@@ -33,6 +33,7 @@ const btnGhost =
 function WorkPage() {
   const [tab, setTab] = useState<Tab>("queue");
   const experimental = useExperimental();
+  const { runPrompt } = useChat();
   const queues = useQuery({
     queryKey: ["queues"],
     queryFn: () => api.getQueues(),
@@ -88,7 +89,7 @@ function WorkPage() {
       {tab === "next" && <NextUpTab />}
       {tab === "issues" && <IssuesTab />}
       {tab === "views" && <SavedViews />}
-      {tab === "design" && <DesignBoards />}
+      {tab === "design" && <DesignBoards onAsk={(text) => { void runPrompt(text, []); }} />}
     </div>
   );
 }

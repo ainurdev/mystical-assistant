@@ -6,6 +6,7 @@ import {
   type DesignBoard, type DesignComment,
 } from "../lib/designframe";
 import { designCall, uploadImage, useRefSession } from "../lib/readapi";
+import { DesignSystem } from "./DesignSystem";
 
 // The right half of the design-chat view (bridge/design_board.py): the page in its sandboxed frame
 // (lib/designframe), the tools for pointing at it, and what you've said so far. It polls, so an
@@ -503,7 +504,7 @@ export function DesignCard({ board, title, pages }: { board: string; title: stri
 }
 
 /** A project's boards: the design tab. */
-export function DesignBoards() {
+export function DesignBoards({ onAsk, view }: { onAsk?: (text: string) => void; view?: (path: string, line?: number, at?: { x: number; y: number }) => void }) {
   const session = useRefSession();
   const [boards, setBoards] = useState<DesignBoard[] | null>(null);
   const [confirm, setConfirm] = useState("");
@@ -512,11 +513,13 @@ export function DesignBoards() {
     designCall<{ boards: DesignBoard[] }>(session, "design-boards").then((r) => setBoards(r.boards), () => setBoards([]));
   }, [session]);
   useEffect(load, [load]);
-  if (!boards) return null;
   return (
+    <>
+    <DesignSystem onAsk={onAsk} view={view} />
+    <h4 className="dg-boards-h">Designs</h4>
     <div className="dg-boards">
-      {!boards.length ? <p className="dg-empty">No designs in this project yet. Ask an agent to design something, and its boards will be kept here.</p> : null}
-      {boards.map((b) => (
+      {boards && !boards.length ? <p className="dg-empty">No designs in this project yet. Ask an agent to design something, and its boards will be kept here.</p> : null}
+      {(boards ?? []).map((b) => (
         <div key={b.id} className="dg-card">
           <div className="dg-card-text">
             <b>{b.title}</b>
@@ -529,5 +532,6 @@ export function DesignBoards() {
         </div>
       ))}
     </div>
+    </>
   );
 }
