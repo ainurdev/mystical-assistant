@@ -43,12 +43,17 @@ _AUDIT = r"""(() => {
   const bgOf = (el) => { for (let n = el; n; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor); if (c && c[3] > 0.95) return c; if (c && c[3] > 0) return null; } return [255, 255, 255, 1]; };
   const name = (el) => { let s = el.tagName.toLowerCase(); if (el.id) s += '#' + el.id; else if (typeof el.className === 'string' && el.className.trim()) s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.'); return s; };
   const seen = (el) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0.05; };
-  const out = { width: innerWidth, overflow: Math.max(0, document.documentElement.scrollWidth - innerWidth), wide: [], contrast: [], targets: [], images: [], fonts: {}, sizes: {}, colors: {}, radii: {}, vars: 0, hardcoded: 0 };
-  const all = [...document.body.querySelectorAll('*')];
-  for (const el of all) {
+  const words = (el) => '"' + el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30) + '"';
+  const TOUCH = __TOUCH__, SCOPE = __SCOPE__;
+  const top = SCOPE ? document.querySelector(SCOPE) : document.body;
+  const out = { width: innerWidth, overflow: Math.max(0, document.documentElement.scrollWidth - innerWidth), missing: !top, wide: [], contrast: [], targets: [], images: [], cut: [], trimmed: 0, inner: [], fonts: {}, sizes: {}, colors: {}, radii: {}, vars: 0, hardcoded: 0 };
+  if (!top) return JSON.stringify(out);
+  const box = SCOPE ? top.getBoundingClientRect() : { right: innerWidth };
+  for (const el of [top, ...top.querySelectorAll('*')]) {
     if (!seen(el)) continue;
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-    if (r.right > innerWidth + 1 && out.wide.length < 8) out.wide.push(name(el) + ' ends at ' + Math.round(r.right) + 'px');
+    if (r.right > box.right + 1 && out.wide.length < 8) out.wide.push(name(el) + ' ends at ' + Math.round(r.right) + 'px');
+    if (/auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 1 && el.clientHeight > 0) out.inner.push({ name: name(el), extra: el.scrollHeight - el.clientHeight });
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
     if (own) {
       const f = s.fontFamily.split(',')[0].replace(/["']/g, '').trim();
@@ -59,12 +64,24 @@ _AUDIT = r"""(() => {
       if (fg && bg && fg[3] > 0.5) {
         const a = lum(fg), b = lum(bg), ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
         const big = parseFloat(s.fontSize) >= 24 || (parseFloat(s.fontSize) >= 18.66 && +s.fontWeight >= 700);
-        if (ratio < (big ? 3 : 4.5) && out.contrast.length < 10) out.contrast.push(name(el) + ' "' + el.textContent.trim().slice(0, 30) + '" is ' + ratio.toFixed(1) + ':1');
+        if (ratio < (big ? 3 : 4.5) && out.contrast.length < 10) out.contrast.push(name(el) + ' ' + words(el) + ' is ' + ratio.toFixed(1) + ':1');
+      }
+      // Hidden past an ancestor that clips: gone, with nothing to say it was there. Ellipsis and
+      // a line clamp at least show it, and a list of them is usually on purpose, so they're counted.
+      if (/hidden|clip/.test(s.overflowX + s.overflowY) && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) && (s.textOverflow === 'ellipsis' || s.webkitLineClamp !== 'none')) out.trimmed++;
+      else for (let a = el.parentElement; a; a = a.parentElement) {
+        const c = getComputedStyle(a);
+        if (!/hidden|clip/.test(c.overflowX + c.overflowY)) continue;
+        const b = a.getBoundingClientRect();
+        if (b.width > 0 && (r.left >= b.right - 1 || r.top >= b.bottom - 1 || r.right > b.right + 1 || r.bottom > b.bottom + 1)) {
+          if (out.cut.length < 10) out.cut.push(name(el) + ' ' + words(el) + ' is cut off by ' + name(a));
+          break;
+        }
       }
     }
     if (s.backgroundColor !== 'rgba(0, 0, 0, 0)') out.colors[s.backgroundColor] = (out.colors[s.backgroundColor] || 0) + 1;
     if (s.borderTopLeftRadius !== '0px') out.radii[s.borderTopLeftRadius] = (out.radii[s.borderTopLeftRadius] || 0) + 1;
-    if (el.matches('a,button,input,select,textarea,[role=button]') && (r.width < 44 || r.height < 44) && innerWidth < 600 && out.targets.length < 10) out.targets.push(name(el) + ' is ' + Math.round(r.width) + 'x' + Math.round(r.height));
+    if (TOUCH && el.matches('a,button,input,select,textarea,[role=button]') && (r.width < 44 || r.height < 44) && out.targets.length < 10) out.targets.push(name(el) + ' is ' + Math.round(r.width) + 'x' + Math.round(r.height));
     if (el.tagName === 'IMG' && !el.naturalWidth && out.images.length < 8) out.images.push(el.getAttribute('src')?.slice(0, 80));
   }
   try { for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) { const t = rule.cssText || ''; out.vars += (t.match(/var\(--/g) || []).length; out.hardcoded += (t.match(/#[0-9a-f]{3,8}\b|rgba?\(\s*\d/gi) || []).length; } } catch (e) {}
@@ -109,7 +126,8 @@ def _run(url: str, width: int, height: int, steps: list, mobile: bool = False) -
 
 
 def _eval_result(got: dict) -> dict:
-    for value in got.get("evals") or []:
+    # The last one: a caller's own steps may have evals of their own before ours.
+    for value in reversed(got.get("evals") or []):
         try:
             return json.loads(value) if isinstance(value, str) else {}
         except ValueError:
@@ -118,7 +136,8 @@ def _eval_result(got: dict) -> dict:
 
 
 def target_url(root: str, a: dict) -> "tuple[str | None, str | None]":
-    """(url, why not). A board's page, a project file, or a page of your dev server."""
+    """(url, why not). A board's page as it's shown, or a page of your dev server. A board's page
+    goes to a temp file, so the browser sees its inlined images and theme; the caller removes it."""
     if a.get("url"):
         url = str(a["url"])
         return (url, None) if re.match(r"^https?://", url) else (None, "url must be an absolute http(s) URL.")
@@ -126,40 +145,105 @@ def target_url(root: str, a: dict) -> "tuple[str | None, str | None]":
         meta = design_board.load(root, str(a["board"]))
         page = next((p for p in meta["pages"] if p["name"] == a.get("page")), meta["pages"][0] if meta["pages"] else None)
         if page:
-            return "file://" + urllib.parse.quote(page["file"]), None
+            try:
+                with open(page["file"], encoding="utf-8", errors="replace") as f:
+                    shown = design_board.render(root, page, f.read())
+            except OSError:
+                return None, "That page's file is gone."
+            d = tempfile.mkdtemp(prefix="mystical-page-")
+            path = os.path.join(d, "page.html")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(shown)
+            return "file://" + urllib.parse.quote(path), None
     return None, "Give board (and page), or url."
 
 
-def _summary(r: dict) -> str:
-    bits = [f"{r.get('width')}px:"]
+def _summary(r: dict, label: str) -> str:
+    bits = [f"{label}:"]
+    if r.get("missing"):
+        bits.append("nothing matches that selector")
+        return "\n".join(bits)
     bits.append(f"overflows sideways by {r['overflow']}px" if r.get("overflow") else "no sideways overflow")
-    for key, label in (("wide", "Too wide"), ("contrast", "Low contrast (WCAG)"), ("targets", "Small tap targets (under 44px)"), ("images", "Broken images")):
+    for key, name in (("wide", "Too wide"), ("cut", "Cut off and invisible"), ("contrast", "Low contrast (WCAG)"), ("targets", "Small tap targets (under 44px)"), ("images", "Broken images")):
         if r.get(key):
-            bits.append(f"{label}: " + "; ".join(r[key]))
+            bits.append(f"{name}: " + "; ".join(r[key]))
+    if r.get("trimmed"):
+        bits.append(f"{r['trimmed']} text(s) shortened by an ellipsis or line clamp: check that's meant")
+    if r.get("inner"):
+        most = max(r["inner"], key=lambda x: x["extra"])
+        bits.append(f"{most['name']} scrolls inside itself, with {most['extra']}px more below")
     return "\n".join(bits)
+
+
+MAX_WIDTHS = 4
+_BUDGET_S = 42
+
+
+def _sizes(a: dict) -> list:
+    """(width, height, touch) to look at. Phone and desktop unless told, as most things are for both;
+    given widths are mouse-driven unless told, since a side panel's 26px button isn't a tap target."""
+    raw = a.get("widths")
+    height = a.get("height") if isinstance(a.get("height"), int) and 200 <= a["height"] <= 6000 else None
+    if isinstance(raw, list) and raw:
+        widths = [w for w in raw if isinstance(w, int) and 200 <= w <= 3840][:MAX_WIDTHS]
+        if not widths:
+            raise design_board.Refused("widths are pixel widths from 200 to 3840.")
+        touch = a.get("touch") is True
+        return [(w, height or 800, touch) for w in widths]
+    return [(390, height or 844, True), (1280, height or 800, False)]
+
+
+def _steps(a: dict) -> list:
+    """What to do to reach a state before looking at it, as in drive_page. What it looks at is ours."""
+    raw = a.get("steps") if isinstance(a.get("steps"), list) else []
+    return [s for s in raw[:12] if isinstance(s, dict) and "shot" not in s]
 
 
 def inspect(root: str, a: dict) -> "tuple[str, list]":
     """(what it found, screenshot paths in the caller's temp dirs). Raises OSError or Refused."""
+    sizes, steps = _sizes(a), _steps(a)
+    selector = str(a["selector"]) if a.get("selector") else None
     url, why = target_url(root, a)
     if not url:
         raise design_board.Refused(why)
-    sizes = [(390, 844, True), (1280, 800, False)]
-    parts, shots, last = [], [], {}
-    for w, h, mobile in sizes:
-        got = _run(url, w, h, [{"wait": 500}, {"eval": _AUDIT}, {"shot": f"{w}px"}], mobile)
-        if got.get("error"):
-            raise OSError(got["error"])
-        r = _eval_result(got)
-        parts.append(_summary(r))
-        if mobile and r.get("width", w) > w + 1:
-            parts.append(f"No viewport meta tag: on a real phone this lays out {r['width']}px wide and shrinks to fit. Add "
-                         '<meta name="viewport" content="width=device-width, initial-scale=1">.')
-        for key, label in (("exceptions", "Exceptions"), ("console", "Console"), ("failed", "Failed requests")):
-            if got.get(key):
-                parts.append(f"{label}: " + "; ".join(got[key][:6]))
-        shots += [sh["path"] for sh in got.get("shots", [])]
-        last = r
+    page_dir = os.path.dirname(urllib.parse.urlparse(url).path) if url.startswith("file://") else None
+    parts, shots, last, ran = [], [], {}, []
+    deadline = time.time() + _BUDGET_S
+    try:
+        for w, h, touch in sizes:
+            if time.time() > deadline:
+                parts.append(f"Stopped before {w}px to stay in time: ask for fewer widths.")
+                break
+            audit = _AUDIT.replace("__TOUCH__", "true" if touch else "false").replace("__SCOPE__", json.dumps(selector))
+            shot = {"shot": f"{w}px", "full": not selector, **({"selector": selector} if selector else {})}
+            got = _run(url, w, h, [{"wait": 500}, *steps, {"eval": audit}, shot], touch)
+            ran.append(got)
+            if got.get("error"):
+                raise OSError(got["error"])
+            r = _eval_result(got)
+            parts.append(_summary(r, f"{w}px"))
+            if touch and r.get("width", w) > w + 1:
+                parts.append(f"No viewport meta tag: on a real phone this lays out {r['width']}px wide and shrinks to fit. Add "
+                             '<meta name="viewport" content="width=device-width, initial-scale=1">.')
+            for key, label in (("exceptions", "Exceptions"), ("console", "Console"), ("failed", "Failed requests")):
+                if got.get(key):
+                    parts.append(f"{label}: " + "; ".join(got[key][:6]))
+            # A list that scrolls inside itself is hidden from a page-sized picture: open the window
+            # up so it's all in view. Only for the picture: the facts above are at the real size.
+            extra = max((x["extra"] for x in r.get("inner") or []), default=0)
+            if extra and not selector and "height" not in a and time.time() < deadline:
+                tall = _run(url, w, min(h + extra, 6000), [{"wait": 300}, *steps, {"shot": f"{w}px, all of it", "full": True}], touch)
+                ran.append(tall)
+                got = tall if tall.get("shots") else got
+            shots += [sh["path"] for sh in got.get("shots", [])]
+            last = r
+    finally:
+        if page_dir:
+            shutil.rmtree(page_dir, ignore_errors=True)
+        kept = {os.path.dirname(p) for p in shots}
+        for g in ran:
+            if g.get("dir") and g["dir"] not in kept:
+                shutil.rmtree(g["dir"], ignore_errors=True)
     rank = lambda m, n: ", ".join(f"{k} ({v})" for k, v in sorted((m or {}).items(), key=lambda e: -e[1])[:n])  # noqa: E731
     parts.append(f"Fonts: {rank(last.get('fonts'), 5)}\nText sizes: {rank(last.get('sizes'), 10)}\n"
                  f"Colours: {rank(last.get('colors'), 10)}\nRadii: {rank(last.get('radii'), 5)}")
@@ -183,6 +267,12 @@ def _tracked(root: str) -> list:
 def context(root: str) -> str:
     """What's already decided in this project, for an agent about to design in it."""
     parts = []
+    live = design_board.theme() if design_board.is_mystical(root) else {}
+    if live.get("tokens"):
+        parts.append(f"This project is Mystical, and its dashboard is wearing {live.get('name') or 'a theme'} "
+                     f"({'light' if live.get('light') else 'dark'}). Put <meta name=\"mystical-theme\"> in a page's head and use "
+                     "these variables: they arrive with the current values, and follow a change of theme.\n"
+                     + "\n".join(f"{k}: {v}" for k, v in live["tokens"].items()))
     for name in ("DESIGN.md", "design.md", "docs/DESIGN.md"):
         path = os.path.join(root, name)
         if os.path.isfile(path):
@@ -202,7 +292,7 @@ def context(root: str) -> str:
         except OSError:
             continue
     if tokens:
-        parts.append(f"CSS variables ({len(tokens)}, first 60), use these rather than new values:\n"
+        parts.append(f"CSS variables in the code ({len(tokens)}, first 60, as written, so a theme may override them), use these rather than new values:\n"
                      + "\n".join(f"{k}: {v}" for k, v in list(tokens.items())[:60]))
     if any(re.search(r"tailwind\.config", f) for f in files):
         parts.append("Tailwind is configured: read its config for the scale.")

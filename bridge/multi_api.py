@@ -209,6 +209,8 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path == "design-theme":
+        return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):
         if not experimental.enabled():
             return _OFF

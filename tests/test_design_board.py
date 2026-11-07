@@ -228,3 +228,129 @@ def test_routes_are_behind_the_switch_and_the_owner(session, repo):
     assert multi_api.post("chat/design-boards", {"session_id": session["id"]}, chat)[0]["boards"][0]["id"] == "home"
     experimental.set_enabled(False)
     assert multi_api.post("chat/design", body, chat)[1] == 409
+
+
+# ---- the app's live theme, and what the inspector is asked to look at ---------------------
+
+@pytest.fixture
+def theme_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "_theme_path", lambda: str(tmp_path / "theme.json"))
+
+
+def test_a_page_asks_for_the_live_theme_and_gets_it(repo, theme_file, monkeypatch):
+    monkeypatch.setattr(db, "is_mystical", lambda root: True)
+    assert db.save_theme({"theme": "flint-signal", "light": False, "tokens": {"--acc": "#9ade4a", "--panel": "#111"}})[1] == 200
+    html = '<head><meta name="mystical-theme"><style>a{color:var(--acc)}</style></head>'
+    out = db._with_theme(html, repo)
+    assert ":root{--acc:#9ade4a;--panel:#111}" in out
+    assert out.index("data-mystical-theme") < out.index("a{color")      # the page's own CSS still wins
+    assert db._with_theme("<head></head>", repo) == "<head></head>"       # not asked: left alone
+
+
+def test_another_projects_design_is_its_own(repo, theme_file):
+    """Mystical's theme says nothing about what you're building, even if a page asks for it."""
+    db.save_theme({"theme": "flint-signal", "tokens": {"--acc": "#9ade4a"}})
+    html = '<head><meta name="mystical-theme"></head>'
+    assert not db.is_mystical(repo) and db._with_theme(html, repo) == html
+    open(os.path.join(repo, "DESIGN.md"), "w").write("Calm and bookish.")
+    said = design_audit.context(repo)
+    assert "Calm and bookish." in said and "flint-signal" not in said and "#9ade4a" not in said and "mystical-theme" not in said
+
+
+def test_mystical_is_known_by_where_the_bridge_runs_from():
+    assert db.is_mystical(os.path.dirname(os.path.dirname(os.path.abspath(db.__file__))))
+    assert not db.is_mystical(None)
+
+
+@pytest.mark.parametrize("tokens", [{"--x": "red}</style><script>alert(1)</script>"}, {"--x": "a;b"}, {"color": "red"}, {"--a b": "red"}])
+def test_a_theme_cant_break_out_of_its_style_block(theme_file, tokens):
+    db.save_theme({"tokens": tokens})
+    assert db.theme()["tokens"] == {}
+
+
+def test_a_new_theme_reloads_a_page_without_a_new_version(repo, theme_file, monkeypatch):
+    monkeypatch.setattr(db, "is_mystical", lambda root: True)
+    db.save_theme({"tokens": {"--acc": "red"}})
+    db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": '<head><meta name="mystical-theme"></head>'}]})
+    first = db.poll(repo, {"board": "home"})[0]
+    db.save_theme({"tokens": {"--acc": "blue"}})
+    again = db.poll(repo, {"board": "home", "have": first["hash"]})[0]
+    assert "--acc:blue" in again["html"] and again["version"] == first["version"]
+
+
+def test_context_gives_the_theme_when_there_is_one(repo, theme_file, monkeypatch):
+    monkeypatch.setattr(db, "is_mystical", lambda root: True)
+    assert "wearing" not in design_audit.context(repo)
+    db.save_theme({"theme": "flint-signal", "tokens": {"--acc": "#9ade4a"}})
+    said = design_audit.context(repo)
+    assert "flint-signal (dark)" in said and "--acc: #9ade4a" in said and "mystical-theme" in said
+
+
+def test_the_theme_route_is_behind_the_switch(session, theme_file):
+    body = {"theme": "x", "tokens": {"--acc": "red"}}
+    assert multi_api.post("design-theme", body, config.DASH_CHAT_ID)[1] == 200
+    experimental.set_enabled(False)
+    assert multi_api.post("design-theme", body, config.DASH_CHAT_ID)[1] == 409
+
+
+@pytest.fixture
+def driver(repo, monkeypatch):
+    db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": PAGE}]})
+    calls = []
+
+    def run(url, w, h, steps, mobile=False):
+        calls.append({"url": url, "w": w, "h": h, "steps": steps, "mobile": mobile, "page": open(url[7:]).read()})
+        audit = next((s["eval"] for s in steps if "eval" in s and "TOUCH" in s["eval"]), "")
+        calls[-1]["audit"] = audit
+        inner = [{"name": "div.list", "extra": 500}] if audit and "extra" in run.__dict__ else []
+        return {"evals": [json.dumps({"width": w, "overflow": 0, "inner": inner, "cut": ["span.ok \"x\" is cut off by div.a"], "fonts": {"A": 1}})], "shots": []}
+    monkeypatch.setattr(design_audit, "_run", run)
+    return calls, run
+
+
+def test_inspect_looks_at_phone_and_desktop_by_default(repo, driver):
+    calls, _ = driver
+    facts, _ = design_audit.inspect(repo, {"board": "home"})
+    assert [(c["w"], c["mobile"]) for c in calls] == [(390, True), (1280, False)]
+    assert "const TOUCH = true" in calls[0]["audit"] and "const TOUCH = false" in calls[1]["audit"]
+    assert "Cut off and invisible" in facts and "<h1>Hello" in calls[0]["page"]
+
+
+def test_given_widths_are_mouse_driven_unless_told(repo, driver):
+    calls, _ = driver
+    design_audit.inspect(repo, {"board": "home", "widths": [340, "x", 5, 500, 600, 700, 800]})
+    assert [c["w"] for c in calls] == [340, 500, 600, 700] and not any(c["mobile"] for c in calls)
+    calls.clear()
+    design_audit.inspect(repo, {"board": "home", "widths": [340], "touch": True, "height": 900})
+    assert calls[0]["mobile"] is True and calls[0]["h"] == 900
+    with pytest.raises(db.Refused):
+        design_audit.inspect(repo, {"board": "home", "widths": ["x"]})
+
+
+def test_steps_come_first_and_selector_scopes_and_crops(repo, driver):
+    calls, _ = driver
+    design_audit.inspect(repo, {"board": "home", "widths": [340], "selector": ".panel", "steps": [{"click": "Open"}, {"shot": "theirs"}]})
+    steps = calls[0]["steps"]
+    assert steps[1] == {"click": "Open"} and "SCOPE = \".panel\"" in calls[0]["audit"]
+    assert steps[-1] == {"shot": "340px", "full": False, "selector": ".panel"} and not any(s.get("shot") == "theirs" for s in steps)
+
+
+def test_a_list_scrolling_inside_itself_gets_a_taller_picture(repo, driver):
+    calls, run = driver
+    run.extra = True
+    facts, _ = design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert [c["h"] for c in calls] == [800, 1300] and "div.list scrolls inside itself, with 500px more" in facts
+
+
+def test_the_temp_page_is_removed(repo, driver):
+    calls, _ = driver
+    design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert not os.path.exists(calls[0]["url"][7:])
+
+
+def test_the_placing_hint_is_said_once_a_turn(session):
+    job = Job()
+    item = {"view": "stats", "title": "A", "items": [{"label": "a", "value": 1}]}
+    first = gt.call(session, job, "show_data", item)["content"][0]["text"]
+    second = gt.call(session, job, "show_data", item)["content"][0]["text"]
+    assert "goes above your answer" in first and "goes above your answer" not in second and "[[view:v2]]" in second

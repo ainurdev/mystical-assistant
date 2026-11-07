@@ -4,6 +4,7 @@ import { Palette, Bookmark,
 } from "lucide-react";
 import {
   api,
+  req,
   AUTH_REQUIRED,
   TOKEN,
   type CardAnswer,
@@ -618,6 +619,26 @@ export function App() {
     (n, t) => n + t.events.filter((e) => e.type === "tool").length, 0);
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   const tele = useTelemetry({ running, toolCount, eventCount });
+
+  // Tell the bridge what we're wearing, so an agent designing for this app can use the real values
+  // (bridge/design_board.py). Read off the themed container, once this theme has been applied.
+  useEffect(() => {
+    if (!multiOn) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector("[data-fam]:not(html)") ?? document.documentElement;
+      const cs = getComputedStyle(el);
+      const tokens: Record<string, string> = {};
+      for (const k of ["--canvas", "--panel", "--panel2", "--panel3", "--tx", "--txb", "--txh", "--txm", "--txd", "--txf", "--txl",
+        "--acc", "--acc-on", "--ask", "--ok", "--warn", "--err", "--info", "--purple", "--tool", "--think", "--border", "--border-bright",
+        "--mono", "--prad", "--ui-font"]) {
+        const v = cs.getPropertyValue(k).trim();
+        if (v) tokens[k] = v;
+      }
+      if (!tokens["--ui-font"]) tokens["--ui-font"] = cs.fontFamily;
+      void req("/local/design-theme", { method: "POST", body: { theme: settings.theme, light: isLight(settings.theme), tokens } }).catch(() => undefined);
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [multiOn, settings.theme, settings.font]);
 
   // Apply theme: the palette's vars, the family, the glow var, light/dark.
   useEffect(() => {

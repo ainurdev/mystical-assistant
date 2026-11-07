@@ -174,9 +174,16 @@ CORE_ALL = (SHOW, DATA, DESIGN, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
-INSPECT = _t("inspect_ui", "Open a page at phone and desktop width and get measured facts: overflow, contrast, tap targets, broken "
-             "images, fonts and sizes in use, hand-typed colours, plus screenshots. Use before saying a design is done.",
-             {"board": _S, "page": _S, "url": _S}, [])
+INSPECT = _t("inspect_ui", "Open a page and get measured facts: overflow, content cut off, contrast, tap targets, broken images, "
+             "fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
+             "widths, like [340] for a side panel. Use before saying a design is done, and with steps for states you can click to.",
+             {"board": _S, "page": _S, "url": _S,
+              "widths": {"type": "array", "items": {"type": "integer"}, "description": "Up to 4. Treated as mouse-driven unless touch is true."},
+              "height": {"type": "integer", "description": "Window height, when the page fills it. Default: tall enough to see everything."},
+              "selector": {"type": "string", "description": "Check and picture this element only."},
+              "touch": {"type": "boolean", "description": "With widths: emulate a phone and check tap targets."},
+              "steps": {"type": "array", "items": {"type": "object"}, "description":
+                        "Done before looking, as in drive_page: {click: 'text'}, {type}, {key}, {wait}, {scroll}, {eval}."}}, [])
 CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's page by a model that didn't make it: scores and "
               "fixes. It takes a minute or two: if it says it's running, call again. Fix what's right, and tell the user what you skipped.",
               {"board": _S, "page": _S, "fresh": {"type": "boolean", "description": "Ask again after your changes."}}, ["board"])
@@ -240,7 +247,7 @@ def _figure(s: dict, job, items: list, caption: str, kind: str) -> dict:
     ref = _next_ref(job)
     job.add({"type": "figure", "kind": kind, "images": images, "caption": caption, "ref": ref})
     _send_figure(s, job, images, caption)
-    return _text(f"It's in the chat, with your caption. The user can see it now. {_placing(ref)}")
+    return _text(f"It's in the chat, with your caption. The user can see it now. {_placed(job, ref)}")
 
 
 def _send_figure(s: dict, job, images: list, caption: str) -> None:
@@ -267,6 +274,14 @@ def _placing(ref: str) -> str:
     return f"It goes above your answer; to put it mid-answer instead, write [[view:{ref}]] on its own line there."
 
 
+def _placed(job, ref: str) -> str:
+    """How to place a view: said once a turn, as it's the same each time. After that, its name."""
+    if getattr(job, "told_placing", False):
+        return f"Its marker is [[view:{ref}]]."
+    job.told_placing = True
+    return _placing(ref)
+
+
 def _show_data(s: dict, job, a: dict) -> dict:
     """A sheet, chart or board on the turn (bridge/data_views.py)."""
     from bridge import data_views
@@ -278,7 +293,7 @@ def _show_data(s: dict, job, a: dict) -> dict:
         return _text(str(e), error=True)
     ev["ref"] = _next_ref(job)
     job.add(ev)
-    said = f"It's in the chat: {data_views.describe(ev)}. {_placing(ev['ref'])} Keep your reply short and don't repeat the data."
+    said = f"It's in the chat: {data_views.describe(ev)}. {_placed(job, ev['ref'])} Keep your reply short and don't repeat the data."
     if notes:
         said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
     return _text(said)
@@ -304,7 +319,7 @@ def _show_design(s: dict, job, a: dict) -> dict:
     job.add({"type": "design", "board": meta["id"], "title": meta["title"], "pages": [p["name"] for p in meta["pages"]], "ref": ref})
     files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"])
     return _text(f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). Edit these files and the user sees it live:\n{files}\n"
-                 f"Ask which direction, and let them comment. {_placing(ref)}")
+                 f"Ask which direction, and let them comment. {_placed(job, ref)}")
 
 
 def _design_context(s: dict, job, a: dict) -> dict:
@@ -323,9 +338,10 @@ def _inspect_ui(s: dict, job, a: dict) -> dict:
     except (design_board.Refused, OSError) as e:
         return _text(str(e), error=True)
     blocks = [{"type": "text", "text": facts}]
-    for sh in shots:
-        with open(sh, "rb") as f:
-            blocks.append({"type": "image", "data": base64.b64encode(f.read()).decode(), "mimeType": "image/png"})
+    for i, sh in enumerate(shots):
+        if i < 4:       # the facts cover every width; a result can only hold so many pictures
+            with open(sh, "rb") as f:
+                blocks.append({"type": "image", "data": base64.b64encode(f.read()).decode(), "mimeType": "image/png"})
         shutil.rmtree(os.path.dirname(sh), ignore_errors=True)
     return {"content": blocks}
 

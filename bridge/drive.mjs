@@ -6,7 +6,8 @@
 //
 // spec: {url, width, height, mobile, scale, wait, steps: [
 //   {click: "text or /regex/"} | {tap_at: [x, y]} | {type: "text"} | {key: "Enter"}
-//   | {wait: ms} | {scroll: pixels} | {eval: "js"} | {shot: "label"} ]}
+//   | {wait: ms} | {scroll: pixels} | {eval: "js"}
+//   | {shot: "label", full: true for the whole page, selector: "css" for one element} ]}
 import fs from "node:fs/promises";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -62,8 +63,19 @@ const mouse = async (x, y) => {
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
     await send("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "left", clickCount: type === "mouseMoved" ? 0 : 1 });
 };
-const shot = async (label) => {
-  const { data } = await send("Page.captureScreenshot", { format: "png" });
+const shot = async (label, opts = {}) => {
+  let clip;
+  if (opts.selector) {
+    const r = (await send("Runtime.evaluate", { returnByValue: true, expression:
+      `(()=>{const e=document.querySelector(${JSON.stringify(String(opts.selector))});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height}})()` })).result?.value;
+    if (r && r.width && r.height) clip = { ...r, scale: 1 };
+    else out.log.push(`shot: nothing matches ${opts.selector}`);
+  } else if (opts.full) {
+    const m = await send("Page.getLayoutMetrics");
+    const size = m.cssContentSize || m.contentSize;
+    if (size) clip = { x: 0, y: 0, width: Math.max(width, size.width), height: Math.min(Math.max(height, size.height), 6000), scale: 1 };
+  }
+  const { data } = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip, captureBeyondViewport: true } : {}) });
   if (!data) return;
   const path = `${outDir}/shot-${out.shots.length + 1}.png`;
   await fs.writeFile(path, Buffer.from(data, "base64"));
@@ -99,7 +111,7 @@ for (const s of spec.steps || []) {
     out.log.push(`eval: ${JSON.stringify(r.result?.value ?? r.exceptionDetails?.exception?.description ?? null)}`.slice(0, 800));
     (out.evals ??= []).push(r.result?.value ?? null);
   } else if (s.shot !== undefined) {
-    await shot(String(s.shot));
+    await shot(String(s.shot), s);
   }
 }
 if (!out.shots.length || spec.steps?.at(-1)?.shot === undefined) await shot("final");

@@ -36,6 +36,7 @@ MAX_INLINE_IMAGES = 6 * 1024 * 1024
 MAX_COMMENTS = 300
 KEEP = 30
 _lock = threading.Lock()
+_THEME_META = re.compile(r"<meta[^>]*name\s*=\s*[\"']mystical-theme[\"'][^>]*>", re.I)
 _IMG = re.compile(r"""(<img\b[^>]*?\bsrc\s*=\s*)(["'])(.*?)\2""", re.I | re.S)
 
 
@@ -166,6 +167,52 @@ def _inline_images(html: str, base: str, root: str) -> str:
     return _IMG.sub(swap, html)
 
 
+def _theme_path() -> str:
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "design_theme.json")
+
+
+def save_theme(body: dict) -> "tuple[dict, int]":
+    """POST design-theme: the dashboard says what it's wearing, as only it knows. These land in a
+    <style> in every page that asks for them, so a value can't close the block or start a tag."""
+    tokens = body.get("tokens")
+    if not isinstance(tokens, dict):
+        return {"error": "tokens must be an object."}, 400
+    clean = {k: " ".join(str(v).split())[:200] for k, v in list(tokens.items())[:80]
+             if isinstance(k, str) and re.fullmatch(r"--[\w-]{1,40}", k) and v and not re.search(r"[;{}<>]", str(v))}
+    data = {"name": str(body.get("theme") or "")[:60], "light": body.get("light") is True, "tokens": clean}
+    with _lock:
+        _write_json(_theme_path(), data)
+    return {"ok": True}, 200
+
+
+def theme() -> dict:
+    got = _read_json(_theme_path(), {})
+    return got if isinstance(got, dict) and isinstance(got.get("tokens"), dict) else {}
+
+
+def is_mystical(root: "str | None") -> bool:
+    """Is this project Mystical itself? Its theme is how Mystical looks, and says nothing about any
+    other project, whose design is its own: DESIGN.md, CSS, components (design_audit.context)."""
+    here = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    return bool(root) and os.path.realpath(root) == here
+
+
+def _with_theme(html: str, root: "str | None") -> str:
+    """A page of Mystical's that asks for it (<meta name="mystical-theme">) gets the live theme as
+    CSS variables ahead of its own CSS. Per page, as a draft may be going somewhere new on purpose."""
+    m = _THEME_META.search(html) if is_mystical(root) else None
+    tokens = theme().get("tokens") if m else None
+    if not m or not tokens:
+        return html
+    css = ":root{" + ";".join(f"{k}:{v}" for k, v in tokens.items()) + "}"
+    return f"{html[:m.end()]}<style data-mystical-theme>{css}</style>{html[m.end():]}"
+
+
+def render(root: str, entry: dict, html: str) -> str:
+    """A page as it's shown: images in it, and the theme if it asked."""
+    return _with_theme(_inline_images(html, os.path.dirname(entry["file"]), root), root)
+
+
 def _read_page(root: str, d: str, entry: dict) -> "dict | None":
     """{html, version, hash} for a page, keeping a version when its content is new."""
     try:
@@ -190,7 +237,10 @@ def _read_page(root: str, d: str, entry: dict) -> "dict | None":
                 os.remove(os.path.join(vdir, old))
                 names.remove(old)
     version = int(names[-1].split("-")[0])
-    return {"html": _inline_images(html, os.path.dirname(entry["file"]), root), "version": version, "hash": digest}
+    shown = render(root, entry, html)
+    # A new theme is new to the viewer without being a new version of the page.
+    stamp = hashlib.sha256(shown.encode()).hexdigest()[:8] if _THEME_META.search(html) else ""
+    return {"html": shown, "version": version, "hash": digest + stamp}
 
 
 def versions(root: str, board: str, page: str) -> "list[int]":
@@ -212,7 +262,7 @@ def read_version(root: str, board: str, page: str, version: int) -> "str | None"
     for n in os.listdir(vdir):
         if n.startswith(f"{int(version):05d}-") and n.endswith(".html"):
             with open(os.path.join(vdir, n), encoding="utf-8", errors="replace") as f:
-                return _inline_images(f.read(), os.path.dirname(entry["file"]), root)
+                return render(root, entry, f.read())
     return None
 
 
