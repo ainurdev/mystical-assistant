@@ -38,7 +38,7 @@ from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
                     device_ask, device_setup, device_share, device_side, device_view,
                     devserver, fmt, git,
                     github, graphmap, httpgz, integrations, logostyle,
-                    models, native, notices, preview_detect, profiles, project_config, projectmarks,
+                    meter, models, native, notices, preview_detect, profiles, project_config, projectmarks,
                     prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, rivendell_video, runner, selfupdate,
@@ -670,6 +670,13 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(attribution.breakdown(sid))
+        # The SESSION tab's window, time and spend, from the CLI's own transcript.
+        if path.startswith("/local/sessions/") and path.endswith("/meter"):
+            sid = path[len("/local/sessions/"):-len("/meter")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(meter.read(s, store.turn_metrics(sid)) or {})
         if path.startswith("/local/sessions/"):
             sid = path[len("/local/sessions/"):].split("/")[0]
             s = store.get_session(sid)
