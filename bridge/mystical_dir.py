@@ -30,7 +30,7 @@ from bridge import chat_images, devserver
 
 KINDS = {"images": "images", "docs": "docs", "drafts": "drafts", "design-drafts": "drafts",
          "scratch": "scratch", "learn": "learn", "handoff": "bridge", "helpers": "bridge"}
-OWNED = {".gitignore", ".keep.json", "dev.log", "tasks.json", "checks.json", "checks-last.log"}
+OWNED = {".gitignore", ".keep.json", "dev.log", "tasks.json", "checks.json", "checks-last.log", "worklist.json"}
 NOTE = ("Keep it tidy: .mystical/scratch/ for throwaway scripts and probes, .mystical/docs/ for reports and "
         "other Markdown written to be read, .mystical/drafts/ for design drafts and mockups. "
         ".mystical/images/ holds the pictures in the user's messages: leave it alone.")

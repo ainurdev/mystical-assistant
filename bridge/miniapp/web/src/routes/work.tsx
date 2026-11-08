@@ -1,5 +1,6 @@
 import { SavedViews } from "../components/SavedViews";
 import { AutomationsPanel } from "../components/AutomationsPanel";
+import { WorkPanel } from "../components/WorkPanel";
 import { DocsPanel } from "../components/DocsPanel";
 import { DesignBoards } from "../components/DesignPane";
 import { useExperimental } from "../lib/multi";
@@ -16,7 +17,7 @@ import { Skeleton } from "../components/ui";
    queued, the ranked next steps the scout found, and the repo's open issues.
    All three end the same way — text in a chat — so they share a screen. */
 
-type Tab = "queue" | "next" | "issues" | "views" | "design" | "auto" | "docs";
+type Tab = "queue" | "next" | "issues" | "views" | "design" | "auto" | "docs" | "list";
 
 function ago(sec: number | null | undefined): string {
   if (!sec) return "";
@@ -58,7 +59,7 @@ function WorkPage() {
     { id: "queue", label: `QUEUE${queued ? ` · ${queued}` : ""}` },
     ...(nextup.data?.enabled ? [{ id: "next" as Tab, label: "NEXT UP" }] : []),
     { id: "issues", label: `ISSUES${issues.data?.open_count ? ` · ${issues.data.open_count}` : ""}` },
-    ...(experimental ? [{ id: "views" as Tab, label: "SAVED" }, { id: "design" as Tab, label: "DESIGN" }, { id: "auto" as Tab, label: "AUTO" }, { id: "docs" as Tab, label: "DOCS" }] : []),
+    ...(experimental ? [{ id: "list" as Tab, label: "LIST" }, { id: "views" as Tab, label: "SAVED" }, { id: "design" as Tab, label: "DESIGN" }, { id: "auto" as Tab, label: "AUTO" }, { id: "docs" as Tab, label: "DOCS" }] : []),
   ];
 
   return (
@@ -92,6 +93,7 @@ function WorkPage() {
       {tab === "next" && <NextUpTab />}
       {tab === "issues" && <IssuesTab />}
       {tab === "views" && <SavedViews />}
+      {tab === "list" && <WorkPanel onAsk={(text) => { void runPrompt(text, []); }} onOpen={(id) => { selectSession(id); void navigate({ to: "/" }); }} />}
       {tab === "docs" && <DocsPanel onAsk={(text) => { void runPrompt(text, []); }} />}
       {tab === "auto" && <AutomationsPanel onOpen={(id) => { selectSession(id); void navigate({ to: "/" }); }} />}
       {tab === "design" && <DesignBoards onAsk={(text) => { void runPrompt(text, []); }} />}

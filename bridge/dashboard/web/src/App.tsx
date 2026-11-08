@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { BookOpen, Timer, Palette, Bookmark,
+import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Scale, Users,
 } from "lucide-react";
 import {
@@ -126,6 +126,8 @@ import { arrange } from "./lib/rail";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
+import { WorkPanel } from "./components/WorkPanel";
+import { workCall, workGet } from "./lib/readapi";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { CouncilPanel } from "./components/hud/CouncilPanel";
@@ -1663,6 +1665,19 @@ export function App() {
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
+    // `/work` opens the work list, and `/work run [n]` starts a run from this chat (bridge/workrun.py).
+    const workCmd = multiOn ? /^\/work(?:\s+run(?:\s+(\d+))?)?\s*$/.exec(text.trim()) : null;
+    if (workCmd) {
+      patchSettings({ rightTab: "work", rightOpen: true });
+      if (!/\brun\b/.test(text)) return true;
+      try {
+        await workCall("run/start", sid, null, { parallel: workCmd[1] ? Number(workCmd[1]) : undefined });
+        return true;
+      } catch (e) {
+        notify("error", (e as Error).message);
+        return false;
+      }
+    }
     const goalCmd = /^\/goal\b\s*([\s\S]*)$/.exec(text.trim());
     // An agent with no goals (caps.goals): the words go to it as written.
     if (goalCmd && briefOf(sid)?.caps?.goals !== false) {
@@ -2562,6 +2577,32 @@ export function App() {
   // USAGE's tile is that login's window as a ring: the PROFILE chip's window
   // (chipWindow), printed as a number only once it runs low.
   const usageWin = chipWindow(loginWindows(spender));
+
+  // A run starting in this chat, from anywhere, opens the work list once, so you can watch it.
+  // Its open items are the rail's badge.
+  const [workOpen, setWorkOpen] = useState(0);
+  useEffect(() => {
+    if (!multiOn || !sessionId) { setWorkOpen(0); return; }
+    let gone = false;
+    const look = () => {
+      workGet<{ items: { state: string; group: string }[]; runs?: { id: string; chat: string; state: string }[] }>(sessionId, null).then((r) => {
+        if (gone) return;
+        const run = (r.runs ?? []).find((x) => x.state === "running" && x.chat === sessionId);
+        setWorkOpen(run ? r.items.filter((i) => i.state === "doing" || i.state === "review" || i.group === "next").length : 0);
+        if (!run) return;
+        const key = `mystical.work-opened.${run.id}`;
+        if (!localStorage.getItem(key)) {
+          localStorage.setItem(key, "1");
+          patchSettings({ rightTab: "work", rightOpen: true });
+        }
+      }, () => { if (!gone) setWorkOpen(0); });
+    };
+    look();
+    const t = window.setInterval(look, 4000);
+    return () => { gone = true; window.clearInterval(t); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [multiOn, sessionId]);
+
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
   // HOME's sky follows the hour; the cap holds its top while HOME is open.
   const [almanacAsk, setAlmanacAsk] = useState(0); // HOME's big clock bumps it: the cap's Almanac opens
@@ -2674,6 +2715,11 @@ export function App() {
     ...(multiOn ? [{
       id: "docs", short: "DOCS", label: "Docs", icon: <BookOpen {...RAIL} />, scope: "project" as const, group: "project",
       render: () => <DocsPanel onAsk={(text) => { void send(text, [], { force: true }); }} />,
+    }] : []),
+    // The project's tasks (components/WorkPanel). Keyed by chat: "done in this chat" is relative to it.
+    ...(multiOn ? [{
+      id: "work", short: "WORK", label: "Work list", icon: <ListChecks {...RAIL} />, scope: "project" as const, group: "project", badge: workOpen ? String(workOpen) : null,
+      render: () => <WorkPanel key={sessionId ?? ""} chat={sessionId} project={sessionProject} onAsk={(text) => { void send(text, [], { force: true }); }} onOpen={(id) => { openSession(id); toChat(); }} />,
     }] : []),
     // Your timers, listeners and commands that run agents (components/AutomationsPanel).
     ...(multiOn ? [{
