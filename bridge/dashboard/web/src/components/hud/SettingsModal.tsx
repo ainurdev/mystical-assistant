@@ -4703,9 +4703,8 @@ export function SettingsModal(props: SettingsModalProps) {
         background: "color-mix(in srgb, var(--panel3) 72%, transparent)",
         zIndex: 93,
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "center",
         justifyContent: "center",
-        paddingTop: "7vh",
         animation: "backdropIn .22s ease both",
       }}
     >
@@ -4713,17 +4712,8 @@ export function SettingsModal(props: SettingsModalProps) {
         onClick={(e) => e.stopPropagation()}
         className="panel setdlg"
         style={{
-          // Content is capped at 760px by .mcol; the family layer's rail is 236
-          // and the pane pads 32 a side — so 1062 IS the content's width. Wider
-          // is empty gutter (the shared --modal-w, 75vw, spent ~130px a side on
-          // it); 976, sized for the old 180 rail, squeezed the rows to 674.
-          width: "min(1062px, 94vw)",
-          // One height for every category, not one per: sizing to the tab meant
-          // the panel jumped ~200px between INTERFACE (one switch) and
-          // APPEARANCE, and a dialog that resizes under the pointer costs more
-          // than the void it saves. 86vh rather than the old 76vh — the tabs
-          // that overflow are the ones you spend time in.
-          height: "86vh",
+          // Its width and height live in index.css (.setdlg), beside the phone
+          // layout they give way to.
           display: "flex",
           flexDirection: "column",
           border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
@@ -4850,7 +4840,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <RailFoot onOpen={() => { setQ(""); setTab("system"); }} />
           </div>
 
-          <div ref={pane} className={`mscroll mcol setpane${shown === "projects" ? " prj-fill" : ""}`} style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+          <div ref={pane} className={`mscroll setpane${shown === "projects" ? " prj-fill" : ""}`} style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
             {/* Keyed on the page, so a new category remounts and its entrance
                 runs again (.setpage in index.css). Search is a page too. */}
             <div key={shown} className="setpage">

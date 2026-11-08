@@ -53,3 +53,13 @@ _Avoid_: second time zone, extra clock, city clock
 **Limit reset**:
 The moment a login's usage window (the 5-hour one or the weekly one) rolls over and its allowance refills.
 _Avoid_: refill, renewal
+
+## Settings
+
+**Settings**:
+The dashboard's preferences dialog: a rail of Settings pages down its left, and the open page beside it.
+_Avoid_: settings modal, preferences, config dialog
+
+**Settings page**:
+One entry in the Settings rail, such as Appearance, Projects or System, and everything it shows when picked.
+_Avoid_: tab, category
