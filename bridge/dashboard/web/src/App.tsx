@@ -3480,6 +3480,8 @@ export function App() {
                       onSend={(t, i, noPath, run) => void send(t, i, { ...(noPath ? { noPath: true } : {}),
                         ...(run ? { picks: { model: run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
+                      kindPresets={settings.kindPresets}
+                      onSaveKindPreset={(k, r) => patchSettings({ kindPresets: { ...settings.kindPresets, [k]: r } })}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
                       designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
                       // An agent turn can't be steered unless the bridge says this one can

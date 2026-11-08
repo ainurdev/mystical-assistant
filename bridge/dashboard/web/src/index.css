@@ -4813,7 +4813,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.ptile, .isle-pill, [data-style="dossier"] .dprompt, [data-style="dossier"] .dwork, [style*="--shadow-modal"],
   .setdlg, .set-search, .set-close, .setrail button, .setpane [style*="padding: 14px 16px"], .set-toggle, .set-toggle i,
   .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button,
-  .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-paused > button, .ctrl-ctx .seg i,
+  .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-tabs > .pb-work, .pb-work > .pb-resume, .ctrl-ctx .seg i,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
   .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input,
@@ -5039,11 +5039,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-card > .pb-ledger { margin: 12px 14px 0; }
 /* the text at 12px on the 10px base the scale is drawn at, two lines tall at least, so a
    one-line prompt and a two-line one make the same box */
-.pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; padding: 12px 12px 12px 11px; --pb-fs: calc(var(--fsu) * 14.4); }
-.pb-body { flex: 1; min-width: 0; min-height: calc(var(--pb-fs) * 3); }
+.pb-line { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 11px; min-width: 0; padding: 12px 12px 12px 11px; --pb-fs: calc(var(--fsu) * 14.4); }
+/* the text keeps 120px at least: in a narrow box a running turn's keys go under it, right-aligned */
+.pb-body { flex: 1; min-width: 120px; min-height: calc(var(--pb-fs) * 3); }
 .pb-body .cm-editor { font-size: var(--pb-fs); }
 .pb-body > .pb-attach { margin-bottom: 9px; }
-.pb-keys { display: flex; align-items: center; gap: 8px; align-self: flex-end; }
+.pb-keys { display: flex; align-items: center; gap: 8px; align-self: flex-end; margin-left: auto; }
 /* the key keeps its width whatever word it says, so tapping a kind never moves it */
 .pb-keys .act-pri { min-width: 84px; justify-content: center; }
 .pb-rail { display: flex; align-items: center; height: 30px; padding: 0 6px; white-space: nowrap;
@@ -5073,11 +5074,54 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-kind > i { font-style: normal; font-size: var(--t7); letter-spacing: 1px; text-transform: uppercase; color: var(--txd); margin-left: 2px; }
 .pb-kinds[data-dim] > * { opacity: .45; cursor: default; }
 [data-fam]:not([data-fam="aurora"]) :is(.pb-kind, .pb-kg) { border-radius: 5px; }
-/* today's run and PROFILE chips, flat on the rail until the preset and usage segments get
-   faces of their own (prompt-kinds plan, Task 4). The PROFILE chip reads as usage there: its
-   name gives way to the meter, and stays while there is none (an expired login says so in it). */
-.pb-rail :is(.drop-btn, .run-trigger) { border: 0 !important; background: transparent !important; padding-block: 0 !important; min-width: 0; }
+/* usage: the PROFILE chip, flat, its face the ring (Composer UsageRing) while its login has a
+   reading. Without one it keeps its name (an expired login says so in it), which gives way to
+   the spinner while the first reading lands. The menu is the PROFILE menu, unchanged. */
+.pb-rail .drop-btn { border: 0 !important; background: transparent !important; padding: 0 !important; min-width: 0; }
 .pb-use .drop-btn:has(.ctrl-meter) .drop-val { display: none; }
+.pb-ring { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t10); color: var(--txl); white-space: nowrap; }
+.pb-ring > svg { flex: none; }
+/* preset: the run the next send goes with. The kind's glyph (sliders with no kind), the model
+   bold, then mode · effort · trim; tinted while PRESET is open. */
+.pb-preset[data-open] { background: color-mix(in oklab, var(--acc) 12%, transparent); }
+.pb-run { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none;
+          font: inherit; font-size: var(--t11); color: var(--txd); white-space: nowrap; }
+.pb-run > svg { flex: none; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-run > b { font-weight: 700; color: var(--txh); }
+.pb-run > i { font-style: normal; font-size: var(--t8); color: var(--txl); }
+/* PRESET (Composer presetPop): over the card, its right edge on the segment's (--pp-at) and kept
+   inside the card. Model and mode are the chips' Drop (.pb-sel), effort and trim segmented. */
+.pb-pp { position: absolute; z-index: 30; bottom: calc(100% + 9px); right: clamp(0px, var(--pp-at, 0px), calc(100% - 300px)); width: min(300px, 100%);
+         box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; white-space: nowrap;
+         background: var(--panel); border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 35%, transparent)); border-radius: var(--f-rad, 0);
+         box-shadow: var(--f-pop-shadow, 0 -8px 26px var(--shadow-pop)); font-family: var(--ui-font, inherit); animation: mpop .12s ease; }
+.pb-pp > h4 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: 1.6px;
+              text-transform: uppercase; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-pp > h4 > span { margin-left: auto; font-size: var(--t9); font-weight: 400; letter-spacing: .2px; text-transform: none; color: var(--txl); }
+.pb-pr { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 8px; }
+.pb-pr > b { font-size: var(--t8); font-weight: 700; line-height: 1; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
+.pb-sel { min-width: 0; }
+.pb-sel > .drop-btn { flex: 1; min-width: 0; }
+.pb-sg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.pb-sg > button { appearance: none; cursor: pointer; flex: 1; min-width: 0; height: 20px; padding: 0 4px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
+                  background: transparent; font: inherit; font-size: var(--t10); font-weight: 600; color: var(--txd); }
+.pb-sg > button:hover { color: var(--txh); }
+.pb-sg > button[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 22%, transparent); color: var(--txb); }
+.pb-pf { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line, var(--border)); font-size: var(--t9); line-height: 1.35; color: var(--txl); }
+.pb-pf > button { appearance: none; cursor: pointer; margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-weight: 700;
+                  color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+/* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
+   card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under
+   480px the kinds are glyphs (the lit one keeps its ink, AUTO goes), the facts go, the preset is
+   its glyph and usage its ring. */
+@container (max-width: 699px) {
+  .pb-preset { min-width: 0; }
+  .pb-run > span, .pb-ring > .pb-clock { display: none; }
+}
+@container (max-width: 479px) {
+  .pb-kinds { width: auto; flex: 1; }
+  .pb-kind > :not(svg), .pb-facts, .pb-run > :not(svg), .pb-ring > .pb-pc { display: none; }
+}
 /* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
    under the text, saying why the routed /command is there and what Tab, ⌫ or Esc does with it.
    DEFAULT hangs it under the editor (.pb-ed); TABS shows the empty box's in the rail's facts. Its
@@ -5107,13 +5151,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-ledger:has(> :not(.pillstrip), > .pillstrip > *) { display: flex; }
 .pb-ledger > .pillstrip { display: contents; }
 .pb-ledger:has(> :nth-child(2), > .pillstrip > :nth-child(2)) .pill-desc { display: none; }
-.pb-paused, .pb-queued { display: inline-flex; align-items: center; gap: 7px; height: 22px; box-sizing: border-box; padding: 0 10px; border: 1px solid; border-radius: 999px;
-                         font-family: inherit; font-size: var(--t105); letter-spacing: .5px; white-space: nowrap; }
-.pb-paused { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
-.pb-paused > button { appearance: none; cursor: pointer; font-family: inherit; font-size: var(--t85); letter-spacing: 1.2px; padding: 1px 6px;
-                      border: 1px solid var(--warn); background: transparent; color: var(--warn); }
-.pb-queued { appearance: none; cursor: pointer; color: var(--purple-h); border-color: color-mix(in srgb, var(--purple) 30%, transparent); background: color-mix(in srgb, var(--purple) 8%, transparent); }
-.pb-queued:hover { border-color: var(--purple); }
 /* The login this chat spends is dry (Composer, design-drafts/limit-chat C): said
    before you send, with the login that has room one tap away. */
 .pb-dry { display: inline-flex; align-items: center; gap: 7px; height: 22px; max-width: 100%; box-sizing: border-box; padding: 0 3px 0 9px;
@@ -5127,10 +5164,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── TABS: the lead as folder tabs on the card's top edge, CTX the last tab ── */
 .pb-tabs { display: flex; align-items: flex-end; gap: 4px; padding: 0 12px; min-width: 0; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-tabs > .pb-work {
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 26px !important;
   margin-bottom: -1px; padding: 0 10px !important; border-bottom: 0 !important; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), .pb-tabs > .ctrl-ctx {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-tabs > .pb-work {
   border: 1px solid var(--pb-edge) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
 /* the PR tab keeps its state's ink: tone border, tone tint over the ground (PrChip's --tone-bg) */
 .pb-tabs .np-pr { background: linear-gradient(var(--tone-bg, transparent), var(--tone-bg, transparent)), var(--pb-ground) !important; }
@@ -5151,6 +5188,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs > .ctrl-ctx > button { height: 17px; padding: 0 6px !important; line-height: 15px; font-size: var(--t85) !important; }
 /* past the compact threshold the CTX tab is COMPACT's: the word and the token count go */
 .pb-tabs > .ctrl-ctx:has(> button) .lbl, .pb-tabs > .ctrl-ctx:has(> button) > span:nth-of-type(4) { display: none; }
+/* the working tab (Composer workTab): the turn in the accent, what waits behind it in the queue's
+   purple (a tap lists it); paused in the warn colour, with RESUME */
+.pb-tabs > .pb-work { gap: 6px; font-family: var(--ui-font, inherit); font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
+                      color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-work > i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 25%, transparent); }
+.pb-work[data-paused] { color: var(--warn); }
+.pb-work > button { appearance: none; cursor: pointer; padding: 0; border: 0; background: none; font: inherit; color: var(--purple-h); }
+.pb-work > button > i { font-style: normal; font-size: var(--t8); }
+.pb-work > .pb-resume { display: inline-flex; align-items: center; font-size: var(--t85); letter-spacing: 1.2px; padding: 1px 6px; border: 1px solid var(--warn); color: var(--warn); }
+.pb-resume > svg { display: none; }
 
 /* narrow: names give way first, then the words around the numbers */
 @container (max-width: 640px) {
@@ -5158,19 +5205,26 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .pb-lead .np-title-btn { min-width: 92px !important; }
 }
 @container (max-width: 560px) { .pb-tabs > .ctrl-ctx .seg { display: none; } }
+/* a narrow box: the working tab keeps its glyphs and its count, RESUME its ▶, and the title gives
+   way further, so the tabs still fit the card */
+@container (max-width: 479px) {
+  .pb-work .pb-ww { display: none; }
+  .pb-resume > svg { display: block; }
+  .pb-lead .np-title-btn { min-width: 56px !important; }
+}
 
 /* FLINT: the same shells in its skin — radius, hairlines, Geist */
 [data-fam] .composer[data-pb] { --pb-ground: var(--panel); }
 [data-fam] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
-[data-fam] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
+[data-fam] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam] .pb-tabs > :is(.ctrl-ctx, .pb-work) { border-radius: 8px 8px 0 0 !important; }
 [data-fam] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
 [data-fam] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
 [data-fam] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
 [data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run, .np-task) { font-family: var(--mono) !important; }
 [data-fam] .pb-tabs .np-title { font-size: var(--t12) !important; }
 [data-fam] .pb-plus { border-color: var(--line2); border-radius: 50%; }
-[data-fam] :is(.pb-queued, .pb-paused, .pb-dry) { font-family: var(--ui-font); letter-spacing: 0; }
-[data-fam] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
+[data-fam] .pb-dry { font-family: var(--ui-font); letter-spacing: 0; }
+[data-fam] .pb-work > .pb-resume { border-radius: 5px; }
 /* FLINT and CLAUDE hide the HUD's ~ ❯ (.cmdbox > span:first-child); AURORA keeps it */
 [data-fam]:not([data-fam="aurora"]) [data-pb] .pb-pfx { display: none; }
 /* TABS: the tabs and the card share one edge, in every state the card has: the
@@ -5219,7 +5273,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    every control is a pill. The shadow is MIDDLE-EARTH's short cut: the pop
    shadow reached past the 16px under the card, so the sheet's edge cut it off in a band. */
 [data-fam="pebble"] .pb-tabs { align-items: center; gap: 6px; padding: 0 4px 7px; }
-[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
+[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam="pebble"] .pb-tabs > :is(.ctrl-ctx, .pb-work) {
   margin-bottom: 0; height: 26px !important; border: 1px solid var(--line) !important; border-radius: 999px !important; background: var(--panel2) !important;
 }
 [data-fam="pebble"] .pb-tabs .np-tile { border-radius: 999px 0 0 999px !important; border-right: 0 !important; padding: 0 3px 0 8px !important; }
@@ -7341,7 +7395,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 /* TABS runs the transcript on under its tab row, so no fade: it stopped at the tabs' top in a hard line */
 [data-fam="middle-earth"] .swapwrap + .composer[data-pb="tabs"]::before { content: none; }
-[data-fam="middle-earth"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="middle-earth"] .pb-tabs > .ctrl-ctx { background: var(--panel) !important; }
+[data-fam="middle-earth"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="middle-earth"] .pb-tabs > :is(.ctrl-ctx, .pb-work) { background: var(--panel) !important; }
 [data-fam="middle-earth"] .gp-pb { box-shadow: none !important; }
 
 /* ── our own logo in the theme's ink: the bridge's emblem (ProjectTile
