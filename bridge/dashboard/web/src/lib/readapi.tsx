@@ -51,3 +51,8 @@ export const designCall = <T,>(session: string, path: string, body: Record<strin
 
 export const uploadImage = async (session: string, data: string) =>
   (await req<{ path: string }>("/local/chat-images/upload", { method: "POST", body: { session_id: session, data } })).path;
+
+/** Automations (bridge/automations.py). No session: they belong to you, not to a chat. */
+export const autoGet = <T,>() => req<T>("/local/automations");
+export const autoCall = <T,>(path: string, body: Record<string, unknown> = {}) =>
+  req<T>(`/local/automations/${path}`, { method: "POST", body });

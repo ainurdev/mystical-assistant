@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Columns2, Eraser, MessageSquare, Monitor, MousePointer2, Pencil, Smartphone, SlidersHorizontal, Tablet, X } from "lucide-react";
+import { Columns2, RotateCw, Eraser, MessageSquare, Monitor, MousePointer2, Pencil, Smartphone, SlidersHorizontal, Tablet, X } from "lucide-react";
 import {
-  ASPECTS, commentsMessage, frameDoc, remixMessage,
+  ASPECTS, SCRIPT, commentsMessage, frameDoc, remixMessage,
   type DesignBoard, type DesignComment,
 } from "../lib/designframe";
 import { designCall, uploadImage, useRefSession } from "../lib/readapi";
@@ -77,6 +77,14 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
   const have = useRef("");
   const answered = useRef(0);
   const [silent, setSilent] = useState(false);
+  // A page at an address: where the proxy shows it, what's in the bar, and which screen it's on.
+  const [live, setLive] = useState<string | null>(null);
+  const [src, setSrc] = useState("");
+  const [bar, setBar] = useState("");
+  const [screen, setScreen] = useState("");
+  const [reload, setReload] = useState(0);
+  // A phone can't reach this machine's loopback, where those are served.
+  const local = /^(localhost|127\.|\[::1\])/.test(location.hostname);
 
   const tell = useCallback((text: string) => {
     setSaid(text);
@@ -89,7 +97,7 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
     if (!session) return;
     let live = true;
     const tick = () => {
-      call<DesignBoard & { comments: DesignComment[]; page?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean }>("design", { page: page || undefined, have: have.current })
+      call<DesignBoard & { comments: DesignComment[]; page?: string; url?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean }>("design", { page: page || undefined, have: have.current })
         .then((r) => {
           if (!live) return;
           setError("");
@@ -97,6 +105,8 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
           setComments(r.comments);
           setMissing(!!r.missing);
           if (r.page && !page) setPage(r.page);
+          setLive(r.url ?? null);
+          if (r.url) { setVersions([]); setVersion(0); setHtml(null); }
           if (r.versions) setVersions(r.versions);
           if (r.version) setVersion(r.version);
           if (r.html !== undefined && r.hash) { have.current = r.hash; setHash(r.hash); setHtml(r.html); }
@@ -108,17 +118,34 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
   }, [session, call, page]);
 
   const doc = useMemo(() => (html === null ? "" : frameDoc(html)), [html]);
+  useEffect(() => {
+    if (!live || !local || !session) { setSrc(""); return; }
+    setBar(live);
+    call<{ src: string }>("design-live", { page, script: SCRIPT }).then((r) => setSrc(r.src), (e) => setError(e instanceof Error ? e.message : "Couldn't open it."));
+  }, [live, page, local, session, call]);
+  const go = (typed: string) => {
+    if (!typed.trim()) return;
+    call<{ board: string; page: string }>("design-url", { url: typed, board: boardId, name: live && page ? page : undefined })
+      .then((r) => {
+        if (r.page !== page) goTo(r.page);
+        setLive(null);       // reopens through the effect, at the new address
+        setReload((n) => n + 1);
+      }, (e) => tell(e instanceof Error ? e.message : "Couldn't open it."));
+  };
   const beforeDoc = useMemo(() => (before === null ? "" : frameDoc(before)), [before]);
 
   // ---- talking to the frame -------------------------------------------------------------
   const post = (m: Record<string, unknown>, to = frame.current) => to?.contentWindow?.postMessage({ mystical: 1, ...m }, "*");
+  // On a real app a comment belongs to the screen it was made on, and shows there.
   const mine = useMemo(() => comments.filter((c) => c.page === page), [comments, page]);
+  const shown = useMemo(() => (live ? mine.filter((c) => !c.path || c.path === screen) : mine), [mine, live, screen]);
   const sendMarks = useCallback(() => {
-    const marks = mine.filter((c) => c.kind !== "tweak").map((c, i) => ({ id: c.id, n: i + 1, x: c.x, y: c.y, points: c.points, sent: c.status === "sent" }));
-    const tweaks = mine.filter((c) => c.kind === "tweak" && c.status !== "sent")
+    const numbers = new Map(mine.filter((c) => c.kind !== "tweak").map((c, i) => [c.id, i + 1]));
+    const marks = shown.filter((c) => c.kind !== "tweak").map((c) => ({ id: c.id, n: numbers.get(c.id), x: c.x, y: c.y, points: c.points, sent: c.status === "sent" }));
+    const tweaks = shown.filter((c) => c.kind === "tweak" && c.status !== "sent")
       .flatMap((c) => (c.changes ?? []).map((ch) => ({ selector: c.selector, prop: ch.prop, to: ch.to })));
     post({ t: "marks", marks, tweaks });
-  }, [mine]);
+  }, [mine, shown]);
   useEffect(sendMarks, [sendMarks]);
   useEffect(() => { post({ t: "tool", tool }); }, [tool]);
   useEffect(() => { post({ t: "theme", v: theme }); post({ t: "theme", v: theme }, beforeFrame.current); }, [theme]);
@@ -147,7 +174,11 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
       if (e.source !== frame.current?.contentWindow) return;
       answered.current = Date.now();
       setSilent(false);
-      if (m.t === "ready") {
+      if (m.t === "location") {
+        setScreen(String(m.path ?? ""));
+        if (live) { try { setBar(new URL(String(m.path ?? ""), live).href); } catch { /* as it was */ } }
+      } else if (m.t === "ready") {
+        if (m.path) setScreen(String(m.path));
         setVars((m.vars as Record<string, string>) ?? {});
         post({ t: "tool", tool });
         post({ t: "theme", v: theme });
@@ -157,9 +188,9 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
         scrollAt.current = { x: Number(m.x) || 0, y: Number(m.y) || 0 };
         post({ t: "scroll", ...scrollAt.current }, beforeFrame.current);
       } else if (m.t === "pick" && m.el) {
-        openEditor({ id: newId(), kind: "comment", page, text: "", x: Number(m.x), y: Number(m.y), status: "open", selector: String(m.el.selector), about: String(m.el.about), styles: m.el.styles }, Number(m.cx), Number(m.cy), true);
+        openEditor({ id: newId(), kind: "comment", page, path: live ? screen : "", text: "", x: Number(m.x), y: Number(m.y), status: "open", selector: String(m.el.selector), about: String(m.el.about), styles: m.el.styles }, Number(m.cx), Number(m.cy), true);
       } else if (m.t === "stroke" && m.el) {
-        const comment: DesignComment = { id: newId(), kind: "draw", page, text: "", x: Number(m.x), y: Number(m.y), status: "open", selector: String(m.el.selector), about: String(m.el.about), points: m.points as number[][] };
+        const comment: DesignComment = { id: newId(), kind: "draw", page, path: live ? screen : "", text: "", x: Number(m.x), y: Number(m.y), status: "open", selector: String(m.el.selector), about: String(m.el.about), points: m.points as number[][] };
         // A drawing stands by itself: it's kept now, and its words are optional.
         void saveComment(comment);
         openEditor(comment, Number(m.cx), Number(m.cy), false);
@@ -232,7 +263,7 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
     const first = (cur?.changes ?? []).find((ch) => ch.prop === css)?.from ?? from;
     void saveComment({
       id: cur?.id ?? newId(), kind: "tweak", page, text: cur?.text ?? "", x: picked?.x ?? 0, y: picked?.y ?? 0, status: "open",
-      selector, about, changes: [...others, { prop: css, from: first, to }],
+      selector, about, path: live ? screen : "", changes: [...others, { prop: css, from: first, to }],
     });
   };
 
@@ -297,6 +328,10 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
             {(meta?.pages ?? []).map((p) => <option key={p.name} value={p.name}>{p.name}{p.direction ? ` · ${p.direction}` : ""}</option>)}
           </select>
         </label>
+        <form className="dg-url" onSubmit={(e) => { e.preventDefault(); go(bar); }}>
+          <input value={bar} placeholder="Open an address: localhost:5173" aria-label="Address" spellCheck={false} onChange={(e) => setBar(e.target.value)} />
+          {live ? <button type="button" className="dg-btn" title="Reload" aria-label="Reload" onClick={() => setReload((n) => n + 1)}><RotateCw size={14} aria-hidden /></button> : null}
+        </form>
         <div className="dg-group" role="radiogroup" aria-label="Tool">
           {tools.map((t) => (
             <button key={t.id} type="button" role="radio" aria-checked={tool === t.id} className="dg-btn" title={t.label} aria-label={t.label}
@@ -328,10 +363,15 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
         <div className="dg-stage" ref={stage}>
           {error ? <div className="dg-note">{error}</div> : null}
           {missing ? <div className="dg-note">This page's file is gone.</div> : null}
+          {live && !local ? <div className="dg-note">A page at an address opens on the computer running Mystical, not here.</div> : null}
           {silent ? <div className="dg-note">The page stopped answering, so the tools can't reach it. It may have navigated away: switch pages to reload it.</div> : null}
           {!meta && !error ? <div className="dg-note">Opening…</div> : null}
           <div className="dg-sheet" style={w ? { width: w } : undefined}>
-            {doc ? (
+            {live && src ? (
+              // Its own origin (bridge/design_proxy.py), so same-origin here gives it nothing of ours.
+              <iframe ref={frame} key={`${page}-${reload}`} title={page} className="dg-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads" src={src} />
+            ) : null}
+            {!live && doc ? (
               <iframe ref={frame} key={`${page}`} title={page} className="dg-frame" sandbox="allow-scripts" srcDoc={doc} onLoad={loaded} data-hash={hash} />
             ) : null}
             {compareTo !== null && beforeDoc ? (
@@ -508,6 +548,8 @@ export function DesignBoards({ onAsk, view }: { onAsk?: (text: string) => void; 
   const session = useRefSession();
   const [boards, setBoards] = useState<DesignBoard[] | null>(null);
   const [confirm, setConfirm] = useState("");
+  const [address, setAddress] = useState("");
+  const [bad, setBad] = useState("");
   const load = useCallback(() => {
     if (!session) { setBoards([]); return; }
     designCall<{ boards: DesignBoard[] }>(session, "design-boards").then((r) => setBoards(r.boards), () => setBoards([]));
@@ -518,6 +560,11 @@ export function DesignBoards({ onAsk, view }: { onAsk?: (text: string) => void; 
     <DesignSystem onAsk={onAsk} view={view} />
     <h4 className="dg-boards-h">Designs</h4>
     <div className="dg-boards">
+      <form className="dg-open" onSubmit={(e) => { e.preventDefault(); if (session && address.trim()) void designCall<{ board: string }>(session, "design-url", { url: address }).then((r) => { setAddress(""); load(); window.dispatchEvent(new CustomEvent("mystical:design", { detail: { board: r.board } })); }, (err) => setBad(err instanceof Error ? err.message : "Couldn't open it.")); }}>
+        <input value={address} placeholder="Open an address to point at" aria-label="Open an address" spellCheck={false} onChange={(e) => { setAddress(e.target.value); setBad(""); }} />
+        <button type="submit" className="dg-btn" disabled={!address.trim()}>Open</button>
+      </form>
+      {bad ? <p className="ds-err" role="alert">{bad}</p> : null}
       {boards && !boards.length ? <p className="dg-empty">No designs in this project yet. Ask an agent to design something, and its boards will be kept here.</p> : null}
       {(boards ?? []).map((b) => (
         <div key={b.id} className="dg-card">

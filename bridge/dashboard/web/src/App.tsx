@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Palette, Bookmark,
+import { BookOpen, Timer, Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Scale, Users,
 } from "lucide-react";
 import {
@@ -125,6 +125,8 @@ import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/R
 import { arrange } from "./lib/rail";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
+import { AutomationsPanel } from "./components/AutomationsPanel";
+import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { CouncilPanel } from "./components/hud/CouncilPanel";
 import { hero as councilHero, railTile, tileKey } from "./lib/council";
@@ -2668,6 +2670,16 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // The project's docs, generated or found (components/DocsPanel).
+    ...(multiOn ? [{
+      id: "docs", short: "DOCS", label: "Docs", icon: <BookOpen {...RAIL} />, scope: "project" as const, group: "project",
+      render: () => <DocsPanel onAsk={(text) => { void send(text, [], { force: true }); }} />,
+    }] : []),
+    // Your timers, listeners and commands that run agents (components/AutomationsPanel).
+    ...(multiOn ? [{
+      id: "automations", short: "AUTO", label: "Automations", icon: <Timer {...RAIL} />, group: "project",
+      render: () => <AutomationsPanel project={sessionProject} onOpen={(id) => { openSession(id); toChat(); }} />,
+    }] : []),
     // What agents designed in this project (components/DesignPane).
     ...(multiOn ? [{
       id: "design", short: "DESIGN", label: "Design", icon: <Palette {...RAIL} />, scope: "project" as const, group: "project",

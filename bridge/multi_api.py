@@ -13,7 +13,7 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
+from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, project_docs, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
@@ -81,6 +81,10 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
             return design_board.edit_comments(root, body)
         if path == "chat/design-boards":
             return design_board.listed(root)
+        if path == "chat/design-url":
+            return design_board.live(root, body)
+        if path == "chat/design-live":
+            return design_board.proxied(root, body)
         if path == "chat/design-delete":
             return design_board.delete(root, body.get("board"))
         if path == "chat/design-version":
@@ -114,6 +118,10 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "automations":
+        if not experimental.enabled():
+            return _OFF
+        return (automations.listed(), 200) if chat_id == config.DASH_CHAT_ID else ({"error": "Only the owner can see automations."}, 403)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -221,6 +229,8 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path.startswith("automations"):
+        return automations.api(path, body, chat_id) if experimental.enabled() else _OFF
     if path == "design-theme":
         return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):
@@ -265,6 +275,11 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return chat_aside.explain(body, chat_id, s.get("cwd"))
     if path.startswith("chat/design"):
         return _post_design(path, body, s, chat_id)
+    if path in ("chat/docs", "chat/doc-read"):
+        root = chat_images.root_of(s.get("cwd"))
+        if not root:
+            return {"error": "This chat has no project folder."}, 400
+        return (project_docs.listed(root), 200) if path == "chat/docs" else project_docs.read(root, body)
     if path == "chat/view-save":
         return saved_views.save(chat_images.root_of(s.get("cwd")), body.get("view"))
     if path == "chat/config":

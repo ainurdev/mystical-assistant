@@ -354,3 +354,34 @@ def test_the_placing_hint_is_said_once_a_turn(session):
     first = gt.call(session, job, "show_data", item)["content"][0]["text"]
     second = gt.call(session, job, "show_data", item)["content"][0]["text"]
     assert "goes above your answer" in first and "goes above your answer" not in second and "[[view:v2]]" in second
+
+
+# ---- reviews are offered, not run ----------------------------------------------------------
+
+def test_offering_a_review_puts_a_card_on_the_turn(session):
+    job = Job()
+    res = gt.call(session, job, "offer_review", {"title": "Review the  retry change?", "focus": "src/retry.ts", "rounds": 9})
+    ev = job.events[0]
+    assert ev["type"] == "offer" and ev["title"] == "Review the retry change?" and ev["rounds"] == 5 and ev["kind"] == "code"
+    assert "src/retry.ts" in ev["prompt"] and "at most 5 rounds" in ev["prompt"] and "Don't commit" in ev["prompt"]
+    assert "after your final answer" in res["content"][0]["text"]
+
+
+def test_a_design_review_goes_through_the_critic(session):
+    job = Job()
+    gt.call(session, job, "offer_review", {"title": "Review it?", "kind": "design", "rounds": 1, "focus": "board home"})
+    assert "critique_design" in job.events[0]["prompt"] and "at most 1 round." in job.events[0]["prompt"]
+
+
+def test_an_offer_needs_a_title_and_a_turn(session):
+    job = Job()
+    assert gt.call(session, job, "offer_review", {"title": "  "})["isError"] and not job.events
+    assert gt.call(session, None, "offer_review", {"title": "x"})["isError"]
+
+
+def test_agents_ask_when_its_complex_and_otherwise_go_ahead_normally(session):
+    from bridge import prompt_pack, runner
+    assert "offer_review" in gateway.tool_names(session)
+    for text in (prompt_pack.SHOW, runner._EXPERIMENTAL_NOTE):
+        assert "offer_review" in text and "complex enough" in text and "go ahead normally" in text
+        assert "by yourself" not in text and "Never run" not in text

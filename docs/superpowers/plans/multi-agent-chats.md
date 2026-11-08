@@ -283,6 +283,18 @@ Run through the whole build, as a regression suite written before workstream 2:
 - A live Kimi smoke per workstream that touches it.
 - `bridge-eyes` screenshots of the tree, grid and picker on dashboard and Mini App.
 
+## Automations, live pages and project docs (added after the second round)
+
+`bridge/automations.py` runs a prompt in a project on a timer (with an optional command or script as
+its check), some times a day, when files change, or on a Telegram command. Each has its own permission
+mode and chat mode. Only the owner can write one, and no agent tool can.
+
+`bridge/design_proxy.py` shows a running app or public page in the design view with the tools working,
+one local port per site. Agents call `show_design` with a url, and never start a server unasked.
+
+`bridge/project_docs.py` is the Docs tab: found Markdown, flagged as unchecked, and generated docs with
+the contents first, hidden in `.mystical/wiki` or in a project folder. Pages can hold live views.
+
 ## Designing with an agent (added after the second round)
 
 `show_design` puts a PREVIEW DESIGN button on the turn. It opens the design-chat view: the chat in
