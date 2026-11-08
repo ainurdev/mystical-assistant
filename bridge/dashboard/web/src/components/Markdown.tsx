@@ -1,5 +1,5 @@
-import { cloneElement, createContext, isValidElement, memo, useContext, useEffect, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import { cloneElement, createContext, isValidElement, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { Check, Copy, Play } from "lucide-react";
@@ -217,7 +217,7 @@ function RefSpan({ addr, children }: { addr?: string; children?: ReactNode }) {
 }
 
 export const Markdown = memo(function Markdown({
-  children, className = "", onOpenFile, toolStyle = "dossier", breaks = false, typed = false,
+  children, className = "", onOpenFile: openGiven, toolStyle = "dossier", breaks = false, typed = false,
 }: {
   children: string;
   className?: string;
@@ -235,26 +235,17 @@ export const Markdown = memo(function Markdown({
   toolStyle?: ToolStyle;
 }) {
   const multiOn = useMultiOn();
-  return (
-    <div
-      className={`md ${className}`}
-      data-typed={typed || undefined}
-      // What you copy out of a rendered reply is its markdown, not the view.
-      onCopy={(e) => {
-        const md = selectionMd();
-        if (md === null) return;
-        e.preventDefault();
-        e.clipboardData.setData("text/plain", md);
-      }}
-    >
-      <RefView.Provider value={onOpenFile}>
-      <MdTyped.Provider value={typed}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, ...(breaks ? [remarkBreaks] : []), remarkEmbedAddress, ...(multiOn && !typed ? [remarkFileRefs] : [])]}
-        components={{
+  // The caller's function changes on its renders, and this map's must not: every entry here is a
+  // component type, so a new function makes React throw the old DOM away. A reply's table, code
+  // blocks and quotes were being rebuilt a few times a second, and each rebuild replayed the
+  // landing animation (.res[data-land]). So the map only changes when what it draws does.
+  const latestOpen = useRef(openGiven);
+  latestOpen.current = openGiven;
+  const stableOpen = useCallback<OpenFile>((path, line, at) => latestOpen.current?.(path, line, at), []);
+  const onOpenFile = openGiven ? stableOpen : undefined;
+  const components = useMemo((): Components => ({
           ...(multiOn && !typed ? { "file-ref": RefSpan } : {}),
-          // One component, not a closure here: this object is rebuilt on every streamed
-          // chunk, and a new function would remount (and reload) each image each time.
+          // One component, not a closure here: a new function would remount (and reload) each image.
           ...(multiOn ? { img: MdImage } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
@@ -355,7 +346,24 @@ export const Markdown = memo(function Markdown({
             if (rows.some((r) => typeof r !== "string")) return <ProgressBlock rows={rows} />;
             return <CodeBlock code={code} lang={lang} />;
           },
-        }}
+  }), [multiOn, typed, toolStyle, onOpenFile]);
+  return (
+    <div
+      className={`md ${className}`}
+      data-typed={typed || undefined}
+      // What you copy out of a rendered reply is its markdown, not the view.
+      onCopy={(e) => {
+        const md = selectionMd();
+        if (md === null) return;
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", md);
+      }}
+    >
+      <RefView.Provider value={onOpenFile}>
+      <MdTyped.Provider value={typed}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, ...(breaks ? [remarkBreaks] : []), remarkEmbedAddress, ...(multiOn && !typed ? [remarkFileRefs] : [])]}
+        components={components}
       >
         {typed ? children : stripViews(children)}
       </ReactMarkdown>

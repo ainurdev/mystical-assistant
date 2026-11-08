@@ -31,6 +31,13 @@ const GROUPS: { id: string; label: string }[] = [
 ];
 const ASK_HINT = "Open Linear issues tagged backend, or paste your notes";
 
+/** As tall as its text, so it never scrolls. */
+const fitBox = (el: HTMLTextAreaElement | null) => {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + 2}px`;
+};
+
 function RunCard({ run, session, onRun, onOpen }: { run: Run; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void }) {
   const [sure, setSure] = useState(false);
   const here = run.chat === session;
@@ -95,6 +102,7 @@ function Row({ item, first, onEdit, onMove, onOpen }: { item: Item; first: boole
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(item.title);
   const [detail, setDetail] = useState(item.detail);
+  const [editing, setEditing] = useState(false);
   const [sure, setSure] = useState(false);
   const live = item.state === "doing" || item.state === "review";
   const source = item.source;
@@ -111,18 +119,34 @@ function Row({ item, first, onEdit, onMove, onOpen }: { item: Item; first: boole
       {item.depends_on.length ? <small>After {item.depends_on.join(", ")}</small> : null}
       {item.note ? <small className={item.state === "blocked" ? "wl-note" : undefined}>{item.note}</small> : null}
       {live && item.session_id ? <small>{item.helper}{onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(item.session_id!)}>open its chat</button></> : null}</small> : null}
+      {/* One scroller, the panel's. WebKitGTK, the Linux window's engine, keeps a whole wheel gesture on a box
+          that scrolls, even at its end, so scrolling boxes here left the list stuck under the pointer. So the
+          detail reads as plain text, and the box you edit it in grows to fit (fitBox) rather than scroll. */}
       {open ? (
         <div className="wl-open">
-          <label className="ds-f"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-          <label className="ds-f"><span>Detail</span><textarea rows={4} value={detail} onChange={(e) => setDetail(e.target.value)} /></label>
+          {editing ? (
+            <>
+              <label className="ds-f"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+              <label className="ds-f"><span>Detail</span><textarea ref={fitBox} rows={2} value={detail} onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} /></label>
+            </>
+          ) : item.detail ? <p className="wl-detail">{item.detail}</p> : null}
           <div className="wl-acts">
-            <button type="button" className="dg-btn" disabled={!title.trim()} onClick={() => { onEdit({ items: [{ id: item.id, title, detail }] }); setOpen(false); }}>Save</button>
-            {item.state === "todo" ? <button type="button" className="dg-btn" disabled={first} onClick={() => onMove(true)}>Move up</button> : null}
-            {!live && item.state !== "done" ? <button type="button" className="dg-btn" onClick={() => onEdit({ items: [{ id: item.id, state: "done" }] })}>Mark done</button> : null}
-            {item.state === "done" || item.state === "dropped" || item.state === "blocked" ? <button type="button" className="dg-btn" onClick={() => onEdit({ items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
-            {!live ? (sure
-              ? <button type="button" className="dg-btn dg-danger" onClick={() => onEdit({ ids: [item.id] }, "remove")}>Really delete</button>
-              : <button type="button" className="dg-btn" onClick={() => setSure(true)}>Delete</button>) : null}
+            {editing ? (
+              <>
+                <button type="button" className="dg-btn" disabled={!title.trim()} onClick={() => { onEdit({ items: [{ id: item.id, title, detail }] }); setEditing(false); }}>Save</button>
+                <button type="button" className="dg-btn" onClick={() => { setTitle(item.title); setDetail(item.detail); setEditing(false); }}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="dg-btn" onClick={() => { setTitle(item.title); setDetail(item.detail); setEditing(true); }}>Edit</button>
+                {item.state === "todo" ? <button type="button" className="dg-btn" disabled={first} onClick={() => onMove(true)}>Move up</button> : null}
+                {!live && item.state !== "done" ? <button type="button" className="dg-btn" onClick={() => onEdit({ items: [{ id: item.id, state: "done" }] })}>Mark done</button> : null}
+                {item.state === "done" || item.state === "dropped" || item.state === "blocked" ? <button type="button" className="dg-btn" onClick={() => onEdit({ items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
+                {!live ? (sure
+                  ? <button type="button" className="dg-btn dg-danger" onClick={() => onEdit({ ids: [item.id] }, "remove")}>Really delete</button>
+                  : <button type="button" className="dg-btn" onClick={() => setSure(true)}>Delete</button>) : null}
+              </>
+            )}
           </div>
         </div>
       ) : null}

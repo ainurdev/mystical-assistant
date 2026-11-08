@@ -239,6 +239,8 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .wl-note { color: var(--warn) !important; }
 .wl-open { padding: 6px 0 0; }
 .wl-open textarea, .wl-open input { width: 100%; }
+.wl-open textarea { display: block; overflow: hidden; resize: none; }
+.wl-detail { margin: 0; color: var(--txm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .wl-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .wl-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--txl); transform: translateY(-1px); }
 .wl-item[data-state="doing"] .wl-dot { background: var(--acc); animation: mpulse 2.4s infinite; }

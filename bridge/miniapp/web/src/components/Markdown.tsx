@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, memo, useState, type ReactNode } from "react";
+import { cloneElement, isValidElement, memo, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -132,21 +132,9 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
   toolStyle?: ToolStyle;
 }) {
   const multiOn = useExperimental();
-  return (
-    <div
-      className={`md ${className}`}
-      // What you copy out of a rendered reply is its markdown, not the view.
-      onCopy={(e) => {
-        const md = selectionMd();
-        if (md === null) return;
-        e.preventDefault();
-        e.clipboardData.setData("text/plain", md);
-      }}
-    >
-      <ReactMarkdown
-        remarkPlugins={multiOn ? WITH_REFS : PLAIN}
-        urlTransform={multiOn ? keepImageAddress : undefined}
-        components={{
+  // Every entry here is a component type, so a new function makes React throw the old DOM away:
+  // a table would lose its sideways scroll, a code block its state. Only changes with what it draws.
+  const components = useMemo((): Components => ({
           ...(multiOn ? { img: MdImage, "file-ref": RefSpan } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
@@ -239,7 +227,22 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
               </div>
             );
           },
-        }}
+  }), [multiOn, toolStyle]);
+  return (
+    <div
+      className={`md ${className}`}
+      // What you copy out of a rendered reply is its markdown, not the view.
+      onCopy={(e) => {
+        const md = selectionMd();
+        if (md === null) return;
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", md);
+      }}
+    >
+      <ReactMarkdown
+        remarkPlugins={multiOn ? WITH_REFS : PLAIN}
+        urlTransform={multiOn ? keepImageAddress : undefined}
+        components={components}
       >
         {stripViews(children)}
       </ReactMarkdown>
