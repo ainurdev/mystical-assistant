@@ -21,7 +21,7 @@ type Preview = { name: string; source: string; docs: string[]; tokens: number; c
 const KIND: Record<string, string> = { doc: "DOC", tailwind: "TW", shadcn: "UI", tokens: "TOK", storybook: "SB", skill: "SK", imported: "IMP", claude: "CD" };
 const errorOf = (e: unknown) => (e instanceof Error ? e.message : "That didn't work.");
 
-function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);

@@ -162,3 +162,38 @@
   .ds-form { border-right: 0; border-bottom: 1px solid var(--border); }
   .ds-choice { grid-template-columns: 1fr; }
 }
+
+/* automations (components/AutomationsPanel.tsx) */
+.au-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.au-head .ds-h { margin: 0; }
+.au-list { list-style: none; margin: 0; padding: 0; }
+.au-list li { padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); }
+.au-list li[data-off] > b, .au-list li[data-off] > small, .au-list li[data-off] .au-top b { opacity: 0.55; }
+.au-list small { display: block; margin-top: 2px; color: var(--txd); overflow-wrap: anywhere; line-height: 1.4; }
+.au-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.au-top b { font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.au-switch { flex: none; width: 34px; height: 20px; padding: 2px; background: color-mix(in srgb, var(--txl) 35%, transparent); border: 0; border-radius: 99px; cursor: pointer; }
+.au-switch i { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--txb); transition: transform 0.12s; }
+.au-switch[aria-checked="true"] { background: var(--acc); }
+.au-switch[aria-checked="true"] i { transform: translateX(14px); background: var(--acc-on, var(--canvas)); }
+.au-switch:focus-visible { outline: 2px solid var(--border-bright); outline-offset: 1px; }
+.au-link { padding: 0; background: none; border: 0; color: var(--acc); font: inherit; cursor: pointer; text-decoration: underline; }
+.au-note { color: var(--warn) !important; }
+.au-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.au-form { overflow-y: auto; padding: 12px 0 2px; min-height: 0; }
+.au-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.au-row > span { flex: 1 0 100%; margin-bottom: 0 !important; }
+.au-row label { display: inline-flex; align-items: center; gap: 4px; color: var(--txm); }
+.ds-dialog input[type="number"], .ds-dialog input[type="time"] { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; min-height: 30px; padding: 3px 6px; color-scheme: dark; }
+:root[data-light] .ds-dialog input[type="time"] { color-scheme: light; }
+.ds-dialog input[type="number"] { width: 70px; }
+.au-row select { width: auto; flex: 0 0 auto; }
+.au-hint { display: block; margin: 4px 0 11px; color: var(--txd); line-height: 1.4; }
+.au-hint[data-warn] { color: var(--warn); }
+.au-test { margin-top: 2px; margin-bottom: 8px; }
+.au-tested { margin: 0 0 11px; padding: 7px 9px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--dg-r); font-size: var(--t105, 10.5px); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--txm); max-height: 160px; overflow-y: auto; }
+.au-save { position: sticky; bottom: 0; padding: 9px 0 12px; background: var(--panel); }
+: flex; align-items: center; gap: 3px; flex: 1 1 200px; min-width: 150px; max-width: 420px; }
+.dg-url input { flex: 1; min-width: 0; }
+.dg-open { display: flex; gap: 4px; margin-bottom: 8px; }
+.dg-open input { flex: 1; min-width: 0; background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--prad, 0px); font: inherit; font-size: var(--t115, 11.5px); min-height: 28px; padding: 3px 6px; }

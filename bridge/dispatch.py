@@ -272,6 +272,13 @@ def on_message(msg: dict):
         if thread is None and not made_topic:
             send(chat_id, "Send a text prompt, or /help.")
         return
+    # One of your automations' commands (bridge/automations.py).
+    if text.startswith("/"):
+        from bridge import automations
+        said = automations.on_command(chat_id, text)
+        if said:
+            send(chat_id, said, thread=thread)
+            return
     replied = msg.get("reply_to_message") or {}
     # A text reply to a question or an approval (bridge/tgask.py) answers it in
     # those words; it is not a prompt.

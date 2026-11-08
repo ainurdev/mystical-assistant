@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Palette, Bookmark,
+import { Timer, Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
@@ -117,6 +117,7 @@ import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
+import { AutomationsPanel } from "./components/AutomationsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -2476,6 +2477,11 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // Your timers, listeners and commands that run agents (components/AutomationsPanel).
+    ...(multiOn ? [{
+      id: "automations", label: "Automations", icon: <Timer {...RAIL} />,
+      render: () => <AutomationsPanel project={sessionProject} onOpen={(id) => { openSession(id); toChat(); }} />,
+    }] : []),
     // What agents designed in this project (components/DesignPane).
     ...(multiOn ? [{
       id: "design", label: "Design", icon: <Palette {...RAIL} />, scope: "project" as const,

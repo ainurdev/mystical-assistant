@@ -13,7 +13,7 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
+from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
@@ -114,6 +114,10 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "automations":
+        if not experimental.enabled():
+            return _OFF
+        return (automations.listed(), 200) if chat_id == config.DASH_CHAT_ID else ({"error": "Only the owner can see automations."}, 403)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -221,6 +225,8 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path.startswith("automations"):
+        return automations.api(path, body, chat_id) if experimental.enabled() else _OFF
     if path == "design-theme":
         return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):
