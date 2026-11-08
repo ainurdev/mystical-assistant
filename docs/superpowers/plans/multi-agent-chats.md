@@ -283,6 +283,41 @@ Run through the whole build, as a regression suite written before workstream 2:
 - A live Kimi smoke per workstream that touches it.
 - `bridge-eyes` screenshots of the tree, grid and picker on dashboard and Mini App.
 
+## Designing with an agent (added after the second round)
+
+`show_design` puts a PREVIEW DESIGN button on the turn. It opens the design-chat view: the chat in
+a resizable pane beside the page, in a sandboxed frame with no network but Google Fonts. Pages live
+in `.mystical/design/<board>/`, and the view polls, so an agent's edits appear live and versions
+build up for before and after. You can comment, draw, tweak values, remix directions, ask an
+independent critic and keep references. Comments go to the agent as one message naming the elements.
+`design_context`, `inspect_ui`, `critique_design` and `grab_style` sit behind find_tools. Agents are
+told to show three rough directions when a design request is open. Taste memory is deliberately
+not built yet: `.mystical/design/refs/` is what you choose to keep, by hand.
+
+## Where views go, and what charts can say (added after the second round)
+
+A finished turn draws what it showed above its answer. An agent can place a view or picture
+mid-answer with `[[view:v1]]`, which the clients cut the answer at and everything else strips.
+`kind: projection` works out a balance from a start, dated amounts and what-if scenarios, and
+any chart can carry numbered pins, reference lines and a dashed forecast.
+
+## Reading what an agent wrote (added after the second round)
+
+Paths an agent names become links once the bridge confirms the file (bridge/chat_files.py), with
+the images among them drawn under the message. Pressing one opens it with the OS's own command,
+which refuses anything that would run. Selecting agent text offers quote, translate and copy
+(bridge/chat_translate.py, a press-only model call listed in the AI tab). `FileRef.tsx`,
+`SelectionPop.tsx`, `lib/refs.ts` and `chatread.css` are the same files in both apps.
+
+## Data views (added after the second round)
+
+`show_data` (bridge/data_views.py) lets any agent put a live sheet, chart, burndown, kanban
+board or row of figures on a turn. The bridge types the values and computes totals, burndown
+lines and counts, so a sum in a finance sheet is never the model's arithmetic. An ambiguous
+number like "1.000" is left blank and reported back, because a wrong guess is off by a factor of 1000.
+`components/DataView.tsx`, `lib/dataview.ts` and `dataview.css` are the same files in both
+apps. Telegram can't draw them: there, the agent's short answer is all you get.
+
 ## Risks
 
 - **Anthropic terms.** [Their page](https://code.claude.com/docs/en/legal-and-compliance)

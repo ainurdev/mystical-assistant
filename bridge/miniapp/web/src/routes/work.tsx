@@ -1,3 +1,6 @@
+import { SavedViews } from "../components/SavedViews";
+import { DesignBoards } from "../components/DesignPane";
+import { useExperimental } from "../lib/multi";
 import { useState } from "react";
 import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +14,7 @@ import { Skeleton } from "../components/ui";
    queued, the ranked next steps the scout found, and the repo's open issues.
    All three end the same way — text in a chat — so they share a screen. */
 
-type Tab = "queue" | "next" | "issues";
+type Tab = "queue" | "next" | "issues" | "views" | "design";
 
 function ago(sec: number | null | undefined): string {
   if (!sec) return "";
@@ -29,6 +32,8 @@ const btnGhost =
 
 function WorkPage() {
   const [tab, setTab] = useState<Tab>("queue");
+  const experimental = useExperimental();
+  const { runPrompt } = useChat();
   const queues = useQuery({
     queryKey: ["queues"],
     queryFn: () => api.getQueues(),
@@ -50,6 +55,7 @@ function WorkPage() {
     { id: "queue", label: `QUEUE${queued ? ` · ${queued}` : ""}` },
     ...(nextup.data?.enabled ? [{ id: "next" as Tab, label: "NEXT UP" }] : []),
     { id: "issues", label: `ISSUES${issues.data?.open_count ? ` · ${issues.data.open_count}` : ""}` },
+    ...(experimental ? [{ id: "views" as Tab, label: "SAVED" }, { id: "design" as Tab, label: "DESIGN" }] : []),
   ];
 
   return (
@@ -82,6 +88,8 @@ function WorkPage() {
       {tab === "queue" && <QueueTab queues={queues.data?.queues ?? []} loading={queues.isLoading} />}
       {tab === "next" && <NextUpTab />}
       {tab === "issues" && <IssuesTab />}
+      {tab === "views" && <SavedViews />}
+      {tab === "design" && <DesignBoards onAsk={(text) => { void runPrompt(text, []); }} />}
     </div>
   );
 }

@@ -9,6 +9,9 @@ import { stickToBottom } from "../lib/stick";
 import { useLoadingPhase } from "../lib/loadingPhase";
 import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
 import { RunStream, ToolImage, TURN_TAIL } from "../components/RunStream";
+import { SelectionPop } from "../components/SelectionPop";
+import { DesignPane } from "../components/DesignPane";
+import { createPortal } from "react-dom";
 import { Composer } from "../components/Composer";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
@@ -82,9 +85,15 @@ function runtimeLine(runtime: string, multi: boolean): string {
 }
 
 function RunPage({ barKey }: { barKey: string }) {
+  const [designBoard, setDesignBoard] = useState<string | null>(null);
+  useEffect(() => {
+    const open = (e: Event) => setDesignBoard((e as CustomEvent<{ board: string }>).detail.board);
+    window.addEventListener("mystical:design", open);
+    return () => window.removeEventListener("mystical:design", open);
+  }, []);
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
-    runPrompt, setDraft,
+    runPrompt, draft, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav, sessionAgent,
     experimental, openBrief, openHelper,
@@ -400,6 +409,24 @@ function RunPage({ barKey }: { barKey: string }) {
       {/* Virtualized turn list: only rows near the viewport are mounted. Row
           wrappers are translateY'd (why the lightbox portals to body); pb-3
           stands in for the list gap so measureElement counts row spacing. */}
+      {experimental && designBoard ? createPortal(
+        // The phone has no room for two panes: the design takes the screen, and Close is the chat.
+        <div className="dg-phone">
+          <DesignPane board={designBoard} onClose={() => setDesignBoard(null)} onSend={(text) => {
+            if (isRunning) {
+              setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text);
+              return "The agent's busy, so it's in your message box";
+            }
+            void runPrompt(text, []);
+            return undefined;
+          }} />
+        </div>, document.body) : null}
+      {experimental ? (
+        <SelectionPop root="[data-index]" onQuote={(text) => {
+          const q = text.trim().split("\n").map((l) => `> ${l}`).join("\n");
+          setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${q}\n\n` : `${q}\n\n`);
+        }} />
+      ) : null}
       <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((vi) => {
         const turn = visibleTurns[vi.index];

@@ -1,3 +1,4 @@
+import type { DataEv } from "./lib/dataview";
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
 import type { Flow, FlowSet } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
@@ -279,7 +280,11 @@ export type RunEvent =
   // What the bridge's own tools record (bridge/gateway_tools.py, bridge/rules.py).
   // A figure is the agent showing you something, with a caption: `images` are upload-dir
   // paths, served by /local/attachment. `compare` is [before, after].
-  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string; ref?: string }
+  // show_data: a sheet, chart, board or figures (lib/dataview.ts, bridge/data_views.py).
+  | DataEv
+  // show_design: a board the agent made (bridge/design_board.py), and its PREVIEW DESIGN button.
+  | { type: "design"; board: string; title: string; pages: string[]; ref?: string }
   // run_checks. A count the runner's output didn't show is null. `new`: failures not on
   // the project's known list; `known`: the ones that are. `log` is relative to the project.
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number; passed: number | null;

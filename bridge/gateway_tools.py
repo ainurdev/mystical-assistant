@@ -51,6 +51,73 @@ SHOW = _t("show_image", "Put an image or video in front of the user, drawn large
           "and crop to the part that matters.",
           {"path": _IMG, "caption": {"type": "string", "description": "One line: what this shows."}},
           ["path", "caption"])
+DATA = {"name": "show_data", "description": (
+    "Draw a live sheet, chart, board or diagram in the chat. Use it in any conversation, whenever numbers or items "
+    "would otherwise be a list or a Markdown table: test coverage or bundle size by folder, benchmarks, options side "
+    "by side, a plan's status as a board, tasks, finances, a burndown; or a flowchart for how something works and a "
+    "timeline for what happened, or a projection of a balance from dated amounts. Call it once per view; several in one answer are "
+    "fine. Totals, burndown lines and counts are computed for you. Then keep your reply to what stands out. Use real "
+    "data only, and say when it's partial."),
+    "inputSchema": {"type": "object", "required": ["view", "title"], "properties": {
+        "view": {"type": "string", "enum": ["table", "chart", "kanban", "stats", "diagram"]},
+        "title": {"type": "string", "description": "What this is, as you'd say it to the user."},
+        "caption": {"type": "string", "description": "Optional: one line on what stands out."},
+        "source": {"type": "string", "description": "Where the data came from: Rivendell board X, Snelstart, bank CSV."},
+        "as_of": {"type": "string", "description": "When it's from. Default: today."},
+        "currency": {"type": "string", "description": "ISO code for money, like EUR."},
+        "columns": {"type": "array", "items": {"type": "object"}, "description":
+                    "table: [{key, label, type: text|number|money|percent|progress|date|link, currency}]; progress "
+                    "draws a 0-100 value as a bar. "
+                    "kanban: [{name, limit, cards: [{title, key, assignee, due, priority, tags, note, url}]}], "
+                    "including empty columns."},
+        "rows": {"type": "array", "items": {"type": "object"}, "description":
+                 "table and chart: one object per row, keyed by column. Send amounts as plain JSON numbers. "
+                 "Up to 5000 for a table, 500 for a chart."},
+        "totals": {"type": "boolean", "description": "table: false hides the computed totals row."},
+        "nodes": {"type": "array", "items": {"type": "object"}, "description":
+                  "diagram, flow: [{id, label, note, shape: process|decision|terminal, group}]. Laid out for you."},
+        "edges": {"type": "array", "items": {"type": "object"}, "description": "diagram, flow: [{from, to, label}]."},
+        "direction": {"type": "string", "enum": ["right", "down"], "description": "diagram, flow. Default: fits the screen."},
+        "kind": {"type": "string", "enum": ["bar", "bar_horizontal", "bar_stacked", "line", "step", "area", "donut", "burndown", "projection",
+                                                   "flow", "timeline"], "description":
+                 "diagram: flow or timeline. chart: projection works out a balance from start, events and scenarios, "
+                 "so don't compute it yourself; step for values that jump; bar_horizontal for long labels; bar to compare, line or area over time, bar_stacked for parts of a whole over time, donut for "
+                 "a few parts of one whole, burndown for work remaining (the ideal line is computed)."},
+        "x": {"type": "string", "description": "chart: the row key for the x axis."},
+        "series": {"type": "array", "items": {}, "description":
+                   "chart: row keys to plot, or [{key, label, dashed, dashed_from}]; dashed_from is the x where a forecast starts. All on one axis, so same unit. Two different units "
+                   "are two charts."},
+        "format": {"type": "string", "enum": ["number", "money", "percent"], "description":
+                   "chart: how values read. For percent, 12 means 12%."},
+        "x_label": _S, "y_label": _S,
+        "annotations": {"type": "array", "items": {"type": "object"}, "description":
+                        "chart: pins explaining points, [{x, label, note, series}]."},
+        "lines": {"type": "array", "items": {"type": "object"}, "description": "chart: reference lines, [{y, label}], like a goal or a limit."},
+        "start": {"type": "number", "description": "projection: the balance it starts from."},
+        "events": {"type": "array", "items": {"type": "object"}, "description":
+                   "projection: amounts in every scenario, [{x: date, amount, label}], negative for money out."},
+        "scenarios": {"type": "array", "items": {"type": "object"}, "description":
+                      "projection: what-ifs to compare, [{label, events: [...]}]."},
+        "from": {"type": "string", "description": "projection: first date. Default today."},
+        "until": {"type": "string", "description": "projection: run on to this date."},
+        "ideal_end": {"type": "number", "description": "burndown: where the ideal line ends. Default 0."},
+        "items": {"type": "array", "items": {"type": "object"}, "description":
+                  "stats: [{label, value, format: number|money|percent|text, currency, delta, note}]. "
+                  "diagram, timeline: [{date, label, note, state: done|now|next}], in the order to show."}}}}
+DESIGN = {"name": "show_design", "description": (
+    "Show a designed page or pages to the user: it puts a PREVIEW DESIGN button in the chat, which opens the chat beside "
+    "the live page, where they can point, draw, comment, tweak and remix. Use it for any UI you design, as self-contained "
+    "HTML. When a design request is open, first show three rough directions as three pages, say how they differ, and ask "
+    "which way to go; skip that for a small change or when the direction is set. Pass file to point at an HTML file, then "
+    "keep editing that file: the user watches edits land, so don't call this again unless pages change. No network in "
+    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Their comments arrive "
+    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui and "
+    "critique_design (use them before saying a design is done) and grab_style."),
+    "inputSchema": {"type": "object", "required": ["title"], "properties": {
+        "title": {"type": "string", "description": "What's being designed."},
+        "board": {"type": "string", "description": "The board id, to add to or update one. Default: made from the title."},
+        "pages": {"type": "array", "items": {"type": "object"}, "description":
+                  "[{name, file or html, direction}]. direction says in a few words what this one is going for."}}}}
 COMPARE = _t("compare_images", "Show a before and an after side by side, with one caption saying what changed.",
              {"before": _IMG, "after": _IMG, "caption": _S}, ["before", "after", "caption"])
 CHECKS = _t("run_checks", "Run this project's tests or checks and record the result in the chat, compared with "
@@ -103,9 +170,27 @@ RECORD = _t("record", "Record a page to a video and put it in the chat. Returns 
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, DESIGN, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
-EXTRA_ALL = (COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
+DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
+                    "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
+INSPECT = _t("inspect_ui", "Open a page and get measured facts: overflow, content cut off, contrast, tap targets, broken images, "
+             "fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
+             "widths, like [340] for a side panel. Use before saying a design is done, and with steps for states you can click to.",
+             {"board": _S, "page": _S, "url": _S,
+              "widths": {"type": "array", "items": {"type": "integer"}, "description": "Up to 4. Treated as mouse-driven unless touch is true."},
+              "height": {"type": "integer", "description": "Window height, when the page fills it. Default: tall enough to see everything."},
+              "selector": {"type": "string", "description": "Check and picture this element only."},
+              "touch": {"type": "boolean", "description": "With widths: emulate a phone and check tap targets."},
+              "steps": {"type": "array", "items": {"type": "object"}, "description":
+                        "Done before looking, as in drive_page: {click: 'text'}, {type}, {key}, {wait}, {scroll}, {eval}."}}, [])
+CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's page by a model that didn't make it: scores and "
+              "fixes. It takes a minute or two: if it says it's running, call again. Fix what's right, and tell the user what you skipped.",
+              {"board": _S, "page": _S, "fresh": {"type": "boolean", "description": "Ask again after your changes."}}, ["board"])
+GRAB_STYLE = _t("grab_style", "Read a public page's fonts, sizes, colours, radii and spacing, with a screenshot, as a direction "
+                "to work from when the user says \"like this\". Don't copy its code or content.",
+                {"url": _S, "note": _S}, ["url"])
+EXTRA_ALL = (DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
 # the session by its Claude id, so an agent session has nothing to send.
 EXTRA_AGENT = (WAIT_SESSION, SCREENSHOT, RECORD)
@@ -159,9 +244,10 @@ def _figure(s: dict, job, items: list, caption: str, kind: str) -> dict:
         if why:
             return _text(why, error=True)
         images.append(got)
-    job.add({"type": "figure", "kind": kind, "images": images, "caption": caption})
+    ref = _next_ref(job)
+    job.add({"type": "figure", "kind": kind, "images": images, "caption": caption, "ref": ref})
     _send_figure(s, job, images, caption)
-    return _text("It's in the chat, with your caption. The user can see it now.")
+    return _text(f"It's in the chat, with your caption. The user can see it now. {_placed(job, ref)}")
 
 
 def _send_figure(s: dict, job, images: list, caption: str) -> None:
@@ -176,6 +262,117 @@ def _send_figure(s: dict, job, images: list, caption: str) -> None:
                 telegram.send_photo(job.chat_id, p, caption=caption[:900], thread=thread)
     except Exception as e:  # noqa: BLE001 - the chat still has it
         print(f"[gateway_tools] telegram figure: {e!r}", file=sys.stderr)
+
+
+def _next_ref(job) -> str:
+    """A view's name within its turn, for placing it in the answer."""
+    job.view_refs = getattr(job, "view_refs", 0) + 1
+    return f"v{job.view_refs}"
+
+
+def _placing(ref: str) -> str:
+    return f"It goes above your answer; to put it mid-answer instead, write [[view:{ref}]] on its own line there."
+
+
+def _placed(job, ref: str) -> str:
+    """How to place a view: said once a turn, as it's the same each time. After that, its name."""
+    if getattr(job, "told_placing", False):
+        return f"Its marker is [[view:{ref}]]."
+    job.told_placing = True
+    return _placing(ref)
+
+
+def _show_data(s: dict, job, a: dict) -> dict:
+    """A sheet, chart or board on the turn (bridge/data_views.py)."""
+    from bridge import data_views
+    if job is None:
+        return _text("No turn is running to show this in.", error=True)
+    try:
+        ev, notes = data_views.build(a)
+    except data_views.Refused as e:
+        return _text(str(e), error=True)
+    ev["ref"] = _next_ref(job)
+    job.add(ev)
+    said = f"It's in the chat: {data_views.describe(ev)}. {_placed(job, ev['ref'])} Keep your reply short and don't repeat the data."
+    if notes:
+        said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
+    return _text(said)
+
+
+def _design_root(s: dict) -> str:
+    root = chat_images.root_of(s.get("cwd"))
+    if not root:
+        raise OSError("This chat has no project folder.")
+    return root
+
+
+def _show_design(s: dict, job, a: dict) -> dict:
+    """A board, and the button that opens it (bridge/design_board.py)."""
+    from bridge import design_board
+    if job is None:
+        return _text("No turn is running to show this in.", error=True)
+    try:
+        meta = design_board.put(_design_root(s), s.get("cwd"), a)
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    ref = _next_ref(job)
+    job.add({"type": "design", "board": meta["id"], "title": meta["title"], "pages": [p["name"] for p in meta["pages"]], "ref": ref})
+    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"])
+    return _text(f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). Edit these files and the user sees it live:\n{files}\n"
+                 f"Ask which direction, and let them comment. {_placed(job, ref)}")
+
+
+def _design_context(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit
+    try:
+        return _text(design_audit.context(_design_root(s)))
+    except OSError as e:
+        return _text(str(e), error=True)
+
+
+def _inspect_ui(s: dict, job, a: dict) -> dict:
+    import base64
+    from bridge import design_audit, design_board
+    try:
+        facts, shots = design_audit.inspect(_design_root(s), a)
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    blocks = [{"type": "text", "text": facts}]
+    for i, sh in enumerate(shots):
+        if i < 4:       # the facts cover every width; a result can only hold so many pictures
+            with open(sh, "rb") as f:
+                blocks.append({"type": "image", "data": base64.b64encode(f.read()).decode(), "mimeType": "image/png"})
+        shutil.rmtree(os.path.dirname(sh), ignore_errors=True)
+    return {"content": blocks}
+
+
+def _critique_design(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit, design_board
+    try:
+        got = design_audit.critique(_design_root(s), a, s["chat_id"])
+        # Long enough for most reviews, short of the MCP timeout.
+        deadline = time.time() + 40
+        while got["state"] == "running" and time.time() < deadline:
+            time.sleep(2)
+            got = design_audit.critique(_design_root(s), {k: v for k, v in a.items() if k != "fresh"}, s["chat_id"])
+    except (design_board.Refused, OSError) as e:
+        return _text(str(e), error=True)
+    if got["state"] == "running":
+        return _text("Still reviewing. Call this again in a moment.")
+    if got["state"] == "failed":
+        return _text(got.get("error") or "The review failed.", error=True)
+    return _text(json.dumps({k: got.get(k) for k in ("scores", "verdict", "fixes")}, ensure_ascii=False, indent=1))
+
+
+def _grab_style(s: dict, job, a: dict) -> dict:
+    from bridge import design_audit
+    try:
+        out, code = design_audit.reference(_design_root(s), {"url": a.get("url"), "note": a.get("note")})
+    except OSError as e:
+        return _text(str(e), error=True)
+    if code != 200:
+        return _text(out.get("error") or "Couldn't read it.", error=True)
+    return _text(json.dumps(out["reference"], ensure_ascii=False, indent=1))
 
 
 def _show_image(s: dict, job, a: dict) -> dict:
@@ -541,7 +738,8 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "design_context": _design_context,
+    "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,
     "request_secret": _request_secret, "screenshot": _screenshot, "record": _record,

@@ -44,6 +44,9 @@ import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { useExperimental } from "../lib/multi";
+import { AnswerParts, DataView } from "./DataView";
+import { DesignCard } from "./DesignPane";
+import { viewsNamed } from "../lib/dataview";
 import { bashKind, bashLine, parseTests, testWords } from "../lib/bashkind";
 import { failureState, type Ev as FailEv } from "../lib/failures";
 import { figuresOf, isShowTool, nextNote, type Ev as FigEv } from "../lib/figures";
@@ -669,7 +672,7 @@ const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
-const EVIDENCE_ROW = new Set(["figure", "checks", "report", "secret_request", "rule"]);
+const EVIDENCE_ROW = new Set(["figure", "data", "design", "checks", "report", "secret_request", "rule"]);
 const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
 
 /** Tool kinds that draw a block of their own, so they never fold into a
@@ -959,7 +962,10 @@ function FinalResult({
   onAnswer,
   onWrite,
   noMeta = false,
+  views,
 }: {
+  /** The turn's views the answer names, to draw where it names them. */
+  views?: Map<string, ReactNode>;
   result: string;
   /** The receipt carries the clock, the time and the tokens. */
   noMeta?: boolean;
@@ -977,7 +983,9 @@ function FinalResult({
   return (
     <Card className="res chatcard space-y-2 border border-[var(--tg-button)]/30">
       {(ask ? ask.body : result) && (
-        <Markdown className="text-sm leading-normal">{ask ? ask.body : result}</Markdown>
+        <AnswerParts text={ask ? ask.body : result} views={views} draw={(md, k) => (
+          <Markdown key={k} className="text-sm leading-normal">{md}</Markdown>
+        )} />
       )}
       {ask && (
         <div className="space-y-2 rounded-lg border border-[var(--tg-button)]/40 bg-[var(--tg-bg)] p-2.5">
@@ -1194,6 +1202,17 @@ export const RunStream = memo(function RunStream({
   // A turn can hold several results (a background agent's wake-up carries on in the
   // same turn): only the last is the answer.
   const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
+  // What it showed comes above the answer, unless the answer names it ([[view:v1]]).
+  const named = lastResult >= 0 ? viewsNamed((events[lastResult] as { result?: string }).result ?? "") : new Set<string>();
+  const refAt = (i: number) => (events[i] as { ref?: string }).ref ?? "";
+  const placedViews = new Map<string, ReactNode>();
+  if (named.size) {
+    events.forEach((e) => {
+      if (e.type === "data" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DataView ev={e} />);
+      if (e.type === "design" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DesignCard board={e.board} title={e.title} pages={e.pages} />);
+    });
+    for (const f of figures) if (named.has(refAt(f.at))) placedViews.set(refAt(f.at), <Figures items={[f]} />);
+  }
   const firstResult = (events.find((e) => e.type === "result") as { result?: string } | undefined)?.result?.trim();
   const resultTexts = new Set(multiOn ? events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : []))
     : firstResult ? [firstResult] : []);
@@ -1397,10 +1416,14 @@ export const RunStream = memo(function RunStream({
         }
         return (
           <Fragment key={i}>
+          {i === lastResult && figures.some((f) => !named.has(refAt(f.at))) ? <Figures items={figures.filter((f) => !named.has(refAt(f.at)))} /> : null}
+          {i === lastResult ? events.map((e, j) => (e.type === "data" && !named.has(e.ref ?? "") ? <DataView key={`data${j}`} ev={e} />
+            : e.type === "design" && !named.has(e.ref ?? "") ? <DesignCard key={`design${j}`} board={e.board} title={e.title} pages={e.pages} /> : null)) : null}
           <div className="relative -ml-3 pl-3">
             <RailNode />
             <FinalResult
               noMeta={multiOn}
+              views={i === lastResult ? placedViews : undefined}
               result={event.result}
               // The Mini App's events carry no timestamp of their own, so
               // the turn's start plus the result's wall time is the answer's.
@@ -1411,13 +1434,16 @@ export const RunStream = memo(function RunStream({
               onWrite={onWrite}
             />
           </div>
-          {i === lastResult && figures.length > 0 ? <Figures items={figures} /> : null}
           </Fragment>
         );
       case "figure": {
         const f = figureAt.get(i);
         return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
       }
+      case "data":
+        return multiOn && lastResult < 0 ? <DataView key={i} ev={event} /> : null;
+      case "design":
+        return multiOn && lastResult < 0 ? <DesignCard key={i} board={event.board} title={event.title} pages={event.pages} /> : null;
       case "checks":
         return <ChecksRow key={i} ev={event} />;
       case "report":

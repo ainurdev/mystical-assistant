@@ -197,7 +197,8 @@ def _finish(job, chat_id: int, msg_id: "int | None", thread: "int | None") -> No
         body = f"⚠️ {why}"
         emoji = "😢"
     else:
-        body = job.result or said or "(no answer)"
+        from bridge import data_views
+        body = data_views.strip_refs(job.result or said) or "(no answer)"
         emoji = "👌"
     # A button under every answer would be noise; under one that failed or is
     # too long to read in a chat bubble, it's the way out.

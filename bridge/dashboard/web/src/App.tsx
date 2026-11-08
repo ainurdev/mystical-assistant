@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
+import { Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Scale, Users,
 } from "lucide-react";
 import {
   api,
+  req,
   AUTH_REQUIRED,
   TOKEN,
   type CardAnswer,
@@ -120,6 +121,8 @@ import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
 import { arrange } from "./lib/rail";
+import { SavedViews } from "./components/SavedViews";
+import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { GitPanel } from "./components/hud/GitPanel";
 import { CouncilPanel } from "./components/hud/CouncilPanel";
 import { hero as councilHero, railTile, tileKey } from "./lib/council";
@@ -448,6 +451,31 @@ export function App() {
   // in `sessions` (a helper lists under its chat, never as a chat of its own).
   const experimental = useExperimental();
   const multiOn = experimental.enabled;
+  // The design-chat view: the chat beside a board. Left panes step aside, the transcript and the
+  // composer stay exactly where they are, so a turn in progress carries on. ?design= opens it.
+  const [designBoard, setDesignBoard] = useState<string | null>(() => new URLSearchParams(location.search).get("design"));
+  const [designChat, setDesignChat] = useState(() => {
+    const saved = Number(localStorage.getItem("design-chat-width"));
+    return saved >= 320 ? saved : 480;
+  });
+  useEffect(() => {
+    const open = (e: Event) => setDesignBoard((e as CustomEvent<{ board: string }>).detail.board);
+    window.addEventListener("mystical:design", open);
+    return () => window.removeEventListener("mystical:design", open);
+  }, []);
+  const resizeDesign = (e: React.PointerEvent<HTMLDivElement>) => {
+    const bar = e.currentTarget;
+    bar.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const w = Math.max(320, Math.min(window.innerWidth - 420, ev.clientX));
+      setDesignChat(w);
+      localStorage.setItem("design-chat-width", String(Math.round(w)));
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); bar.removeEventListener("pointerup", up); };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up);
+  };
+  const inDesign = multiOn && !!designBoard;
   const openHelper = useHelperBrief(sessionId, sessions, multiOn);
   const selected = sessions.find((s) => s.id === sessionId) ?? openHelper;
   const chatId = selected?.parent_session ?? sessionId;
@@ -606,6 +634,26 @@ export function App() {
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   const tele = useTelemetry({ running, toolCount, eventCount });
 
+  // Tell the bridge what we're wearing, so an agent designing for this app can use the real values
+  // (bridge/design_board.py). Read off the themed container, once this theme has been applied.
+  useEffect(() => {
+    if (!multiOn) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector("[data-fam]:not(html)") ?? document.documentElement;
+      const cs = getComputedStyle(el);
+      const tokens: Record<string, string> = {};
+      for (const k of ["--canvas", "--panel", "--panel2", "--panel3", "--tx", "--txb", "--txh", "--txm", "--txd", "--txf", "--txl",
+        "--acc", "--acc-on", "--ask", "--ok", "--warn", "--err", "--info", "--purple", "--tool", "--think", "--border", "--border-bright",
+        "--mono", "--prad", "--ui-font"]) {
+        const v = cs.getPropertyValue(k).trim();
+        if (v) tokens[k] = v;
+      }
+      if (!tokens["--ui-font"]) tokens["--ui-font"] = cs.fontFamily;
+      void req("/local/design-theme", { method: "POST", body: { theme: settings.theme, light: isLight(settings.theme), tokens } }).catch(() => undefined);
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [multiOn, settings.theme, settings.font]);
+
   // Apply theme: the palette's vars, the family, the glow var, light/dark.
   useEffect(() => {
     const root = document.documentElement;
@@ -624,6 +672,8 @@ export function App() {
     // lightbox, AgentsModal) sit under the same [data-theme]/[data-fam] rules
     // as the container they were opened from — a FLINT context menu is a FLINT one.
     root.dataset.theme = settings.theme;
+    // Corner radius is per theme and otherwise only on the wrapper: a portal needs it too.
+    root.style.setProperty("--prad", themePrad(settings.theme) || "0px");
     root.dataset.fam = family(settings.theme);
     // Themes override the design tokens on :root (not just the themed wrapper)
     // so the DERIVED tokens (--primary/--card/--border/--ac-*, defined via
@@ -2598,6 +2648,17 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // What agents designed in this project (components/DesignPane).
+    ...(multiOn ? [{
+      id: "design", short: "DESIGN", label: "Design", icon: <Palette {...RAIL} />, scope: "project" as const, group: "project",
+      // A little scrolling of its own, like the other tabs. Files open in the editor beside it.
+      render: () => <DesignBoards view={openFileRef} onAsk={(text) => { void send(text, [], { force: true }); }} />,
+    }] : []),
+    // What you pressed SAVE on in this project's chats (components/SavedViews).
+    ...(multiOn ? [{
+      id: "views", short: "VIEWS", label: "Saved views", icon: <Bookmark {...RAIL} />, scope: "project" as const, group: "project",
+      render: () => <SavedViews />,
+    }] : []),
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
       id: "learn", short: "LEARN", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
@@ -3232,11 +3293,11 @@ export function App() {
             <div
               className="hudgrid grid min-h-0 flex-1"
               data-rbare={rightShown ? undefined : ""}
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0,
+              style={{ gridTemplateColumns: inDesign ? `0 ${designChat}px 7px minmax(0,1fr)` : shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0,
                        ...(settings.rightW ? { "--rbody": rbody(settings.rightW) } : {}) } as CSSProperties}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
-              <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
+              <div className="shellcol flex min-h-0 min-w-0 flex-col" hidden={inDesign} style={{ display: inDesign ? "none" : undefined, borderRight: "1px solid var(--border)" }}>
                 <Brand folded={!settings.leftOpen} onFold={toggleLeft}
                   workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
@@ -3425,6 +3486,15 @@ export function App() {
                   the body and unmounts the panel (which stops its polling). The
                   cap rides on top: the cluster over the panel, the gear over
                   the rail. */}
+              {inDesign && designBoard ? (
+                <>
+                  <div className="dg-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" onPointerDown={resizeDesign} />
+                  <DesignPane key={designBoard} board={designBoard} onClose={() => setDesignBoard(null)}
+                    chrome={isLinuxApp() ? <LinuxClose /> : undefined}
+                    // Into the running turn when there is one, the way the composer's SEND does.
+                    onSend={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }} />
+                </>
+              ) : (
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0,
                 // Moving, the column is a window onto the open layout pinned to
                 // the rail: cap and panel keep their open width, the edge sweeps,
@@ -3449,6 +3519,7 @@ export function App() {
                   </>}
                 />
               </div>
+              )}
 
             </div>
 

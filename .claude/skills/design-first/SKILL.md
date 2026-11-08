@@ -31,6 +31,13 @@ design with its tokens and components — no generic styling. Deliverables go in
 - `SPEC.md` — intent, components and tokens used, states, behavior notes,
   open questions. Short.
 
+**With the experimental switch on, use the design view instead of steps 3 to 5.** Read
+`design_context` (find_tools), then call `show_design`. When the direction is open, make three
+rough directions as three pages on one board, say how they differ and ask which way to go. The
+user opens PREVIEW DESIGN, points, draws, tweaks and remixes, and their comments come back as a
+message naming the elements. Keep editing the page files: edits appear live. Run `inspect_ui` and
+`critique_design` before calling it done. Then ask for approval, and implement after it.
+
 ## 3. Show it in the transcript
 
 Screenshot each mockup with the bridge-eyes skill and include the images in

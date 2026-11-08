@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -14,6 +14,9 @@ import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 import { MdImage, MdLinked, MdTyped } from "./MdImage";
 import { useMultiOn } from "../lib/multistore";
+import { stripViews } from "../lib/dataview";
+import { refOf, remarkFileRefs } from "../lib/refs";
+import { FileRef, RefImages } from "./FileRef";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab. Images go through MdImage,
@@ -190,6 +193,14 @@ function FileRefSpan({
   );
 }
 
+/** How a path in plain prose gets to the editor. A context, as this stays one stable
+ *  component while `components` below is rebuilt on every render. */
+const RefView = createContext<OpenFile | undefined>(undefined);
+function RefSpan({ addr, children }: { addr?: string; children?: ReactNode }) {
+  const onView = useContext(RefView);
+  return <FileRef address={addr ?? ""} md={addr ?? ""} onView={onView}>{children}</FileRef>;
+}
+
 export const Markdown = memo(function Markdown({
   children, className = "", onOpenFile, toolStyle = "dossier", breaks = false, typed = false,
 }: {
@@ -212,6 +223,7 @@ export const Markdown = memo(function Markdown({
   return (
     <div
       className={`md ${className}`}
+      data-typed={typed || undefined}
       // What you copy out of a rendered reply is its markdown, not the view.
       onCopy={(e) => {
         const md = selectionMd();
@@ -220,10 +232,12 @@ export const Markdown = memo(function Markdown({
         e.clipboardData.setData("text/plain", md);
       }}
     >
+      <RefView.Provider value={onOpenFile}>
       <MdTyped.Provider value={typed}>
       <ReactMarkdown
-        remarkPlugins={breaks ? [remarkGfm, remarkBreaks, remarkEmbedAddress] : [remarkGfm, remarkEmbedAddress]}
+        remarkPlugins={[remarkGfm, ...(breaks ? [remarkBreaks] : []), remarkEmbedAddress, ...(multiOn && !typed ? [remarkFileRefs] : [])]}
         components={{
+          ...(multiOn && !typed ? { "file-ref": RefSpan } : {}),
           // One component, not a closure here: this object is rebuilt on every streamed
           // chunk, and a new function would remount (and reload) each image each time.
           ...(multiOn ? { img: MdImage } : {}),
@@ -278,7 +292,18 @@ export const Markdown = memo(function Markdown({
             // Fenced blocks arrive here too (inside `pre`) — those are the `pre`
             // handler's business, and they carry a language class.
             const raw = textOf(kids);
-            const ref = onOpenFile && !cls ? parseFileRef(raw) : null;
+            // Experimental: any path the bridge confirms, and a word if it doesn't. Off: the
+            // repo paths this has always linked, to the editor.
+            const address = multiOn && !typed && !cls ? refOf(raw) : null;
+            if (address) {
+              return (
+                <FileRef address={address} md={`\`${raw}\``} onView={onOpenFile} link={<code {...props}>{kids}</code>}>
+                  <code {...props}>{kids}</code>
+                  {raw && <CopyBtn title="Copy code" text={raw} />}
+                </FileRef>
+              );
+            }
+            const ref = !multiOn && onOpenFile && !cls ? parseFileRef(raw) : null;
             if (ref && onOpenFile) return <FileRefSpan {...ref} label={raw} onOpen={onOpenFile} />;
             // An inline span carries the fence's glyph too: a command or a name
             // named mid-sentence is the thing you came to copy, and a drag
@@ -317,9 +342,11 @@ export const Markdown = memo(function Markdown({
           },
         }}
       >
-        {children}
+        {typed ? children : stripViews(children)}
       </ReactMarkdown>
+      {multiOn && !typed ? <RefImages text={children} /> : null}
       </MdTyped.Provider>
+      </RefView.Provider>
     </div>
   );
 });

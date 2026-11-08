@@ -31,6 +31,9 @@ import { clearReveal, revealKey, useRevealAsk } from "../lib/reveal";
 import { ROW_FILTERS, rowMatches, type RowFilter } from "../lib/rowfilter";
 import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./EvidenceRows";
 import { ProofBlock } from "./Proof";
+import { AnswerParts, DataView } from "./DataView";
+import { DesignCard } from "./DesignPane";
+import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
@@ -2545,7 +2548,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && (t === "figure" || t === "report" || showAt(i));
+    return !ended && (t === "figure" || t === "report" || t === "data" || t === "design" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2553,7 +2556,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -2586,6 +2589,19 @@ export const RunStream = memo(function RunStream({
   // what it made of the ones it only looked at, which the lightbox says too.
   const answerText = lastResult >= 0 ? (events[lastResult] as { result?: string }).result ?? "" : finalText >= 0 ? (events[finalText] as { text?: string }).text ?? "" : "";
   const proofs = mx ? withoutAnswered(proofsOf(events), answerText) : [];
+  // A finished turn's views go where its answer names them ([[view:v1]]), and the rest above it.
+  const named = mx && ended ? viewsNamed(answerText) : new Set<string>();
+  const refOfEvent = (i: number) => (events[i] as { ref?: string }).ref ?? "";
+  const placedViews = new Map<string, ReactNode>();
+  if (named.size) {
+    events.forEach((e, i) => {
+      if (e.type === "data" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DataView ev={e} />);
+      if (e.type === "design" && e.ref && named.has(e.ref)) placedViews.set(e.ref, <DesignCard board={e.board} title={e.title} pages={e.pages} />);
+    });
+    for (const p of proofs) {
+      if (named.has(refOfEvent(p.i))) placedViews.set(refOfEvent(p.i), <ProofBlock items={[p]} all={proofs} />);
+    }
+  }
   const looked = mx ? lookedNotes(events, (t) => resultTexts.has(t.trim()) || (finalText >= 0 && t === (events[finalText] as { text?: string }).text)) : null;
   if (looked) shotsOf.forEach((own, i) => {
     const note = looked.get(i);
@@ -2675,6 +2691,7 @@ export const RunStream = memo(function RunStream({
           return (
             <FinalResult
               key={i}
+              views={i === finalText ? placedViews : undefined}
               result={text}
               label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
               animate={animate}
@@ -2904,6 +2921,10 @@ export const RunStream = memo(function RunStream({
         return mx ? <ChecksRow key={i} ev={event} /> : null;
       case "rule":
         return mx ? <RuleRow key={i} ev={event} /> : null;
+      case "data":
+        return mx && !ended ? <DataView key={i} ev={event} /> : null;
+      case "design":
+        return mx && !ended ? <DesignCard key={i} board={event.board} title={event.title} pages={event.pages} /> : null;
       case "report":
         return mx && !ended ? <ReportCard key={i} ev={event} session={sessionId} /> : null;
       case "secret_request": {
@@ -2946,6 +2967,7 @@ export const RunStream = memo(function RunStream({
         return (
           <FinalResult
             key={i}
+            views={i === lastResult ? placedViews : undefined}
             result={event.result}
             update={lastResult >= 0 && i !== lastResult}
             // A stored event knows when it landed; a live one doesn't carry
@@ -3377,7 +3399,7 @@ export const RunStream = memo(function RunStream({
         z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : z.kind === "said" ? said(z, i)
           : workZone(z.segs, i === zones.length - 1, i === zones.map((x) => x.kind).lastIndexOf("work")))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
-  // What a finished turn did, by its answer: what it showed you, then its receipt.
+  // What a finished turn did, around its answer: what it showed you above it, its receipt below.
   if (mx && ended) {
     const receipt = unfinished ? null : receiptOf(events, { elapsed, tokens, runtime, started: turnStarted });
     const reports = events.flatMap((e, i) => (e.type === "report" ? [<ReportCard key={`rep${i}`} ev={e} session={sessionId} />] : []));
@@ -3387,10 +3409,21 @@ export const RunStream = memo(function RunStream({
     }, -1);
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
-        {proofs.length ? <ProofBlock items={proofs} turn={turnWord} /> : null}
         {reports}
         {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
       </Fragment>);
+    // What it showed comes first, then the answer that talks about it.
+    const above = proofs.filter((p) => !named.has(refOfEvent(p.i)));
+    const dataAbove = events.flatMap((e, i) => (named.has((e as { ref?: string }).ref ?? "") ? []
+      : e.type === "data" ? [<DataView key={`data${i}`} ev={e} />]
+      : e.type === "design" ? [<DesignCard key={`design${i}`} board={e.board} title={e.title} pages={e.pages} />] : []));
+    if (above.length || dataAbove.length) {
+      rows.splice(answerZone >= 0 ? answerZone : rows.length, 0,
+        <Fragment key="turn-shown">
+          {above.length ? <ProofBlock items={above} all={proofs} turn={turnWord} /> : null}
+          {dataAbove}
+        </Fragment>);
+    }
   }
   // DOSSIER: with no zone to carry it, the card is there anyway, live and
   // empty, its line saying what the turn waits on (the boot step). It is keyed
@@ -3543,10 +3576,13 @@ export function FinalResult({
   onAnswer,
   onQuote,
   onOpenFile,
+  views,
   view,
   askDocked = false,
   update = false,
 }: {
+  /** The turn's views the answer names, to draw where it names them. */
+  views?: Map<string, ReactNode>;
   result: string;
   /** An earlier result in a turn that went on after it: a progress update, not the answer. */
   update?: boolean;
@@ -3596,7 +3632,7 @@ export function FinalResult({
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
-  const [open, setOpen] = useState(update ? lines <= 3 : land || lines <= RESULT_FOLD_LINES);
+  const [open, setOpen] = useState(update ? lines <= 3 : land || lines <= RESULT_FOLD_LINES || !!views?.size);
   return (
     // `--tone` rather than four inline colours: the answer is the loudest thing
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
@@ -3621,13 +3657,15 @@ export function FinalResult({
             )}
           </span>
           <span className="flex-none opacity-0 transition-opacity group-focus-within/res:opacity-100 group-hover/res:opacity-100">
-            <CopyBtn text={result} title="copy result" />
+            <CopyBtn text={stripViews(result)} title="copy result" />
           </span>
         </div>
         {drawn ?? (body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-              <Markdown className="leading-relaxed text-foreground-bright" onOpenFile={onOpenFile}>{body}</Markdown>
+              <AnswerParts text={body} views={views} draw={(md, k) => (
+                <Markdown key={k} className="leading-relaxed text-foreground-bright" onOpenFile={onOpenFile}>{md}</Markdown>
+              )} />
             </div>
             {!open && <div className="res-fade" aria-hidden />}
           </div>

@@ -1,0 +1,164 @@
+/* The design-chat view (components/DesignPane.tsx). The chrome wears the theme; what's inside the
+   frame is the design and wears its own. The same file is in both apps. */
+.dg, .dg-editor, .dg-card { --dg-face: var(--ui-font, var(--page-font, var(--font-sans, inherit))); --dg-r: var(--prad, 0px); font-family: var(--dg-face); color: var(--tx); }
+.dg *, .dg-editor *, .dg-card * { box-sizing: border-box; }
+.dg { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--canvas); }
+.dg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--panel); font-size: var(--t115, 11.5px); }
+.dg-grow { flex: 1; }
+.dg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; min-width: 28px; padding: 3px 7px; appearance: none; background: none; border: 1px solid var(--border); border-radius: var(--dg-r); color: var(--txm); font: inherit; font-size: var(--t115, 11.5px); cursor: pointer; }
+.dg-btn:hover:not(:disabled), .dg-btn:focus-visible { color: var(--txb); border-color: var(--border-bright); outline: none; }
+.dg-btn:disabled { opacity: 0.45; cursor: default; }
+.dg-btn[aria-checked="true"], .dg-btn[aria-pressed="true"] { color: var(--acc); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.dg-group { display: inline-flex; gap: 2px; }
+.dg-danger { color: var(--err); border-color: var(--err); }
+.dg-wide { width: 100%; margin-top: 8px; }
+.dg select, .dg-editor select, .dg input[type="text"], .dg input[type="url"], .dg textarea, .dg-editor textarea { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; font-size: var(--t115, 11.5px); min-height: 28px; padding: 3px 6px; min-width: 0; }
+.dg select:focus, .dg input:focus, .dg textarea:focus, .dg-editor textarea:focus { outline: none; border-color: var(--border-bright); }
+.dg-page select { max-width: 240px; color: var(--txb); }
+.dg-live { color: var(--txd); font-variant-numeric: tabular-nums; }
+.dg-said { color: var(--txm); }
+.dg-main { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
+.dg-stage { flex: 1; position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; background: color-mix(in srgb, var(--txl) 12%, var(--canvas)); overflow: hidden; }
+.dg-sheet { position: relative; flex: 1; width: 100%; max-width: 100%; min-height: 0; background: #fff; }
+.dg-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.dg-before { pointer-events: none; }
+.dg-split { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--acc); pointer-events: none; }
+.dg-tag { position: absolute; top: 8px; padding: 2px 7px; font-size: var(--t105, 10.5px); color: #fff; background: rgba(0, 0, 0, 0.65); border-radius: 4px; pointer-events: none; }
+.dg-slider { position: absolute; left: 0; right: 0; bottom: 8px; width: calc(100% - 24px); margin: 0 12px; }
+.dg-note { padding: 6px 10px; width: 100%; font-size: var(--t115, 11.5px); color: var(--txb); background: var(--panel); border-bottom: 1px solid var(--border); }
+.dg-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--panel); font-size: var(--t115, 11.5px); }
+.dg-show { position: absolute; right: 8px; bottom: 8px; padding: 5px 10px; background: var(--panel); border: 1px solid var(--border-bright); border-radius: var(--dg-r); color: var(--txb); font: inherit; font-size: var(--t115, 11.5px); cursor: pointer; }
+.dg-tabs { display: flex; flex-wrap: nowrap; gap: 0 1px; padding: 4px 4px 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.dg-tabs button { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 5px 6px; color: var(--txd); font: inherit; cursor: pointer; }
+.dg-tabs button[aria-selected="true"] { color: var(--txb); border-bottom-color: var(--acc); }
+.dg-tabs .dg-hide { margin-left: auto; font-size: 15px; }
+.dg-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
+.dg-empty { margin: 0 0 8px; line-height: 1.5; color: var(--txd); }
+.dg-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.dg-list li { display: flex; align-items: flex-start; gap: 2px; border-bottom: 1px solid color-mix(in srgb, var(--txl) 22%, transparent); }
+.dg-list li[data-sent] { opacity: 0.6; }
+.dg-item { flex: 1; min-width: 0; display: flex; gap: 8px; padding: 7px 2px; appearance: none; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dg-item:hover { color: var(--txb); }
+.dg-n { flex: none; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #e8703a; color: #fff; font-size: 10px; font-weight: 600; }
+.dg-what { min-width: 0; line-height: 1.4; color: var(--txb); overflow-wrap: anywhere; }
+.dg-what em { color: var(--txd); font-style: normal; }
+.dg-what small { display: block; color: var(--txd); font-size: var(--t105, 10.5px); }
+.dg-drop { flex: none; margin-top: 5px; padding: 3px; appearance: none; background: none; border: 0; color: var(--txd); cursor: pointer; }
+.dg-drop:hover { color: var(--err); }
+.dg-note-in { display: block; width: 100%; resize: vertical; margin-bottom: 8px; }
+.dg-send { min-height: 30px; padding: 4px 11px; appearance: none; border: 1px solid var(--acc); border-radius: var(--dg-r); background: var(--acc); color: var(--acc-on, var(--canvas)); font: inherit; font-size: var(--t115, 11.5px); font-weight: 500; cursor: pointer; }
+.dg-panel > .dg-send, .dg-remix > .dg-send, .dg-critic > .dg-send { width: 100%; }
+.dg-send:disabled { opacity: 0.45; cursor: default; }
+.dg-chip { min-height: 26px; padding: 2px 8px; appearance: none; background: none; border: 1px solid var(--border-bright); border-radius: var(--dg-r); color: var(--txb); font: inherit; cursor: pointer; }
+.dg-pick { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.dg-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: var(--txm); }
+.dg-field span { flex: 0 0 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-field input, .dg-field select { flex: 1; width: 100%; }
+.dg-field input[type="color"] { min-height: 26px; padding: 1px; background: none; border: 1px solid var(--border); border-radius: var(--dg-r); }
+.dg-about { margin: 0 0 10px; color: var(--txb); overflow-wrap: anywhere; }
+.dg-tweaks h5 { margin: 14px 0 6px; font: inherit; color: var(--txd); }
+.dg-verdict { margin: 0 0 10px; line-height: 1.5; color: var(--txb); }
+.dg-score { display: grid; grid-template-columns: 76px 1fr 18px; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--txm); text-transform: capitalize; }
+.dg-score b { font-weight: 500; color: var(--txb); text-align: right; }
+.dg-track { display: block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 22%, transparent); overflow: hidden; }
+.dg-track i { display: block; height: 100%; background: var(--acc); }
+.dg-fixes { margin: 10px 0; padding-left: 18px; line-height: 1.45; color: var(--txm); }
+.dg-fixes li { margin-bottom: 6px; }
+.dg-fixes b { display: block; font-weight: 500; color: var(--txb); }
+.dg-refs form { display: flex; gap: 5px; }
+.dg-refs form input { flex: 1; }
+.dg-file { position: relative; }
+.dg-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.dg-ref { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 22%, transparent); }
+.dg-ref b { flex: 1 1 100%; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.dg-ref small { flex: 1; color: var(--txd); }
+.dg-editor { position: fixed; z-index: 9600; width: 288px; padding: 9px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: var(--dg-r); box-shadow: 0 12px 44px var(--shadow-pop, rgba(0, 0, 0, 0.45)); font-size: var(--t12, 12px); }
+.dg-editor small { display: block; margin-bottom: 5px; color: var(--txd); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-editor textarea { display: block; width: 100%; resize: vertical; }
+.dg-editor > div { display: flex; align-items: center; gap: 5px; margin-top: 7px; }
+.dg-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--prad, 0px); font-size: var(--t12, 12px); }
+.dg-card-text { flex: 1 1 160px; min-width: 0; }
+.dg-card-text b { display: block; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.dg-card-text small { display: block; margin-top: 2px; color: var(--txd); overflow-wrap: anywhere; }
+.dg-boards { padding: 8px 10px; }
+.dg-resize { width: 7px; cursor: col-resize; background: var(--border); touch-action: none; }
+.dg-resize:hover, .dg-resize:active { background: var(--acc); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 720px) {
+  .dg-main { flex-direction: column; }
+  .dg-side { flex: 0 0 42%; border-left: 0; border-top: 1px solid var(--border); }
+  .dg-close span { display: none; }
+  .dg-btn { min-height: 36px; min-width: 36px; }
+  .dg-sheet { width: 100% !important; }
+}
+.dg-phone { position: fixed; inset: 0; z-index: 9000; background: var(--canvas); }
+
+/* the design tab's top half (components/DesignSystem.tsx) */
+.ds, .ds-dialog { --dg-r: var(--prad, 0px); font-family: var(--ui-font, var(--page-font, var(--font-sans, inherit))); color: var(--tx); font-size: var(--t115, 11.5px); }
+.ds { padding: 8px 10px 0; }
+.ds *, .ds-dialog * { box-sizing: border-box; }
+.ds section { margin-bottom: 12px; }
+.ds-h { margin: 0 0 6px; font: inherit; font-weight: 500; color: var(--txb); font-size: var(--t12, 12px); }
+.ds-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.ds-list li { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); }
+.ds-tag { flex: none; width: 34px; padding: 1px 0; text-align: center; border: 1px solid var(--border); border-radius: var(--dg-r); font-size: 9px; letter-spacing: 0.05em; color: var(--txd); }
+.ds-what { flex: 1; min-width: 0; }
+.ds-what b { display: block; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.ds-what small { display: block; color: var(--txd); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-do { display: flex; flex-wrap: wrap; gap: 5px; }
+.ds-said { margin: 8px 0 0; color: var(--txm); line-height: 1.45; }
+.ds-err { margin: 8px 0; color: var(--err); line-height: 1.45; }
+.ds-swatches { display: flex; flex-wrap: wrap; gap: 3px; }
+.ds-swatches i { width: 18px; height: 18px; border-radius: min(var(--dg-r), 5px); border: 1px solid var(--border); }
+.ds-more { margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 7px; }
+.ds-more summary { cursor: pointer; color: var(--txb); font-weight: 500; }
+.ds-more summary span { margin-left: 4px; color: var(--txd); font-weight: 400; }
+.ds-files { list-style: none; margin: 6px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.ds-files li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 0; min-width: 0; }
+.ds-files small { flex: none; color: var(--txd); }
+.ds-path { display: inline-block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; direction: rtl; text-align: left; }
+.ds-find { width: 100%; margin-top: 6px; }
+.ds input:not([type]), .ds input[type="search"], .ds-dialog input:not([type]), .ds-dialog textarea, .ds-dialog select { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; min-height: 30px; padding: 4px 7px; width: 100%; min-width: 0; }
+.ds-dialog input:focus, .ds-dialog textarea:focus, .ds-dialog select:focus, .ds input:focus { outline: none; border-color: var(--border-bright); }
+.ds-back { position: fixed; inset: 0; z-index: 9400; display: grid; place-items: center; padding: 16px; background: var(--shadow-modal, rgba(0, 0, 0, 0.6)); }
+.ds-dialog { width: min(480px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-bright); border-radius: var(--dg-r); font-size: var(--t12, 12px); overflow: hidden; }
+.ds-dialog[data-wide] { width: min(920px, 100%); height: min(640px, calc(100vh - 32px)); }
+.ds-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.ds-dialog h3 { margin: 0; font-size: var(--t13, 13px); font-weight: 500; color: var(--txb); }
+.ds-dialog > :not(header) { margin-inline: 14px; }
+.ds-dialog > .ds-create { margin: 0; }
+.ds-create { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); }
+.ds-form { min-height: 0; overflow-y: auto; padding: 12px 14px; border-right: 1px solid var(--border); }
+.ds-sample { width: 100%; height: 100%; border: 0; background: #fff; }
+.ds-hint { margin: 0 0 10px; color: var(--txm); }
+.ds-f { display: block; margin-bottom: 11px; }
+.ds-f > span { display: block; margin-bottom: 4px; color: var(--txm); }
+.ds-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dg-chip[aria-pressed="true"], .dg-chip[aria-checked="true"] { color: var(--acc); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.ds-colors { display: flex; gap: 12px; }
+.ds-colors label { display: flex; flex-direction: column; gap: 3px; color: var(--txd); font-size: var(--t105, 10.5px); }
+.ds-colors input { width: 62px; height: 30px; padding: 1px; background: none; border: 1px solid var(--border); border-radius: var(--dg-r); cursor: pointer; }
+.ds-warn { list-style: none; margin: -4px 0 11px; padding: 0; color: var(--warn); line-height: 1.4; }
+.ds-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ds-two input { width: 100%; }
+/* stays in view: the form scrolls, and this is what it's all for */
+.ds-actions { position: sticky; bottom: -12px; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin: 4px -14px -12px; padding: 9px 14px 11px; background: var(--panel); border-top: 1px solid var(--border); }
+.ds-actions small { color: var(--txd); }
+.ds-source { display: flex; align-items: flex-end; gap: 6px; margin-top: 12px; margin-bottom: 4px; }
+.ds-source .ds-f { flex: 1; margin: 0; min-width: 0; }
+.ds-source .dg-btn { min-height: 30px; }
+.ds-seen { margin-top: 8px; padding: 9px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--dg-r); }
+.ds-seen b { display: block; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.ds-seen span { display: block; margin: 2px 0 6px; color: var(--txd); overflow-wrap: anywhere; }
+.ds-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; margin-bottom: 14px; }
+.ds-choice > div { display: flex; flex-direction: column; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: var(--dg-r); }
+.ds-choice h4 { margin: 0 0 3px; font: inherit; font-weight: 500; color: var(--txb); }
+.ds-choice p { flex: 1; margin: 0 0 9px; color: var(--txm); line-height: 1.45; }
+.ds-choice code { font-size: 0.95em; }
+.dg-boards-h { margin: 12px 10px 0; padding-top: 10px; border-top: 1px solid var(--border); font-size: var(--t12, 12px); font-weight: 500; color: var(--txb); font-family: var(--ui-font, var(--page-font, inherit)); }
+@media (max-width: 720px) {
+  .ds-dialog[data-wide] { height: calc(100vh - 32px); }
+  .ds-create { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 200px; }
+  .ds-form { border-right: 0; border-bottom: 1px solid var(--border); }
+  .ds-choice { grid-template-columns: 1fr; }
+}

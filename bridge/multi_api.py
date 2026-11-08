@@ -13,8 +13,8 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_images, chat_search, config, experimental,
-                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, skill_share, store,
+from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
+                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
@@ -69,9 +69,55 @@ def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
         return None
 
 
+def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, int]":
+    """The design view (bridge/design_board.py, design_audit.py)."""
+    root = chat_images.root_of(s.get("cwd"))
+    if not root:
+        return {"error": "This chat has no project folder."}, 400
+    try:
+        if path == "chat/design":
+            return design_board.poll(root, body)
+        if path == "chat/design-comments":
+            return design_board.edit_comments(root, body)
+        if path == "chat/design-boards":
+            return design_board.listed(root)
+        if path == "chat/design-delete":
+            return design_board.delete(root, body.get("board"))
+        if path == "chat/design-version":
+            html = design_board.read_version(root, str(body.get("board") or ""), str(body.get("page") or ""), int(body.get("version") or 0))
+            return ({"html": html}, 200) if html is not None else ({"error": "No such version."}, 404)
+        if path == "chat/design-critique":
+            return design_audit.critique(root, {"board": body.get("board"), "page": body.get("page"), "fresh": body.get("fresh") is True}, chat_id), 200
+        if path == "chat/design-reference":
+            return design_audit.reference(root, body)
+        if path == "chat/design-system":
+            return design_system.discover(root, s), 200
+        if path == "chat/design-system-preview":
+            return design_system.preview(root, body)
+        if path == "chat/design-system-create":
+            return design_system.create(root, body)
+        if path == "chat/design-system-link":
+            return design_system.link(root, body)
+        if path == "chat/design-system-unlink":
+            return design_system.unlink(root, body)
+        if path == "chat/design-system-import":
+            return design_system.import_(root, body)
+        if path == "chat/design-references":
+            return {"references": design_audit.references(root)}, 200
+    except (design_board.Refused, design_system.Refused, ValueError) as e:
+        return {"error": str(e)}, 400
+    except OSError as e:
+        return {"error": f"Couldn't do that: {e}"}, 500
+    return {"error": "No such route."}, 404
+
+
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "saved-views":
+        if not experimental.enabled():
+            return _OFF
+        return saved_views.listed(image_root(chat_id, _one(qs, "session"), _one(qs, "project")))
     if path == "chat-images":
         return {"mode": chat_images.mode()}, 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
@@ -175,6 +221,14 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path == "design-theme":
+        return design_board.save_theme(body) if experimental.enabled() else _OFF
+    if path.startswith("saved-views"):
+        if not experimental.enabled():
+            return _OFF
+        if path == "saved-views/send":
+            return saved_views.send(body, chat_id)
+        return saved_views.delete(image_root(chat_id, body.get("session_id"), body.get("project")), body.get("id"))
     if not path.startswith(("chat/", "channel/", "mcp-share", "skill-share", "project/helper", "tool-policy",
                             "rules", "mystical-dir", "hooks")):
         return None
@@ -201,6 +255,18 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
     if not s:
         return {"error": "not found"}, 404
     chat = _chat_of(s)
+    if path == "chat/file-refs":
+        return chat_files.refs(body, s)
+    if path == "chat/open-file":
+        return chat_files.open_file(body, s)
+    if path == "chat/translate":
+        return chat_aside.translate(body, chat_id, s.get("cwd"))
+    if path == "chat/explain":
+        return chat_aside.explain(body, chat_id, s.get("cwd"))
+    if path.startswith("chat/design"):
+        return _post_design(path, body, s, chat_id)
+    if path == "chat/view-save":
+        return saved_views.save(chat_images.root_of(s.get("cwd")), body.get("view"))
     if path == "chat/config":
         try:
             return {"ok": True, "config": channel.set_config(chat, body.get("config") or {})}, 200
