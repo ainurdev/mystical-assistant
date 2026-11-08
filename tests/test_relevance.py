@@ -241,3 +241,18 @@ def test_session_shows_as_checking_while_the_check_runs(monkeypatch):
     h._run(906, {"prompt": LONG, "session_id": s["id"]})
     assert mid[s["id"]]["state"] == "checking"
     assert s["id"] not in relevance.checking_ids()      # cleared once it's done
+
+
+def test_pick_once_leaves_the_sessions_saved_picks_alone(monkeypatch):
+    s = _session(chat=907)
+    _no_jobs(monkeypatch)
+    h, box = _handler()
+    body = {"prompt": "fix that", "session_id": s["id"], "model": "opus",
+            "permission_mode": "plan", "effort": "high"}
+    h._run(907, {**body, "pick_once": True})
+    got = store.get_session(s["id"])
+    assert (got["model"], got["permission_mode"], got["effort"]) == (
+        s["model"], s["permission_mode"], s["effort"])
+    h._run(907, body)
+    got = store.get_session(s["id"])
+    assert got["permission_mode"] == "plan" and got["effort"] == "high" and got["model"]

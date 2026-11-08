@@ -262,6 +262,8 @@ interface HeldPrompt {
   reason: string;
   title: string | null;
   noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
+  // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
+  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string };
 }
 
 export function App() {
@@ -1649,7 +1651,8 @@ export function App() {
     // where the composer's are still the session you left's, or a kind's preset (lib/kinds),
     // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
-             picks?: { model: string; perm: string; effort: string }; ponytail?: string },
+             picks?: { model: string; perm: string; effort: string }; ponytail?: string;
+             pickOnce?: boolean },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1695,7 +1698,7 @@ export function App() {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
-        ...(opts?.picks && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
+        ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1713,6 +1716,7 @@ export function App() {
         session_id: sid, model: (knobs && pk.model) || undefined, effort: (knobs && pk.effort) || undefined,
         permission_mode: (knobs && pk.perm) || undefined, ponytail: (opts?.ponytail ?? ponytail) || undefined,
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
+        pick_once: opts?.pickOnce || undefined,
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -1720,7 +1724,8 @@ export function App() {
         setHeldMap((m) => ({
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
-                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath },
+                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath,
+                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail } : undefined },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -1730,7 +1735,7 @@ export function App() {
       // The run saved these picks to the session (/local/run); mirror that here,
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this browser's defaults meanwhile.
-      if (knobs) setSessions((prev) => prev.map((s) => (s.id === sid
+      if (knobs && !opts?.pickOnce) setSessions((prev) => prev.map((s) => (s.id === sid
         ? { ...s, model: pk.model, permission_mode: pk.perm || s.permission_mode, effort: pk.effort || null } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
@@ -3408,7 +3413,8 @@ export function App() {
                         onStartNew={() => void heldStartNew(held)}
                         onContinue={() => {
                           setHeldMap((m) => omit(m, held.sid));
-                          void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid });
+                          void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid,
+                            ...(held.kind ? { ...held.kind, pickOnce: true } : {}) });
                         }}
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
@@ -3471,7 +3477,7 @@ export function App() {
                       showPonytail={ai.ponytail}
                       // A kind's preset rides with its prompt, and never becomes this browser's picks.
                       onSend={(t, i, noPath, run) => void send(t, i, { ...(noPath ? { noPath: true } : {}),
-                        ...(run ? { picks: { model: run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail } : {}) })}
+                        ...(run ? { picks: { model: run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
                       designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}

@@ -1668,6 +1668,7 @@ export interface RunBody {
   permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
+  pick_once?: boolean; // a kind's preset: this prompt only, the session's saved picks stay
   no_path?: boolean; // Esc took the auto-applied skill out of this prompt: the run is told there is no path
 }
 
@@ -2574,7 +2575,8 @@ export const api = {
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
-    effort?: string; surface?: string; // no model/mode: it runs on the session's
+    effort?: string; surface?: string;
+    model?: string; permission_mode?: string; // only a kind's preset; a plain prompt runs on the session's
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>
