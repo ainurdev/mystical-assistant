@@ -33,6 +33,7 @@ import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./Evid
 import { ProofBlock } from "./Proof";
 import { AnswerParts, DataView } from "./DataView";
 import { DesignCard } from "./DesignPane";
+import { OfferCard, offerOf } from "./OfferCard";
 import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
@@ -2530,7 +2531,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "offer" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -2895,6 +2896,8 @@ export const RunStream = memo(function RunStream({
         return mx ? <ChecksRow key={i} ev={event} /> : null;
       case "rule":
         return mx ? <RuleRow key={i} ev={event} /> : null;
+      case "offer":
+        return null;       // drawn after the answer, once the turn is over
       case "data":
         return mx && !ended ? <DataView key={i} ev={event} /> : null;
       case "design":
@@ -3376,6 +3379,7 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {reports}
+        {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? <OfferCard offer={offerOf(events)!} onStart={onAnswer} /> : null}
         {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
       </Fragment>);
     // What it showed comes first, then the answer that talks about it.

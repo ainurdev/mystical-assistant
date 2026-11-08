@@ -46,6 +46,7 @@ import { Markdown } from "./Markdown";
 import { useExperimental } from "../lib/multi";
 import { AnswerParts, DataView } from "./DataView";
 import { DesignCard } from "./DesignPane";
+import { OfferCard, offerOf } from "./OfferCard";
 import { viewsNamed } from "../lib/dataview";
 import { bashKind, bashLine, parseTests, testWords } from "../lib/bashkind";
 import { failureState, type Ev as FailEv } from "../lib/failures";
@@ -672,7 +673,7 @@ const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
-const EVIDENCE_ROW = new Set(["figure", "data", "design", "checks", "report", "secret_request", "rule"]);
+const EVIDENCE_ROW = new Set(["figure", "data", "design", "offer", "checks", "report", "secret_request", "rule"]);
 const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
 
 /** Tool kinds that draw a block of their own, so they never fold into a
@@ -1434,12 +1435,15 @@ export const RunStream = memo(function RunStream({
               onWrite={onWrite}
             />
           </div>
+          {i === lastResult && ended && onAnswer && offerOf(events) ? <OfferCard offer={offerOf(events)!} onStart={onAnswer} /> : null}
           </Fragment>
         );
       case "figure": {
         const f = figureAt.get(i);
         return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
       }
+      case "offer":
+        return null;       // drawn after the answer, once the turn is over
       case "data":
         return multiOn && lastResult < 0 ? <DataView key={i} ev={event} /> : null;
       case "design":

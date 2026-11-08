@@ -200,7 +200,10 @@ _EXPERIMENTAL_NOTE = (
     "bars, kanban board, flowchart or timeline in the chat. Keep your reply to what stands out.\n\n"
     "For UI you design, read design_context (find_tools), then call show_design from the mystical MCP server: the user "
     "sees it live and can point, draw and comment on it. If the request is open, show three rough directions first and "
-    "ask which way to go. Run inspect_ui and critique_design before calling a design done.")
+    "ask which way to go. inspect_ui and critique_design are there for checking a design.\n\n"
+    "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
+    "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
+    "tested and just needs a check, go ahead normally.")
 
 
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:

@@ -111,13 +111,21 @@ DESIGN = {"name": "show_design", "description": (
     "which way to go; skip that for a small change or when the direction is set. Pass file to point at an HTML file, then "
     "keep editing that file: the user watches edits land, so don't call this again unless pages change. No network in "
     "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Their comments arrive "
-    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui and "
-    "critique_design (use them before saying a design is done) and grab_style."),
+    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui, "
+    "critique_design and grab_style."),
     "inputSchema": {"type": "object", "required": ["title"], "properties": {
         "title": {"type": "string", "description": "What's being designed."},
         "board": {"type": "string", "description": "The board id, to add to or update one. Default: made from the title."},
         "pages": {"type": "array", "items": {"type": "object"}, "description":
                   "[{name, file or html, direction}]. direction says in a few words what this one is going for."}}}}
+OFFER = _t("offer_review", "Ask the user whether to run a review loop, when you think a feature is complex enough to warrant one. Call "
+           "this as your last step, once you're done with everything, then give your final answer. A Start review button appears "
+           "after your answer.",
+           {"kind": {"type": "string", "enum": ["code", "design", "other"], "description": "What's being reviewed. Default code."},
+            "title": {"type": "string", "description": "As the card says it, like: Review the retry change?"},
+            "detail": {"type": "string", "description": "Optional: one line on why it's worth it."},
+            "focus": {"type": "string", "description": "What to look at: files, a board's id, risks."},
+            "rounds": {"type": "integer", "description": "Most rounds, 1 to 5. Default 3."}}, ["title"])
 COMPARE = _t("compare_images", "Show a before and an after side by side, with one caption saying what changed.",
              {"before": _IMG, "after": _IMG, "caption": _S}, ["before", "after", "caption"])
 CHECKS = _t("run_checks", "Run this project's tests or checks and record the result in the chat, compared with "
@@ -170,7 +178,7 @@ RECORD = _t("record", "Record a page to a video and put it in the chat. Returns 
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, DATA, DESIGN, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, DESIGN, OFFER, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
@@ -297,6 +305,35 @@ def _show_data(s: dict, job, a: dict) -> dict:
     if notes:
         said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
     return _text(said)
+
+
+def _review_prompt(kind: str, focus: str, rounds: int) -> str:
+    """What pressing Start review sends: the loop, spelled out, as this is its only instruction."""
+    look = ("Run inspect_ui, then critique_design with fresh set to true, for each page" if kind == "design"
+            else "Have a separate reviewer that didn't write this check it, using the code-review skill, a read-only helper or a subagent")
+    about = f" Look at: {focus}." if focus else ""
+    return (f"Start the review loop you offered, for at most {rounds} round{'' if rounds == 1 else 's'}.{about} In each round: {look}. "
+            "Verify each finding yourself before acting on it, fix the ones that are real, and run the checks. Stop early once a round "
+            "finds nothing real. Then tell me what was found and fixed, and what you chose not to fix and why. Don't commit or push "
+            "unless I've asked for that.")
+
+
+def _offer_review(s: dict, job, a: dict) -> dict:
+    """A card after the final answer (components/OfferCard), for the user to start a review from."""
+    if job is None:
+        return _text("No turn is running to offer this in.", error=True)
+    title = " ".join(str(a.get("title") or "").split())[:120]
+    if not title:
+        return _text("Give the card a title: what would be reviewed, as a question.", error=True)
+    kind = a.get("kind") if a.get("kind") in ("code", "design", "other") else "code"
+    try:
+        rounds = max(1, min(5, int(a.get("rounds") or 3)))
+    except (TypeError, ValueError):
+        rounds = 3
+    focus = " ".join(str(a.get("focus") or "").split())[:400]
+    job.add({"type": "offer", "kind": kind, "title": title, "detail": " ".join(str(a.get("detail") or "").split())[:200],
+             "rounds": rounds, "prompt": _review_prompt(kind, focus, rounds)})
+    return _text("The button will appear after your final answer.")
 
 
 def _design_root(s: dict) -> str:
@@ -738,7 +775,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "design_context": _design_context,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,

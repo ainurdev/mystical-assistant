@@ -388,6 +388,8 @@ export type RunEvent =
   | DataEv
   // show_design: a board the agent made (bridge/design_board.py), and its PREVIEW DESIGN button.
   | { type: "design"; board: string; title: string; pages: string[]; ref?: string }
+  // offer_review: a review the agent offers, with a button after its final answer (OfferCard).
+  | { type: "offer"; kind: string; title: string; detail: string; rounds: number; prompt: string }
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
       passed: number | null; failed: number | null; skipped: number | null;
       new: string[]; known: string[]; log: string; tail: string }
