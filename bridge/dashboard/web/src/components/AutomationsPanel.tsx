@@ -10,6 +10,7 @@ type Check = { kind: "none" | "command" | "script"; command?: string; script?: s
 type Trigger =
   | { kind: "timer"; every: number; check: Check }
   | { kind: "daily"; count: number; start: string; end: string }
+  | { kind: "once"; at: string }
   | { kind: "path"; paths: string[] }
   | { kind: "telegram"; command: string };
 type Run = { at: number; why: string; session_id: string; status: string };
@@ -33,6 +34,10 @@ export function triggerWords(t: Trigger): string {
     return `Every ${every}${t.check.kind === "none" ? "" : ", if its check says yes"}`;
   }
   if (t.kind === "daily") return t.count === 1 ? `Daily at ${t.start}` : `${t.count} times a day, ${t.start} to ${t.end}`;
+  if (t.kind === "once") {
+    const d = new Date(t.at);
+    return `Once, on ${d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }) })} at ${t.at.slice(11)}`;
+  }
   if (t.kind === "path") return `When ${t.paths.length === 1 ? t.paths[0] : `${t.paths.length} paths`} change${t.paths.length === 1 ? "s" : ""}`;
   return `When you send /${t.command}`;
 }
@@ -43,12 +48,18 @@ const MODES: { id: string; label: string; note: string }[] = [
   { id: "bypassPermissions", label: "Fully automatic", note: "It never stops to ask. A bad prompt or a hostile file could do damage before you see it." },
 ];
 const KINDS: { id: Trigger["kind"]; label: string }[] = [
-  { id: "timer", label: "Timer" }, { id: "daily", label: "Times a day" }, { id: "path", label: "File or folder" }, { id: "telegram", label: "Telegram" },
+  { id: "timer", label: "Timer" }, { id: "daily", label: "Times a day" }, { id: "once", label: "Once" }, { id: "path", label: "File or folder" }, { id: "telegram", label: "Telegram" },
 ];
 
-type Draft = { id?: string; name: string; prompt: string; project: string; mode: string; chat: "new" | "same"; kind: Trigger["kind"]; every: number; unit: number; check: Check["kind"]; command: string; script: string; count: number; start: string; end: string; paths: string; word: string };
+type Draft = { id?: string; name: string; prompt: string; project: string; mode: string; chat: "new" | "same"; kind: Trigger["kind"]; every: number; unit: number; check: Check["kind"]; command: string; script: string; count: number; start: string; end: string; at: string; paths: string; word: string };
 
-const blank = (project: string): Draft => ({ name: "", prompt: "", project, mode: "acceptEdits", chat: "new", kind: "timer", every: 10, unit: 1, check: "none", command: "", script: "", count: 3, start: "09:00", end: "18:00", paths: "", word: "" });
+/** Tomorrow at nine, in the form a datetime-local input takes. */
+const tomorrow = () => {
+  const d = new Date(Date.now() + 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T09:00`;
+};
+
+const blank = (project: string): Draft => ({ name: "", prompt: "", project, mode: "acceptEdits", chat: "new", kind: "timer", every: 10, unit: 1, check: "none", command: "", script: "", count: 3, start: "09:00", end: "18:00", at: tomorrow(), paths: "", word: "" });
 
 function fromAuto(a: Auto): Draft {
   const d = { ...blank(a.project), id: a.id, name: a.name, prompt: a.prompt, mode: a.mode, chat: a.chat, kind: a.trigger.kind };
@@ -58,6 +69,7 @@ function fromAuto(a: Auto): Draft {
     return { ...d, every: t.every / unit, unit, check: t.check.kind, command: t.check.command ?? "", script: t.check.script ?? "" };
   }
   if (t.kind === "daily") return { ...d, count: t.count, start: t.start, end: t.end };
+  if (t.kind === "once") return { ...d, at: t.at };
   if (t.kind === "path") return { ...d, paths: t.paths.join("\n") };
   return { ...d, word: t.command };
 }
@@ -65,6 +77,7 @@ function fromAuto(a: Auto): Draft {
 function toTrigger(d: Draft): Trigger {
   if (d.kind === "timer") return { kind: "timer", every: d.every * d.unit, check: { kind: d.check, command: d.command, script: d.script } };
   if (d.kind === "daily") return { kind: "daily", count: d.count, start: d.start, end: d.end };
+  if (d.kind === "once") return { kind: "once", at: d.at };
   if (d.kind === "path") return { kind: "path", paths: d.paths.split("\n").map((p) => p.trim()).filter(Boolean) };
   return { kind: "telegram", command: d.word };
 }
@@ -148,6 +161,12 @@ function Form({ start, projects, onDone, onClose, onOpen }: { start: Draft; proj
             {d.count > 1 ? <label>to <input type="time" value={d.end} onChange={(e) => set({ end: e.target.value })} /></label> : null}
           </div>
         ) : null}
+        {d.kind === "once" ? (
+          <label className="ds-f"><span>Date and time, on this machine's clock</span>
+            <input type="datetime-local" value={d.at} onChange={(e) => set({ at: e.target.value })} />
+            <small className="au-hint">It runs one time, then switches itself off. If this machine is asleep then, it runs on waking, up to 12 hours late.</small>
+          </label>
+        ) : null}
         {d.kind === "path" ? <label className="ds-f"><span>Files or folders to watch, one per line, from the project or absolute</span><textarea rows={3} value={d.paths} placeholder={"src/\nnotes/inbox.md"} onChange={(e) => set({ paths: e.target.value })} /></label> : null}
         {d.kind === "telegram" ? <label className="ds-f"><span>Command for the bot. Anything after it reaches the agent</span><input value={d.word} placeholder="standup" onChange={(e) => set({ word: e.target.value })} /></label> : null}
         <label className="ds-f"><span>What should the agent do?</span><textarea rows={4} value={d.prompt} placeholder="Check the forecast and tell me if I need an umbrella." onChange={(e) => set({ prompt: e.target.value })} /></label>
@@ -195,7 +214,7 @@ export function AutomationsPanel({ project, onOpen }: { project?: string | null;
         <button type="button" className="dg-send" disabled={!data} onClick={() => setDraft(blank(project ?? ""))}>New</button>
       </div>
       {error ? <p className="ds-err" role="alert">{error}</p> : null}
-      {data && !data.automations.length ? <p className="dg-empty">Nothing yet. An automation runs a prompt on a timer, some times a day, when a file changes, or when you send the bot a command.</p> : null}
+      {data && !data.automations.length ? <p className="dg-empty">Nothing yet. An automation runs a prompt on a timer, some times a day, once at a set time, when a file changes, or when you send the bot a command.</p> : null}
       <ul className="au-list">
         {(data?.automations ?? []).map((a) => {
           const last = a.runs[a.runs.length - 1];
