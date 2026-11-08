@@ -156,6 +156,7 @@ import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
+import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
 
 
@@ -1645,9 +1646,10 @@ export function App() {
     text: string, images: string[],
     // newAgent: the agent of a session minted for this prompt (startIn), which
     // this render's `sessions` doesn't know yet; picks: that session's own,
-    // where the composer's are still the session you left's.
+    // where the composer's are still the session you left's, or a kind's preset (lib/kinds),
+    // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
-             picks?: { model: string; perm: string; effort: string } },
+             picks?: { model: string; perm: string; effort: string }; ponytail?: string },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1686,12 +1688,14 @@ export function App() {
     // browser doesn't know its picks: its next turn runs on its own, never on these.
     const knobs = sendPicks(targetAgent, agentPick?.agent, opts?.newAgent !== undefined) && !briefOf(sid)?.parent_session;
     // No model or mode: a queued prompt runs on the session's when it starts,
-    // so a pick made while it waits still applies. Resolves whether the prompt
-    // got into the queue; a miss says so here.
+    // so a pick made while it waits still applies. Picks sent with the prompt
+    // (a kind's preset) are the exception: they queue with it. Resolves whether
+    // the prompt got into the queue; a miss says so here.
     const enqueue = async () => {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
+        ...(opts?.picks && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1707,7 +1711,7 @@ export function App() {
       const res = await api.run({
         prompt: text, images, project,
         session_id: sid, model: (knobs && pk.model) || undefined, effort: (knobs && pk.effort) || undefined,
-        permission_mode: (knobs && pk.perm) || undefined, ponytail: ponytail || undefined,
+        permission_mode: (knobs && pk.perm) || undefined, ponytail: (opts?.ponytail ?? ponytail) || undefined,
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
       });
       // Held: this looks like different work from the session it would resume.
@@ -2378,6 +2382,16 @@ export function App() {
     const id = setInterval(tick, 10000);
     return () => { live = false; clearInterval(id); };
   }, [sessionProject, sessionBranch, gitNonce]);
+
+  // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
+  // status above: the session's newest check, and whether its project is linked to Claude
+  // Design, held per project and read again on each visit (null until the first answer).
+  const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
+  const [designLinks, setDesignLinks] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (sessionProject) api.projectSettings({ project: sessionProject })
+      .then((s) => setDesignLinks((m) => ({ ...m, [sessionProject]: !!s.design_project })), () => {});
+  }, [sessionProject]);
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
@@ -3455,7 +3469,12 @@ export function App() {
                       onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
-                      onSend={(t, i, noPath) => void send(t, i, noPath ? { noPath: true } : undefined)} onStop={() => void stop()}
+                      // A kind's preset rides with its prompt, and never becomes this browser's picks.
+                      onSend={(t, i, noPath, run) => void send(t, i, { ...(noPath ? { noPath: true } : {}),
+                        ...(run ? { picks: { model: run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail } : {}) })}
+                      onStop={() => void stop()}
+                      git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
+                      designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental), nor one that has answered while
                       // background tasks run: SEND queues instead.

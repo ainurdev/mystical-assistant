@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users } from "lucide-react";
-import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, type LucideIcon } from "lucide-react";
+import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
@@ -68,6 +69,8 @@ const COMPACT_SUGGEST = 0.75;
 // as fast as a bar at a tenth of the width, and the width is the point — the
 // old full-bleed bar spent a whole row of the composer to render "1%".
 const CTX_SEGMENTS = 8;
+// The prompt box's kinds of work (lib/kinds), each with its glyph on the rail.
+const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
@@ -520,7 +523,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, flowQueued, smartZone, multi,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, flowQueued, smartZone, multi, git, lastCheck, designLinked,
 }: {
   /** Multi-agent chats (ComposerMulti). */
   multi?: ComposerMulti | null;
@@ -571,7 +574,8 @@ export function Composer({
   contextWindow?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
-  onSend: (text: string, images: string[], noPath?: boolean) => void;
+  /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). */
+  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -611,6 +615,11 @@ export function Composer({
   flowQueued?: boolean;
   /** Sub-switch: the 150k mark on the CTX meter. */
   smartZone?: boolean;
+  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
+   *  check, and whether its project is linked to Claude Design (null: not known yet). */
+  git?: GitStatus | null;
+  lastCheck?: LastCheck | null;
+  designLinked?: boolean | null;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -813,14 +822,15 @@ export function Composer({
     return () => { live = false; };
   }, [slashOn, leadsSlash, project, noList, skillPrefix, goals, cwd]);
   // The router has it read up front, once per project, so a command it puts in front draws as one at once.
+  // COMPACT's kinds read it too: whether Matt's pack is listed decides FIX's command and BUILD's fact.
   useEffect(() => {
-    if (!routing || onAgent) return;
+    if ((!routing && !shelled) || onAgent) return;
     let live = true;
     void api.commands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [routing, project, onAgent]);
+  }, [routing, shelled, project, onAgent]);
   const slashQ = slash ? (skillPrefix ? skillQuery(slash.q, skillPrefix) : slash.q) : "";
   const shits = slash && !noList ? rankCommands(cmds, slashQ) : [];
   const slashOpen = !!slash && !noList && !slashDismissed && (shits.length > 0 || cmdsStale);
@@ -862,6 +872,8 @@ export function Composer({
   // Never while a turn runs (steer or queue) or a docked ask takes the text, never over
   // a /command, never for an agent (its / runs none of these), and not at all (no caption
   // row either) while the project's / list has none of Matt's commands to offer.
+  // COMPACT has no auto pick and no typed-text suggestion: its kinds take the typed text.
+  // The empty box's ghost stays, its caption on the rail.
   const pack = cmds.some((c) => c.name.startsWith("mattpocock-skills:"));
   const routeOn = !!routing && pack && !!routeCtx && !onAgent && !running && !ask?.send;
   // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
@@ -871,6 +883,7 @@ export function Composer({
   const [dropped, setDropped] = useState(false);                // no auto pick for this draft: one was taken out, or it wasn't typed fresh here
   const [hidden, setHidden] = useState(false);                  // Esc on the route on show, until the box empties or fills
   const [noPath, setNoPath] = useState(false);                 // Esc took an auto pick out of this draft: its send says "no path"
+  const [kindPick, setKindPick] = useState<KindPick>(null);     // COMPACT: the kind you tapped or Tabbed to; null = guess it from the text
   const [fitPick, setFitPick] = useState(0);
   const fitsId = useId();
   const routeSeq = useRef(0);
@@ -892,7 +905,7 @@ export function Composer({
       }).then(({ route }) => {
         if (stale()) return;
         setHeld(route && { r: route, for: text, ctx: ctxKey });
-        if (route && shouldAutoApply(text, route, now.current.dropped)) {
+        if (route && !shelled && shouldAutoApply(text, route, now.current.dropped)) {
           taRef.current?.prepend(`/${route.name} `);
           setApplied(route);
           landed.current = `/${route.name} ${text}`;
@@ -905,20 +918,24 @@ export function Composer({
   useEffect(() => { if (!blank && isDropped(text, applied?.name ?? null)) setDropped(true); }, [text, applied, blank]);
   useEffect(() => { if (text !== landed.current) landed.current = null; }, [text]);
   // Hiding lasts until the box empties or fills; an emptied box is a fresh draft.
-  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); setNoPath(false); } }, [blank]);
+  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); setNoPath(false); setKindPick(null); } }, [blank]);
   // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
   useEffect(() => {
-    setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== "");
+    setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== ""); setKindPick(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
   const live = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
   // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
   // A flow step already queued is the next step: its ghost would offer it twice.
   const ghost = live && blank && !(flowQueued && live.kind === "next") ? ghostFor("", live) : null;
-  const rowRoute = live && !blank && ghostFor(text, live) ? live : null;
-  const auto = routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
+  const rowRoute = !shelled && live && !blank && ghostFor(text, live) ? live : null;
+  const auto = !shelled && routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
   // What you typed, without the auto pick: DESIGN, GRILL and COMPACT put their own command in front.
   const typed = auto ? swapLead(text, auto.name, null) : text;
+  // The kind of work on show (COMPACT only; DEFAULT has no rail to show one). An answer to a
+  // docked ask, an agent's session and a typed /command go as typed: no kind, the kinds dim.
+  const kindsOn = shelled && !onAgent && !ask?.send && !leadsSlash;
+  const { kind, how: kindHow } = kindsOn ? shownKind(kindPick, typed) : { kind: null, how: "none" as const };
   const shown = auto ?? (ghost ? live : rowRoute);   // what the caption and the list of other fits are about
   const how = auto ? "auto" : ghost ? "inline" : "row";
   // The list of other fits goes with the command it is for (⌫ while it is open), backdrop and all.
@@ -987,6 +1004,18 @@ export function Composer({
       return take();
     }
     return false;
+  }
+
+  /** COMPACT's kinds: Tab and Shift+Tab walk them while the box has text (design … ask, then
+   *  plain, then round again), Esc drops the one on show. An open list or menu keeps its keys. */
+  function kindKey(e: KeyboardEvent): boolean {
+    if (!kindsOn || openDrop || e.altKey || e.ctrlKey || e.metaKey) return false;
+    if (e.key === "Tab" && !blank) setKindPick(nextKind(kind, e.shiftKey ? -1 : 1) ?? "plain");
+    else if (e.key === "Escape" && kind) setKindPick("plain");
+    else return false;
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
   }
 
   // --- Ctrl+R: reverse prompt search ---------------------------------------
@@ -1107,7 +1136,9 @@ export function Composer({
       return;
     }
     if (!t || disabled) return;
-    onSend(t, images, noPath || undefined);
+    // The kind on show puts its command in front and sends its preset with the prompt.
+    const plan = sendPlan({ kind, text: t, pack, answering: !!ask?.send, agent: onAgent, run: kind ? presetFor(kind) : null });
+    onSend(plan.text, images, noPath || undefined, plan.run);
     setText("");
     setImages([]);
   }
@@ -1279,11 +1310,14 @@ export function Composer({
     </div>
   );
   const verbMenu = openDrop === "verbs" && menuOf(verbs);
+  // GRILL stays DEFAULT's: COMPACT's + drops it, the kinds carry the work there (docs/superpowers/specs/prompt-kinds.md).
+  const plusVerbs = verbs.filter((v) => v.key !== "grill");
+  // Over the open-menu backdrop (z 25), as the rail is, so a second tap toggles directly.
   const plusBtn = (
-    <div style={{ position: "relative", flex: "none" }}>
+    <div style={{ position: "relative", flex: "none", zIndex: 26 }}>
       <button className="pb-plus" onClick={() => setOpenDrop((d) => (d === "plus" ? "" : "plus"))}
-        title={["Attach a file", ...verbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
-      {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...verbs])}
+        title={["Attach a file", ...plusVerbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
+      {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...plusVerbs])}
     </div>
   );
   // Claude's window and Claude's /compact: an agent's meter would divide its
@@ -1391,8 +1425,9 @@ export function Composer({
   ) : (
     <>
       {withDesign && designBtn}
-      <button className="act-pri caps" onClick={submit} disabled={disabled || !text.trim()} title="SEND (Enter)">
-        Send <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      {/* COMPACT's key says the kind it sends as; DEFAULT has no kind, so it always reads Send. */}
+      <button className="act-pri caps" onClick={submit} disabled={disabled || !text.trim()} title={`${kind ? KINDS[kind].name : "SEND"} (Enter)`}>
+        {kind ? KINDS[kind].verb : "Send"} <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
     </>
   );
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
@@ -1492,7 +1527,6 @@ export function Composer({
         </div>
       : <div className="ma-set-note" role="status" style={{ marginTop: 0, marginBottom: 6 }}>saving image…</div>
   );
-  const settingsChips = (right: boolean) => (<>{profileDrop(right)}{ponyDrop(right)}</>);
   const runTrigger = (
     <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
       model={model} modelOpts={modelOpts} perm={perm} permOpts={permOpts} effort={effort}
@@ -1616,7 +1650,7 @@ export function Composer({
       ghost={ghost}
       onCmdClick={shown ? openFits : undefined}
       onKeyDown={(e) => {
-        if (mentionKey(e) || slashKey(e) || routeKey(e)) return;
+        if (mentionKey(e) || slashKey(e) || routeKey(e) || kindKey(e)) return;
         // Ctrl+R is the browser's reload; in the command line it's the shell's
         // history search, which is what the hands in this box expect.
         if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
@@ -1679,6 +1713,40 @@ export function Composer({
   );
   // DEFAULT sets the editor in a row, so the caption hangs under it in a column of its own.
   const editorCol = <div className="pb-ed">{editor}{routeLine}</div>;
+  // COMPACT's rail under the text (docs/superpowers/specs/prompt-kinds.md, R3 · RAIL): the kinds,
+  // the lit one's live facts, the run preset, the login's usage, on one line where only the facts
+  // give way. While the empty box shows the router's next step, its caption takes the facts' place;
+  // the segment is a live region, so that caption is still the ghost's announcement.
+  const profileChip = profileDrop(true);
+  const facts = ghost && capt
+    ? <span className="pb-route"><b data-tone={capt.tone}>{capt.tag}</b>{capt.why && <span className="why">{capt.why}</span>}
+        {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
+    : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
+    : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
+        mapBuiltAt: graph?.exists ? graph.built_at : null, pack })
+        .map((f, i) => <Fragment key={i}>{i > 0 && " · "}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
+  const rail = (
+    <div className="pb-rail">
+      <div className="pb-seg pb-kinds" role="group" aria-label="Kind of work" data-dim={kindsOn ? undefined : ""}>
+        {KIND_ORDER.map((id) => {
+          const Icon = KIND_ICON[id];
+          const lit = id === kind;
+          // The editor keeps the focus (and the caret) through a tap.
+          return (
+            <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
+              disabled={!kindsOn} aria-pressed={lit} title={lit ? `${KINDS[id].name} — click to send as typed` : KINDS[id].name}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => setKindPick(lit ? "plain" : id)}>
+              <Icon size={lit ? 11 : 12} strokeWidth={2} aria-hidden />
+              {lit && <>{KINDS[id].verb}{kindHow === "auto" && <i>auto</i>}</>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="pb-seg pb-facts" role="status">{facts}</div>
+      <div className="pb-seg pb-preset">{runTrigger}</div>
+      {profileChip && <div className="pb-seg pb-use">{profileChip}</div>}
+    </div>
+  );
   // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
   // arrives flattened from Terminal; .pb-lead lays it out in index.css.
   const shell =
@@ -1688,12 +1756,12 @@ export function Composer({
         {embedNote}
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
-          {attachRow}
-          <div className="pb-line">{pfx}{popovers}{editor}</div>
-          {routeLine}
-          {/* DESIGN steps out while a turn runs (it could only queue): that is
-              what keeps this footer on one line at 787px with both sidebars open. */}
-          <div className="pb-foot"><div className="pb-l">{plusBtn}{settingsChips(false)}</div><div className="pb-r">{runTrigger}{actions(!running)}</div></div>
+          <div className="pb-line">
+            {plusBtn}{pfx}{popovers}
+            <div className="pb-body">{attachRow}{editor}</div>
+            <div className="pb-keys">{actions(false)}</div>
+          </div>
+          {rail}
         </div>
       </>;
 

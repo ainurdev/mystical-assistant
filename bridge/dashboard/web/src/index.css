@@ -5025,18 +5025,62 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-lead .np-branch .np-name { max-width: 220px; }
 [data-pb] .sp { flex: 1; }
 /* over the open-menu backdrop (z 25), so a second trigger toggles directly */
-:is(.pb-foot, .pb-ledger, .pb-tabs) { position: relative; z-index: 26; }
-.pb-plus { width: 28px; height: 28px; flex: none; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-           border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); background: transparent; color: var(--txd);
-           font-family: inherit; font-size: 18px; font-weight: 300; line-height: 1; padding: 0; }
+:is(.pb-keys, .pb-rail, .pb-ledger, .pb-tabs) { position: relative; z-index: 26; }
+.pb-plus { width: 24px; height: 24px; margin-top: -2px; flex: none; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+           border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); border-radius: 50%; background: transparent; color: var(--txd);
+           font-family: inherit; font-size: 16px; font-weight: 300; line-height: 1; padding: 0; }
 .pb-plus:hover { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
 
-/* the card (TABS): ledger, attachments, the line, the footer */
+/* the card (TABS): the ledger, then line one (+, attachments over the text, the key), then the
+   rail (docs/superpowers/specs/prompt-kinds.md, R3 · RAIL). The rows carry the card's padding
+   so the rail runs edge to edge; a device run's plate (.pb-card, no rail) keeps the card's own. */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
-.pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.cmdbox.pb-card:has(> .pb-rail) { padding: 0 !important; gap: 0 !important; }
+.pb-card > .pb-ledger { margin: 12px 14px 0; }
+/* the text at 12px on the 10px base the scale is drawn at, two lines tall at least, so a
+   one-line prompt and a two-line one make the same box */
+.pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; padding: 12px 12px 12px 11px; --pb-fs: calc(var(--fsu) * 14.4); }
+.pb-body { flex: 1; min-width: 0; min-height: calc(var(--pb-fs) * 3); }
+.pb-body .cm-editor { font-size: var(--pb-fs); }
+.pb-body > .pb-attach { margin-bottom: 9px; }
+.pb-keys { display: flex; align-items: center; gap: 8px; align-self: flex-end; }
+/* the key keeps its width whatever word it says, so tapping a kind never moves it */
+.pb-keys .act-pri { min-width: 84px; justify-content: center; }
+.pb-rail { display: flex; align-items: center; height: 30px; padding: 0 6px; white-space: nowrap;
+           background: var(--panel2); border-top: 1px solid var(--line, var(--border));
+           border-bottom-left-radius: inherit; border-bottom-right-radius: inherit;
+           font-family: var(--ui-font, inherit); font-size: var(--t10); letter-spacing: .2px; color: var(--txm); }
+.pb-seg { display: flex; align-items: center; gap: 2px; height: 100%; padding: 0 8px; border-right: 1px solid var(--line, var(--border)); }
+.pb-seg:last-child { border-right: 0; }
+.pb-kinds { width: 188px; flex: none; }
+.pb-facts { flex: 1; min-width: 0; }
+.pb-facts > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pb-facts [data-tone="warn"] { color: var(--warn); }
+.pb-facts [data-tone="err"] { color: var(--err); }
+.pb-facts [data-tone="ok"] { color: var(--ok); }
+.pb-facts [data-tone="dim"] { color: var(--txl); }
+.pb-preset { min-width: 196px; flex: none; }
+.pb-use { flex: none; }
+/* the kinds: accent ink only. The lit one carries its word, outlined while guessed (with a
+   small AUTO), filled once picked; the others are glyphs named in their tooltips. */
+.pb-kind, .pb-kg { appearance: none; flex: none; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer;
+                   font-family: inherit; color: var(--txl); }
+.pb-kg { width: 22px; display: grid; place-items: center; }
+.pb-kg:hover:not(:disabled) { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-kind { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 6px; font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
+           color: color-mix(in oklab, var(--acc) 70%, var(--txb)); background: color-mix(in oklab, var(--acc) 13%, transparent); }
+.pb-kind[data-how="auto"] { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 55%, transparent); }
+.pb-kind > i { font-style: normal; font-size: var(--t7); letter-spacing: 1px; text-transform: uppercase; color: var(--txd); margin-left: 2px; }
+.pb-kinds[data-dim] > * { opacity: .45; cursor: default; }
+[data-fam]:not([data-fam="aurora"]) :is(.pb-kind, .pb-kg) { border-radius: 5px; }
+/* today's run and PROFILE chips, flat on the rail until the preset and usage segments get
+   faces of their own (prompt-kinds plan, Task 4). The PROFILE chip reads as usage there: its
+   name gives way to the meter, and stays while there is none (an expired login says so in it). */
+.pb-rail :is(.drop-btn, .run-trigger) { border: 0 !important; background: transparent !important; padding-block: 0 !important; min-width: 0; }
+.pb-use .drop-btn:has(.ctrl-meter) .drop-val { display: none; }
 /* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
    under the text, saying why the routed /command is there and what Tab, ⌫ or Esc does with it.
-   TABS has it as a row of the card; DEFAULT hangs it under the editor (.pb-ed). Its
+   DEFAULT hangs it under the editor (.pb-ed); TABS shows the empty box's in the rail's facts. Its
    height holds while SKILL ROUTER is on, empty or not, so a route coming or going never moves the box. */
 .pb-ed { flex: 1; min-width: 0; }
 .pb-ed > .pb-route { margin-top: 7px; }
@@ -5054,20 +5098,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-route kbd { font-family: inherit; font-size: var(--t8); font-weight: 700; line-height: 1; text-transform: uppercase; color: var(--txm);
                 padding: 2px 5px 1px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-bottom-width: 2px; border-radius: 4px;
                 background: color-mix(in oklab, black 16%, transparent); }
-/* two groups that wrap as units: the right one (run picker, SEND or the running
-   cluster) moves down whole rather than leaving QUEUE alone on a line — but
-   only once the PROFILE name has given way. .pb-l offers line breaking its
-   narrowest (basis 0, min-width auto: its min-content), where that name, free
-   to break anywhere, counts for nothing; on one line it ellipsises into what
-   .pb-r leaves (line-clamp is the ellipsis of a line that may wrap). The run
-   chip pushed SEND's group under the chips at 787px with both sidebars open. */
-.pb-foot { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
-.pb-l, .pb-r { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pb-l { flex: 1 1 0; min-width: auto; }
-.pb-r { margin-left: auto; }
-/* ponytail: no floor — in a ~570–620px column the name is down to a letter or two before
-   SEND's group wraps; a floor that spares short names needs the label split into an unbreakable head */
-.pb-l .drop-prof .drop-val { white-space: normal !important; word-break: break-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 
 /* the ledger: goal, agents, paused, queued on one wrapping line, absent when
    nothing is live (the pill strip always renders; its pills do not). Busy
@@ -5126,8 +5156,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 @container (max-width: 640px) {
   .pb-lead .np-branch .np-name { max-width: 110px; }
   .pb-lead .np-title-btn { min-width: 92px !important; }
-  .pb-foot .drop-btn { min-width: 0 !important; }
-  .pb-foot .drop-btn > span:not(.ctrl-fld) { max-width: 60px; }
 }
 @container (max-width: 560px) { .pb-tabs > .ctrl-ctx .seg { display: none; } }
 
@@ -5140,7 +5168,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
 [data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run, .np-task) { font-family: var(--mono) !important; }
 [data-fam] .pb-tabs .np-title { font-size: var(--t12) !important; }
-[data-fam] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-fam] .pb-plus { border-color: var(--line2); border-radius: 50%; }
 [data-fam] :is(.pb-queued, .pb-paused, .pb-dry) { font-family: var(--ui-font); letter-spacing: 0; }
 [data-fam] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
 /* FLINT and CLAUDE hide the HUD's ~ ❯ (.cmdbox > span:first-child); AURORA keeps it */
