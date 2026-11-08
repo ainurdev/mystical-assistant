@@ -1,8 +1,9 @@
 """Automations: when something happens, or at some time, run a prompt in a project.
 
-Four triggers. A timer runs every N minutes, and can first ask a command or a script whether to go
+Five triggers. A timer runs every N minutes, and can first ask a command or a script whether to go
 on: exit 0 means yes, unless the last line it prints says false. "Times a day" spaces N runs between
-two times. A path listener watches files or folders. A Telegram command fires on your /word. Whatever
+two times. "Once" runs at one date and time, then switches itself off. A path listener watches files
+or folders. A Telegram command fires on your /word. Whatever
 fires, the same thing happens: an agent runs the prompt in the chosen project, in a new chat or the
 automation's one chat, with the permission mode that automation was given, and you get a Telegram
 message when it ends. An approval it stops for pings you the way any turn's does (tgask).
@@ -15,6 +16,13 @@ Laptops sleep. A "times a day" slot missed within CATCH_UP_S runs once on waking
 by, as five weather reports at once help nobody. Timers just carry on. Path listeners ignore what
 happens during their own run and look afresh after it, or an agent editing a watched folder would
 trigger itself forever, and they're capped per hour besides.
+
+A "once" keeps its time as the local wall clock, like "times a day", and `spent` on the row names the
+time that's been used up, so a new time is a new run and nothing else re-arms it. Why not last_fire,
+as the daily slots do: Run now writes that, and Run now mustn't use up the scheduled run. It's used up
+by firing, by being missed past CATCH_UP_S, or by its time going by while switched off, and from then
+on it stays off until it's given a later time, which also turns it back on. So "on" always means there
+is a run to come. It gets one attempt: a retry on a refused start would leave a new empty chat each go.
 
 ponytail: paths are polled, as stdlib has no file events, so a change lands within POLL_S and a
 tree over MAX_WATCH entries is only watched that far. It's also why this is JSON beside the database:
@@ -35,7 +43,7 @@ import uuid
 
 from bridge import config, experimental, store
 
-KINDS = ("timer", "daily", "path", "telegram")
+KINDS = ("timer", "daily", "once", "path", "telegram")
 MODES = ("plan", "acceptEdits", "bypassPermissions")
 TICK_S, POLL_S, QUIET_S, WATCH_S = 5, 10, 3, 2
 CHECK_TIMEOUT_S = 60
@@ -144,6 +152,15 @@ def _clean_trigger(raw: dict, cwd: str) -> dict:
         if count > 1 and _mins(end) <= _mins(start):
             raise Refused("The last time has to be after the first.")
         return {"kind": kind, "count": count, "start": start, "end": end}
+    if kind == "once":
+        at = str(raw.get("at") or "").strip().replace(" ", "T")
+        if not at:
+            raise Refused("Pick a date and time.")
+        try:
+            once_at({"at": at})
+        except (ValueError, OverflowError):
+            raise Refused(f"{at} isn't a date and time like 2030-12-31T09:00.") from None
+        return {"kind": kind, "at": at}
     if kind == "path":
         paths = [str(p).strip() for p in (raw.get("paths") or []) if str(p).strip()][:20] if isinstance(raw.get("paths"), list) else []
         if not paths:
@@ -183,6 +200,17 @@ def due_slot(trigger: dict, last: float, now: float) -> "float | None":
     return gone[-1] if gone else None
 
 
+def once_at(trigger: dict) -> float:
+    """When a "once" trigger's local date and time falls, by this machine's clock as it is now."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", trigger["at"]):
+        raise ValueError(trigger["at"])
+    return time.mktime(time.strptime(trigger["at"], "%Y-%m-%dT%H:%M"))
+
+
+def _once_words(trigger: dict) -> str:
+    return time.strftime("%b %d at %H:%M", time.localtime(once_at(trigger)))
+
+
 def next_at(a: dict, now: "float | None" = None) -> "float | None":
     """When it'll next run, for the list. None when it depends on something happening."""
     now = now or time.time()
@@ -197,6 +225,8 @@ def next_at(a: dict, now: "float | None" = None) -> "float | None":
             for m in slots(t):
                 if base + m * 60 > now:
                     return base + m * 60
+    if t["kind"] == "once" and a.get("spent") != t["at"]:
+        return max(now, once_at(t))
     return None
 
 
@@ -227,7 +257,14 @@ def save(body: dict) -> dict:
         if trigger["kind"] == "telegram" and any(a["trigger"].get("command") == trigger["command"] and a["id"] != body.get("id") for a in rows):
             raise Refused(f"Another automation already uses /{trigger['command']}.")
         cur = next((a for a in rows if a["id"] == body.get("id")), None)
+        # Only a time being set has to be ahead: a finished one can still have its prompt or name edited.
+        if trigger["kind"] == "once" and not (cur and cur["trigger"] == trigger) and once_at(trigger) <= time.time():
+            raise Refused("That time has already gone by. Pick a later one.")
         if cur:
+            if cur.get("spent") and cur["trigger"] != trigger:
+                del cur["spent"]
+                cur["note"] = ""
+                cur["enabled"] = trigger["kind"] == "once"      # it switched itself off: a new time undoes that
             cur.update(name=name, prompt=prompt, project=str(body["project"]), mode=mode, chat=chat, trigger=trigger)
             _mem.pop(cur["id"], None)
         else:
@@ -249,6 +286,9 @@ def toggle(aid: str, on: bool) -> dict:
         if on:
             cur["last_check"] = cur["last_fire"] = time.time()
             cur["note"] = ""
+            if cur["trigger"]["kind"] == "once" and once_at(cur["trigger"]) <= time.time():
+                cur.update(enabled=False, spent=cur["trigger"]["at"],
+                           note=f"Its time, {_once_words(cur['trigger'])}, has gone by, so it stays off. Pick a later time to run it again.")
         _mem.pop(aid, None)
         _save(rows)
     return public(cur)
@@ -442,6 +482,21 @@ def _check_then_fire(a: dict) -> None:
         _mem.setdefault(a["id"], {})["checking"] = False
 
 
+def _tick_once(a: dict, now: float) -> None:
+    """Its time has come: run it or say why not. Spent first, so nothing can make it go twice."""
+    t = a["trigger"]
+    words = _once_words(t)
+    if now - once_at(t) > CATCH_UP_S:
+        hours = CATCH_UP_S // 3600
+        _update(a["id"], enabled=False, spent=t["at"],
+                note=f"It didn't run: it was due {words}, and that was over {hours} hours ago, as this machine was asleep or the bridge was off. Run it now, or pick a later time.")
+        return
+    _update(a["id"], enabled=False, spent=t["at"])
+    if not fire(a, f"its one-time run, set for {words}"):
+        why = next((r.get("note") for r in _load() if r["id"] == a["id"]), "")
+        _update(a["id"], note=f"It missed its run {words}. {why} Run it now, or pick a later time.")
+
+
 def tick(now: "float | None" = None) -> None:
     now = now or time.time()
     if not experimental.enabled():
@@ -464,6 +519,8 @@ def tick(now: "float | None" = None) -> None:
             if slot:
                 _update(a["id"], last_fire=now)
                 fire(a, f"its {time.strftime('%H:%M', time.localtime(slot))} run")
+        elif t["kind"] == "once" and a.get("spent") != t["at"] and once_at(t) <= now:
+            _tick_once(a, now)
 
 
 def on_command(chat_id: int, text: str) -> "str | None":
