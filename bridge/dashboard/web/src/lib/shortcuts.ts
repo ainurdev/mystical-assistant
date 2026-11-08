@@ -3,8 +3,12 @@
    comparing chord(e) to the string. "Control" is the one exception: the Control
    key even on a Mac, for the keys whose ⌘ form macOS or the browser already owns
    (⌘Tab switches apps, ⌘R reloads). The handlers stay with the state they act
-   on (App, the Ask cards); this module only names the keys and holds the logic
-   worth checking — see shortcuts.check.ts. */
+   on; this module only names the keys and holds the logic worth checking — see
+   shortcuts.check.ts. App takes the keys in the window's capture phase, because
+   the message box has the cursor and would use them first: its CodeMirror keymap
+   comments a line on ⌘/, the composer sends on ⌘↵. A live Ask answers ⌘1–9 and
+   ⌘↵ through useAskKeys (ui/Keys): in AskDock, where asks normally wait, or in
+   QuestionCard / PermissionCard where they don't dock. */
 
 const MAC_GLYPH: Record<string, string> = {
   Ctrl: "⌘", Control: "⌃", Alt: "⌥", Shift: "⇧", Enter: "↵", ArrowUp: "↑", ArrowDown: "↓",

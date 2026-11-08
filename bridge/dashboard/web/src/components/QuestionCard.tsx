@@ -213,8 +213,9 @@ export function TextPreview({ q, texts, picked }: { q: Question; texts: string[]
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
-// Live only: once answered (or never answered) a question is drawn as AskDock's
-// AskRecord, and where the prompt box can take it, it docks there instead (AskDock).
+// Most live questions never show here: they dock on the prompt box (AskDock's
+// QuestionDock). This card is live only where App's askDocked is false (device
+// runs, TEAM sessions, jobs, a dismissed dock); answered, it's AskDock's AskRecord.
 export function QuestionCard({
   questions,
   requestId,

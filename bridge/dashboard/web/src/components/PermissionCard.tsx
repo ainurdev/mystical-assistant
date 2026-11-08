@@ -4,7 +4,8 @@ import { Button, Card, Spinner } from "./ui";
 import { Keys, useAskKeys } from "./ui/Keys";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
-// Live only: answered, it's AskDock's AskRecord; where the box can take it, it docks (AskDock).
+// Most live permissions dock on the prompt box instead (AskDock's PermissionDock):
+// this card is live only where App's askDocked is false. Answered, it's AskDock's AskRecord.
 export function PermissionCard({
   toolName,
   summary,

@@ -13,7 +13,7 @@ One prompt and everything the agent does in answer to it, until it stops.
 _Avoid_: run, job
 
 **Ask**:
-A question or permission card a session waits on before its turn can go on.
+A question or permission a session waits on before its turn can go on. It waits docked on the message box, or as a card in the stream where it can't dock (device runs, TEAM sessions).
 _Avoid_: request, prompt
 
 **Mystical MCP**:
