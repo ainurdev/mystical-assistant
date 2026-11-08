@@ -7,8 +7,10 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
   ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 /** Resolves to the listening server once it has a port (server.address().port). It runs in your
- *  process: block the event loop (execFileSync) while a page loads from it and the page never loads. */
-export function serve(dist, port = 8798, up = "127.0.0.1:8790") {
+ *  process: block the event loop (execFileSync) while a page loads from it and the page never loads.
+ *  `canned(req, res, url)` sees every request a build file doesn't answer, first, and returns true
+ *  when it answered it (asks.mjs). */
+export function serve(dist, port = 8798, up = "127.0.0.1:8790", canned = null) {
   dist = path.resolve(dist);
   const [upHost, upPort] = up.includes(":") ? up.split(":") : ["127.0.0.1", up];
   const server = http.createServer((req, res) => {
@@ -18,6 +20,7 @@ export function serve(dist, port = 8798, up = "127.0.0.1:8790") {
       res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream" });
       fs.createReadStream(file).pipe(res); return;
     }
+    if (canned?.(req, res, url)) return;
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405); res.end(); return; }
     const p = http.request({ host: upHost, port: +upPort, method: req.method, path: req.url, headers: { ...req.headers, host: `${upHost}:${upPort}` } },
       (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
