@@ -1585,7 +1585,9 @@ export function App() {
       const el = e.target as HTMLElement;
       if (el.closest?.("[data-ctxmenu]")) { e.preventDefault(); return; }
       // Text fields keep the real browser menu (spellcheck, undo, paste), and
-      // shift+right-click is the usual escape hatch to it everywhere else.
+      // shift+right-click is the usual escape hatch to it everywhere else, and
+      // so is a right click while a menu is open, which ContextMenu takes before
+      // this listener sees it.
       if (el.closest?.("input, textarea") || e.shiftKey) return;
       e.preventDefault();
       const node = el.closest?.("[data-ctx-type]") as HTMLElement | null;

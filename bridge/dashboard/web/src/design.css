@@ -184,8 +184,8 @@
 .au-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .au-row > span { flex: 1 0 100%; margin-bottom: 0 !important; }
 .au-row label { display: inline-flex; align-items: center; gap: 4px; color: var(--txm); }
-.ds-dialog input[type="number"], .ds-dialog input[type="time"] { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; min-height: 30px; padding: 3px 6px; color-scheme: dark; }
-:root[data-light] .ds-dialog input[type="time"] { color-scheme: light; }
+.ds-dialog input[type="number"], .ds-dialog input[type="time"], .ds-dialog input[type="datetime-local"] { background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--dg-r); font: inherit; min-height: 30px; padding: 3px 6px; color-scheme: dark; }
+:root[data-light] .ds-dialog input[type="time"], :root[data-light] .ds-dialog input[type="datetime-local"] { color-scheme: light; }
 .ds-dialog input[type="number"] { width: 70px; }
 .au-row select { width: auto; flex: 0 0 auto; }
 .au-hint { display: block; margin: 4px 0 11px; color: var(--txd); line-height: 1.4; }
