@@ -1,5 +1,5 @@
 """The two servers' half of session run settings: briefs carry a session's picks,
-/run saves the ones it was sent, enqueue leaves them to the session, and
+/run saves the ones it was sent, enqueue leaves them to the session (a dashboard kind prompt keeps its own), and
 POST …/session/settings saves a pick and switches the running turn.
 
 Socket-free via Handler.__new__ (the test_context_meter.py pattern).
@@ -90,7 +90,7 @@ def test_a_run_without_picks_leaves_the_sessions_alone(monkeypatch, surface):
     assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "default")
 
 
-# --- enqueue leaves model + mode to the session ------------------------------------
+# --- enqueue: a dashboard kind prompt keeps its model + mode; the Mini App leaves them to the session
 
 @pytest.fixture()
 def held_queue(monkeypatch):
@@ -99,13 +99,13 @@ def held_queue(monkeypatch):
     return q
 
 
-def test_dashboard_enqueue_drops_model_and_mode(held_queue):
+def test_dashboard_enqueue_keeps_a_kind_prompts_model_and_mode(held_queue):
     h, box = _handler(dash)
     h._queue("enqueue", CHAT, {"session_id": "s-q-dash", "text": "later", "effort": "high",
                                "model": "claude-opus-5-5", "permission_mode": "default"})
     assert box["code"] == 200
     [it] = held_queue.snapshot("s-q-dash")["items"]
-    assert (it["model"], it["permission_mode"], it["effort"]) == (None, None, "high")
+    assert (it["model"], it["permission_mode"], it["effort"]) == ("claude-opus-5-5", "default", "high")
 
 
 def test_miniapp_enqueue_drops_model_and_mode(held_queue):
