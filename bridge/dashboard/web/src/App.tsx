@@ -2609,7 +2609,7 @@ export function App() {
   const homeSky = skyFor(parseInt(tele.clock.slice(0, 2), 10) || 0);
   const rightTabs: PanelTab[] = [
     {
-      id: "home", label: "Home", icon: <House {...RAIL} />, ownScroll: true, group: "home",
+      id: "home", short: "HOME", label: "Home", icon: <House {...RAIL} />, ownScroll: true, group: "home",
       hint: "the time, the sky and what shipped today",
       render: () => <HomePanel clock={tele.clock} weather={weather} sky={homeSky} onClock={() => setAlmanacAsk((n) => n + 1)} onOpen={(id) => { openSession(id); toChat(); }} />,
     },

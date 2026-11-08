@@ -38,7 +38,7 @@ export function RailRing({ left }: { left: number }) {
 
 export interface PanelTab {
   id: string;
-  short?: string; // the name printed under the icon; defaults to the label, upper-cased
+  short: string; // the name printed under the icon, one word (BRANCH, COUNCIL)
   label: string; // the tab's name; what it says right now goes in `hint`
   icon: ReactNode;
   // The rail prints under a tile's icon only what wants you (/design-first
@@ -61,8 +61,9 @@ export interface PanelTab {
   // accent while a run goes, ok once it passed, ask once it stopped and waits on you).
   tone?: "ok" | "ask" | "acc";
   // "session" | "project" | "you": a short rule where the rail moves from one
-  // to the next, so you can see which tabs follow the session you open.
-  group?: string;
+  // to the next, so you can see which tabs follow the session you open. A tab
+  // without one would draw a stray rule on each side.
+  group: string;
   // The tooltip's second line: what the tab would print if the rail printed numbers.
   hint?: string;
   // Panel owns its scroller — the wrapper must not add a second one.
@@ -312,7 +313,7 @@ export function RightPanel({
                 }`}
               >
                 <span className="rtile-ico">{t.icon}{t.busy && <span className="rail-orbit" aria-hidden />}</span>
-                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n">{t.short ?? t.label.toUpperCase().slice(0, 6)}</span>}
+                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n">{t.short}</span>}
               </button>
             </Fragment>
           );
