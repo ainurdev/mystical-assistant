@@ -35,7 +35,7 @@ import time
 import uuid
 
 from bridge import (acp, agent_caps, channel, config, experimental, gateway_tools, goals, mcp_client, mcp_share,
-                    profiles, store, tool_policy)
+                    profiles, store, tool_policy, worklist)
 
 _tokens: dict = {}        # token -> {session_id}
 _lock = threading.Lock()
@@ -168,6 +168,20 @@ RV_LIST = _t("list_rivendell_tasks", "The open tasks on this repo's Rivendell bo
 RV_NEW = _t("create_rivendell_task", "Create a task on this repo's Rivendell board. Returns its key.",
             {"title": {"type": "string"}, "description": {"type": "string"}, "board": {"type": "string"}},
             ["title"])
+WORK_LIST = _t("work_list", "The project's work list, which the user sees in the right sidebar and which outlives this chat. Change it "
+               "only when the user asks. Fill it from wherever they name, a tracker, notes, anything, using whichever tools you "
+               "have: Mystical doesn't sync with anything. replace makes the list what you give it: an item named by id or "
+               "source ref keeps its state, open items you leave out go, and finished ones stay unless clear_done. Only the "
+               "user starts a run on the list.",
+               {"action": {"type": "string", "enum": ["read", "add", "update", "remove", "replace", "reorder"]},
+                "items": {"type": "array", "description": "For add, update and replace.", "items": {"type": "object", "properties": {
+                    "id": {"type": "string", "description": "For update, and to keep an item in replace."},
+                    "title": {"type": "string"}, "detail": {"type": "string", "description": "What's needed: a helper may only ever see this."},
+                    "state": {"type": "string", "enum": ["todo", "blocked", "done", "dropped"]}, "note": {"type": "string"},
+                    "depends_on": {"type": "array", "items": {"type": "string"}, "description": "Ids that must be done first."},
+                    "source": {"type": "object", "description": "Where it came from: {kind, ref, url}."}}}},
+                "ids": {"type": "array", "items": {"type": "string"}, "description": "For remove and reorder."},
+                "clear_done": {"type": "boolean"}}, ["action"])
 FIND = _t("find_tools", "Find more tools: Mystical's rarer ones (reports, chat search, waiting, pinging the user, "
           "secrets) and MCP servers shared with you. Empty query lists servers.",
           {"query": {"type": "string"}, "server": {"type": "string"}})
@@ -197,6 +211,8 @@ def tools_for(s: dict) -> list:
     out = [SEND, LIST, READ]
     if not s.get("parent_session") and channel.refusal(s) is None:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
+    if not s.get("parent_session"):
+        out += [WORK_LIST]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
         out += [ASK, RUN]
         if not s.get("parent_session"):
@@ -387,6 +403,11 @@ def _call(s: dict, name: str, a: dict) -> dict:
         return _text(_run_project(s, a))
     if name in ("list_rivendell_tasks", "create_rivendell_task"):
         return _text(_rivendell(s, name, a))
+    if name == "work_list":
+        try:
+            return _text(worklist.tool(s, a))
+        except worklist.Refused as e:
+            return _text(str(e), error=True)
     if name == "find_tools":
         return _text(_find(s, a))
     if name == "call_tool":

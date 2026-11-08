@@ -15,7 +15,7 @@ import urllib.parse
 
 from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, project_docs, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
-                    tool_policy)
+                    tool_policy, worklist)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
 _AGENTS_EXTRA = ("claude",)
@@ -67,6 +67,15 @@ def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
             return f.read(), mimetypes.guess_type(real)[0] or "application/octet-stream"
     except OSError:
         return None
+
+
+def _work_root(chat_id: int, session: "str | None", project: "str | None") -> "tuple[str | None, str | None]":
+    """(the project's main checkout, the chat it's seen from). Named by an owned chat, or by the
+    project when you're the owner and no chat is open."""
+    s = _owned(chat_id, session)
+    if s:
+        return worklist.root_of(s.get("cwd")), _chat_of(s)["id"]
+    return (image_root(chat_id, None, project), None) if config.is_owner(chat_id) else (None, None)
 
 
 def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, int]":
@@ -122,6 +131,11 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         if not experimental.enabled():
             return _OFF
         return (automations.listed(), 200) if chat_id == config.DASH_CHAT_ID else ({"error": "Only the owner can see automations."}, 403)
+    if path == "worklist":
+        if not experimental.enabled():
+            return _OFF
+        root, chat = _work_root(chat_id, _one(qs, "session"), _one(qs, "project"))
+        return (worklist.view(root, chat), 200) if root else ({"error": "No project here."}, 404)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -231,6 +245,11 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
     if path.startswith("automations"):
         return automations.api(path, body, chat_id) if experimental.enabled() else _OFF
+    if path.startswith("worklist"):
+        if not experimental.enabled():
+            return _OFF
+        root, chat = _work_root(chat_id, body.get("session_id"), body.get("project"))
+        return worklist.api(path, body, root, chat)
     if path == "design-theme":
         return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):

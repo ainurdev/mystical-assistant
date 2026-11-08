@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { BookOpen, Timer, Palette, Bookmark,
+import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
@@ -118,6 +118,7 @@ import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
+import { WorkPanel } from "./components/WorkPanel";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -2482,6 +2483,11 @@ export function App() {
     ...(multiOn ? [{
       id: "docs", label: "Docs", icon: <BookOpen {...RAIL} />, scope: "project" as const,
       render: () => <DocsPanel onAsk={(text) => { void send(text, [], { force: true }); }} />,
+    }] : []),
+    // The project's tasks (components/WorkPanel). Keyed by chat: "done in this chat" is relative to it.
+    ...(multiOn ? [{
+      id: "work", label: "Work list", icon: <ListChecks {...RAIL} />, scope: "project" as const,
+      render: () => <WorkPanel key={sessionId ?? ""} project={sessionProject} onAsk={(text) => { void send(text, [], { force: true }); }} onOpen={(id) => { openSession(id); toChat(); }} />,
     }] : []),
     // Your timers, listeners and commands that run agents (components/AutomationsPanel).
     ...(multiOn ? [{

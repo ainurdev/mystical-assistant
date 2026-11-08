@@ -218,3 +218,31 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .dc-read { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 4px 18px; font-size: var(--t13, 13px); }
 .ds-dialog[data-wide] > .dc-read { margin-inline: 22px; }
 .dc-intro { margin: 0 0 12px; color: var(--txm); line-height: 1.5; }
+
+/* The work list (components/WorkPanel). */
+.wl { padding: 2px 0 12px; }
+.wl-add { display: flex; gap: 4px; margin-bottom: 8px; }
+.wl-add input { flex: 1; min-width: 0; }
+.wl-ask { margin-bottom: 10px; }
+.wl-ask textarea { width: 100%; }
+.wl-group { margin: 12px 0 0; }
+.wl-group > h5 { display: flex; justify-content: space-between; margin: 0 0 3px; font: inherit; font-size: var(--t105, 10.5px); letter-spacing: 0.06em; text-transform: uppercase; color: var(--txd); }
+.wl-group ul { list-style: none; margin: 0; padding: 0; }
+.wl-item { padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); }
+.wl-top { display: flex; align-items: baseline; gap: 6px; }
+.wl-id { flex: none; font-size: var(--t105, 10.5px); color: var(--txd); }
+.wl-title { flex: 1; min-width: 0; padding: 0; background: none; border: 0; font: inherit; color: var(--txb); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.wl-title:hover, .wl-title:focus-visible { color: var(--acc); outline: none; }
+.wl-item[data-state="done"] .wl-title, .wl-item[data-state="dropped"] .wl-title { color: var(--txd); }
+.wl-item[data-state="dropped"] .wl-title { text-decoration: line-through; }
+.wl-item small { display: block; margin-top: 2px; color: var(--txd); line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.wl-note { color: var(--warn) !important; }
+.wl-open { padding: 6px 0 0; }
+.wl-open textarea, .wl-open input { width: 100%; }
+.wl-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.wl-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--txl); transform: translateY(-1px); }
+.wl-item[data-state="doing"] .wl-dot { background: var(--acc); animation: mpulse 2.4s infinite; }
+.wl-item[data-state="review"] .wl-dot { background: var(--acc); }
+.wl-item[data-state="blocked"] .wl-dot { background: var(--warn); }
+.wl-item[data-state="done"] .wl-dot { background: color-mix(in srgb, var(--acc) 45%, transparent); }
+@media (prefers-reduced-motion: reduce) { .wl-item[data-state="doing"] .wl-dot { animation: none; } }
