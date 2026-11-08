@@ -60,6 +60,8 @@ def finish(world, i=-1):
     ({"trigger": timer(check={"kind": "script"})}, "script"), ({"trigger": timer(check={"kind": "script", "script": "/etc/x.sh"})}, "outside"),
     ({"trigger": {"kind": "daily", "count": 0}}, "48"), ({"trigger": {"kind": "daily", "count": 2, "start": "18:00", "end": "09:00"}}, "after"),
     ({"trigger": {"kind": "daily", "count": 1, "start": "25:00"}}, "time like"),
+    ({"trigger": {"kind": "once"}}, "date and time"), ({"trigger": {"kind": "once", "at": "soon"}}, "isn't a date"),
+    ({"trigger": {"kind": "once", "at": "2030-02-30T09:00"}}, "isn't a date"), ({"trigger": {"kind": "once", "at": "2020-01-01T09:00"}}, "gone by"),
     ({"trigger": {"kind": "path", "paths": []}}, "watch"), ({"trigger": {"kind": "path", "paths": ["/etc"]}}, "outside"),
     ({"trigger": {"kind": "telegram", "command": "two words"}}, "one word"), ({"trigger": {"kind": "telegram", "command": "new"}}, "already"),
 ])
@@ -246,3 +248,182 @@ def test_drafting_a_script_starts_a_chat_that_saves_when_told(world):
     assert got["session_id"] and "AAPL" in prompt and "Only when I say to save it" in prompt and os.path.join("scripts", "check.sh") in prompt
     with pytest.raises(au.Refused, match="outside"):
         au.write_script({"project": "/shop", "description": "x", "path": "/etc/x.sh"})
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Moves time.time itself, as save and toggle read the real clock."""
+    real, shift = time.time, [0.0]
+    monkeypatch.setattr(time, "time", lambda: real() + shift[0])
+
+    def jump_to(when):
+        shift[0] = when - real()
+    return jump_to
+
+
+def stamp(when):
+    return time.strftime("%Y-%m-%dT%H:%M", time.localtime(when))
+
+
+def once(hours=1.0, **kw):
+    """A one-time automation due in some hours. Returns it and when it's due, to the minute it holds."""
+    at = stamp(time.time() + hours * 3600)
+    a = make(trigger={"kind": "once", "at": at}, **kw)
+    return a, au.once_at(a["trigger"])
+
+
+def row(a):
+    return next(x for x in au._load() if x["id"] == a["id"])
+
+
+def test_once_waits_runs_one_time_then_switches_itself_off_keeping_its_history(world, clock):
+    a, due = once()
+    assert a["enabled"] and a["next_at"] == due
+    clock(due - 60)
+    au.tick()
+    assert not world["runs"]
+    clock(due)
+    au.tick()
+    assert len(world["runs"]) == 1 and "one-time run" in world["runs"][0]["prompt"]
+    got = au.public(row(a))
+    assert not got["enabled"] and got["next_at"] is None and got["running"] and got["note"] == ""
+    finish(world)
+    clock(due + 600)
+    au.tick()
+    assert len(world["runs"]) == 1
+    runs = row(a)["runs"]
+    assert len(runs) == 1 and runs[0]["status"] == "done"
+
+
+def test_once_asleep_at_its_time_runs_on_waking_within_the_catch_up(world, clock):
+    a, due = once()
+    au.tick(due + au.CATCH_UP_S)                              # the last moment that still counts
+    assert len(world["runs"]) == 1 and not row(a)["enabled"]
+    finish(world)
+    au.tick(due + au.CATCH_UP_S + 5)
+    assert len(world["runs"]) == 1
+
+
+def test_once_asleep_past_the_catch_up_doesnt_run_and_says_why(world, clock):
+    a, due = once()
+    clock(due + au.CATCH_UP_S + 1)
+    au.tick()
+    got = row(a)
+    assert not world["runs"] and not got["enabled"] and "didn't run" in got["note"] and "12 hours" in got["note"]
+    au.tick()
+    assert not world["runs"]
+
+
+def test_once_run_now_doesnt_use_up_the_scheduled_run(world, clock):
+    a, due = once()
+    au.run_now(a["id"])
+    finish(world)
+    got = row(a)
+    assert got["enabled"] and au.next_at(got) == due and not got.get("spent")
+    clock(due + 1)                                            # even pressed after its time, before a tick sees it
+    au.run_now(a["id"])
+    finish(world)
+    au.tick()
+    assert len(world["runs"]) == 3 and "one-time run" in world["runs"][2]["prompt"]
+    finish(world)
+
+
+def test_once_waits_out_a_run_now_that_spans_its_time(world, clock):
+    a, due = once()
+    au.run_now(a["id"])
+    clock(due + 60)
+    au.tick()
+    assert len(world["runs"]) == 1 and row(a)["enabled"]      # that run is still going
+    finish(world)
+    au.tick()
+    assert len(world["runs"]) == 2
+    finish(world)
+
+
+def test_once_turned_back_on_after_firing_stays_off_until_given_a_later_time(world, clock):
+    a, due = once()
+    clock(due + 60)
+    au.tick()
+    finish(world)
+    got = au.toggle(a["id"], True)
+    assert not got["enabled"] and "gone by" in got["note"] and got["next_at"] is None
+    au.tick()
+    assert len(world["runs"]) == 1
+
+    later = stamp(time.time() + 3600)
+    got = make(id=a["id"], trigger={"kind": "once", "at": later})
+    assert got["enabled"] and got["note"] == "" and got["next_at"] == au.once_at(got["trigger"])
+    au.tick()
+    assert len(world["runs"]) == 1                            # not yet
+    clock(got["next_at"])
+    au.tick()
+    assert len(world["runs"]) == 2 and not row(a)["enabled"]
+    finish(world)
+
+
+def test_once_whose_time_went_by_while_off_doesnt_run_when_turned_on(world, clock):
+    a, due = once()
+    au.toggle(a["id"], False)
+    clock(due + 60)
+    au.tick()
+    got = au.toggle(a["id"], True)
+    au.tick()
+    assert not world["runs"] and not got["enabled"] and "gone by" in got["note"]
+
+
+def test_once_switched_off_by_you_stays_off_when_only_rescheduled(world, clock):
+    a, due = once()
+    au.toggle(a["id"], False)
+    got = make(id=a["id"], trigger={"kind": "once", "at": stamp(due + 7200)})
+    assert not got["enabled"]
+    assert au.toggle(a["id"], True)["next_at"] == au.once_at(got["trigger"])
+
+
+def test_once_can_be_edited_after_it_ran_without_running_again(world, clock):
+    a, due = once()
+    clock(due)
+    au.tick()
+    finish(world)
+    clock(due + 60)
+    same = row(a)["trigger"]
+    got = make(id=a["id"], trigger=same, name="Renamed")
+    au.tick()
+    assert got["name"] == "Renamed" and not got["enabled"] and len(world["runs"]) == 1
+    with pytest.raises(au.Refused, match="gone by"):
+        make(id=a["id"], trigger={"kind": "once", "at": stamp(due - 3600)})
+    assert row(a)["trigger"] == same
+
+
+def test_once_that_couldnt_start_says_so_and_isnt_retried(world, clock, monkeypatch):
+    a, due = once()
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *x, **k: None)
+    clock(due)
+    au.tick()
+    got = row(a)
+    assert not got["enabled"] and "missed its run" in got["note"] and "busy" in got["note"] and not got["runs"]
+    au.tick()
+    assert "It missed its run" in row(a)["note"] and row(a)["note"].count("missed") == 1
+
+
+def test_once_is_local_time(monkeypatch):
+    t = {"at": "2030-06-01T09:00"}
+    try:
+        monkeypatch.setenv("TZ", "UTC")
+        time.tzset()
+        utc = au.once_at(t)
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        time.tzset()
+        assert utc - au.once_at(t) == 9 * 3600
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_a_finished_once_turned_into_a_timer_is_a_clean_timer(world, clock):
+    a, due = once()
+    clock(due)
+    au.tick()
+    finish(world)
+    got = make(id=a["id"], trigger=timer())
+    assert "spent" not in got and not got["enabled"]
+    assert au.toggle(a["id"], True)["enabled"]
