@@ -3,6 +3,7 @@ import { KINDS, KIND_ORDER, guessKind, kindFacts, lastCheckOf, nextKind, presetF
 import type { FactsCtx, LastCheck } from "./kinds.ts";
 import type { GitStatus } from "../api.ts";
 import type { Turn } from "../chat.ts";
+import { hhmm } from "./surfaces.ts";
 
 console.assert(KIND_ORDER.join() === "design,build,fix,ship,ask", "tab order");
 
@@ -71,7 +72,7 @@ console.assert(lastCheckOf([]) === null, "no turns, null");
 // --- kindFacts ---------------------------------------------------------------
 const git = (p: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...p });
 const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, pack: false, ...p });
-const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => f.text).join(" · ");
+const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => (f.lead ?? "") + f.text).join(" · ");
 console.assert(text("ship", ctx({ git: git({ ahead: 3 }) })) === "3 to push · 0 to pull", "ship push/pull");
 const dirty = kindFacts("ship", ctx({ git: git({ dirty: 2, ahead: 1 }) }));
 console.assert(same(dirty[0], { text: "2 uncommitted", tone: "warn" }), "ship dirty first");
@@ -79,6 +80,10 @@ console.assert(text("ship", ctx({ git: git({ upstream: "", unpublished: 4 }) }))
 console.assert(text("ship", ctx()) === "in sync", "in sync");
 const bad: LastCheck = { ok: false, line: "1 failed", at: null };
 console.assert(kindFacts("fix", ctx({ lastCheck: bad }))[0].tone === "err", "red check is err");
+console.assert(text("fix", ctx({ lastCheck: bad })) === "last check 1 failed", "fix copy, no time");
+const timed = ctx({ lastCheck: { ...bad, at: 1_700_000_000 } });
+console.assert(text("fix", timed) === `last check 1 failed · ${hhmm(1_700_000_000)}`, "fix copy with its time");
+console.assert(kindFacts("fix", timed)[0].lead === "last check " && kindFacts("fix", timed)[1].tone === undefined, "only the result is red: the words and the time stay plain");
 console.assert(text("fix", ctx()) === "no checks run in this session yet", "fix no checks");
 console.assert(text("design", ctx({ designLinked: false })) === "no Claude Design project linked", "design unlinked");
 console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claude Design", "design linked");

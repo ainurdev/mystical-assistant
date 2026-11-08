@@ -5020,12 +5020,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    one-line prompt and a two-line one make the same box */
 .pb-line { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 11px; min-width: 0; padding: 12px 12px 12px 11px; --pb-fs: calc(var(--fsu) * 14.4); }
 /* the text keeps 120px at least: in a narrow box a running turn's keys go under it, right-aligned */
-.pb-body { flex: 1; min-width: 120px; min-height: calc(var(--pb-fs) * 3); }
-.pb-body .cm-editor { font-size: var(--pb-fs); }
+.pb-body { flex: 1; min-width: 120px; }
+/* the two lines are the text's own, so they hold under an attachment too (the mockup's FIX): two
+   1.5 lines plus the .25em the editor gives back above and below (.cmdbox .cm-editor) */
+.pb-body .cm-editor { font-size: var(--pb-fs); min-height: 3.5em; }
 .pb-body > .pb-attach { margin-bottom: 9px; }
 .pb-keys { display: flex; align-items: center; gap: 8px; align-self: flex-end; margin-left: auto; }
 /* the key keeps its width whatever word it says, so tapping a kind never moves it */
 .pb-keys .act-pri { min-width: 84px; justify-content: center; }
+/* empty, it keeps its shape: the base key's faint accent edge, where a family's hairline vanishes into the card */
+.pb-keys .act-pri:disabled { border-color: color-mix(in srgb, var(--acc) 16%, transparent); }
 .pb-rail { display: flex; align-items: center; height: 30px; padding: 0 6px; white-space: nowrap;
            background: var(--panel2); border-top: 1px solid var(--line, var(--border));
            border-bottom-left-radius: inherit; border-bottom-right-radius: inherit;
@@ -5060,17 +5064,20 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-use .drop-btn:has(.ctrl-meter) .drop-val { display: none; }
 .pb-ring { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t10); color: var(--txl); white-space: nowrap; }
 .pb-ring > svg { flex: none; }
+.pb-ring > .pb-clock { text-transform: lowercase; }   /* "2d20h", the rail's quiet case, as its facts' "37m ago" */
 /* preset: the run the next send goes with. The kind's glyph (sliders with no kind), the model
    bold, then mode · effort · trim; tinted while PRESET is open. */
 .pb-preset[data-open] { background: color-mix(in oklab, var(--acc) 12%, transparent); }
-.pb-run { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none;
+/* it fills its segment: the whole tinted segment opens PRESET, and PRESET's edge (--pp-at) is the segment's, whatever the kind's words */
+.pb-run { flex: 1; appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none;
           font: inherit; font-size: var(--t11); color: var(--txd); white-space: nowrap; }
 .pb-run > svg { flex: none; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .pb-run > b { font-weight: 700; color: var(--txh); }
 .pb-run > i { font-style: normal; font-size: var(--t8); color: var(--txl); }
-/* PRESET (Composer presetPop): over the card, its right edge on the segment's (--pp-at) and kept
-   inside the card. Model and mode are the chips' Drop (.pb-sel), effort and trim segmented. */
-.pb-pp { position: absolute; z-index: 30; bottom: calc(100% + 9px); right: clamp(0px, var(--pp-at, 0px), calc(100% - 300px)); width: min(300px, 100%);
+/* PRESET (Composer presetPop): above the card and clear of its 26px tabs (the mockup), so it never
+   hides one (the working tab, the title at a narrow box); its right edge on the segment's (--pp-at),
+   kept inside the card. Model and mode are the chips' Drop (.pb-sel), effort and trim segmented. */
+.pb-pp { position: absolute; z-index: 30; bottom: calc(100% + 26px + 9px); right: clamp(0px, var(--pp-at, 0px), calc(100% - 300px)); width: min(300px, 100%);
          box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; white-space: nowrap;
          background: var(--panel); border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 35%, transparent)); border-radius: var(--f-rad, 0);
          box-shadow: var(--f-pop-shadow, 0 -8px 26px var(--shadow-pop)); font-family: var(--ui-font, inherit); animation: mpop .12s ease; }

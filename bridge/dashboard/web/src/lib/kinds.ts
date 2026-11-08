@@ -94,7 +94,8 @@ export function lastCheckOf(turns: Turn[]): LastCheck | null {
 }
 
 export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null; pack: boolean }
-export type Fact = { text: string; tone?: "ok" | "warn" | "err" };
+/** `lead`: plain words before the text, so a state colour lands on the state alone ("last check" stays plain). */
+export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
 
 const uncommitted = (g: GitStatus | null): Fact | null => g?.dirty ? { text: `${g.dirty} uncommitted`, tone: "warn" } : null;
 
@@ -107,7 +108,7 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
       return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...(g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [])];
     case "fix":
       return c.lastCheck
-        ? [{ text: `last check ${c.lastCheck.line}${c.lastCheck.at ? ` · ${hhmm(c.lastCheck.at)}` : ""}`, tone: c.lastCheck.ok ? undefined : "err" }]
+        ? [{ lead: "last check ", text: c.lastCheck.line, tone: c.lastCheck.ok ? undefined : "err" }, ...(c.lastCheck.at ? [{ text: hhmm(c.lastCheck.at) }] : [])]
         : [{ text: "no checks run in this session yet" }];
     case "ship": {
       const out: Fact[] = [];

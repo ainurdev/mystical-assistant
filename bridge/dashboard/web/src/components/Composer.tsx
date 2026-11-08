@@ -361,13 +361,14 @@ function ClaudeLogo({ size = 12 }: { size?: number }) {
 }
 
 /** The rail's usage (prompt-kinds R3 · RAIL): a 12px ring of what the login's window has left, its
- *  %, and when it refills. Spent, the whole ring takes the tone (err) and the clock is the refill time. */
+ *  %, and when it refills. Spent, the whole ring takes the tone (err) and the clock is the refill time.
+ *  The track is the theme's neutral --line2, as the mockup's; a theme without one tints it. */
 function UsageRing({ left, tone, clock }: { left: number; tone: string; clock: string }) {
   const r = 4.5, c = 2 * Math.PI * r, w = 2.4;
   return (
     <span className="pb-ring">
       <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden>
-        <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={left > 0 ? `color-mix(in srgb, ${tone} 22%, transparent)` : tone} />
+        <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={left > 0 ? `var(--line2, color-mix(in srgb, ${tone} 22%, transparent))` : tone} />
         {/* round caps reach half a stroke past each end, so the dash is a stroke shorter: 92% keeps its gap */}
         {left > 0 && <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={tone} strokeLinecap="round"
           strokeDasharray={`${Math.max(0, (c * left) / 100 - w)} ${c}`} transform="rotate(-90 6 6)" />}
@@ -531,8 +532,8 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers">("");
-  // PRESET's model or mode list, open inside it; and where it hangs: over the card, its right edge
-  // on the preset segment's (measured as it opens; index.css keeps it inside the card).
+  // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
+  // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
   const [ppList, setPpList] = useState<"" | "model" | "mode">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
@@ -1724,7 +1725,7 @@ export function Composer({
     : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
     : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
         mapBuiltAt: graph?.exists ? graph.built_at : null, pack })
-        .map((f, i) => <Fragment key={i}>{i > 0 && " · "}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
+        .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   const rail = (
     <div className="pb-rail">
       <div className="pb-seg pb-kinds" role="group" aria-label="Kind of work" data-dim={kindsOn ? undefined : ""}>
