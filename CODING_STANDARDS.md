@@ -29,6 +29,10 @@ conventions in CLAUDE.md apply as well.
   handles only unmodified keys outside inputs, and stops the propagation of every key
   it handles. App listens on `window` for ⌥↑/⌥↓ (jump between turns), ⌥1–9 and Esc
   (closes App's own overlays), so a key that leaks out does two things at once.
+  The shortcuts in `lib/shortcuts.ts` (⌘J, ⌃Tab, ⌘N, ⌘B, ⌥⌘B, ⌘1–9/⌘↵ for an Ask)
+  App takes in the capture phase, before any overlay sees them; they stand down
+  while a `[role="dialog"]` or `[aria-modal="true"]` is on the page, so give an
+  overlay one of those. A letter typed outside any field goes to the message box.
 
 ## Everywhere
 

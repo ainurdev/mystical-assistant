@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PALETTE_BOX } from "./CommandPalette";
 import { Keys } from "./ui/Keys";
 import { isNativeApp } from "../lib/mac";
 import { SHORTCUTS, WHERE, type Shortcut } from "../lib/shortcuts";
@@ -24,16 +25,16 @@ export function ShortcutSheet({ open, sendKey, onClose }: { open: boolean; sendK
   return (
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 70%, transparent)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: "backdropIn .2s ease both" }}
+      style={{ ...PALETTE_BOX.backdrop, animation: "backdropIn .2s ease both" }}
     >
       <div
         role="dialog"
         aria-label="Keyboard shortcuts"
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ ...PALETTE_BOX.panel, animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
+        <div style={PALETTE_BOX.head}>
           <span style={{ color: "var(--acc)" }}>~ ❯</span>
           <input
             autoFocus
@@ -47,9 +48,9 @@ export function ShortcutSheet({ open, sendKey, onClose }: { open: boolean; sendK
             }}
             placeholder="filter shortcuts…"
             aria-label="Filter shortcuts"
-            style={{ flex: 1, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t135)" }}
+            style={PALETTE_BOX.input}
           />
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 7px" }}>ESC</span>
+          <span className="caps" style={PALETTE_BOX.esc}>Esc</span>
         </div>
         <div className="mscroll" style={{ maxHeight: "56vh", overflowY: "auto", padding: "4px 6px 10px" }}>
           {hits.length === 0 && (
@@ -60,7 +61,7 @@ export function ShortcutSheet({ open, sendKey, onClose }: { open: boolean; sendK
             if (!group.length) return null;
             return (
               <section key={w} aria-label={w}>
-                <div style={{ padding: "12px 11px 6px", fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>{w.toUpperCase()}</div>
+                <div className="caps" style={{ padding: "12px 11px 6px", fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>{w}</div>
                 {group.map((s) => (
                   <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 11px" }}>
                     <span style={{ flex: 1, fontSize: "var(--t12)", color: "var(--txh)" }}>

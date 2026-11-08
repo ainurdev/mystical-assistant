@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Wrench } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
-import { Keys } from "./ui/Keys";
+import { Keys, useAskKeys } from "./ui/Keys";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
 // Live only: answered, it's AskDock's AskRecord; where the box can take it, it docks (AskDock).
@@ -28,21 +28,12 @@ export function PermissionCard({
     setSending(which);
     if ((await fn()) === false) setSending(null);
   }
-  // ⌘1 allows, ⌘2 denies, as a click would — when this is the topmost live
-  // Ask card (QuestionCard's `mark`, the same one). The Mini App's twin has no
-  // keyboard to serve, so it stays without.
-  const mark = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (sending || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (document.querySelector("[data-ask-keys]") !== mark.current) return;
-      if (e.code !== "Digit1" && e.code !== "Digit2") return;
-      e.preventDefault();
-      if (e.code === "Digit1") void answer("allow", onAllow);
-      else void answer("deny", onDeny);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+  // ⌘1 allows, ⌘2 denies, as a click would, when this is the live Ask on top
+  // (ui/Keys). The Mini App's twin has no keyboard to serve, so it stays without.
+  const mark = useAskKeys((k) => {
+    if (sending || (k !== "1" && k !== "2")) return false;
+    void (k === "1" ? answer("allow", onAllow) : answer("deny", onDeny));
+    return true;
   });
   return (
     <Card className="chatcard pcard pcard-live space-y-2 border border-[var(--tg-button)]/30">

@@ -11,7 +11,7 @@ public struct MacPrefs: Equatable {
     public var floating = false
     /// The window title is the open session's.
     public var titleFollowsSession = false
-    /// The summon shortcut: ⌃⌘A raises the window from any app (Hotkey.swift).
+    /// The summon shortcut: ⌃⌘A raises the window from any app (SummonShortcut.swift).
     public var hotkey = true
 
     public static let keys = ["keepInDock", "floating", "titleFollowsSession", "hotkey"]

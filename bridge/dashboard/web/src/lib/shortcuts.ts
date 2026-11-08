@@ -80,7 +80,6 @@ export const SHORTCUTS = {
   search: { keys: "/", label: "Search the sessions", where: "Anywhere" },
   terminal: { keys: "Control+`", label: "The project's terminal", where: "Anywhere" },
   prompts: { keys: "Alt+ArrowUp Alt+ArrowDown", label: "Previous / next prompt", where: "Chat" },
-  find: { keys: "Ctrl+F", label: "Search the chat", where: "Chat" },
   stop: { keys: "Ctrl+.", label: "Stop the turn", where: "Chat" },
   type: { keys: "A…Z", label: "Typing anywhere writes here", where: "Message box" },
   send: { keys: "Enter", label: "Send", where: "Message box" },
@@ -88,8 +87,11 @@ export const SHORTCUTS = {
   history: { keys: "Control+R", label: "Past prompts", where: "Message box" },
   mention: { keys: "@", label: "Mention a file", where: "Message box" },
   commands: { keys: "/", label: "Commands and skills", where: "Message box" },
+  route: { keys: "Tab", label: "Take the suggested command", where: "Message box" },
+  fits: { keys: "Alt+ArrowDown", label: "Other commands that fit it", where: "Message box" },
   pick: { keys: "Ctrl+1…9", label: "Pick an option", where: "Ask cards" },
   next: { keys: "Ctrl+Enter", label: "Next question, then send", where: "Ask cards" },
+  permit: { keys: "Ctrl+1 Ctrl+2", label: "Allow / deny a permission", where: "Ask cards" },
   editor: { keys: "Ctrl+Shift+P", label: "Every editor command, with its key", where: "Editor window" },
 } satisfies Record<string, Shortcut>;
 

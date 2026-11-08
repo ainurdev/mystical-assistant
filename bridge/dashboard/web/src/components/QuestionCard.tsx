@@ -7,8 +7,8 @@ import { ImageLightbox } from "./ImageLightbox";
 import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
-import { askAt, askEnter, typing } from "../lib/shortcuts";
-import { Keys } from "./ui/Keys";
+import { askAt, askEnter, SHORTCUTS } from "../lib/shortcuts";
+import { Keys, useAskKeys } from "./ui/Keys";
 
 /* The Rivendell note's push question (header "Task",
    docs/superpowers/specs/rivendell-task-check.md) wears the board's mark, the
@@ -266,34 +266,21 @@ export function QuestionCard({
   const answered = questions.map((_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "");
   const ready = answered.every(Boolean);
   // ⌘1–9 pick on the first question not done, ⌘↵ moves past a pick-several one or
-  // sends (lib/shortcuts askAt / askEnter). Only the topmost live card takes them:
-  // `mark` tells it whether that's this one (a permission card carries one too).
+  // sends (lib/shortcuts askAt / askEnter), when this is the live Ask on top (ui/Keys).
   const [passed, setPassed] = useState<Set<number>>(() => new Set());
   const at = askAt(questions, answered, passed);
-  const mark = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (sending || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (document.querySelector("[data-ask-keys]") !== mark.current) return;
-      const n = /^Digit([1-9])$/.exec(e.code);
-      if (n) {
-        const q = questions[at];
-        const o = q?.options[Number(n[1]) - 1];
-        if (!o) return;
-        e.preventDefault();
-        toggle(q, at, o.label);
-        return;
-      }
-      // ⌘↵ in a box with text in it is that box's own (it sends your message)
-      if (e.key !== "Enter" || typing(e.target)) return;
+  const mark = useAskKeys((k) => {
+    if (sending) return false;
+    if (k === "enter") {
       const next = askEnter(questions, answered, passed);
-      if (next === null) return;
-      e.preventDefault();
       if (next === "send") void submit();
-      else setPassed((p) => new Set(p).add(next));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+      else if (next !== null) setPassed((p) => new Set(p).add(next));
+      return next !== null;
+    }
+    const q = questions[at];
+    const o = q?.options[Number(k) - 1];
+    if (o) toggle(q, at, o.label);
+    return !!o;
   });
   const multi = questions.some((q) => q.multiSelect);
   // One staged question: the button names what goes back ("Send · B HEADER").
@@ -354,7 +341,8 @@ export function QuestionCard({
                       </div>
                     )}
                   </div>
-                  {qi === at && oi < 9 && <Keys k={`Ctrl+${oi + 1}`} hover />}
+                  {/* every option keeps its caps' room, so the rows don't reflow as the keys move on */}
+                  {oi < 9 && <span style={{ visibility: qi === at ? "visible" : "hidden" }}><Keys k={`Ctrl+${oi + 1}`} hover /></span>}
                 </button>
               );
             })}
@@ -422,7 +410,7 @@ export function QuestionCard({
           </span>
         ) : (task && taskVerb(questions[0], sel[0]?.[0]))
           || (soloKey ? `Send · ${soloKey.key} ${soloKey.name}` : multi ? "Submit" : "Send answer")}
-        {!sending && <Keys k="Ctrl+Enter" hover />}
+        {!sending && <Keys k={SHORTCUTS.next.keys} hover />}
       </Button>
     </Card>
   );

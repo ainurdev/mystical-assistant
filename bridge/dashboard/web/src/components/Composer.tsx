@@ -26,7 +26,7 @@ import { rankProfiles, skillQuery, STEER_SOFT_WORDS, type Caps, type HelperConfi
 import { multi as multiApi } from "../lib/multistore";
 import { chatImagesInline, uploadChatImage, useChatImages } from "../lib/chatimages";
 import { isInlineImage } from "../lib/embeds";
-import { keyAttrs, SHORTCUTS as SC } from "../lib/shortcuts";
+import { keyAttrs, SHORTCUTS } from "../lib/shortcuts";
 
 const STILL_SAVING = "An image is still saving. Send again in a moment.";
 
@@ -1365,7 +1365,7 @@ export function Composer({
   const actions = (withDesign: boolean) => askBtn ? (
     <>
       {running && (
-        <button className="act-glyph stop" onClick={onStop} aria-label="Stop" title="STOP — interrupt this turn now" {...keyAttrs(SC.stop.keys)}>
+        <button className="act-glyph stop" onClick={onStop} aria-label="Stop" title="STOP — interrupt this turn now" {...keyAttrs(SHORTCUTS.stop.keys)}>
           <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
       )}
       <span className="act-fence" aria-hidden />
@@ -1374,7 +1374,7 @@ export function Composer({
   ) : running ? (
     <>
       {/* After the answer it ends the background tasks, so it says so. */}
-      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"} {...keyAttrs(SC.stop.keys)}
+      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"} {...keyAttrs(SHORTCUTS.stop.keys)}
         title={bg ? "STOP — end the background tasks this turn left running; its answer stays" : "STOP — interrupt this turn now"}>
         <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />{bg ? "Stop them" : null}</button>
       {/* The graceful counterpart to STOP: no interrupt, no half-written

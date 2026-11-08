@@ -102,6 +102,7 @@ import { takeSettingsFocus } from "../../lib/opensettings";
 import { testText } from "../../lib/rivendelltasks";
 import { PromptBubble } from "../PromptBubble";
 import { FinalResult } from "../RunStream";
+import { Keys } from "../ui/Keys";
 
 export interface SettingsModalProps {
   /** The open session's folder: which project's servers and skills EXPERIMENTAL lists. */
@@ -1428,7 +1429,7 @@ function MacPanel() {
           )}
           {mac.hotkey !== undefined && (
             <Row
-              label={`SUMMON WITH ${mac.platform === "windows" ? "WIN+CTRL+A" : "⌃⌘A"}`}
+              label={<>Summon with <Keys k={mac.platform === "windows" ? "Win+Ctrl+A" : "Control+Ctrl+A"} /></>}
               desc="A system-wide shortcut raises the dashboard from any app, and hides it again when it's already in front."
             >
               <Switch on={mac.hotkey} onClick={() => flip("hotkey")} />

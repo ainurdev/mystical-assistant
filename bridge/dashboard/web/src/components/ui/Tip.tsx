@@ -140,11 +140,12 @@ export function NativeTips() {
       }, DELAY);
     };
     // A click with the mouse on a control that has a key: show the key, if it's due.
-    // detail 0 is Enter or Space on a focused button — that hand is on the keys already.
+    // detail 0 is Enter or Space on a focused button — that hand is on the keys
+    // already; and a touch screen has no keys to learn.
     const click = (e: MouseEvent) => {
       const t = (e.target as Element | null)?.closest?.("[data-key]") as HTMLElement | null;
       const k = t?.dataset.key;
-      if (!t || !k || e.detail === 0) return;
+      if (!t || !k || e.detail === 0 || matchMedia("(hover: none)").matches) return;
       const n = loadNudges();
       if (!nudgeDue(n, k)) return;
       saveNudges(nudged(n, k));

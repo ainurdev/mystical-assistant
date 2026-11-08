@@ -102,7 +102,7 @@ import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { chord } from "./lib/chord";
-import { inField, nextNeed, pressed, SHORTCUTS as SC, typing } from "./lib/shortcuts";
+import { inField, nextNeed, pressed, SHORTCUTS, typing } from "./lib/shortcuts";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
 import { HomePanel, HomeSky } from "./components/hud/HomePanel";
 import { skyFor } from "./lib/home";
@@ -423,11 +423,11 @@ export function App() {
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
-  // ⌃Tab's way back: the session open before this one. No session in between
-  // (a fresh screen) doesn't count as one.
-  const lastSession = useRef<{ now: string | null; was: string | null }>({ now: null, was: null });
-  if (sessionId !== lastSession.current.now) {
-    lastSession.current = { now: sessionId, was: lastSession.current.now ?? lastSession.current.was };
+  // ⌃Tab's way back: the last two sessions opened, newest first. A fresh screen
+  // in between isn't one, so A → B → fresh → B still goes back to A.
+  const recent = useRef<string[]>([]);
+  if (sessionId && sessionId !== recent.current[0]) {
+    recent.current = [sessionId, ...recent.current.filter((x) => x !== sessionId)].slice(0, 2);
   }
   // NEEDS YOU as the last poll had it, newest first, for ⌘J.
   const needsRef = useRef<Need[]>([]);
@@ -1558,40 +1558,57 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, sheetOpen, settingsOpen, analyzeProject, selected?.project, activeProject]);
 
-  // The keys of lib/shortcuts' table that act on this screen: ⌘/, ⌘J, ⌃Tab, ⌘N,
-  // ⌘B, ⌥⌘B and ⌘. — plus a letter typed with no field to take it, which starts
-  // a message. None over the project window, whose editor has keys of its own
-  // (⌘/ comments a line there). Read through a ref, so every press sees this
-  // render's state.
+  // The keys of lib/shortcuts' table that act on this screen. Taken in the
+  // capture phase, before the message box's editor sees them: there ⌘/ would
+  // comment a line and ⌘↵ would send an empty box. None over the project window,
+  // whose editor has keys of its own (⌘/ comments a line there), and none but ⌘/
+  // and ⌘. while a dialog is up. Read through refs, so a press sees this render.
+  const covered = () => settingsOpen || paletteOpen || sheetOpen || inspectorOpen || !!toolsFor || !!ctxMenu
+    || !!document.querySelector("[role='dialog'], [aria-modal='true']");
   const shortcutKeys = useRef<(e: KeyboardEvent) => void>(() => {});
   shortcutKeys.current = (e) => {
-    if (e.defaultPrevented || analyzeProject) return;
+    if (e.defaultPrevented || analyzeProject || !(e.metaKey || e.ctrlKey || e.altKey)) return;
     const c = chord(e);
     const act = (fn: () => void) => { e.preventDefault(); fn(); };
-    if (pressed(c, SC.sheet.keys)) return act(() => { setPaletteOpen(false); setSheetOpen((v) => !v); });
-    if (settingsOpen || paletteOpen || sheetOpen || inspectorOpen || toolsFor || ctxMenu) return;
-    if (pressed(c, SC.needs.keys)) return act(jumpToNeeds);
-    if (pressed(c, SC.last.keys)) return act(() => {
-      const s = sessions.find((x) => x.id === lastSession.current.was);
+    // Always taken: unhandled, a Mac turns ⌘. into Cancel, which leaves full screen.
+    if (pressed(c, SHORTCUTS.stop.keys)) return act(() => void stop());
+    if (pressed(c, SHORTCUTS.sheet.keys) && (sheetOpen || paletteOpen || !covered())) {
+      return act(() => { setPaletteOpen(false); setSheetOpen((v) => !v); });
+    }
+    if (covered()) return;
+    if (pressed(c, SHORTCUTS.needs.keys)) return act(jumpToNeeds);
+    if (pressed(c, SHORTCUTS.last.keys)) return act(() => {
+      // From a session: the one before it. From a fresh screen: the one you just left.
+      const s = sessions.find((x) => x.id === recent.current[sessionId ? 1 : 0]);
       if (s) selectSession(s);
     });
-    if (pressed(c, SC.newSession.keys)) return act(() => { if (activeProject) void newSession(activeProject); });
-    if (pressed(c, SC.sidebar.keys)) return act(toggleLeft);
-    if (pressed(c, SC.panel.keys)) return act(toggleRight);
-    // Always taken: unhandled, a Mac turns ⌘. into Cancel, which leaves full screen.
-    if (pressed(c, SC.stop.keys)) return act(() => void stop());
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\p{L}\p{N}]$/u.test(e.key) && view === "chat" && !inField(e.target)
-        && !(e.target as Element | null)?.closest?.("[role='dialog'], [role='menu'], [role='listbox']")
-        && !window.dispatchEvent(new CustomEvent("hud:type", { detail: e.key, cancelable: true }))) e.preventDefault();
+    if (pressed(c, SHORTCUTS.newSession.keys)) return act(() => { if (activeProject) void newSession(activeProject); });
+    if (pressed(c, SHORTCUTS.sidebar.keys)) return act(toggleLeft);
+    if (pressed(c, SHORTCUTS.panel.keys)) return act(toggleRight);
+    // ⌘1–9 and ⌘↵ go to the live Ask (ui/Keys useAskKeys); ⌘↵ only from the empty
+    // box or outside a field, since with text in the box it sends that text.
+    const ask = /^Ctrl\+([1-9])$/.exec(c)?.[1] ?? (pressed(c, SHORTCUTS.next.keys) && !typing(e.target) ? "enter" : null);
+    if (ask && !window.dispatchEvent(new CustomEvent("hud:ask-key", { detail: ask, cancelable: true }))) e.preventDefault();
+  };
+  // A letter or digit typed with no field to take it starts a message. In the
+  // bubble phase, so a menu or picker that takes letters on document goes first.
+  const typeAnywhere = useRef<(e: KeyboardEvent) => void>(() => {});
+  typeAnywhere.current = (e) => {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !/^[\p{L}\p{N}]$/u.test(e.key)) return;
+    if (view !== "chat" || analyzeProject || inField(e.target) || covered()
+        || (e.target as Element | null)?.closest?.("[role='menu'], [role='listbox']")) return;
+    if (!window.dispatchEvent(new CustomEvent("hud:type", { detail: e.key, cancelable: true }))) e.preventDefault();
   };
   useEffect(() => {
-    const on = (e: KeyboardEvent) => shortcutKeys.current(e);
-    window.addEventListener("keydown", on);
-    return () => window.removeEventListener("keydown", on);
+    const keys = (e: KeyboardEvent) => shortcutKeys.current(e);
+    const letters = (e: KeyboardEvent) => typeAnywhere.current(e);
+    window.addEventListener("keydown", keys, true);
+    window.addEventListener("keydown", letters);
+    return () => { window.removeEventListener("keydown", keys, true); window.removeEventListener("keydown", letters); };
   }, []);
 
   // ⌘J: the next session NEEDS YOU lists, opened the way the bell opens one.
-  // shortcut: a Rivendell job on offer has no session to open, so ⌘J passes it by; the bell lists it.
+  // shortcut: ⌘J passes Rivendell offers by (no session to open), give them a place to land if they pile up.
   function jumpToNeeds() {
     const id = nextNeed(needsRef.current.flatMap((n) => (n.session_id ? [n.session_id] : [])), sessionId);
     if (!id) { notify("info", "Nothing else is waiting on you"); return; }
@@ -2852,7 +2869,7 @@ export function App() {
   }, [view, ai]);
 
   const commands: Command[] = [
-    { id: "new-chat", label: "New chat", group: "Session", icon: "+", keys: SC.newSession.keys, run: () => activeProject && void newSession(activeProject) },
+    { id: "new-chat", label: "New chat", group: "Session", icon: "+", keys: SHORTCUTS.newSession.keys, run: () => activeProject && void newSession(activeProject) },
     ...(isReadOnly(selected?.origin) ? [] : [
       { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) }]),
     { id: "copy-chat", label: "Copy chat as markdown", group: "Session", icon: "⧉", run: () => {
@@ -2868,10 +2885,10 @@ export function App() {
       ? [{ id: "view-next", label: "Go to Next up", group: "View", icon: "◈", run: () => setView("next") }]
       : []),
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
-    { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", keys: SC.panel.keys, run: toggleRight },
-    { id: "left-panel", label: settings.leftOpen ? "Fold the sidebar to its rail" : "Unfold the sidebar", group: "View", icon: "▤", keys: SC.sidebar.keys, run: toggleLeft },
+    { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", keys: SHORTCUTS.panel.keys, run: toggleRight },
+    { id: "left-panel", label: settings.leftOpen ? "Fold the sidebar to its rail" : "Unfold the sidebar", group: "View", icon: "▤", keys: SHORTCUTS.sidebar.keys, run: toggleLeft },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
-    { id: "shortcuts", label: "Keyboard shortcuts", group: "Help", icon: "⌨", keys: SC.sheet.keys, run: () => setSheetOpen(true) },
+    { id: "shortcuts", label: "Keyboard shortcuts", group: "Help", icon: "⌨", keys: SHORTCUTS.sheet.keys, run: () => setSheetOpen(true) },
     { id: "replay-boot", label: "Replay boot intro", group: "Display", icon: "↻", run: replayBoot },
     { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
     ...modelOpts.map((m) => ({

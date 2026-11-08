@@ -14,6 +14,7 @@ import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { REC, TaskQuestion, TextPreview, isTask, taskLabel, taskVerb } from "./QuestionCard";
 import { Spinner } from "./ui";
+import { Keys, useAskKeys } from "./ui/Keys";
 
 /* Every card that waits on you, docked on the prompt box
    (.mystical/design-drafts/response-cards, C · DOCK — the user's pick over an
@@ -219,6 +220,20 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, picked.length > 0]);
   useEffect(() => { bind(mode); }, [mode, bind]);
+  // ⌘1–9 pick on this page and a pick-one question then moves on by itself (the
+  // last one waits); ⌘↵ is the box's button: Next, or Send on the last (ui/Keys).
+  const mark = useAskKeys((k) => {
+    if (sending) return false;
+    if (k === "enter") {
+      if (mode.ready) mode.send?.(draft);
+      return !!mode.ready;
+    }
+    const o = q.options[Number(k) - 1];
+    if (!o) return false;
+    toggle(o.label);
+    if (!q.multiSelect && !last) go(page + 1);
+    return true;
+  });
 
   const pics = staged(q);
   const texts = previewTexts(q);
@@ -249,6 +264,7 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
         </div>
       )}
       <div className="ad-b" key={page}>
+        <span ref={mark} data-ask-keys hidden />
         {task ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
         {pics
           ? <Pictures q={q} chosen={picked} onPick={toggle} sending={sending} />
@@ -260,13 +276,14 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
                 const on = picked.includes(o.label);
                 return (
                   <button key={o.label} type="button" className="ad-row" aria-pressed={on} disabled={sending}
-                    data-multi={q.multiSelect ? "" : undefined} onClick={() => toggle(o.label)}>
+                    data-multi={q.multiSelect ? "" : undefined} data-keys={i < 9 ? "" : undefined} onClick={() => toggle(o.label)}>
                     <Key k={k.key} on={on} />
                     <span className="ad-lab">
                       {task ? taskLabel(o.label, true) : k.name}
                       {k.rec && !task && <span className="ad-sug" title="Suggested">★</span>}
                     </span>
                     {o.description && <span className="ad-desc">{o.description}</span>}
+                    {i < 9 && <Keys k={`Ctrl+${i + 1}`} hover />}
                   </button>
                 );
               })}
@@ -506,6 +523,12 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
     send: (t: string) => { void sendRef.current("deny", t); },
   }), [plan, sending]);
   useEffect(() => { bind(mode); }, [mode, bind]);
+  // ⌘1 allows, ⌘2 denies (with the box's note, as the button does) — ui/Keys.
+  const mark = useAskKeys((k) => {
+    if (sending || (k !== "1" && k !== "2")) return false;
+    void (k === "1" ? answer("allow") : answer("deny", draft.trim()));
+    return true;
+  });
 
   const topic = bash ? "Bash" : plan ? "ready to build" : mcp ? `${mcp.server} · ${mcp.tool}` : d.tool;
   return (
@@ -539,13 +562,16 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
           </>
         )}
         <div className="ad-acts">
+          <span ref={mark} data-ask-keys hidden />
           <button type="button" className="ad-btn" data-pri="" disabled={!!sending} onClick={() => void answer("allow")}>
             {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : <Check size={13} strokeWidth={2.6} aria-hidden />}
             {plan ? "Approve & build" : "Allow"}
+            <Keys k="Ctrl+1" hover />
           </button>
           <button type="button" className="ad-btn" disabled={!!sending} onClick={() => void answer("deny", draft.trim())}>
             {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <X size={13} strokeWidth={2.6} aria-hidden />}
             {plan ? "Keep planning" : typed ? "Deny with note" : "Deny"}
+            <Keys k="Ctrl+2" hover />
           </button>
           <span className="ad-aside">{plan ? "nothing has changed yet" : "or type below to deny it and say what to do instead"}</span>
         </div>
@@ -592,16 +618,25 @@ function ProseDock({ d, onAnswer, bind }: {
     return { o, key: m?.[1], name: m?.[2] ?? o };
   });
   const reply = (o: string) => { setSent(o); onAnswer(o); };
+  // ⌘1–9 reply with that option, as a click would (ui/Keys).
+  const mark = useAskKeys((k) => {
+    const x = opts[Number(k) - 1];
+    if (sent !== null || !x) return false;
+    reply(x.o);
+    return true;
+  });
   return (
     <>
       <Head icon={<MessageCircleQuestion size={13} strokeWidth={2.2} />} kind="Asked in the answer" at={d.at} word="asked" />
       <div className="ad-b">
         <div className="ad-ask"><Markdown>{d.ask.question}</Markdown></div>
         <div className="ad-replies">
-          {opts.map((x) => (
+          <span ref={mark} data-ask-keys hidden />
+          {opts.map((x, i) => (
             <button key={x.o} type="button" className="ad-reply" disabled={sent !== null} aria-pressed={sent === x.o}
               title={x.o === "No" ? "Drop the question — nothing runs" : `Reply "${x.o}"`} onClick={() => reply(x.o)}>
               {x.key && <Key k={x.key} />}{x.name}
+              {i < 9 && <Keys k={`Ctrl+${i + 1}`} hover />}
             </button>
           ))}
           {!d.ask.options.includes("No") && (

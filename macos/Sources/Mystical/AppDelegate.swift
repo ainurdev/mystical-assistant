@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var busy = false
     private var rebuilding = false
-    private lazy var hotkey = Hotkey { [weak self] in self?.summon() }
+    private lazy var summonShortcut = SummonShortcut { [weak self] in self?.summon() }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // Native chrome in the theme's mode from the first frame; the page
@@ -28,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.applyPolicy(windowVisible: self.dashboard.window?.isVisible ?? false)
             self.syncFloating()
-            self.hotkey.set(self.notifier.prefs.hotkey)
+            self.summonShortcut.set(self.notifier.prefs.hotkey)
         }
-        hotkey.set(notifier.prefs.hotkey)
+        summonShortcut.set(notifier.prefs.hotkey)
         floating = FloatingPanel { [weak self] id in self?.dashboard.open(session: id) }
         // The panel yields to the dashboard: gone while it's in front, back when it isn't.
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {

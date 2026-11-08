@@ -8,7 +8,7 @@ import { useClock12 } from "../../lib/surfaces";
 import type { WorldClock } from "../../lib/theme";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
 import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
-import { keyAttrs, SHORTCUTS as SC } from "../../lib/shortcuts";
+import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -171,7 +171,7 @@ function FoldButton({ onClick }: { onClick: () => void }) {
   const [hover, setHover] = useState(false);
   return (
     <button
-      onClick={onClick} aria-label="Fold the sidebar" title="Fold the sidebar to its rail" {...keyAttrs(SC.sidebar.keys)}
+      onClick={onClick} aria-label="Fold the sidebar" title="Fold the sidebar to its rail" {...keyAttrs(SHORTCUTS.sidebar.keys)}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,

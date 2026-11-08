@@ -4,7 +4,6 @@ import { api } from "../api";
 import type { Turn } from "../chat";
 import { hitWord, MIN_QUERY, orderHits, snippetParts, stepHit, type ChatHit } from "../lib/chatsearch";
 import { hhmm, useClock12 } from "../lib/surfaces";
-import { keyAttrs, SHORTCUTS as SC } from "../lib/shortcuts";
 
 /* Search in this chat, from the island (components/hud/Terminal). No shortcut of its own:
    Ctrl/Cmd+F is already spoken for, Transcript mounts the whole list so the browser's
@@ -68,7 +67,7 @@ export function ChatSearch({ sessionId, turns, onJump }: {
 
   if (!open) {
     return (
-      <button type="button" className="ma-cs-btn" title="Search this chat" aria-label="Search this chat" {...keyAttrs(SC.find.keys)} onClick={() => setOpen(true)}>
+      <button type="button" className="ma-cs-btn" title="Search this chat" aria-label="Search this chat" onClick={() => setOpen(true)}>
         <Search size={13} strokeWidth={2} aria-hidden />
       </button>
     );
