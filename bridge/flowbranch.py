@@ -13,9 +13,6 @@ worktrees of one repo: the stash list is shared across them. That sharing is
 also the hazard: a bare `stash pop` takes the newest entry, which may be someone
 else's, so carry_and_commit pops only when its own push added an entry, and then
 exactly that one, found by its commit id (indexes shift whenever anyone stashes).
-
-ensure_feature_branch also makes `fix/<slug>` for a BUG path's FIX (paths._start):
-the same rule, another prefix.
 """
 
 import os
@@ -88,13 +85,6 @@ def flow_files(session_id: str, since: int) -> list[str]:
             _log(f"{p} stays out of the carry: {why}")
         out = keep
     return out
-
-
-def on_default(session: dict) -> bool:
-    """Whether the session's checkout has its repo's default branch checked out."""
-    co = _checkout(session)
-    cur = git._run(co, "symbolic-ref", "-q", "--short", "HEAD")[1].strip() if co else ""  # noqa: SLF001
-    return bool(cur) and cur == git.default_branch(git.main_checkout(co))
 
 
 def ensure_feature_branch(session: dict, slug: str, prefix: str = "feat") -> tuple[str, str]:

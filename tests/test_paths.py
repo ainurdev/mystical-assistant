@@ -93,7 +93,7 @@ def test_choice_here_switches_to_feature_here(state_dir):
 
 def test_step_done_same_turn_twice_is_one_step(state_dir):
     paths.set_path("s1", "bug", "crash", "rule")
-    assert paths.step_done("s1", "t1") == "fix" and paths.step_done("s1", "t1") == "fix"
+    assert paths.step_done("s1", "t1") == "retro" and paths.step_done("s1", "t1") == "retro"
     assert paths.get("s1")["done"] == ["diagnose"]
 
 
@@ -404,9 +404,9 @@ def test_a_typed_command_replaces_a_stale_path(sess, fake_queue, nextstep_on):
     paths.step_done(sess, "t0")                          # grill done; stuck at SPEC
     t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
     assert paths.get(sess)["path"] == "bug" and paths.get(sess)["done"] == []
-    assert paths.step_done(sess, t) == "fix"
+    assert paths.step_done(sess, t) == "retro"
     assert paths.continue_after_turn(_job(sess, t)) is True
-    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
 
 
 def test_a_typed_to_spec_joins_feature_at_spec(sess, nextstep_on):
@@ -551,10 +551,10 @@ def test_a_resumed_turn_starts_the_step_its_cut_turn_recorded(sess, fake_queue, 
     n1 = _turn(sess, r.RESUME_NUDGE)
     _end(sess, n1, "error")                             # the resume dies too
     n2 = _turn(sess, r.RESUME_NUDGE)
-    assert paths.step_done(sess, n2) == "fix" and paths.get(sess)["done"] == ["diagnose"]   # a repeat moves nothing
+    assert paths.step_done(sess, n2) == "retro" and paths.get(sess)["done"] == ["diagnose"]   # a repeat moves nothing
     job = _end(sess, n2)
     assert paths.continue_after_turn(job) is True
-    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:tdd"]
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
     assert paths.continue_after_turn(job) is False and len(fake_queue.items) == 1   # once per step
 
 
@@ -572,7 +572,7 @@ def test_releasing_auto_starts_the_pending_step(sess, fake_queue, nextstep_on):
     paths.set_auto(sess, False)
     assert paths.continue_after_turn(_end(sess, t)) is False and not fake_queue.items
     paths.set_auto(sess, True)
-    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:tdd"]
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
     paths.set_auto(sess, False)
     paths.set_auto(sess, True)
     assert len(fake_queue.items) == 1
@@ -654,29 +654,3 @@ def test_build_here_moves_the_session_into_its_feature_worktree(repo_session, fa
     assert _git(main, "rev-parse", "master") == master
     assert fake_queue.items[-1]["prompt"] == \
         f"/mattpocock-skills:implement Work in {cwd} on branch feat/my-feature, and commit there."
-
-
-def test_an_auto_fix_on_the_default_branch_moves_to_a_fix_worktree(repo_session, fake_queue, nextstep_on):
-    sid, main = repo_session
-    master = _git(main, "rev-parse", "master")
-    t = _turn(sid, "/mattpocock-skills:diagnosing-bugs the crash")
-    _wrote(sid, t, os.path.join(main, "test_crash.py"))
-    paths.step_done(sid, t)
-    assert paths.continue_after_turn(_end(sid, t)) is True
-    cwd = store.get_session(sid)["cwd"]
-    assert cwd != main and _git(cwd, "rev-parse", "--abbrev-ref", "HEAD") == "fix/my-feature"
-    assert os.path.isfile(os.path.join(cwd, "test_crash.py")) and _git(main, "rev-parse", "master") == master
-    assert fake_queue.items[-1]["prompt"] == \
-        f"/mattpocock-skills:tdd Work in {cwd} on branch fix/my-feature, and commit there."
-    assert _git(cwd, "log", "-1", "--format=%s") == "wip: carry the my-feature investigation"
-
-
-def test_an_auto_fix_off_the_default_branch_stays_put(repo_session, fake_queue, nextstep_on):
-    sid, main = repo_session
-    wt = os.path.join(os.path.dirname(main), "wt")
-    _git(main, "worktree", "add", "-q", "-b", "feat/y", wt)
-    store.set_cwd(sid, wt)
-    t = _turn(sid, "/mattpocock-skills:diagnosing-bugs the crash")
-    paths.step_done(sid, t)
-    assert paths.continue_after_turn(_end(sid, t)) is True
-    assert store.get_session(sid)["cwd"] == wt and fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"

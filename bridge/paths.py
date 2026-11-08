@@ -89,7 +89,7 @@ PATHS: dict[str, list[tuple[str, "str | None", str]]] = {
                 ("merge", None, "auto"), ("retro", "retro", "auto")],
     "feature-here": [("grill", "grill-with-docs", "you"), ("build-here", "implement", "auto"),
                      ("retro", "retro", "auto")],
-    "bug": [("diagnose", "diagnosing-bugs", "auto"), ("fix", "tdd", "auto"), ("retro", "retro", "auto")],
+    "bug": [("diagnose", "diagnosing-bugs", "auto"), ("retro", "retro", "auto")],   # diagnosing-bugs fixes and tests
     "refactor": [("improve", "improve-codebase-architecture", "you"), ("tickets", "to-tickets", "you"),
                  ("build", None, "auto"), ("merge", None, "auto"), ("retro", "retro", "auto")],
 }
@@ -263,7 +263,7 @@ def path_for_command(skill: str) -> tuple:
 # instead while TICKETS is on (tickets.start_build), and merge runs in a session of
 # its own once every ticket is done (tickets.start_merge, then advance); with
 # TICKETS off both are the user's.
-_AUTO_START = {"spec", "tickets", "retro", "fix", "build-here"}
+_AUTO_START = {"spec", "tickets", "retro", "build-here"}
 ZONE_TOKENS = 150_000
 
 
@@ -298,20 +298,16 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     skill = next((sk for st, sk, _ in _stations(_cache[session_id]) if st == station), None)
     if not skill:
         return False
-    from bridge import flowbranch, queue_manager
+    from bridge import queue_manager
     sess = store.get_session(session_id) or {}
     texts = [f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
-    # worktree, an auto FIX when the session sits on the default branch. RETRO only writes notes.
-    if station == "build-here" or station == "fix" and flowbranch.on_default(sess):
-        moved = _branch_off(session_id, sess, flow, "feat" if station == "build-here" else "fix",
-                            chat_id if chat_id is not None else sess.get("chat_id"))
+    # worktree, and RETRO only writes notes.
+    if station == "build-here":
+        moved = _branch_off(session_id, sess, flow, "feat", chat_id if chat_id is not None else sess.get("chat_id"))
         if not moved:
             return False
-        if station == "build-here":
-            texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
-        else:   # the diagnosis names the main checkout's paths: pin the fix to its worktree
-            texts = [f"/mattpocock-skills:tdd Work in {moved[1]} on branch {moved[0]}, and commit there."]
+        texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
     if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
@@ -358,8 +354,7 @@ def _branch_off(session_id: str, sess: dict, flow: dict, prefix: str, chat_id) -
     try:
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)
         flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
-                                    flowbranch.flow_files(session_id, flow["at"]), slug,
-                                    f"wip: carry the {slug} investigation" if prefix == "fix" else "")
+                                    flowbranch.flow_files(session_id, flow["at"]), slug)
     except Exception as e:  # noqa: BLE001 — the step waits for the user instead
         print(f"[paths] {branch} stopped: {e}", file=sys.stderr)
         runner._notify(chat_id, f"Couldn't move this flow's files to {branch}: {e}. "  # noqa: SLF001

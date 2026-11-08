@@ -28,7 +28,7 @@ export const PATHS: Record<string, [string, string | null, "you" | "auto"][]> = 
   feature: [["grill", "grill-with-docs", "you"], ["spec", "to-spec", "auto"], ["tickets", "to-tickets", "you"],
     ["build", null, "auto"], ["merge", null, "auto"], ["retro", "retro", "auto"]],
   "feature-here": [["grill", "grill-with-docs", "you"], ["build-here", "implement", "auto"], ["retro", "retro", "auto"]],
-  bug: [["diagnose", "diagnosing-bugs", "auto"], ["fix", "tdd", "auto"], ["retro", "retro", "auto"]],
+  bug: [["diagnose", "diagnosing-bugs", "auto"], ["retro", "retro", "auto"]],
   refactor: [["improve", "improve-codebase-architecture", "you"], ["tickets", "to-tickets", "you"],
     ["build", null, "auto"], ["merge", null, "auto"], ["retro", "retro", "auto"]],
 };

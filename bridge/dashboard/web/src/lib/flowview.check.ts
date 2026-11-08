@@ -16,7 +16,8 @@ console.assert(f.nowTurn?.tools === 2 && f.nowTurn.started === 100 && f.nowTurn.
 const idle = flowView(flow("feature", ["grill"]), []);
 console.assert(idle.stations.map((x) => x.state).join() === "done,auto,you,auto,auto,auto" && !idle.nowTurn, "idle: the waiting step shows its own kind");
 console.assert(flowView(flow("feature-here", []), []).stations.length === 3, "feature-here has 3");
-console.assert(flowView(flow("bug", ["diagnose", "fix", "retro"]), []).step === 3, "all done keeps step at total");
+const bug = flowView(flow("bug", ["diagnose", "retro"]), []);
+console.assert(bug.total === 2 && bug.step === 2, `bug is diagnose then retro, and all done keeps step at total: ${bug.step} of ${bug.total}`);
 const none = flowView(null, [run]);
 console.assert(none.stations.length === 0 && none.step === 0 && none.total === 0, "null flow: nothing");
 

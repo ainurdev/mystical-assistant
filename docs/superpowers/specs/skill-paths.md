@@ -115,7 +115,7 @@ switch is on, about 250 tokens) carries Matt's map as the paths table below, plu
 | Path | Starts on | Stations (who moves it) |
 |---|---|---|
 | FEATURE | a new feature or idea | GRILL `grill-with-docs` (you) → SPEC `to-spec` (auto) → TICKETS `to-tickets` (you approve) → BUILD tickets (auto) → MERGE (auto) → RETRO `retro` (auto). If the grill concludes the work fits one session, the path becomes GRILL → BUILD here `implement` → RETRO. |
-| BUG | something broken, an error, a regression | DIAGNOSE `diagnosing-bugs` → FIX `tdd` → RETRO |
+| BUG | something broken, an error, a regression | DIAGNOSE `diagnosing-bugs` → RETRO (diagnosing-bugs fixes and tests; FIX dropped 11-08) |
 | REFACTOR | tangled code, architecture | IMPROVE `improve-codebase-architecture` (you) → TICKETS → BUILD → MERGE → RETRO |
 | ONE STEP | research, prototype, review, PR, teach, wizard, writing for agents, questionnaire, domain modelling, codebase design; and `triage` / `wayfinder` when the user takes the rule's suggestion | that one skill |
 
