@@ -27,6 +27,7 @@ import {
   type ShareKind,
   type TeamOverview,
   type InstallStep,
+  type Need,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot, chipWindow, loginWindows } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -99,6 +100,9 @@ import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { ShortcutSheet } from "./components/ShortcutSheet";
+import { chord } from "./lib/chord";
+import { inField, nextNeed, pressed, SHORTCUTS as SC, typing } from "./lib/shortcuts";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
 import { HomePanel, HomeSky } from "./components/hud/HomePanel";
 import { skyFor } from "./lib/home";
@@ -339,6 +343,7 @@ export function App() {
   // survives a session switch and the session list can flag it as a DRAFT.
   const [drafts, setDrafts] = useState<Record<string, string>>(loadDrafts);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   // ?skipboot bypasses the intro (handy on revisits + for screenshots).
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
   const [booting, setBooting] = useState(!skipBoot);
@@ -418,6 +423,14 @@ export function App() {
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+  // ⌃Tab's way back: the session open before this one. No session in between
+  // (a fresh screen) doesn't count as one.
+  const lastSession = useRef<{ now: string | null; was: string | null }>({ now: null, was: null });
+  if (sessionId !== lastSession.current.now) {
+    lastSession.current = { now: sessionId, was: lastSession.current.now ?? lastSession.current.was };
+  }
+  // NEEDS YOU as the last poll had it, newest first, for ⌘J.
+  const needsRef = useRef<Need[]>([]);
   // A pick: shown now, remembered as this browser's default, and saved to the
   // open session as the three the picker shows — a fresh session would
   // otherwise keep the bridge's mode under a picker showing yours. `half` is
@@ -1076,12 +1089,13 @@ export function App() {
 
   // ⌥↑ / ⌥↓: the previous / next of your turns, the TURNS tab open or not. A
   // turn you're halfway down takes you back to its own start first. Not inside
-  // a text field, where the same keys move the caret a paragraph.
+  // a text field, where the same keys move the caret a paragraph — but from the
+  // message box while it's empty (lib/shortcuts typing), where the cursor sits.
   useEffect(() => {
     if (view !== "chat") return;
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      if (e.defaultPrevented || typing(e.target)) return;
       const to = stepRow(turnRows(turns), scrollRef.current, transcriptNav.current, e.key === "ArrowUp" ? -1 : 1);
       if (!to) return;
       e.preventDefault();
@@ -1298,6 +1312,7 @@ export function App() {
           return [id, t ? { ...st, since: t } : st] as [string, SessionStatus];
         })));
         setNeeds(r.needs);
+        needsRef.current = r.needs ?? [];
         noteStyling(r.styling);
       } catch { /* ignore */ }
     };
@@ -1510,6 +1525,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setSheetOpen(false);
         setPaletteOpen((v) => !v);
       } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p" && !analyzeProject) {
         // FILES' find field, from anywhere: the way to a file now that ⊞ PROJECT
@@ -1531,6 +1547,7 @@ export function App() {
         if (ctxMenu) closeCtx();
         else if (inspectorOpen) setInspectorOpen(false);
         else if (toolsFor) setToolsFor(null);
+        else if (sheetOpen) setSheetOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
         else if (analyzeProject) setAnalyzeProject(null);
@@ -1539,7 +1556,48 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, settingsOpen, analyzeProject, selected?.project, activeProject]);
+  }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, sheetOpen, settingsOpen, analyzeProject, selected?.project, activeProject]);
+
+  // The keys of lib/shortcuts' table that act on this screen: ⌘/, ⌘J, ⌃Tab, ⌘N,
+  // ⌘B, ⌥⌘B and ⌘. — plus a letter typed with no field to take it, which starts
+  // a message. None over the project window, whose editor has keys of its own
+  // (⌘/ comments a line there). Read through a ref, so every press sees this
+  // render's state.
+  const shortcutKeys = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcutKeys.current = (e) => {
+    if (e.defaultPrevented || analyzeProject) return;
+    const c = chord(e);
+    const act = (fn: () => void) => { e.preventDefault(); fn(); };
+    if (pressed(c, SC.sheet.keys)) return act(() => { setPaletteOpen(false); setSheetOpen((v) => !v); });
+    if (settingsOpen || paletteOpen || sheetOpen || inspectorOpen || toolsFor || ctxMenu) return;
+    if (pressed(c, SC.needs.keys)) return act(jumpToNeeds);
+    if (pressed(c, SC.last.keys)) return act(() => {
+      const s = sessions.find((x) => x.id === lastSession.current.was);
+      if (s) selectSession(s);
+    });
+    if (pressed(c, SC.newSession.keys)) return act(() => { if (activeProject) void newSession(activeProject); });
+    if (pressed(c, SC.sidebar.keys)) return act(toggleLeft);
+    if (pressed(c, SC.panel.keys)) return act(toggleRight);
+    // Always taken: unhandled, a Mac turns ⌘. into Cancel, which leaves full screen.
+    if (pressed(c, SC.stop.keys)) return act(() => void stop());
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\p{L}\p{N}]$/u.test(e.key) && view === "chat" && !inField(e.target)
+        && !(e.target as Element | null)?.closest?.("[role='dialog'], [role='menu'], [role='listbox']")
+        && !window.dispatchEvent(new CustomEvent("hud:type", { detail: e.key, cancelable: true }))) e.preventDefault();
+  };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => shortcutKeys.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
+
+  // ⌘J: the next session NEEDS YOU lists, opened the way the bell opens one.
+  // shortcut: a Rivendell job on offer has no session to open, so ⌘J passes it by; the bell lists it.
+  function jumpToNeeds() {
+    const id = nextNeed(needsRef.current.flatMap((n) => (n.session_id ? [n.session_id] : [])), sessionId);
+    if (!id) { notify("info", "Nothing else is waiting on you"); return; }
+    const s = sessions.find((x) => x.id === id);
+    if (s) selectSession(s); else openSession(id);
+  }
 
   // "Open SETTINGS on this tab", from anywhere (lib/opensettings.ts).
   useEffect(() => {
@@ -2707,12 +2765,12 @@ export function App() {
   const railKeys = railTabs.map((t) => t.id).join();
   // ⌥1–9: the rail's tabs in its own order, as a click on the tile (the open one
   // shuts). Not inside a text field, where ⌥+digit types a character (¡™£, or a
-  // bracket on some keyboard layouts).
+  // bracket on some keyboard layouts) — the empty message box excepted, as for ⌥↑.
   useEffect(() => {
     const ids = railKeys.split(",");
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || !/^Digit[1-9]$/.test(e.code)) return;
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      if (e.defaultPrevented || typing(e.target)) return;
       const id = ids[Number(e.code.slice(5)) - 1];
       if (!id) return;
       e.preventDefault();
@@ -2794,7 +2852,7 @@ export function App() {
   }, [view, ai]);
 
   const commands: Command[] = [
-    { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
+    { id: "new-chat", label: "New chat", group: "Session", icon: "+", keys: SC.newSession.keys, run: () => activeProject && void newSession(activeProject) },
     ...(isReadOnly(selected?.origin) ? [] : [
       { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) }]),
     { id: "copy-chat", label: "Copy chat as markdown", group: "Session", icon: "⧉", run: () => {
@@ -2810,9 +2868,10 @@ export function App() {
       ? [{ id: "view-next", label: "Go to Next up", group: "View", icon: "◈", run: () => setView("next") }]
       : []),
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
-    { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
-    { id: "left-panel", label: settings.leftOpen ? "Fold the sidebar to its rail" : "Unfold the sidebar", group: "View", icon: "▤", run: toggleLeft },
+    { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", keys: SC.panel.keys, run: toggleRight },
+    { id: "left-panel", label: settings.leftOpen ? "Fold the sidebar to its rail" : "Unfold the sidebar", group: "View", icon: "▤", keys: SC.sidebar.keys, run: toggleLeft },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
+    { id: "shortcuts", label: "Keyboard shortcuts", group: "Help", icon: "⌨", keys: SC.sheet.keys, run: () => setSheetOpen(true) },
     { id: "replay-boot", label: "Replay boot intro", group: "Display", icon: "↻", run: replayBoot },
     { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
     ...modelOpts.map((m) => ({
@@ -3548,6 +3607,7 @@ export function App() {
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+            <ShortcutSheet open={sheetOpen} sendKey={settings.sendKey} onClose={() => setSheetOpen(false)} />
             {toolsFor && (
               <ToolsModal
                 title={sessions.find((s) => s.id === toolsFor)?.title || "session"}

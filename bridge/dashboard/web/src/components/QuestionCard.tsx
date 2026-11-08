@@ -7,6 +7,8 @@ import { ImageLightbox } from "./ImageLightbox";
 import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
+import { askAt, askEnter, typing } from "../lib/shortcuts";
+import { Keys } from "./ui/Keys";
 
 /* The Rivendell note's push question (header "Task",
    docs/superpowers/specs/rivendell-task-check.md) wears the board's mark, the
@@ -261,9 +263,38 @@ export function QuestionCard({
   }
 
   // The options are Claude's guesses; when none fits, free text counts as the answer.
-  const ready = questions.every(
-    (_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "",
-  );
+  const answered = questions.map((_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "");
+  const ready = answered.every(Boolean);
+  // ⌘1–9 pick on the first question not done, ⌘↵ moves past a pick-several one or
+  // sends (lib/shortcuts askAt / askEnter). Only the topmost live card takes them:
+  // `mark` tells it whether that's this one (a permission card carries one too).
+  const [passed, setPassed] = useState<Set<number>>(() => new Set());
+  const at = askAt(questions, answered, passed);
+  const mark = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (sending || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (document.querySelector("[data-ask-keys]") !== mark.current) return;
+      const n = /^Digit([1-9])$/.exec(e.code);
+      if (n) {
+        const q = questions[at];
+        const o = q?.options[Number(n[1]) - 1];
+        if (!o) return;
+        e.preventDefault();
+        toggle(q, at, o.label);
+        return;
+      }
+      // ⌘↵ in a box with text in it is that box's own (it sends your message)
+      if (e.key !== "Enter" || typing(e.target)) return;
+      const next = askEnter(questions, answered, passed);
+      if (next === null) return;
+      e.preventDefault();
+      if (next === "send") void submit();
+      else setPassed((p) => new Set(p).add(next));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const multi = questions.some((q) => q.multiSelect);
   // One staged question: the button names what goes back ("Send · B HEADER").
   const solo = questions.length === 1 && staged(questions[0]) && sel[0]?.[0];
@@ -300,27 +331,30 @@ export function QuestionCard({
           {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
           <div className="flex flex-col gap-1.5">
             {staged(q) && <Stage q={q} chosen={sel[qi] ?? []} onPick={(l) => toggle(q, qi, l)} sending={sending} />}
-            {!staged(q) && q.options.map((o) => {
+            {!staged(q) && q.options.map((o, oi) => {
               const picked = (sel[qi] ?? []).includes(o.label);
               return (
                 <button
                   key={o.label}
                   onClick={() => toggle(q, qi, o.label)}
                   disabled={sending}
-                  className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
+                  className={`qopt${picked ? " qopt-on" : ""} flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                     picked
                       ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
                       : "bg-[var(--tg-bg)]"
                   }`}
                 >
-                  <div className="font-medium">{task ? taskLabel(o.label, true) : o.label}</div>
-                  {o.description && (
-                    <div
-                      className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
-                    >
-                      {o.description}
-                    </div>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{task ? taskLabel(o.label, true) : o.label}</div>
+                    {o.description && (
+                      <div
+                        className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
+                      >
+                        {o.description}
+                      </div>
+                    )}
+                  </div>
+                  {qi === at && oi < 9 && <Keys k={`Ctrl+${oi + 1}`} hover />}
                 </button>
               );
             })}
@@ -380,6 +414,7 @@ export function QuestionCard({
         </div>
         );
       })}
+      <span ref={mark} data-ask-keys hidden />
       <Button className="w-full" disabled={!ready || sending} onClick={() => void submit()}>
         {sending ? (
           <span className="inline-flex items-center gap-1.5">
@@ -387,6 +422,7 @@ export function QuestionCard({
           </span>
         ) : (task && taskVerb(questions[0], sel[0]?.[0]))
           || (soloKey ? `Send · ${soloKey.key} ${soloKey.name}` : multi ? "Submit" : "Send answer")}
+        {!sending && <Keys k="Ctrl+Enter" hover />}
       </Button>
     </Card>
   );

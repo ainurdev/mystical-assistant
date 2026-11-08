@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Keys } from "./ui/Keys";
 
 export interface Command {
   id: string;
@@ -6,6 +7,8 @@ export interface Command {
   group: string;
   icon: string;
   iconColor?: string;
+  /** Its shortcut (lib/shortcuts notation), drawn as keycaps before the group. */
+  keys?: string;
   run: () => void;
 }
 
@@ -122,6 +125,7 @@ export function CommandPalette({
               >
                 <span style={{ fontSize: "var(--t11)", color: c.iconColor ?? "var(--acc)", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>
                 <span style={{ flex: 1, fontSize: "var(--t125)", color: "var(--txh)" }}>{c.label}</span>
+                {c.keys && <Keys k={c.keys} />}
                 <span style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txl)" }}>{c.group.toUpperCase()}</span>
               </button>
             ))

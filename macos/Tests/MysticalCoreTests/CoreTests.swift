@@ -259,6 +259,17 @@ func shimContext(permission: String, reply: String = "granted") -> (JSContext, (
     #expect(MacPrefs(d).dict["keepInDock"] == true)
 }
 
+@Test func summonShortcutIsASwitchOnByDefault() {
+    // ⌃⌘A, the Windows app's Win+Ctrl+A twin: on until you turn it off, like there.
+    let d = UserDefaults(suiteName: "test.mystical.\(UUID().uuidString)")!
+    var p = MacPrefs(d)
+    #expect(p.hotkey && p.dict["hotkey"] == true)   // the page sees it, so SETTINGS shows the row
+    let took = p.set("hotkey", false)
+    #expect(took)
+    p.save(d)
+    #expect(!MacPrefs(d).hotkey)
+}
+
 // MARK: banner buttons
 
 @Test func shimPostsActionsAndRunsOnaction() {

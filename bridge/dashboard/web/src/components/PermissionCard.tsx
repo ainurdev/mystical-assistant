@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Wrench } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
+import { Keys } from "./ui/Keys";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
 // Live only: answered, it's AskDock's AskRecord; where the box can take it, it docks (AskDock).
@@ -27,6 +28,22 @@ export function PermissionCard({
     setSending(which);
     if ((await fn()) === false) setSending(null);
   }
+  // ⌘1 allows, ⌘2 denies, as a click would — when this is the topmost live
+  // Ask card (QuestionCard's `mark`, the same one). The Mini App's twin has no
+  // keyboard to serve, so it stays without.
+  const mark = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (sending || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (document.querySelector("[data-ask-keys]") !== mark.current) return;
+      if (e.code !== "Digit1" && e.code !== "Digit2") return;
+      e.preventDefault();
+      if (e.code === "Digit1") void answer("allow", onAllow);
+      else void answer("deny", onDeny);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   return (
     <Card className="chatcard pcard pcard-live space-y-2 border border-[var(--tg-button)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
@@ -48,11 +65,12 @@ export function PermissionCard({
         </pre>
       )}
       <div className="flex gap-2">
+        <span ref={mark} data-ask-keys hidden />
         <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
-          {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
+          {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : <>Allow <Keys k="Ctrl+1" hover /></>}
         </Button>
         <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
-          {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
+          {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <>Deny <Keys k="Ctrl+2" hover /></>}
         </Button>
       </div>
     </Card>

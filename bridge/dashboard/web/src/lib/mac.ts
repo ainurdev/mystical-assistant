@@ -9,12 +9,13 @@ import { useSyncExternalStore } from "react";
  *
  *  The tab's switches are the app's (UserDefaults on the Mac, settings.json on
  *  Windows) and only cached here: one copy, right at launch before any page has
- *  loaded. `keepInDock` is the Mac's alone, `hotkey` the Windows app's. */
+ *  loaded. `keepInDock` is the Mac's alone; `hotkey` (the summon shortcut) is
+ *  both apps': Win+Ctrl+A on Windows, ⌃⌘A on the Mac. */
 export interface MacSettings {
   keepInDock?: boolean;         // Mac: the Dock icon stays while the window is hidden
   floating: boolean;            // the always-on-top WAITING ON YOU panel
   titleFollowsSession: boolean; // the window title is the open session's
-  hotkey?: boolean;             // Windows: Win+Ctrl+A summons the window
+  hotkey?: boolean;             // the summon shortcut: Win+Ctrl+A / ⌃⌘A raises the window from any app
   version: string;              // the app's build (git describe)
   platform?: "mac" | "windows"; // absent on a Mac app older than the Windows one
 }

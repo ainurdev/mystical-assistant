@@ -26,6 +26,7 @@ import { rankProfiles, skillQuery, STEER_SOFT_WORDS, type Caps, type HelperConfi
 import { multi as multiApi } from "../lib/multistore";
 import { chatImagesInline, uploadChatImage, useChatImages } from "../lib/chatimages";
 import { isInlineImage } from "../lib/embeds";
+import { keyAttrs, SHORTCUTS as SC } from "../lib/shortcuts";
 
 const STILL_SAVING = "An image is still saving. Send again in a moment.";
 
@@ -669,6 +670,18 @@ export function Composer({
     const f = () => taRef.current?.focus();
     window.addEventListener("ask:focus", f);
     return () => window.removeEventListener("ask:focus", f);
+  }, []);
+
+  // A letter typed with nothing else to take it (App): it starts your message
+  // here. The first composer to answer takes it, so two on screen don't both type.
+  useEffect(() => {
+    const f = (e: Event) => {
+      if (e.defaultPrevented || !taRef.current) return;
+      e.preventDefault();
+      taRef.current.type((e as CustomEvent<string>).detail);
+    };
+    window.addEventListener("hud:type", f);
+    return () => window.removeEventListener("hud:type", f);
   }, []);
 
   // Focus the command line whenever a session is opened or switched (and on
@@ -1352,7 +1365,7 @@ export function Composer({
   const actions = (withDesign: boolean) => askBtn ? (
     <>
       {running && (
-        <button className="act-glyph stop" onClick={onStop} aria-label="Stop" title="STOP — interrupt this turn now">
+        <button className="act-glyph stop" onClick={onStop} aria-label="Stop" title="STOP — interrupt this turn now" {...keyAttrs(SC.stop.keys)}>
           <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
       )}
       <span className="act-fence" aria-hidden />
@@ -1361,7 +1374,7 @@ export function Composer({
   ) : running ? (
     <>
       {/* After the answer it ends the background tasks, so it says so. */}
-      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"}
+      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"} {...keyAttrs(SC.stop.keys)}
         title={bg ? "STOP — end the background tasks this turn left running; its answer stays" : "STOP — interrupt this turn now"}>
         <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />{bg ? "Stop them" : null}</button>
       {/* The graceful counterpart to STOP: no interrupt, no half-written

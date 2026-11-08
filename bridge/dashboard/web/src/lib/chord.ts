@@ -21,9 +21,10 @@ export function chord(e: ChordEvent): string {
   if (e.shiftKey) parts.push("Shift");
   if (e.altKey) parts.push("Alt");
   /* The letter comes off `code`, not `key`: Alt+N on macOS reports key "˜", and
-     a non-US layout can report anything at all. `key` still answers for F-keys,
+     a non-US layout can report anything at all. A digit likewise: Alt+3 is "£"
+     on a Mac, Cmd+1 is "&" on AZERTY. `key` still answers for F-keys,
      Escape and Enter, whose `code` is already the name we want. */
-  const letter = /^Key([A-Z])$/.exec(e.code);
-  parts.push(letter ? letter[1] : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  const byCode = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(e.code)?.slice(1).find(Boolean);
+  parts.push(byCode ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key));
   return parts.join("+");
 }

@@ -27,6 +27,7 @@ import { RivendellQueue } from "./RivendellQueue";
 import { TicketsMode } from "./TicketsMode";
 import { NewSessionPop } from "./NewSessionPop";
 import { Spinner } from "../ui";
+import { keyAttrs, SHORTCUTS as SC } from "../../lib/shortcuts";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
  *  unsent text in the composer, a relevance check in flight, or a held card
@@ -1109,11 +1110,11 @@ export function SessionsPanel(props: Props) {
     const flyRest = Math.max(0, flyRows.length - flyVis.length);
     return (
       <div ref={railRef} className="srail" onPointerEnter={hold} onPointerLeave={() => setHeld(null)}>
-        <button className="srail-btn" aria-label="Search sessions" title="Search sessions  /"
+        <button className="srail-btn" aria-label="Search sessions" title="Search sessions" {...keyAttrs(SC.search.keys)}
                 onClick={() => { onUnfold?.(); requestAnimationFrame(() => searchRef.current?.focus()); }}>
           <Search size={18} strokeWidth={2} aria-hidden />
         </button>
-        <button className="srail-btn" data-acc aria-label="New session" title="New session"
+        <button className="srail-btn" data-acc aria-label="New session" title="New session" {...keyAttrs(SC.newSession.keys)}
                 onClick={() => { onUnfold?.(); setNsAt(""); }}>
           <Plus size={18} strokeWidth={2} aria-hidden />
         </button>
@@ -1136,7 +1137,7 @@ export function SessionsPanel(props: Props) {
           })}
         </div>
         <span className="srail-sep" />
-        <button className="srail-btn" aria-label="Unfold the sidebar" title="Unfold the sidebar" onClick={onUnfold}>
+        <button className="srail-btn" aria-label="Unfold the sidebar" title="Unfold the sidebar" {...keyAttrs(SC.sidebar.keys)} onClick={onUnfold}>
           <PanelLeftOpen size={18} strokeWidth={2} aria-hidden />
         </button>
         {flyG && fly && (
@@ -1350,7 +1351,7 @@ export function SessionsPanel(props: Props) {
           {mode !== "plugins" && (
             <button
               className="sess-search sess-plus" onClick={() => toggleNs("")} aria-label="New session" aria-haspopup="dialog" aria-expanded={nsAt === ""}
-              data-ns-anchor title="New session — in a project's checkout or a worktree"
+              data-ns-anchor title="New session — in a project's checkout or a worktree" {...keyAttrs(SC.newSession.keys)}
               style={{ flex: "none", height: 38, aspectRatio: "1", marginTop: 11, padding: 0, display: "grid", placeItems: "center",
                        border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)", cursor: "pointer", color: "var(--acc)" }}
             >{/* open, the + turns into the × that shuts it */}
