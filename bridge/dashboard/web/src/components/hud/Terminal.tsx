@@ -342,8 +342,8 @@ export function Terminal({
   // COMPACT: the nameplate leaves the header for the composer's control row,
   // and the header shrinks to a pill of readouts on the right.
   const compact = hud?.layout === "compact";
-  // COMPACT's TABS and CONSOLE composers lay the nameplate's pieces out
-  // themselves; CLASSIC keeps it whole, as the row it always was.
+  // COMPACT's composer lays the nameplate's pieces out itself; DEFAULT
+  // keeps it whole, as the row it always was.
   const flat = compact;
   // A fresh session's whole screen is a drop target: a file dragged anywhere on
   // it lands where a drop on the prompt box would. Files only — a row or text

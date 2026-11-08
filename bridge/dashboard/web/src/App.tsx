@@ -264,6 +264,7 @@ interface HeldPrompt {
   noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
   // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
   kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string };
+  typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
 
 export function App() {
@@ -1652,7 +1653,7 @@ export function App() {
     // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
              picks?: { model: string; perm: string; effort: string }; ponytail?: string;
-             pickOnce?: boolean },
+             pickOnce?: boolean; typed?: string },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1724,7 +1725,7 @@ export function App() {
         setHeldMap((m) => ({
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
-                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath,
+                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath, typed: opts?.typed,
                    kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail } : undefined },
         }));
         if (sessionIdRef.current !== sid)
@@ -3417,7 +3418,7 @@ export function App() {
                           void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid,
                             ...(held.kind ? { ...held.kind, pickOnce: true } : {}) });
                         }}
-                        onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
+                        onDismiss={() => { feed([held.typed ?? held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
                     {jobBar && !dockLive && selected?.job ? (
@@ -3477,8 +3478,8 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       // A kind's preset rides with its prompt, and never becomes this browser's picks.
-                      onSend={(t, i, noPath, run) => void send(t, i, { ...(noPath ? { noPath: true } : {}),
-                        ...(run ? { picks: { model: run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
+                      onSend={(t, i, noPath, run, typed) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed } : {}),
+                        ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       kindPresets={settings.kindPresets}
                       onSaveKindPreset={(k, r) => patchSettings({ kindPresets: { ...settings.kindPresets, [k]: r } })}
@@ -3498,7 +3499,7 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx}
+                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

@@ -23,14 +23,30 @@ const guesses: [string, string | null][] = [
   ["go with 1", null], ["continue", null], ["Yes", null], ["", null],
   ["/design-first a thing", null], ["/goal ship it", null],
 ];
-for (const [t, k] of guesses) console.assert(guessKind(t) === k, `guessKind(${JSON.stringify(t)}) = ${k}, got ${guessKind(t)}`);
+const START = { start: true, design: true }, MID = { start: false, design: true };
+for (const [t, k] of guesses) console.assert(guessKind(t, START) === k, `guessKind(${JSON.stringify(t)}) = ${k}, got ${guessKind(t, START)}`);
+// Rule order, and Design/Fix only at a session's start.
+const more: [string, typeof START, string | null][] = [
+  ["i mean UI", MID, null], ["i mean UI", START, "design"],
+  ["the session list jumps when a turn ends", MID, null],
+  ["merge this into master locally then clean up", MID, "ship"], ["merge this into master locally then clean up", START, "ship"],
+  ["did we fix project layout?", START, "ask"], ["is the ui done?", START, "ask"],
+  ["do the changes i told exepct generating image", START, null],
+  ["can you upload latest preview build into rivendell as new release", START, null],
+  ["why does the build fail on CI?", START, "fix"], ["why does the build fail on CI?", MID, "ask"],
+  ["reimagine prompt boxes so each kind of work gets its own", { start: true, design: false }, null],
+  ["add avatar with its border to inbox header as well", MID, "build"],
+];
+for (const [t, c, k] of more) console.assert(guessKind(t, c) === k, `guessKind(${JSON.stringify(t)}, ${JSON.stringify(c)}) = ${k}, got ${guessKind(t, c)}`);
 
 // --- shownKind ---------------------------------------------------------------
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-console.assert(same(shownKind("plain", "fix the x"), { kind: null, how: "plain" }), "plain wins over a guess");
-console.assert(same(shownKind("ask", "fix the x"), { kind: "ask", how: "picked" }), "a pick wins over a guess");
-console.assert(same(shownKind(null, "fix the x"), { kind: "fix", how: "auto" }), "guessing");
-console.assert(same(shownKind(null, "ok"), { kind: null, how: "none" }), "nothing to guess");
+console.assert(same(shownKind("plain", "fix the x", START), { kind: null, how: "plain" }), "plain wins over a guess");
+console.assert(same(shownKind("ask", "fix the x", START), { kind: "ask", how: "picked" }), "a pick wins over a guess");
+console.assert(same(shownKind(null, "fix the x", START), { kind: "fix", how: "auto" }), "guessing");
+console.assert(same(shownKind(null, "fix the x", MID), { kind: null, how: "none" }), "no fix guess mid-thread");
+console.assert(same(shownKind("fix", "the x", MID), { kind: "fix", how: "picked" }), "a pick works mid-thread");
+console.assert(same(shownKind(null, "ok", START), { kind: null, how: "none" }), "nothing to guess");
 
 // --- nextKind ----------------------------------------------------------------
 console.assert(nextKind("ask", 1) === null, "ask wraps to plain");
@@ -49,10 +65,10 @@ console.assert(presetFor("fix", { ship: { effort: "low" } }).effort === "max", "
 
 // --- sendPlan ----------------------------------------------------------------
 const run = presetFor("build");
-const o = { text: "do it", pack: true, answering: false, agent: false, run };
+const o = { text: "do it", diagnose: true, answering: false, agent: false, run };
 console.assert(sendPlan({ ...o, kind: "design" }).text === "/design-first do it", "design");
 console.assert(sendPlan({ ...o, kind: "fix" }).text === "/mattpocock-skills:diagnosing-bugs do it", "fix with pack");
-console.assert(sendPlan({ ...o, kind: "fix", pack: false }).text === "do it", "fix without pack");
+console.assert(sendPlan({ ...o, kind: "fix", diagnose: false }).text === "do it", "fix without pack");
 for (const k of ["build", "ship", "ask"] as const) console.assert(sendPlan({ ...o, kind: k }).text === "do it", `${k} as typed`);
 console.assert(sendPlan({ ...o, kind: "build" }).run === run, "run rides along");
 for (const x of [{ answering: true }, { agent: true }, { kind: null }]) {
@@ -71,7 +87,7 @@ console.assert(lastCheckOf([]) === null, "no turns, null");
 
 // --- kindFacts ---------------------------------------------------------------
 const git = (p: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...p });
-const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, pack: false, ...p });
+const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, pack: false, askPerm: "plan", ...p });
 const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => (f.lead ?? "") + f.text).join(" · ");
 console.assert(text("ship", ctx({ git: git({ ahead: 3 }) })) === "3 to push · 0 to pull", "ship push/pull");
 const dirty = kindFacts("ship", ctx({ git: git({ dirty: 2, ahead: 1 }) }));
@@ -85,9 +101,12 @@ const timed = ctx({ lastCheck: { ...bad, at: 1_700_000_000 } });
 console.assert(text("fix", timed) === `last check 1 failed · ${hhmm(1_700_000_000)}`, "fix copy with its time");
 console.assert(kindFacts("fix", timed)[0].lead === "last check " && kindFacts("fix", timed)[1].tone === undefined, "only the result is red: the words and the time stay plain");
 console.assert(text("fix", ctx()) === "no checks run in this session yet", "fix no checks");
+console.assert(same(kindFacts("design", ctx()), []), "design: link not known yet is no fact");
 console.assert(text("design", ctx({ designLinked: false })) === "no Claude Design project linked", "design unlinked");
 console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claude Design", "design linked");
 console.assert(same(kindFacts("ask", ctx()), [{ text: "read-only, changes nothing" }]), "ask, no map");
+console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits", mapBuiltAt: Date.now() / 1000 })).map((f) => f.text), ["map built just now"]), "ask: no read-only claim once its mode edits");
+console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits" })), []), "ask: editing mode, no map, no facts");
 console.assert(text("build", ctx({ pack: true })) === "grill, then build here · working tree clean", "build with pack");
 console.assert(text("build", ctx({ git: git({ dirty: 2 }) })) === "builds here · 2 uncommitted", "build without pack");
 console.assert(text("build", ctx({ git: null })) === "builds here", "build: git unknown, no tree fact");

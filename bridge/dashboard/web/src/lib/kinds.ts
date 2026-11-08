@@ -39,25 +39,34 @@ export const KINDS: Record<KindId, Kind> = {
 /** null = guessing; "plain" = the user dropped the kind. */
 export type KindPick = KindId | "plain" | null;
 
-// First match wins, so order is priority: "merge the broken fix" is shipping, "why does it fail?" is a fix.
-const RULES: [KindId, RegExp][] = [
-  ["ship", /^(merge|push|commit|rebase|ship|release|deploy|clean ?up|integrate)\b|\b(create (a )?pr|open (a )?pr|merge (this|it|into)|push (it|this|to))\b/],
-  ["fix", /\b(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|error|crash\w*|exception|stuck|hang(s|ing)?|freez\w*|slow|lag\w*|wrong|missing|jump(s|ing)?|flicker\w*|regress\w*|can'?t|cannot|isn'?t|won'?t|no longer)\b|^fix /],
-  ["design", /\b(design|redesign|reimagine|mock-?ups?|layout|ui|ux|look and feel|restyle|style|theme|visual\w*)\b/],
-  ["ask", /\?$|^(what|why|how|where|which|who|when|is|are|does|do|can|could|should|explain|tell me|show me|give me|list)\b/],
-  ["build", /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|refactor|improve|extend|write|put|let'?s|lets|we need|i want)\b/],
-];
+/** `start`: the session has had no turn yet. DESIGN and FIX are guessed only there: mid-thread
+ *  "the list jumps" or "i mean UI" is a follow-up, and a guessed /design-first or diagnosing
+ *  prefix would hijack it (a tap or Tab still picks them). `design`: Claude Design is installed. */
+export interface GuessCtx { start: boolean; design: boolean }
 
-export function guessKind(text: string): KindId | null {
+// First match wins, so order is priority: "merge the broken fix" is shipping, "why does it fail?" is a fix,
+// and a trailing "?" is a question even about the ui ("is the ui done?"). The yes/no openers
+// (can, do, is...) count only through that "?": without one, "can you upload X" is a request.
+const SHIP = /^(merge|push|commit|rebase|ship|release|deploy|clean ?up|integrate)\b|\b(create (a )?pr|open (a )?pr|merge (this|it|into)|push (it|this|to))\b/;
+const FIX = /\b(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|error|crash\w*|exception|stuck|hang(s|ing)?|freez\w*|slow|lag\w*|wrong|missing|jump(s|ing)?|flicker\w*|regress\w*|can'?t|cannot|isn'?t|won'?t|no longer)\b|^fix /;
+const DESIGN = /\b(design|redesign|reimagine|mock-?ups?|layout|ui|ux|look and feel|restyle|style|theme|visual\w*)\b/;
+const ASK = /\?$|^(what|why|how|where|which|who|when|explain|tell me|show me|give me|list)\b/;
+const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|refactor|improve|extend|write|put|let'?s|lets|we need|i want)\b/;
+
+export function guessKind(text: string, c: GuessCtx): KindId | null {
   const t = text.trim().toLowerCase();
   if (t.startsWith("/") || t.split(/\s+/).length < 2) return null;
-  return RULES.find(([, re]) => re.test(t))?.[0] ?? null;
+  if (SHIP.test(t)) return "ship";
+  if (c.start && FIX.test(t)) return "fix";
+  if (ASK.test(t)) return "ask";
+  if (c.start && c.design && DESIGN.test(t)) return "design";
+  return BUILD.test(t) ? "build" : null;
 }
 
-export function shownKind(pick: KindPick, text: string): { kind: KindId | null; how: "auto" | "picked" | "plain" | "none" } {
+export function shownKind(pick: KindPick, text: string, c: GuessCtx): { kind: KindId | null; how: "auto" | "picked" | "plain" | "none" } {
   if (pick === "plain") return { kind: null, how: "plain" };
   if (pick) return { kind: pick, how: "picked" };
-  const kind = guessKind(text);
+  const kind = guessKind(text, c);
   return { kind, how: kind ? "auto" : "none" };
 }
 
@@ -72,10 +81,10 @@ export function presetFor(kind: KindId, saved?: Partial<Record<KindId, Partial<K
   return { ...KINDS[kind].preset, ...saved?.[kind], ...session };
 }
 
-export function sendPlan(o: { kind: KindId | null; text: string; pack: boolean; answering: boolean; agent: boolean; run: KindRun | null }):
+export function sendPlan(o: { kind: KindId | null; text: string; diagnose: boolean; answering: boolean; agent: boolean; run: KindRun | null }):
   { text: string; run: KindRun | null } {
   if (!o.kind || o.answering || o.agent) return { text: o.text, run: null };
-  const prefix = o.kind === "design" ? "/design-first " : o.kind === "fix" && o.pack ? "/mattpocock-skills:diagnosing-bugs " : "";
+  const prefix = o.kind === "design" ? "/design-first " : o.kind === "fix" && o.diagnose ? "/mattpocock-skills:diagnosing-bugs " : "";
   return { text: prefix + o.text, run: o.run };
 }
 
@@ -93,7 +102,8 @@ export function lastCheckOf(turns: Turn[]): LastCheck | null {
   return null;
 }
 
-export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null; pack: boolean }
+export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null; pack: boolean;
+  /** The perm ASK will run with: it is read-only only in plan. */ askPerm: string }
 /** `lead`: plain words before the text, so a state colour lands on the state alone ("last check" stays plain). */
 export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
 
@@ -103,7 +113,7 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
   const g = c.git;
   switch (kind) {
     case "design":
-      return [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
+      return c.designLinked === null ? [] : [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
     case "build":
       return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...(g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [])];
     case "fix":
@@ -120,6 +130,6 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
       return out;
     }
     case "ask":
-      return [{ text: "read-only, changes nothing" }, ...(c.mapBuiltAt ? [{ text: `map built ${ago(c.mapBuiltAt) === "now" ? "just now" : `${ago(c.mapBuiltAt)} ago`}` }] : [])];
+      return [...(c.askPerm === "plan" ? [{ text: "read-only, changes nothing" }] : []), ...(c.mapBuiltAt ? [{ text: `map built ${ago(c.mapBuiltAt) === "now" ? "just now" : `${ago(c.mapBuiltAt)} ago`}` }] : [])];
   }
 }

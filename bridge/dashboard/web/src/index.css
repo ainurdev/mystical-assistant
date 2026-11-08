@@ -7458,6 +7458,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .askdock code { font-family: var(--mono); font-size: .92em; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--txl) 16%, transparent); }
 
 /* the joins: the dock and the box read as one card */
+/* the doubled [data-docked] keeps the specificity of the old :not([data-pb="console"]) it replaced */
 .composer[data-docked][data-docked] .cmdbox {
   border-top-left-radius: 0 !important; border-top-right-radius: 0 !important;
   border-color: color-mix(in oklab, var(--ask) 60%, var(--rc-line2)) !important; border-top-color: var(--rc-line) !important;

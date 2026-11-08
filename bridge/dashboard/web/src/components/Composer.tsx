@@ -150,8 +150,7 @@ function Drop<T extends string>({
   label: string;
   // The chip's whole face, when the field draws its own (the rail's usage ring); the menu is unchanged.
   face?: ReactNode;
-  // On the chip's wrapper, for a layout that treats this chip apart (TABS'
-  // footer lets the PROFILE name give way first, .pb-l .drop-prof).
+  // A class on the chip's wrapper, for a layout that treats this chip apart.
   className?: string;
   // A field glyph printed inside the chip. The identity of the field then
   // travels with the control instead of sitting beside it as a separate span,
@@ -423,7 +422,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, flowQueued, smartZone, multi, git, lastCheck, designLinked,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, multi, git, lastCheck, designLinked,
   kindPresets, onSaveKindPreset,
 }: {
   /** Multi-agent chats (ComposerMulti). */
@@ -476,7 +475,7 @@ export function Composer({
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). */
-  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null) => void;
+  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -521,6 +520,8 @@ export function Composer({
   git?: GitStatus | null;
   lastCheck?: LastCheck | null;
   designLinked?: boolean | null;
+  /** The open session is a helper: its next turn runs on its own picks, so the kinds dim like an agent's. */
+  helper?: boolean;
   /** The kinds' presets this browser saved (settings), over the defaults (lib/kinds presetFor). */
   kindPresets?: Partial<Record<KindId, Partial<KindRun>>>;
   /** PRESET's "Save as <Kind>'s preset": keep this run as the kind's preset in this browser. */
@@ -567,6 +568,7 @@ export function Composer({
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
+  const escRef = useRef(false);   // the last editor key was Esc: the next Tab is the browser's
   // Images on their way into the text (SYSTEM ▸ Send images: In the chat).
   useChatImages();
   const [embedErr, setEmbedErr] = useState<string | null>(null);
@@ -785,6 +787,7 @@ export function Composer({
   // COMPACT has no auto pick and no typed-text suggestion: its kinds take the typed text.
   // The empty box's ghost stays, its caption on the rail.
   const pack = cmds.some((c) => c.name.startsWith("mattpocock-skills:"));
+  const diagnose = cmds.some((c) => c.name === "mattpocock-skills:diagnosing-bugs");
   const routeOn = !!routing && pack && !!routeCtx && !onAgent && !running && !ask?.send;
   // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
   const ctxKey = useMemo(() => (routeOn ? JSON.stringify([sessionId, routeCtx]) : ""), [routeOn, sessionId, routeCtx]);
@@ -845,8 +848,8 @@ export function Composer({
   const typed = auto ? swapLead(text, auto.name, null) : text;
   // The kind of work on show (COMPACT only; DEFAULT has no rail to show one). An answer to a
   // docked ask, an agent's session and a typed /command go as typed: no kind, the kinds dim.
-  const kindsOn = shelled && !onAgent && !ask?.send && !leadsSlash;
-  const { kind, how: kindHow } = kindsOn ? shownKind(kindPick, typed) : { kind: null, how: "none" as const };
+  const kindsOn = shelled && !onAgent && !helper && !ask?.send && !leadsSlash;
+  const { kind, how: kindHow } = kindsOn ? shownKind(kindPick, typed, { start: routeCtx?.first === true, design: !!plugins.design }) : { kind: null, how: "none" as const };
   const run = kind ? presetFor(kind, kindPresets, runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
@@ -929,9 +932,19 @@ export function Composer({
    *  plain, then round again), Esc drops the one on show. On an empty box Tab writes a picked
    *  kind's starter, and Esc goes back to guessing. An open list or menu keeps its keys. */
   function kindKey(e: KeyboardEvent): boolean {
+    // CodeMirror's convention: after Esc the next Tab leaves the editor; any other key re-arms the cycling.
+    if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return false;
+    const afterEsc = escRef.current;
+    escRef.current = e.key === "Escape";
+    if (afterEsc && e.key === "Tab") return false;
     if (!kindsOn || openDrop || e.altKey || e.ctrlKey || e.metaKey) return false;
     if (e.key === "Tab" && starter && !e.shiftKey) setText(starter);
-    else if (e.key === "Tab" && !blank) setKindPick(nextKind(kind, e.shiftKey ? -1 : 1) ?? "plain");
+    else if (e.key === "Tab" && !blank) {
+      const dir = e.shiftKey ? -1 : 1;
+      let n = nextKind(kind, dir);
+      if (n === "design" && !plugins.design) n = nextKind(n, dir);   // no Claude Design, no DESIGN kind
+      setKindPick(n ?? "plain");
+    }
     else if (e.key === "Escape" && kind) setKindPick(blank ? null : "plain");
     else return false;
     e.preventDefault();
@@ -1058,8 +1071,8 @@ export function Composer({
     }
     if (!t || disabled) return;
     // The kind on show puts its command in front and sends its preset with the prompt.
-    const plan = sendPlan({ kind, text: t, pack, answering: !!ask?.send, agent: onAgent, run });
-    onSend(plan.text, images, noPath || undefined, plan.run);
+    const plan = sendPlan({ kind, text: t, diagnose, answering: !!ask?.send, agent: onAgent, run });
+    onSend(plan.text, images, noPath || undefined, plan.run, t);
     setText("");
     setImages([]);
   }
@@ -1191,7 +1204,7 @@ export function Composer({
   };
   // ring: the rail's usage face (UsageRing), while the login has a reading and isn't expired.
   const profileDrop = (right: boolean, ring = false) => profiles && (
-    <Drop label="PROFILE" className="drop-prof" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
+    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
       face={ring && chipWin && boundDead === null ? <UsageRing left={chipWin.left} tone={chipTone} clock={chipClock} /> : undefined}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
@@ -1724,7 +1737,7 @@ export function Composer({
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
     : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
     : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
-        mapBuiltAt: graph?.exists ? graph.built_at : null, pack })
+        mapBuiltAt: graph?.exists ? graph.built_at : null, pack, askPerm: run?.perm ?? "" })
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   const rail = (
     <div className="pb-rail">
@@ -1732,10 +1745,12 @@ export function Composer({
         {KIND_ORDER.map((id) => {
           const Icon = KIND_ICON[id];
           const lit = id === kind;
+          const off = !kindsOn || (id === "design" && !plugins.design);   // no Claude Design, no DESIGN kind
           // The editor keeps the focus (and the caret) through a tap.
           return (
             <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
-              disabled={!kindsOn} aria-pressed={lit} title={lit ? `${KINDS[id].name} — click to send as typed` : KINDS[id].name}
+              disabled={off} aria-pressed={lit && kindHow === "picked"}
+              title={lit ? `${KINDS[id].name} — ${blank ? "click to go back to guessing" : "click to send as typed"}` : KINDS[id].name}
               onMouseDown={(e) => e.preventDefault()} onClick={() => setKindPick(lit ? (blank ? null : "plain") : id)}>
               <Icon size={lit ? 11 : 12} strokeWidth={2} aria-hidden />
               {lit && <><span>{KINDS[id].verb}</span>{kindHow === "auto" && <i>auto</i>}</>}
