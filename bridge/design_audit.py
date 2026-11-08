@@ -144,6 +144,8 @@ def target_url(root: str, a: dict) -> "tuple[str | None, str | None]":
     if a.get("board"):
         meta = design_board.load(root, str(a["board"]))
         page = next((p for p in meta["pages"] if p["name"] == a.get("page")), meta["pages"][0] if meta["pages"] else None)
+        if page and page.get("url"):
+            return page["url"], None
         if page:
             try:
                 with open(page["file"], encoding="utf-8", errors="replace") as f:

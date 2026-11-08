@@ -81,6 +81,10 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
             return design_board.edit_comments(root, body)
         if path == "chat/design-boards":
             return design_board.listed(root)
+        if path == "chat/design-url":
+            return design_board.live(root, body)
+        if path == "chat/design-live":
+            return design_board.proxied(root, body)
         if path == "chat/design-delete":
             return design_board.delete(root, body.get("board"))
         if path == "chat/design-version":

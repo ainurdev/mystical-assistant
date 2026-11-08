@@ -110,14 +110,15 @@ DESIGN = {"name": "show_design", "description": (
     "HTML. When a design request is open, first show three rough directions as three pages, say how they differ, and ask "
     "which way to go; skip that for a small change or when the direction is set. Pass file to point at an HTML file, then "
     "keep editing that file: the user watches edits land, so don't call this again unless pages change. No network in "
-    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Their comments arrive "
-    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui, "
+    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Or pass url to show a "
+    "running app or a public page in the same view: when the user asks to run the app and work on it together, start the "
+    "dev server, then call this with its address. Their comments arrive as a message naming the element. find_tools has design_context (read this before designing), inspect_ui, "
     "critique_design and grab_style."),
     "inputSchema": {"type": "object", "required": ["title"], "properties": {
         "title": {"type": "string", "description": "What's being designed."},
         "board": {"type": "string", "description": "The board id, to add to or update one. Default: made from the title."},
         "pages": {"type": "array", "items": {"type": "object"}, "description":
-                  "[{name, file or html, direction}]. direction says in a few words what this one is going for."}}}}
+                  "[{name, file, html or url, direction}]. direction says in a few words what this one is going for."}}}}
 OFFER = _t("offer_review", "Ask the user whether to run a review loop, when you think a feature is complex enough to warrant one. Call "
            "this as your last step, once you're done with everything, then give your final answer. A Start review button appears "
            "after your answer.",
@@ -354,9 +355,17 @@ def _show_design(s: dict, job, a: dict) -> dict:
         return _text(str(e), error=True)
     ref = _next_ref(job)
     job.add({"type": "design", "board": meta["id"], "title": meta["title"], "pages": [p["name"] for p in meta["pages"]], "ref": ref})
-    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"])
-    return _text(f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). Edit these files and the user sees it live:\n{files}\n"
-                 f"Ask which direction, and let them comment. {_placed(job, ref)}")
+    from bridge import design_proxy
+    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"] if p.get("file"))
+    down = [p["url"] for p in meta["pages"] if p.get("url") and not design_proxy.answering(p["url"])]
+    said = f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). "
+    if files:
+        said += f"Edit these files and the user sees it live:\n{files}\n"
+    if any(p.get("url") for p in meta["pages"]):
+        said += "A page at an address shows whatever that server serves, so your edits to the app show as it reloads.\n"
+    if down:
+        said += f"Nothing is answering yet at {', '.join(down)}. Check the server is up.\n"
+    return _text(f"{said}Let them comment. {_placed(job, ref)}")
 
 
 def _design_context(s: dict, job, a: dict) -> dict:

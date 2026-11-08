@@ -193,7 +193,7 @@
 .au-test { margin-top: 2px; margin-bottom: 8px; }
 .au-tested { margin: 0 0 11px; padding: 7px 9px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--dg-r); font-size: var(--t105, 10.5px); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--txm); max-height: 160px; overflow-y: auto; }
 .au-save { position: sticky; bottom: 0; padding: 9px 0 12px; background: var(--panel); }
-: flex; align-items: center; gap: 3px; flex: 1 1 200px; min-width: 150px; max-width: 420px; }
+.dg-url { display: flex; align-items: center; gap: 3px; flex: 1 1 200px; min-width: 150px; max-width: 420px; }
 .dg-url input { flex: 1; min-width: 0; }
 .dg-open { display: flex; gap: 4px; margin-bottom: 8px; }
 .dg-open input { flex: 1; min-width: 0; background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--prad, 0px); font: inherit; font-size: var(--t115, 11.5px); min-height: 28px; padding: 3px 6px; }

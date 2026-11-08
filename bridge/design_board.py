@@ -26,6 +26,7 @@ import re
 import shutil
 import threading
 import time
+import urllib.parse
 
 from bridge import chat_images, config, devserver
 
@@ -115,7 +116,14 @@ def put(root: str, cwd: "str | None", spec: dict) -> dict:
             if not name:
                 raise Refused("Each page needs a name, as it'll read in the dropdown.")
             entry = pages.get(name) or {"name": name}
-            if isinstance(p.get("html"), str) and p["html"].strip():
+            if p.get("url"):
+                from bridge import design_proxy
+                try:
+                    entry["url"] = design_proxy.check(p["url"])
+                except design_proxy.Refused as e:
+                    raise Refused(f"{name}: {e}") from None
+                entry.pop("file", None)
+            elif isinstance(p.get("html"), str) and p["html"].strip():
                 if len(p["html"].encode()) > MAX_PAGE_BYTES:
                     raise Refused(f"{name} is over {MAX_PAGE_BYTES // 1024 // 1024} MB. Inline less.")
                 path = os.path.join(d, f"{_slug(name, 'page')}.html")
@@ -127,8 +135,9 @@ def put(root: str, cwd: "str | None", spec: dict) -> dict:
                 if not real:
                     raise Refused(f"{name}: {p['file']} isn't an HTML file in this project.")
                 entry["file"] = real
-            elif "file" not in entry:
-                raise Refused(f"{name} needs html, or file: a path to an HTML file in the project.")
+                entry.pop("url", None)
+            elif "file" not in entry and "url" not in entry:
+                raise Refused(f"{name} needs html, file (an HTML file in the project) or url (a running app or a page).")
             if p.get("direction"):
                 entry["direction"] = " ".join(str(p["direction"]).split())[:120]
             if name not in pages:
@@ -139,7 +148,8 @@ def put(root: str, cwd: "str | None", spec: dict) -> dict:
         meta["updated"] = time.time()
         _write_json(os.path.join(d, "board.json"), meta)
     for entry in meta["pages"]:
-        _read_page(root, d, entry)
+        if "file" in entry:
+            _read_page(root, d, entry)
     return meta
 
 
@@ -257,7 +267,7 @@ def read_version(root: str, board: str, page: str, version: int) -> "str | None"
     meta = load(root, board)
     entry = next((p for p in meta["pages"] if p["name"] == page), None)
     vdir = os.path.join(d, "versions", _slug(page, "page"))
-    if not entry or not os.path.isdir(vdir):
+    if not entry or "file" not in entry or not os.path.isdir(vdir):
         return None
     for n in os.listdir(vdir):
         if n.startswith(f"{int(version):05d}-") and n.endswith(".html"):
@@ -270,6 +280,9 @@ def _public(meta: dict, root: str) -> dict:
     """What a client sees: never the absolute paths, except as words relative to the project."""
     pages = []
     for p in meta["pages"]:
+        if p.get("url"):
+            pages.append({"name": p["name"], "direction": p.get("direction", ""), "file": p["url"], "url": p["url"]})
+            continue
         file = p["file"]
         pages.append({"name": p["name"], "direction": p.get("direction", ""),
                       "file": os.path.relpath(file, root) if file.startswith(root + os.sep) else file})
@@ -287,7 +300,9 @@ def poll(root: str, body: dict) -> "tuple[dict, int]":
     out = {**_public(meta, root), "comments": comments(root, board)}
     name = body.get("page") or (meta["pages"][0]["name"] if meta["pages"] else "")
     entry = next((p for p in meta["pages"] if p["name"] == name), None)
-    if entry:
+    if entry and entry.get("url"):
+        out["page"], out["url"] = name, entry["url"]
+    elif entry:
         got = _read_page(root, d, entry)
         out["page"] = name
         if got:
@@ -332,6 +347,7 @@ def _clean_comment(c: dict) -> dict:
            "page": str(c.get("page") or "")[:80], "text": str(c.get("text") or "")[:2000],
            "x": num(c.get("x")), "y": num(c.get("y")), "status": "sent" if c.get("status") == "sent" else "open",
            "selector": str(c.get("selector") or "")[:300], "about": str(c.get("about") or "")[:300],
+           "path": str(c.get("path") or "")[:300],
            "at": num(c.get("at")) or time.time()}
     styles = c.get("styles")
     if isinstance(styles, dict):
@@ -372,6 +388,34 @@ def edit_comments(root: str, body: dict) -> "tuple[dict, int]":
                     r["status"] = "sent"
         _write_json(path, rows)
     return {"comments": rows}, 200
+
+
+def live(root: str, body: dict) -> "tuple[dict, int]":
+    """POST chat/design-url: put an address on a board, a new one when none is given."""
+    from bridge import design_proxy
+    url = design_proxy.check(body.get("url"))
+    host = urllib.parse.urlparse(url).netloc
+    board = body.get("board")
+    name = " ".join(str(body.get("name") or "").split())[:80] or host
+    meta = put(root, None, {"board": board or f"live-{_slug(host)}", "title": f"Live: {host}" if not board else "",
+                             "pages": [{"name": name, "url": url}]})
+    return {"board": meta["id"], "page": name}, 200
+
+
+def proxied(root: str, body: dict) -> "tuple[dict, int]":
+    """POST chat/design-live: the local address that shows a page of a board, with the tools in it."""
+    from bridge import design_proxy
+    meta = load(root, str(body.get("board") or ""))
+    entry = next((p for p in meta["pages"] if p["name"] == body.get("page") and p.get("url")), None)
+    if not entry:
+        raise Refused("That page isn't an address.")
+    target = entry["url"]
+    if body.get("to"):
+        target = design_proxy.check(body["to"])
+    try:
+        return {"src": design_proxy.open_proxy(target, str(body.get("script") or "")), "url": target}, 200
+    except design_proxy.Refused as e:
+        raise Refused(str(e)) from None
 
 
 def delete(root: str, board: str) -> "tuple[dict, int]":

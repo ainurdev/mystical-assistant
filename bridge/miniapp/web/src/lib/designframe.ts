@@ -16,7 +16,7 @@
 const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; "
   + "font-src data: https://fonts.gstatic.com; img-src data: blob:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-src 'none'";
 
-const SCRIPT = String.raw`(function () {
+export const SCRIPT = String.raw`(function () {
   if (window.__mysticalFrame) return;
   window.__mysticalFrame = 1;
   var post = function (m) { m.mystical = 1; parent.postMessage(m, "*"); };
@@ -120,10 +120,15 @@ const SCRIPT = String.raw`(function () {
   });
   // A link goes to another page of the board, not away from it.
   document.addEventListener("click", function (e) {
+    if (window.__mysticalProxied) return;      // a real app's links are its own
     var a = e.target && e.target.closest && e.target.closest("a[href]");
     if (a && a.getAttribute("href").charAt(0) !== "#") { e.preventDefault(); post({ t: "link", href: a.getAttribute("href") }); }
   }, true);
-  document.addEventListener("submit", function (e) { e.preventDefault(); }, true);
+  document.addEventListener("submit", function (e) { if (!window.__mysticalProxied) e.preventDefault(); }, true);
+  // Where a real app has got to, for the address bar and to keep a comment with its screen.
+  var where = "";
+  var tellWhere = function () { var w = location.pathname + location.search; if (w !== where) { where = w; post({ t: "location", path: w }); } };
+  if (window.__mysticalProxied) setInterval(tellWhere, 700);
   var ticking = false;
   addEventListener("scroll", function () { if (ticking) return; ticking = true; setTimeout(function () { ticking = false; post({ t: "scrolled", y: scrollY, x: scrollX }); }, 80); }, true);
   addEventListener("resize", draw);
@@ -149,7 +154,7 @@ const SCRIPT = String.raw`(function () {
     } catch (err) {}
     return out;
   };
-  var ready = function () { post({ t: "ready", vars: vars() }); draw(); };
+  var ready = function () { post({ t: "ready", vars: vars(), path: location.pathname + location.search }); draw(); };
   if (document.readyState === "complete") ready(); else addEventListener("load", ready);
 })();`;
 
@@ -168,9 +173,9 @@ export function frameDoc(html: string): string {
 
 export type DesignComment = {
   id: string; kind: "comment" | "draw" | "tweak"; page: string; text: string; x: number; y: number; status: "open" | "sent";
-  selector?: string; about?: string; styles?: Record<string, string>; points?: number[][]; changes?: { prop: string; from: string; to: string }[]; at?: number;
+  selector?: string; about?: string; path?: string; styles?: Record<string, string>; points?: number[][]; changes?: { prop: string; from: string; to: string }[]; at?: number;
 };
-export type DesignPage = { name: string; direction?: string; file: string };
+export type DesignPage = { name: string; direction?: string; file: string; url?: string };
 export type DesignBoard = { id: string; title: string; pages: DesignPage[]; updated: number; open?: number };
 
 /** What you said, as a message an agent can act on: which file, which element, and your words. */
@@ -183,7 +188,8 @@ export function commentsMessage(board: DesignBoard, comments: DesignComment[], n
     if (!mine.length) continue;
     lines.push(`\nPage "${page.name}" (${page.file}):`);
     mine.forEach((c, i) => {
-      const where = c.about ? `${c.about}${c.selector ? ` [${c.selector}]` : ""}` : `at ${Math.round(c.x)},${Math.round(c.y)}`;
+      const screen = page.url && c.path ? ` on ${c.path}` : "";
+      const where = (c.about ? `${c.about}${c.selector ? ` [${c.selector}]` : ""}` : `at ${Math.round(c.x)},${Math.round(c.y)}`) + screen;
       if (c.kind === "tweak") {
         const set = (c.changes ?? []).map((ch) => `${ch.prop}: ${ch.from || "unset"} → ${ch.to}`).join("; ");
         lines.push(`${i + 1}. Apply these exact values to ${where}: ${set}${c.text ? `. ${c.text}` : ""}`);
