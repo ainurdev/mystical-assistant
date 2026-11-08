@@ -479,3 +479,264 @@ def test_a_merged_item_doesnt_claim_to_be_in_your_folder(world, monkeypatch):
     call(world, action="merge_item", id="w1")
     assert not [e for e in seen if e["type"] == "merge" and e.get("state") == "merged"]
     assert any("merged into mystical/work-" in e.get("text", "") for e in seen)
+
+
+REPORT = """Built the thing, and the tests pass.
+
+## Test results
+- 3 passed
+
+Decisions:
+- Used a new field rather than last_fire.
+- Refused past times.
+
+Not verified:
+- The form in a browser.
+"""
+
+
+def test_a_helpers_report_is_kept_and_read(world):
+    begin(world, titles=("x",))
+    call(world, action="start_item", id="w1")
+    s = store.get_session(item(world, "w1")["session_id"])
+    channel._helper_turn_ended(Job(s["id"], result=REPORT), s, chat(world))
+    i = item(world, "w1")
+    assert i["report"].startswith("Built the thing")
+    assert i["summary"] == "Built the thing, and the tests pass."
+    assert i["decisions"] == ["Used a new field rather than last_fire.", "Refused past times."]
+    assert i["unverified"] == ["The form in a browser."]
+
+
+@pytest.mark.parametrize("text,dec,unv", [
+    ("Just words.", [], []),
+    ("Done.\n\nDecisions:\nnone\n\nNot verified:\n- none.", [], []),
+    ("Done.\n\n**Decisions:**\n1. One\n2. Two\n\n**Not verified:**\n* Three\n\nNext steps:\nignored", ["One", "Two"], ["Three"]),
+    ("## Decisions I made\n- One\n## Something else\n- nope\n## Not verified\n- Two", ["One"], ["Two"]),
+])
+def test_reports_are_read_kindly(text, dec, unv):
+    got = wr.read_report(text)
+    assert got["decisions"] == dec and got["unverified"] == unv
+
+
+def test_the_commit_says_what_you_would_want_from_git_log(world):
+    run = begin(world, titles=("x",))
+    call(world, action="start_item", id="w1")
+    work(world, "w1", "b.txt", "x\n")
+    s = store.get_session(item(world, "w1")["session_id"])
+    channel._helper_turn_ended(Job(s["id"], result=REPORT + "\nCo-Authored-By: Someone <a@b>\n"), s, chat(world))
+    call(world, action="merge_item", id="w1")
+    body = git(run["path"], "log", "-1", "--format=%B")
+    assert "Work item w1" in body and "Refused past times." in body and "The form in a browser." in body
+    assert "Built the thing" in body and "Co-Authored-By" not in body
+
+
+def test_a_retry_forgets_the_old_report(world):
+    begin(world, titles=("x",))
+    call(world, action="start_item", id="w1")
+    s = store.get_session(item(world, "w1")["session_id"])
+    channel._helper_turn_ended(Job(s["id"], result=REPORT), s, chat(world))
+    call(world, action="restart_item", id="w1")
+    assert "report" not in item(world, "w1") and "decisions" not in item(world, "w1")
+
+
+def test_helpers_are_asked_for_the_report_and_told_what_already_fails(world):
+    run = begin(world, titles=("x",))
+
+    def known(d):
+        d["runs"][0]["baseline"] = {"state": "done", "command": "pytest", "failures": ["tests/a.py::test_old"], "code": 1}
+    wl.mutate(world["root"], known)
+    call(world, action="start_item", id="w1")
+    prompt = world["started"][-1]["prompt"]
+    assert "Decisions:" in prompt and "Not verified:" in prompt and "tests/a.py::test_old" in prompt and "aren't yours" in prompt
+    assert run["id"]
+
+
+def test_evidence_outlives_the_copy(world):
+    begin(world, titles=("x",))
+    call(world, action="start_item", id="w1")
+    c = copy_of(world, "w1")
+    scratch = os.path.join(c["path"], ".mystical", "scratch")
+    os.makedirs(os.path.join(scratch, "xvfb-home"))
+    for name, data in (("after.png", b"x"), ("drive.mjs", b"y"), ("app.bin", b"z"), ("xvfb-home/secret.txt", b"s")):
+        with open(os.path.join(scratch, name), "wb") as f:
+            f.write(data)
+    os.symlink("/etc/hostname", os.path.join(scratch, "link.txt"))
+    work(world, "w1", "b.txt", "x\n")
+    report(world, "w1")
+    call(world, action="merge_item", id="w1")
+    assert not os.path.isdir(c["path"])
+    e = item(world, "w1")["evidence"]
+    kept = os.path.join(world["root"], e["dir"])
+    assert e["files"] == 2 and e["pictures"] == [os.path.join(e["dir"], "scratch", "after.png")]
+    assert os.path.isfile(os.path.join(kept, "scratch", "drive.mjs"))
+    for gone in ("app.bin", "link.txt", "xvfb-home"):
+        assert not os.path.exists(os.path.join(kept, "scratch", gone))
+
+
+def test_a_copy_that_wont_go_is_on_the_run_not_silent(world, monkeypatch):
+    begin(world, titles=("x",))
+    call(world, action="start_item", id="w1")
+    path = copy_of(world, "w1")["path"]
+    work(world, "w1", "b.txt", "x\n")
+    report(world, "w1")
+    monkeypatch.setattr(wr.shutil, "rmtree", lambda *a, **k: None)
+    monkeypatch.setattr(channel, "_remove_copy", lambda copy: None)
+    assert "merged" in call(world, action="merge_item", id="w1")
+    run = wr.run_view(world["root"])["runs"][0]
+    assert run["leftovers"][0]["path"] == path
+    monkeypatch.undo()
+    subprocess.run(["rm", "-r", "-f", path], check=True)
+    assert wr.run_view(world["root"])["runs"][0]["leftovers"] == []
+
+
+def checks_on(world, monkeypatch, outputs):
+    """A project with a check command, whose runs say what `outputs` says in turn."""
+    from bridge import gateway_tools
+    monkeypatch.setattr(gateway_tools, "detect_command", lambda cwd: "fake-check")
+
+    class P:
+        def __init__(self, out, code):
+            self.stdout, self.stderr, self.returncode = out, "", code
+    real = subprocess.run
+    seen = []
+
+    def run(cmd, *a, **k):
+        if cmd == "fake-check":
+            seen.append(k["cwd"])
+            return P(*outputs.pop(0))
+        return real(cmd, *a, **k)
+    monkeypatch.setattr(wr.subprocess, "run", run)
+    return seen
+
+
+def settle():
+    for t in threading.enumerate():
+        if t.name == "work-check":
+            t.join(5)
+
+
+def prompts(world):
+    return [x for x in world["said"] if x[0] == "queued" and "manage it" in x[2]]
+
+
+def test_the_starting_point_is_checked_before_the_manager_begins(world, monkeypatch):
+    gate = threading.Event()
+    seen = checks_on(world, monkeypatch, [("FAILED tests/a.py::old\n1 failed, 3 passed", 1)])
+    real_run = wr._run_command
+    monkeypatch.setattr(wr, "_run_command", lambda *a: (gate.wait(5), real_run(*a))[1])
+    run = begin(world, titles=("x",))
+    assert not prompts(world) and wr.run_view(world["root"])["runs"][0]["baseline"]["state"] == "running"
+    gate.set()
+    settle()
+    assert len(prompts(world)) == 1 and seen == [run["path"]]
+    assert wl.load(world["root"])["runs"][0]["baseline"]["failures"] == ["tests/a.py::old"]
+
+
+def test_a_second_run_from_the_same_commit_doesnt_check_again(world, monkeypatch):
+    seen = checks_on(world, monkeypatch, [("3 passed", 0), ("3 passed", 0)])
+    begin(world, titles=("x",))
+    settle()
+    call(world, action="finish")
+    settle()
+    assert len(seen) == 2
+    wl.add(world["root"], [{"title": "y"}])
+    wr.start(chat(world), None)
+    assert len(seen) == 2 and len(prompts(world)) == 2
+
+
+@pytest.mark.parametrize("final,code,ok,new,same", [
+    ("FAILED tests/a.py::old\n1 failed, 4 passed", 1, True, [], 1),
+    ("FAILED tests/a.py::old\nFAILED tests/b.py::new\n2 failed, 3 passed", 1, False, ["tests/b.py::new"], 1),
+    ("it crashed", 2, False, [], 0),
+    ("5 passed", 0, True, [], 0),
+])
+def test_the_finished_branch_is_compared_with_where_it_started(world, monkeypatch, final, code, ok, new, same):
+    checks_on(world, monkeypatch, [("FAILED tests/a.py::old\n1 failed, 3 passed", 1), (final, code)])
+    begin(world, titles=("x",))
+    settle()
+    call(world, action="finish")
+    settle()
+    got = wr.run_view(world["root"])["runs"][0]["check"]
+    assert got["ok"] is ok and got["new"] == new and got["same"] == same
+    assert any(x[0] == "ping" for x in world["said"]) is (not ok)
+
+
+def test_a_restart_doesnt_leave_the_manager_waiting(world, monkeypatch):
+    run = begin(world, titles=("x",))
+
+    def lost(d):
+        d["runs"][0]["baseline"] = {"state": "running", "command": "pytest"}
+        d["items"][0]["note"] = "Differs, or the channel drops it as the same message twice."
+    wl.mutate(world["root"], lost)
+    before = len(prompts(world))
+    assert wr.run_view(world["root"])["runs"][0]["baseline"]["state"] == "failed"
+    assert len(prompts(world)) == before + 1 and run["id"]
+
+
+class Live:
+    def __init__(self):
+        self.pending, self.events = [], []
+        self.id, self.chat_id, self.store_session_id = "job", CHAT, None
+        self.status = "running"
+        self.exited = threading.Event()
+
+    def add_pending(self, entry):
+        self.pending.append(entry)
+
+    def add(self, ev):
+        self.events.append(ev)
+
+
+def propose(world, monkeypatch, label, **a):
+    """Calls the tool as an agent would, and taps the card as the user would."""
+    job = Live()
+    job.store_session_id = world["session"]["id"]
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *x, **k: None)
+    monkeypatch.setattr(gateway.agent_caps, "caps", lambda agent: {**real_caps(agent), "block": True})
+    out = {}
+    t = threading.Thread(target=lambda: out.update(gateway._propose_run(chat(world), job, a)))
+    t.start()
+    for _ in range(200):
+        if job.pending:
+            break
+        threading.Event().wait(0.01)
+    entry = job.pending[0]
+    question = entry["questions"][0]["question"]
+    assert wl.active_run(wl.load(world["root"])) is None, "nothing starts before the tap"
+    gateway.answer_card(job, entry, [{"labels": [label]}])
+    t.join(5)
+    return question, out["content"][0]["text"]
+
+
+real_caps = gateway.agent_caps.caps
+
+
+def test_asking_in_words_shows_a_card_and_only_a_tap_starts_it(world, monkeypatch):
+    wl.add(world["root"], [{"title": "Fix login"}, {"title": "Other"}])
+    q, said = propose(world, monkeypatch, "Start", ids=["w1"], parallel=3)
+    assert "Fix login" in q and "Other" not in q and "From main at" in q and "up to 3 at once" in q
+    assert "started" in said
+    run = wl.active_run(wl.load(world["root"]))
+    assert run["items"] == ["w1"] and run["parallel"] == 3 and len(prompts(world)) == 1
+
+
+def test_not_now_starts_nothing(world, monkeypatch):
+    wl.add(world["root"], [{"title": "x"}])
+    _, said = propose(world, monkeypatch, "Not now")
+    assert "Nothing started" in said and wl.active_run(wl.load(world["root"])) is None
+
+
+def test_proposing_says_why_it_cant(world):
+    with pytest.raises(wl.Refused, match="nothing up next"):
+        wr.proposal(chat(world), None)
+    begin(world, titles=("x",))
+    wl.add(world["root"], [{"title": "y"}])
+    with pytest.raises(wl.Refused, match="already going"):
+        wr.proposal(chat(world), None)
+
+
+def test_an_agent_still_cant_start_one_without_the_card(world):
+    wl.add(world["root"], [{"title": "x"}])
+    with pytest.raises(wl.Refused):
+        call(world, action="start", id="w1")
+    assert wl.active_run(wl.load(world["root"])) is None

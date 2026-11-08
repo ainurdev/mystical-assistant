@@ -647,11 +647,11 @@ def _manager_turn_ended(job, chat: dict) -> None:
         print(f"[channel] work run: {e!r}", file=sys.stderr)
 
 
-def _work_ended(member: dict, state: str) -> str:
+def _work_ended(member: dict, state: str, report: str = "") -> str:
     """A work run's helper finished: its item moves, and its report says what's next."""
     from bridge import workrun
     try:
-        return workrun.helper_ended(member, state)
+        return workrun.helper_ended(member, state, report)
     except Exception as e:  # noqa: BLE001
         print(f"[channel] work run: {e!r}", file=sys.stderr)
         return ""
@@ -671,7 +671,7 @@ def _helper_turn_ended(job, s: dict, chat: dict) -> None:
         body = words[:_RESULT_MAX] or f"{name} finished without saying anything."
     _set_state(s["id"], state, ended=time.time())
     if m.get("work"):
-        body += _work_ended(m, state)
+        body += _work_ended(m, state, body if state == "done" else "")
     elif (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):
         stat = _diff_stat(m["copy"])
         if stat:

@@ -64,3 +64,9 @@ export const workCall = <T,>(path: string, session: string | null, project: stri
   req<T>(`/local/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await req<{ sources: string[] }>(`/local/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
+
+/** A picture a run kept (bridge/workrun.py _keep_evidence). */
+export function WorkPicture({ session, path, alt }: { session: string | null; path: string; alt: string }) {
+  const url = `/local/chat-images/file?${new URLSearchParams({ path, session: session ?? "" })}`;
+  return <a href={url} target="_blank" rel="noreferrer"><img className="wl-pic" src={url} alt={alt} loading="lazy" /></a>;
+}

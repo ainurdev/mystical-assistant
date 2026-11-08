@@ -29,6 +29,23 @@ the run and pings you.
 
 Everything that runs at a turn's end swallows its errors: nothing may raise into a turn.
 
+Asking in words. An agent can't start a run, but it can propose one (work_run propose): a card you tap
+naming the tasks and where it starts. Text in a ticket can make a card appear, and only you can press it.
+
+What a run leaves you. A task's Done is no use on its own: what the helper decided, and what it couldn't
+check, is what you need before merging. So its final reply is kept on the item (helper_ended), with
+those two parts pulled out, and goes in the commit. A copy is removed when its item merges, and anything
+kept only there would go with it, so its screenshots and logs move to .mystical/runs/<run>/<item> first.
+A removal can fail (a test left a mount inside one), so what's left is listed on the run, not lost.
+
+Checks. The project's check command runs on the starting commit before any helper does, so helpers are
+told what already fails rather than each proving it again, and on the finished branch, compared with that.
+A failing project still runs: the point is "the same 7 as before", not a green board. It never blocks
+a merge, which is yours. Cached by commit, so a second run from the same one starts at once. A check
+needing a build too isn't covered unless the project's command does that.
+ponytail: checks are threads, so a restart loses one. run_view notices the next time the list is read,
+and carries on without it. Nothing notices until then.
+
 ponytail: one run per project at a time. Two would need to agree on what later items start from.
 ponytail: `git merge` in the run's worktree assumes it's only touched here. A manager editing that
 folder by hand gets a refusal naming the mess rather than a repair.
@@ -38,8 +55,11 @@ Stdlib only.
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -51,6 +71,16 @@ PARALLEL_MAX = 5
 PARALLEL_DEFAULT = 2
 _GIT_TIMEOUT = 60
 OPEN = ("todo", "doing", "review")
+MAX_REPORT = 12000
+_KEEP_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".md", ".log", ".txt", ".json", ".sh", ".mjs", ".py", ".html"}
+_KEEP_SKIP = {"helpers", "handoff", "node_modules", ".cache", "__pycache__", "dist", "assets"}
+_KEEP_FILE, _KEEP_TOTAL = 25 * 1024 * 1024, 100 * 1024 * 1024
+_PICTURE = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+_CHECK_MAX_S = 20 * 60
+_checking: set = set()      # (root, run, which): what's running in this process
+_REPORT_ASK = ("End your final reply with two short lists, headed exactly \"Decisions:\" (choices you made that the user may want to check) "
+               "and \"Not verified:\" (what you couldn't run or see for yourself), each saying \"none\" if so. Put screenshots and "
+               "logs worth keeping in .mystical/scratch/: they're kept after the merge.")
 
 
 def _git(cwd: str, *args: str, timeout: int = _GIT_TIMEOUT) -> "tuple[int, str, str]":
@@ -183,8 +213,136 @@ def start(chat: dict, wanted: "list | None", parallel=None) -> dict:
         raise
     _mark_chat(chat["id"], root, rid)
     _journal(chat, run, "started")
-    _say(chat, _manager_prompt(root, run))
+    _begin_baseline(root, run, chat)
     return run
+
+
+# ------- checks -----------------------------------------------------------------
+
+def _check_command(root: str, cwd: str) -> "str | None":
+    from bridge import gateway_tools
+    return (gateway_tools._read_checks(root).get("command") or gateway_tools.detect_command(cwd) or "").strip() or None
+
+
+def _run_command(cmd: str, cwd: str, log: str) -> dict:
+    """Run it and read the common runners' output. What can't be read stays None, and the exit code speaks."""
+    from bridge import gateway_tools
+    try:
+        p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, errors="replace", timeout=_CHECK_MAX_S, env={**os.environ, "CI": "1"})
+        out, code = (p.stdout or "") + (p.stderr or ""), p.returncode
+    except subprocess.TimeoutExpired as e:
+        out, code = str(e.stdout or "")[-20000:] + "\n(timed out)", 124
+    try:
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "w", encoding="utf-8") as f:
+            f.write(out)
+    except OSError as e:
+        print(f"[workrun] check log: {e!r}", file=sys.stderr)
+    got = gateway_tools.parse_output(out)
+    return {"code": code, "passed": got["passed"], "failed": got["failed"], "failures": got["failures"], "command": cmd}
+
+
+def _set_check(root: str, rid: str, which: str, value: dict) -> None:
+    def go(d: dict) -> None:
+        r = _run_of(d, rid)
+        if r:
+            r[which] = value
+    worklist.mutate(root, go)
+
+
+def _begin_baseline(root: str, run: dict, chat: dict) -> None:
+    """What already fails where this run starts, before the manager is told to begin."""
+    cmd = _check_command(root, run["path"])
+    known = next((r["baseline"] for r in worklist.load(root)["runs"]
+                  if r["id"] != run["id"] and r.get("base") == run["base"] and (r.get("baseline") or {}).get("state") == "done"), None)
+    if not cmd or known:
+        if known:
+            _set_check(root, run["id"], "baseline", known)
+        _say(chat, _manager_prompt(root, _run_of(worklist.load(root), run["id"])))
+        return
+    _set_check(root, run["id"], "baseline", {"state": "running", "command": cmd})
+    key = (root, run["id"], "baseline")
+    _checking.add(key)
+
+    def go() -> None:
+        try:
+            got = _run_command(cmd, run["path"], os.path.join(root, ".mystical", "runs", run["id"], "baseline.log"))
+            _set_check(root, run["id"], "baseline", {"state": "done", **got})
+        except Exception as e:  # noqa: BLE001 - the run goes on without it
+            print(f"[workrun] baseline: {e!r}", file=sys.stderr)
+            _set_check(root, run["id"], "baseline", {"state": "failed", "command": cmd})
+        finally:
+            _checking.discard(key)
+        fresh = store.get_session(run["chat"])
+        if fresh:
+            _say(fresh, _manager_prompt(root, _run_of(worklist.load(root), run["id"])))
+    threading.Thread(target=go, daemon=True, name="work-check").start()
+
+
+def _begin_final_check(root: str, run: dict) -> None:
+    """The branch as it would land, against what failed where it started."""
+    if not os.path.isdir(run.get("path") or ""):
+        return
+    cmd = (run.get("baseline") or {}).get("command") or _check_command(root, run["path"])
+    if not cmd:
+        return
+    _set_check(root, run["id"], "check", {"state": "running", "command": cmd})
+    key = (root, run["id"], "check")
+    _checking.add(key)
+
+    def go() -> None:
+        try:
+            got = _run_command(cmd, run["path"], os.path.join(root, ".mystical", "runs", run["id"], "final.log"))
+            before = set((run.get("baseline") or {}).get("failures") or [])
+            fresh = [f for f in got["failures"] if f not in before]
+            bad = bool(fresh) or (got["code"] != 0 and not got["failures"])
+            _set_check(root, run["id"], "check", {"state": "done", "ok": not bad, "new": fresh[:40], "same": len(got["failures"]) - len(fresh),
+                                                  "log": f".mystical/runs/{run['id']}/final.log", **got})
+            chat = store.get_session(run["chat"])
+            if bad and chat:
+                _ping(chat, "⚠ A finished run's checks found new failures", "Look before you merge it.")
+        except Exception as e:  # noqa: BLE001
+            print(f"[workrun] check: {e!r}", file=sys.stderr)
+            _set_check(root, run["id"], "check", {"state": "failed", "command": cmd})
+        finally:
+            _checking.discard(key)
+    threading.Thread(target=go, daemon=True, name="work-check").start()
+
+
+def _known_note(run: dict) -> str:
+    b = run.get("baseline") or {}
+    if b.get("state") != "done":
+        return ""
+    if b.get("failures"):
+        names = "\n".join(b["failures"][:40])
+        return (f"The project's checks are `{b['command']}`. These already fail where you start, so they aren't yours and you don't need to prove it:\n{names}\n\n")
+    return f"The project's checks are `{b['command']}`, and they passed where you start.\n\n" if b.get("code") == 0 else f"The project's checks are `{b['command']}`.\n\n"
+
+
+# ------- proposing --------------------------------------------------------------
+
+def proposal(chat: dict, wanted: "list | None", parallel=None) -> list:
+    """The card's question for work_run propose, or Refused saying why not. Starts nothing."""
+    why = _start_refusal(chat)
+    if why:
+        raise Refused(why)
+    cwd = _home(chat)
+    root, top = worklist.root_of(cwd), channel._top(cwd) if cwd else ""
+    if not root or not top:
+        raise Refused("A run needs a git repository, for the worktrees.")
+    data = worklist.load(root)
+    if worklist.active_run(data):
+        raise Refused("A run is already going in this project.")
+    picked = [i for i in data["items"] if i["state"] == "todo" and (wanted is None or i["id"] in wanted)]
+    if not picked:
+        raise Refused("There's nothing up next to work on.")
+    _, branch, _ = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
+    _, sha, _ = _git(top, "rev-parse", "--short", "HEAD")
+    rows = "\n".join(f"• {i['id']}: {i['title']}" for i in picked[:20])
+    return [{"header": "Run", "multiSelect": False,
+             "question": f"Start a run on {len(picked)} task{'s' if len(picked) != 1 else ''}?\n{rows}\nFrom {branch.strip()} at {sha.strip()}, up to {_clean_parallel(parallel)} at once. Your branch doesn't move until you merge it.",
+             "options": [{"label": "Start", "description": "This chat's agent manages it, with helpers in their own worktrees."},
+                         {"label": "Not now", "description": "Nothing starts."}]}]
 
 
 def _manager_prompt(root: str, run: dict) -> str:
@@ -281,8 +439,8 @@ def _launch(root: str, chat: dict, rid: str, item: dict, run: dict, a: dict) -> 
         raise Refused(f"Couldn't read the run branch: {err.strip()[:300]}")
     source = item.get("source") or {}
     where = f"\nIt came from {source.get('kind') or 'a tracker'} {source.get('ref') or ''} {source.get('url') or ''}.".rstrip(" .") if source else ""
-    brief = (f"Do this task: {item['title']}\n\n{item.get('detail') or ''}{where}\n\n{str(a.get('brief') or '').strip()}\n\nCommit or leave your changes, "
-             f"either is fine. Your final reply is what the manager reads, so say what you did and how you checked it.").strip()
+    brief = (f"Do this task: {item['title']}\n\n{item.get('detail') or ''}{where}\n\n{str(a.get('brief') or '').strip()}\n\nLeave your changes "
+             f"uncommitted: merging commits them, so that isn't a decision to report. Your final reply is what the manager reads, so say what you did and how you checked it. {_REPORT_ASK}\n\n{_known_note(run)}").strip()
     name = item["id"]     # how the manager and the sidebar already call it
     plan, why = channel.plan_tasks(chat, [{"brief": brief, "name": name, "write": True, "profile": a.get("profile"), "base": head.strip(), "from_dir": run["top"],
                                            "work": {"root": root, "run": rid, "item": item["id"]}}])
@@ -301,6 +459,89 @@ def _launch(root: str, chat: dict, rid: str, item: dict, run: dict, a: dict) -> 
         _touch(run)
     worklist.mutate(root, mark)
     return f"{lines[0]} End your turn when you've started what you want: its result wakes you."
+
+
+_HEAD = re.compile(r"^[#*\s]*(decisions?|not verified)\b[^\n]*?:?[*\s]*$", re.I)
+_OTHER_HEAD = re.compile(r"^(#+\s|\*\*[^*]+\*\*:?\s*$|[A-Z][\w ]{1,40}:\s*$)")
+_NOT_US = re.compile(r"^\s*(?:[-*•]\s*)?(co-authored-by:|.*generated with )", re.I)
+
+
+def read_report(text: str) -> dict:
+    """A helper's final reply, with what you need before merging pulled out. Asked for by heading
+    (_REPORT_ASK), so a reply that ignored that is still kept whole, with nothing pulled out."""
+    out: dict = {"summary": "", "decisions": [], "unverified": []}
+    lines = (text or "").splitlines()
+    current = None
+    lead = []
+    for line in lines:
+        m = _HEAD.match(line.strip())
+        if m:
+            current = "decisions" if m.group(1).lower().startswith("decision") else "unverified"
+            continue
+        if current and line.strip() and not line.lstrip().startswith(("-", "*", "•")) and _OTHER_HEAD.match(line.strip()):
+            current = None
+        if current:
+            bit = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+            if bit and bit.lower().rstrip(".") != "none":
+                out[current].append(bit[:600])
+        elif not out["decisions"] and not out["unverified"]:
+            lead.append(line)
+    first = "\n".join(lead).strip().split("\n\n")[0].strip()
+    out["summary"] = first[:400]
+    return out
+
+
+def commit_message(item: dict) -> str:
+    """The title, where it came from, and what the report says you'd want to know from git log."""
+    source = (item.get("source") or {}).get("ref")
+    parts = [item["title"], f"Work item {item['id']}" + (f", {source}" if source else "")]
+    if item.get("summary"):
+        parts.append(item["summary"])
+    for head, key in (("Decisions", "decisions"), ("Not verified", "unverified")):
+        if item.get(key):
+            parts.append(f"{head}:\n" + "\n".join(f"- {x}" for x in item[key]))
+    return "\n\n".join("\n".join(ln for ln in p.splitlines() if not _NOT_US.match(ln)) for p in parts)
+
+
+def _keep_evidence(root: str, rid: str, iid: str, copy: dict) -> "dict | None":
+    """A helper's screenshots and logs, out of the copy that's about to go. Never stops a merge."""
+    src = os.path.join(copy.get("path") or "", ".mystical")
+    dest = os.path.join(root, ".mystical", "runs", rid, iid)
+    total, files, pictures = 0, 0, []
+    try:
+        for d, dirs, names in os.walk(src):
+            # Not into a mount or a test's private home: it can be anything, and one stopped a removal.
+            dirs[:] = [x for x in dirs if x not in _KEEP_SKIP and not x.startswith("xvfb") and not os.path.ismount(os.path.join(d, x)) and not os.path.islink(os.path.join(d, x))]
+            for name in sorted(names):
+                path = os.path.join(d, name)
+                if os.path.splitext(name)[1].lower() not in _KEEP_EXT or os.path.islink(path):
+                    continue
+                size = os.path.getsize(path)
+                if size > _KEEP_FILE or total + size > _KEEP_TOTAL:
+                    continue
+                rel = os.path.relpath(path, src)
+                to = os.path.join(dest, rel)
+                os.makedirs(os.path.dirname(to), exist_ok=True)
+                shutil.copy2(path, to)
+                total, files = total + size, files + 1
+                if name.lower().endswith(_PICTURE):
+                    pictures.append(os.path.relpath(to, root))
+    except OSError as e:
+        print(f"[workrun] evidence: {e!r}", file=sys.stderr)
+    return {"dir": os.path.relpath(dest, root), "files": files, "pictures": pictures[-12:]} if files else None
+
+
+def _remove_copy(copy: dict) -> "dict | None":
+    """Remove a helper's copy, and say so if any of it stays: a merge isn't a reason to leave it silently."""
+    path = copy.get("path") or ""
+    try:
+        channel._remove_copy(copy)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[workrun] remove: {e!r}", file=sys.stderr)
+    ours = os.path.realpath(os.path.join(config.BASE_PATH, ".worktrees"))
+    if path and os.path.isdir(path) and os.path.realpath(path).startswith(ours + os.sep):
+        shutil.rmtree(path, ignore_errors=True)
+    return {"path": path, "why": "Something in it couldn't be removed. A mount a test left behind does this."} if path and os.path.isdir(path) else None
 
 
 def _commit_copy(copy: dict, title: str) -> "str | None":
@@ -357,8 +598,7 @@ def _merge(root: str, chat: dict, rid: str, iid: str) -> str:
     rc, ahead, _ = _git(run["path"], "rev-list", "--count", f"{run['branch']}..{copy['branch']}")
     commit = None
     if rc == 0 and ahead.strip() != "0":
-        source = (item.get("source") or {}).get("ref")
-        msg = f"{item['title']}\n\nWork item {item['id']}" + (f", {source}" if source else "")
+        msg = commit_message(item)
         rc, _, err = _git(run["path"], "merge", "--no-ff", "--no-verify", "-m", msg, copy["branch"])
         if rc != 0:
             rc2, files, _ = _git(run["path"], "diff", "--name-only", "--diff-filter=U")
@@ -373,7 +613,8 @@ def _merge(root: str, chat: dict, rid: str, iid: str) -> str:
                     f"the helper to merge {run['branch']} into its copy, resolve these and report back.")
         _, sha, _ = _git(run["path"], "rev-parse", "HEAD")
         commit = sha.strip()
-    channel._remove_copy(copy)
+    kept = _keep_evidence(root, rid, iid, copy)
+    left = _remove_copy(copy)
     channel._set_state(s["id"], "merged", merged=True, conflict=False)
 
     def mark(d: dict) -> None:
@@ -381,6 +622,10 @@ def _merge(root: str, chat: dict, rid: str, iid: str) -> str:
         i = _item_in(d, r, iid)
         worklist._set_state(i, "done", r["chat"])
         i.update(commit=commit, note="", session_id=i.get("session_id"))
+        if kept:
+            i["evidence"] = kept
+        if left:
+            r["leftovers"] = (r.get("leftovers") or []) + [left]
         _touch(r)
     worklist.mutate(root, mark)
     # Not a "merge" event: that one's line says the changes are in your folder, and these aren't.
@@ -433,8 +678,7 @@ def _restart(root: str, rid: str, iid: str) -> str:
         return f"{item['helper']} is still working."
     if item["state"] == "done":
         return f"{iid} is already merged."
-    if m.get("copy") and os.path.isdir(m["copy"].get("path") or ""):
-        channel._remove_copy(m["copy"])
+    left = _remove_copy(m["copy"]) if m.get("copy") and os.path.isdir(m["copy"].get("path") or "") else None
     if s:
         channel._set_state(s["id"], "discarded")
 
@@ -442,8 +686,10 @@ def _restart(root: str, rid: str, iid: str) -> str:
         r = _run_of(d, rid)
         i = _item_in(d, r, iid)
         i.update(state="todo", note="", updated=time.time())
-        i.pop("helper", None)
-        i.pop("session_id", None)
+        if left:
+            r["leftovers"] = (r.get("leftovers") or []) + [left]
+        for k in ("helper", "session_id", "report", "summary", "decisions", "unverified"):
+            i.pop(k, None)
         _touch(r)
     worklist.mutate(root, mark)
     return f"{iid} is back up next, and its copy is gone."
@@ -462,7 +708,8 @@ def _finish(root: str, rid: str, summary: str) -> str:
     chat = store.get_session(run["chat"])
     if chat:
         _journal(chat, run, "finished")
-    return f"The run is finished. {run['branch']} is waiting for the user, who merges or discards it."
+    _begin_final_check(root, run)
+    return f"The run is finished. {run['branch']} is waiting for the user, who merges or discards it. Its checks are running on the whole branch, and they see the result."
 
 
 def _end(data: dict, run: dict, summary: str = "") -> None:
@@ -475,7 +722,7 @@ def tool(s: dict, a: dict) -> str:
     own = store.parse_json(s.get("chat_config")).get("_work") or {}
     rid = own.get("run")
     if not root or not rid:
-        raise Refused("No run is going in this chat. Only the user can start one, from the work list.")
+        raise Refused("No run is going in this chat. Only the user can start one. If they asked for one, action propose shows them a card to tap.")
     action, iid = str(a.get("action") or "status"), str(a.get("id") or "")
     if action == "status":
         return status(root, rid)
@@ -500,8 +747,8 @@ def tool(s: dict, a: dict) -> str:
 
 # ------- a turn ended (channel.on_turn_end) ------------------------------------
 
-def helper_ended(member: dict, state: str) -> str:
-    """A work helper's turn ended: move its item, and say what's next for the manager."""
+def helper_ended(member: dict, state: str, report: str = "") -> str:
+    """A work helper's turn ended: keep what it said, move its item, and say what's next for the manager."""
     work = member.get("work") or {}
     root, rid, iid = work.get("root"), work.get("run"), work.get("item")
     if not root:
@@ -512,6 +759,8 @@ def helper_ended(member: dict, state: str) -> str:
         if not r:
             return
         i = _item_in(d, r, iid)
+        if report.strip():
+            i.update(report=report.strip()[:MAX_REPORT], **read_report(report))
         if i["state"] != "doing":
             return
         if state == "done":
@@ -626,6 +875,7 @@ def _finish_by_hand(root: str, run: dict) -> None:
         raise Refused("Its helpers are still running. Stop them first.")
     worklist.mutate(root, go)
     _mark_chat(run["chat"], None, None)
+    _begin_final_check(root, _run_of(worklist.load(root), run["id"]))
 
 
 def land(root: str, run: dict) -> dict:
@@ -670,7 +920,7 @@ def discard(root: str, run: dict) -> None:
             continue
         s, m = _member(i)
         if s and m.get("copy") and os.path.isdir(m["copy"].get("path") or ""):
-            channel._remove_copy(m["copy"])
+            _remove_copy(m["copy"])
     _remove_run_tree(run)
     _git(run["top"], "branch", "-D", run["branch"])
 
@@ -679,7 +929,7 @@ def discard(root: str, run: dict) -> None:
             if i["id"] in run["items"] and i["state"] in ("done", "blocked", "doing", "review") and (i.get("commit") or i.get("session_id")):
                 worklist._set_state(i, "todo", None)
                 i.update(note="Its run was discarded.", updated=time.time())
-                for k in ("helper", "session_id", "commit"):
+                for k in ("helper", "session_id", "commit", "report", "summary", "decisions", "unverified", "evidence"):
                     i.pop(k, None)
         _run_of(d, run["id"]).update(discarded=True)
     worklist.mutate(root, go)
@@ -710,6 +960,18 @@ def answer(root: str, run: dict, iid: str, text: str) -> None:
     channel.human_message(chat, channel.MAIN, f"About {iid}, {i['title']}: {text}\n\n{next_step}")
 
 
+def _notice_lost_checks(root: str, r: dict) -> None:
+    """A restart loses a check's thread, so nothing will finish it. A lost baseline would leave the
+    manager waiting for its prompt for good."""
+    for which in ("baseline", "check"):
+        if (r.get(which) or {}).get("state") == "running" and (root, r["id"], which) not in _checking:
+            r[which] = {"state": "failed", "command": r[which].get("command")}
+            _set_check(root, r["id"], which, r[which])
+            chat = store.get_session(r["chat"])
+            if which == "baseline" and chat and r.get("state") == "running":
+                _say(chat, _manager_prompt(root, r))
+
+
 def run_view(root: str) -> dict:
     """What the sidebar needs about runs: the one going, and any finished one still to decide on."""
     data = worklist.load(root)
@@ -717,9 +979,11 @@ def run_view(root: str) -> dict:
     for r in data["runs"]:
         if r.get("landed") or r.get("discarded"):
             continue
+        _notice_lost_checks(root, r)
         _, ahead, _ = _git(r["path"] if os.path.isdir(r.get("path") or "") else r["top"], "rev-list", "--count", f"{r['base']}..{r['branch']}", "--first-parent")
         chat = store.get_session(r["chat"])
-        out.append({k: r.get(k) for k in ("id", "chat", "state", "branch", "path", "into", "parallel", "started", "ended", "summary", "paused_why", "dirty", "items")}
+        out.append({k: r.get(k) for k in ("id", "chat", "state", "branch", "path", "into", "parallel", "started", "ended", "summary", "paused_why", "dirty", "items", "baseline", "check", "base")}
+                   | {"leftovers": [x for x in (r.get("leftovers") or []) if os.path.isdir(x.get("path") or "")]}
                    | {"merged": int(ahead.strip() or 0) if ahead.strip().isdigit() else 0, "chat_title": (chat or {}).get("title") or ""})
     return {"runs": out}
 

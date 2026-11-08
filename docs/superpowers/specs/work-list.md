@@ -78,6 +78,20 @@ reads diffs, merges or sends back. Its tool is `work_run`: `status`, `start_item
 Because the state lives in the list, a manager that loses its context or its chat can be picked
 up: Resume in another chat moves the run and its helpers there.
 
+### Asking for one in words
+
+An agent can't start a run. If you ask it to, `work_run propose` shows a card naming the tasks and
+where the run starts, and only your tap starts it.
+
+### What a run leaves you
+
+- **Reports.** A helper's final reply stays on its task, with its decisions and what it couldn't check
+  pulled out. They show on the card and on the Merge screen, and go in the commit.
+- **Evidence.** A merge removes the helper's copy, so its screenshots and logs move to
+  `.mystical/runs/<run>/<item>` first. Anything that can't be removed is listed on the run.
+- **Checks.** The project's check command runs on the starting commit before any helper, so helpers are
+  told what already fails, and on the finished branch, compared with that. It never blocks a merge.
+
 ### Brakes
 
 - Parallel helpers: 1 to 5, default 2, on top of the chat's own helper limits.
