@@ -182,6 +182,17 @@ WORK_LIST = _t("work_list", "The project's work list, which the user sees in the
                     "source": {"type": "object", "description": "Where it came from: {kind, ref, url}."}}}},
                 "ids": {"type": "array", "items": {"type": "string"}, "description": "For remove and reorder."},
                 "clear_done": {"type": "boolean"}}, ["action"])
+WORK_RUN = _t("work_run", "Manage a run on the work list, once the user has started one here: you assign items to helpers, review "
+              "and merge. status shows it. start_item gives an item a helper in its own copy of the code. review_item shows what it "
+              "changed. merge_item merges it into the run's branch, never the user's. send_back returns it with what to change. "
+              "block_item says it needs the user. restart_item drops its copy and puts it back up next. finish ends the run. You "
+              "can't start a run: only the user can.",
+              {"action": {"type": "string", "enum": ["status", "start_item", "review_item", "merge_item", "send_back", "block_item", "restart_item", "finish"]},
+               "id": {"type": "string", "description": "The item, for everything but status and finish."},
+               "brief": {"type": "string", "description": "start_item: anything to add to the task's own text. The helper sees nothing else."},
+               "profile": {"type": "string", "description": "start_item: a profile name from list_agents, if the user asked for one."},
+               "text": {"type": "string", "description": "send_back: what to change. block_item: what you need from the user."},
+               "summary": {"type": "string", "description": "finish: what happened."}}, ["action"])
 FIND = _t("find_tools", "Find more tools: Mystical's rarer ones (reports, chat search, waiting, pinging the user, "
           "secrets) and MCP servers shared with you. Empty query lists servers.",
           {"query": {"type": "string"}, "server": {"type": "string"}})
@@ -212,7 +223,7 @@ def tools_for(s: dict) -> list:
     if not s.get("parent_session") and channel.refusal(s) is None:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
     if not s.get("parent_session"):
-        out += [WORK_LIST]
+        out += [WORK_LIST, WORK_RUN]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
         out += [ASK, RUN]
         if not s.get("parent_session"):
@@ -406,6 +417,12 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name == "work_list":
         try:
             return _text(worklist.tool(s, a))
+        except worklist.Refused as e:
+            return _text(str(e), error=True)
+    if name == "work_run":
+        from bridge import workrun
+        try:
+            return _text(workrun.tool(s, a))
         except worklist.Refused as e:
             return _text(str(e), error=True)
     if name == "find_tools":

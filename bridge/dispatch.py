@@ -33,7 +33,8 @@ HELP = (
 
 
 _EXPERIMENTAL_HELP = ("/agents — this chat's agents · /agents stop|hold|release\n"
-                      "/tell <agent> <text> — message one agent in this chat\n")
+                      "/tell <agent> <text> — message one agent in this chat\n"
+                      "/work — the project's work list · /work run [n] · /work pause|resume|stop\n")
 
 
 def help_text() -> str:
@@ -364,6 +365,9 @@ def on_message(msg: dict):
     if cmd0 in ("/agents", "/tell"):
         send(chat_id, handle_agents_command(chat_id, text, thread), thread=thread)
         return
+    if cmd0 == "/work":
+        send(chat_id, handle_work_command(chat_id, text, thread), thread=thread, markdown=False)
+        return
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
@@ -378,6 +382,18 @@ def on_message(msg: dict):
         return
 
     _run_prompt(chat_id, text, thread=thread, msg_id=msg.get("message_id"))
+
+
+def handle_work_command(chat_id: int, text: str, thread=None) -> str:
+    """/work: the project's list, and its run (bridge/workrun.py)."""
+    from bridge import channel, experimental, workrun
+    if not experimental.enabled():
+        return "The work list is experimental. Turn it on in the dashboard's Settings."
+    s = (store.session_by_thread(chat_id, thread) if thread else None) \
+        or store.latest_session(chat_id, state.project_key(chat_id))
+    if not s:
+        return "No chat here yet. Send a prompt first: that chat's agent manages a run."
+    return workrun.on_command(channel._main_of(s), text.strip().partition(" ")[2])
 
 
 def handle_agents_command(chat_id: int, text: str, thread=None) -> str:

@@ -1514,6 +1514,12 @@ def create_member(chat: dict, *, name: str, cwd: str, profile_id: "str | None",
     return get_session(s["id"])
 
 
+def set_parent_session(session_id: str, chat_id: str) -> None:
+    """Move a helper under another chat, when a run's manager is replaced (bridge/workrun.py)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET parent_session=? WHERE id=?", (chat_id, session_id))
+
+
 def members_of(chat_id: str) -> list:
     """The helpers of a chat, oldest first."""
     with closing(_connect()) as c:

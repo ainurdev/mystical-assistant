@@ -220,7 +220,7 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .dc-intro { margin: 0 0 12px; color: var(--txm); line-height: 1.5; }
 
 /* The work list (components/WorkPanel). */
-.wl { padding: 2px 0 12px; }
+.wl { padding: 8px 10px 12px; }
 .wl-add { display: flex; gap: 4px; margin-bottom: 8px; }
 .wl-add input { flex: 1; min-width: 0; }
 .wl-ask { margin-bottom: 10px; }
@@ -246,3 +246,15 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .wl-item[data-state="blocked"] .wl-dot { background: var(--warn); }
 .wl-item[data-state="done"] .wl-dot { background: color-mix(in srgb, var(--acc) 45%, transparent); }
 @media (prefers-reduced-motion: reduce) { .wl-item[data-state="doing"] .wl-dot { animation: none; } }
+.wl-run { margin: 0 0 10px; padding: 8px 9px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--dg-r); }
+.wl-run[data-state="running"] { border-color: var(--acc); }
+.wl-run[data-state="paused"] { border-color: var(--warn); }
+.wl-run small { display: block; margin-top: 3px; color: var(--txd); line-height: 1.4; overflow-wrap: anywhere; }
+.wl-run .au-top small { margin: 0; flex: none; }
+.wl-branch { font-family: var(--mono, monospace); }
+.wl-pick { margin: 0 0 11px; padding: 0; border: 0; }
+.wl-pick legend { padding: 0; margin-bottom: 4px; color: var(--txm); }
+.wl-pick label { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; overflow-wrap: anywhere; cursor: pointer; }
+.wl-more { margin-top: 3px; color: var(--txd); line-height: 1.4; }
+.wl-more summary { cursor: pointer; overflow-wrap: anywhere; }
+.wl-more[open] summary { display: none; }

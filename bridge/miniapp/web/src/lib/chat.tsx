@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "./api";
+import { workCall } from "./readapi";
 import type {
   AnswerSelection,
   SecretAnswer,
@@ -675,6 +676,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!text || !sid) return;
+    // `/work run [n]` starts a run from this chat (bridge/workrun.py). It's watched on the Work page.
+    const workCmd = /^\/work(?:\s+run(?:\s+(\d+))?)?\s*$/.exec(text.trim());
+    if (workCmd) {
+      setSendError(null);
+      try {
+        if (!/\brun\b/.test(text)) throw new Error("The work list is under Work, in LIST.");
+        await workCall("run/start", sid, null, { parallel: workCmd[1] ? Number(workCmd[1]) : undefined });
+        onSent?.();     // the chat shows the run starting, as a line
+      } catch (e) {
+        setSendError(e instanceof ApiError ? e : new ApiError(0, (e as Error).message));
+      }
+      return;
+    }
     if (!opts?.sessionId && (isRunning || pending.length > 0)) return;
     setSendError(null);
     setChecking(true);
