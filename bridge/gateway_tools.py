@@ -110,14 +110,23 @@ DESIGN = {"name": "show_design", "description": (
     "HTML. When a design request is open, first show three rough directions as three pages, say how they differ, and ask "
     "which way to go; skip that for a small change or when the direction is set. Pass file to point at an HTML file, then "
     "keep editing that file: the user watches edits land, so don't call this again unless pages change. No network in "
-    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Their comments arrive "
-    "as a message naming the element. find_tools has design_context (read this before designing), inspect_ui and "
-    "critique_design (use them before saying a design is done) and grab_style."),
+    "the page except Google Fonts: inline scripts and CSS, and local images are inlined for you. Or pass url to show a "
+    "running app or a public page in the same view: when the user asks to run the app and work on it together, start the "
+    "dev server, then call this with its address. Their comments arrive as a message naming the element. find_tools has design_context (read this before designing), inspect_ui, "
+    "critique_design and grab_style."),
     "inputSchema": {"type": "object", "required": ["title"], "properties": {
         "title": {"type": "string", "description": "What's being designed."},
         "board": {"type": "string", "description": "The board id, to add to or update one. Default: made from the title."},
         "pages": {"type": "array", "items": {"type": "object"}, "description":
-                  "[{name, file or html, direction}]. direction says in a few words what this one is going for."}}}}
+                  "[{name, file, html or url, direction}]. direction says in a few words what this one is going for."}}}}
+OFFER = _t("offer_review", "Ask the user whether to run a review loop, when you think a feature is complex enough to warrant one. Call "
+           "this as your last step, once you're done with everything, then give your final answer. A Start review button appears "
+           "after your answer.",
+           {"kind": {"type": "string", "enum": ["code", "design", "other"], "description": "What's being reviewed. Default code."},
+            "title": {"type": "string", "description": "As the card says it, like: Review the retry change?"},
+            "detail": {"type": "string", "description": "Optional: one line on why it's worth it."},
+            "focus": {"type": "string", "description": "What to look at: files, a board's id, risks."},
+            "rounds": {"type": "integer", "description": "Most rounds, 1 to 5. Default 3."}}, ["title"])
 COMPARE = _t("compare_images", "Show a before and an after side by side, with one caption saying what changed.",
              {"before": _IMG, "after": _IMG, "caption": _S}, ["before", "after", "caption"])
 CHECKS = _t("run_checks", "Run this project's tests or checks and record the result in the chat, compared with "
@@ -170,7 +179,7 @@ RECORD = _t("record", "Record a page to a video and put it in the chat. Returns 
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, DATA, DESIGN, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, DESIGN, OFFER, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
@@ -190,7 +199,17 @@ CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's 
 GRAB_STYLE = _t("grab_style", "Read a public page's fonts, sizes, colours, radii and spacing, with a screenshot, as a direction "
                 "to work from when the user says \"like this\". Don't copy its code or content.",
                 {"url": _S, "note": _S}, ["url"])
-EXTRA_ALL = (DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
+DOCS_OUTLINE = _t("docs_outline", "Set the project's table of contents, before writing any docs page. The user sees it in their Docs tab, and "
+                  "only asks for pages after looking it over. Pages already written keep their text if their id stays.",
+                  {"location": {"type": "string", "description": "hidden, or a folder in the project like docs. Only needed the first time."},
+                   "title": _S, "pages": {"type": "array", "items": {"type": "object"}, "description": "[{id, title, group, summary, sources: [files it's about]}]."}}, ["pages"])
+DOC_PAGE = _t("doc_page", "Write one docs page from the contents, as Markdown. Read the code first. A fenced ```view block holding show_data's "
+              "arguments as JSON draws a live chart, table or diagram, and is checked as you save.",
+              {"id": _S, "markdown": _S, "sources": {"type": "array", "items": {"type": "string"}, "description": "The files it's about, so it can tell when it's gone stale."}}, ["id", "markdown"])
+READ_DOCS = _t("read_docs", "The project's docs: with no arguments the contents and what's stale, with id or path a page, with query the pages "
+               "mentioning it. Models wrote them: where they disagree with the code, trust the code.",
+               {"id": _S, "path": _S, "query": _S}, [])
+EXTRA_ALL = (DOCS_OUTLINE, DOC_PAGE, READ_DOCS, DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
 # the session by its Claude id, so an agent session has nothing to send.
 EXTRA_AGENT = (WAIT_SESSION, SCREENSHOT, RECORD)
@@ -299,6 +318,35 @@ def _show_data(s: dict, job, a: dict) -> dict:
     return _text(said)
 
 
+def _review_prompt(kind: str, focus: str, rounds: int) -> str:
+    """What pressing Start review sends: the loop, spelled out, as this is its only instruction."""
+    look = ("Run inspect_ui, then critique_design with fresh set to true, for each page" if kind == "design"
+            else "Have a separate reviewer that didn't write this check it, using the code-review skill, a read-only helper or a subagent")
+    about = f" Look at: {focus}." if focus else ""
+    return (f"Start the review loop you offered, for at most {rounds} round{'' if rounds == 1 else 's'}.{about} In each round: {look}. "
+            "Verify each finding yourself before acting on it, fix the ones that are real, and run the checks. Stop early once a round "
+            "finds nothing real. Then tell me what was found and fixed, and what you chose not to fix and why. Don't commit or push "
+            "unless I've asked for that.")
+
+
+def _offer_review(s: dict, job, a: dict) -> dict:
+    """A card after the final answer (components/OfferCard), for the user to start a review from."""
+    if job is None:
+        return _text("No turn is running to offer this in.", error=True)
+    title = " ".join(str(a.get("title") or "").split())[:120]
+    if not title:
+        return _text("Give the card a title: what would be reviewed, as a question.", error=True)
+    kind = a.get("kind") if a.get("kind") in ("code", "design", "other") else "code"
+    try:
+        rounds = max(1, min(5, int(a.get("rounds") or 3)))
+    except (TypeError, ValueError):
+        rounds = 3
+    focus = " ".join(str(a.get("focus") or "").split())[:400]
+    job.add({"type": "offer", "kind": kind, "title": title, "detail": " ".join(str(a.get("detail") or "").split())[:200],
+             "rounds": rounds, "prompt": _review_prompt(kind, focus, rounds)})
+    return _text("The button will appear after your final answer.")
+
+
 def _design_root(s: dict) -> str:
     root = chat_images.root_of(s.get("cwd"))
     if not root:
@@ -317,9 +365,17 @@ def _show_design(s: dict, job, a: dict) -> dict:
         return _text(str(e), error=True)
     ref = _next_ref(job)
     job.add({"type": "design", "board": meta["id"], "title": meta["title"], "pages": [p["name"] for p in meta["pages"]], "ref": ref})
-    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"])
-    return _text(f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). Edit these files and the user sees it live:\n{files}\n"
-                 f"Ask which direction, and let them comment. {_placed(job, ref)}")
+    from bridge import design_proxy
+    files = "\n".join(f"{p['name']}: {p['file']}" for p in meta["pages"] if p.get("file"))
+    down = [p["url"] for p in meta["pages"] if p.get("url") and not design_proxy.answering(p["url"])]
+    said = f"The PREVIEW DESIGN button is in the chat (board {meta['id']}). "
+    if files:
+        said += f"Edit these files and the user sees it live:\n{files}\n"
+    if any(p.get("url") for p in meta["pages"]):
+        said += "A page at an address shows whatever that server serves, so your edits to the app show as it reloads.\n"
+    if down:
+        said += f"Nothing is answering yet at {', '.join(down)}. Check the server is up.\n"
+    return _text(f"{said}Let them comment. {_placed(job, ref)}")
 
 
 def _design_context(s: dict, job, a: dict) -> dict:
@@ -373,6 +429,33 @@ def _grab_style(s: dict, job, a: dict) -> dict:
     if code != 200:
         return _text(out.get("error") or "Couldn't read it.", error=True)
     return _text(json.dumps(out["reference"], ensure_ascii=False, indent=1))
+
+
+def _docs(s: dict, a: dict, name: str) -> dict:
+    from bridge import project_docs
+    try:
+        root = _design_root(s)
+        if name == "read":
+            return _text(project_docs.for_agents(root, a))
+        if name == "outline":
+            got = project_docs.outline(root, a)
+            return _text(f"The contents are in the user's Docs tab, with {got['pages']} pages in {got['folder']}. Don't write pages until they ask.")
+        got = project_docs.write_page(root, a)
+        return _text(f"Saved {got['path']}, with {got['views']} live view(s). It's in their Docs tab now.")
+    except (project_docs.Refused, OSError) as e:
+        return _text(str(e), error=True)
+
+
+def _docs_outline(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "outline")
+
+
+def _doc_page(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "page")
+
+
+def _read_docs(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "read")
 
 
 def _show_image(s: dict, job, a: dict) -> dict:
@@ -738,7 +821,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "design_context": _design_context,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,

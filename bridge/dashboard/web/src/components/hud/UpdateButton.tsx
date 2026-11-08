@@ -141,8 +141,10 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
     const where = info?.path || "the mystical-assistant repo";
     const pending = info?.behind ?? 0;
     onFeed([
+      // A refused pull or push is a routine merge (the recipe is in memory), so it skips the
+      // paths pack's bug path (bridge/paths.py). A broken build is a bug, and takes it.
       failed === "ship"
-        ? `Committing and pushing the platform's own work in \`${where}\` failed. Work out ` +
+        ? `No path for this message.\n\nCommitting and pushing the platform's own work in \`${where}\` failed. Work out ` +
           `what blocks it and fix it, then commit the changes with a good message and push.` +
           `\n\ngit said:\n${err}`
         : failed === "build"
@@ -150,10 +152,10 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
           `bridge's own checkout (${where}) brought the new commits in, then a web build broke. ` +
           `Work out why and fix it, then rebuild and restart so the update goes live.` +
           `\n\nThe update said:\n${err}`
-        : `Updating the platform failed: \`git pull --ff-only\` in the bridge's own checkout ` +
+        : `No path for this message.\n\nUpdating the platform failed: \`git pull --ff-only\` in the bridge's own checkout ` +
           `(${where}) refused. Work out what blocks it and fix it, then pull the ${pending} ` +
-          `pending commit${pending === 1 ? "" : "s"}. Don't discard my source changes — ` +
-          `generated bundles under dist/ are safe to reset.\n\ngit said:\n${err}`,
+          `pending commit${pending === 1 ? "" : "s"}. Don't discard my source changes.` +
+          `\n\ngit said:\n${err}`,
     ], info?.project, true);
     setOpen(false);
     setErr("");

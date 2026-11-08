@@ -247,9 +247,12 @@ def _top(cwd: str) -> str:
     return out.strip() if rc == 0 else ""
 
 
-def _link_deps(top: str, path: str) -> None:
+def _link_deps(top: str, path: str) -> list:
     """Ignored dependency folders and top-level .env files: a new copy has none, and
-    a helper asked to go fast shouldn't start with an install."""
+    a helper asked to go fast shouldn't start with an install. Returns the links made:
+    `node_modules/` in a .gitignore only matches a folder, so git sees each as a new file,
+    and _stage_all has to keep them out."""
+    links = []
     for root, dirs, files in os.walk(top):
         depth = os.path.relpath(root, top).count(os.sep)
         for d in list(dirs):
@@ -260,6 +263,7 @@ def _link_deps(top: str, path: str) -> None:
                 if rc == 0 and not os.path.lexists(dst):
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     os.symlink(os.path.join(root, d), dst)
+                    links.append(rel)
                 dirs.remove(d)
             elif d == ".git" or depth >= _DEP_DEPTH:
                 dirs.remove(d)
@@ -267,14 +271,16 @@ def _link_deps(top: str, path: str) -> None:
             for f in files:
                 if f.startswith(".env") and _git(top, "check-ignore", "-q", f)[0] == 0:
                     shutil.copy2(os.path.join(root, f), os.path.join(path, f))
+    return links
 
 
-def _make_copy(chat: dict, cwd: str, short: str) -> "tuple[dict | None, str | None]":
-    """A worktree for a writer. Returns ({path, branch, base, top, cwd}, refusal)."""
+def _make_copy(chat: dict, cwd: str, short: str, start_at: "str | None" = None) -> "tuple[dict | None, str | None]":
+    """A worktree for a writer. Returns ({path, branch, base, top, cwd}, refusal). It starts from
+    the chat's current state, or from `start_at` for a work run's item (bridge/workrun.py)."""
     top = _top(cwd)
     if not top:
         return None, "This folder isn't a git repository, so a helper can't have its own copy."
-    rc, base, _ = _git(top, "stash", "create")
+    rc, base, _ = (0, start_at, "") if start_at else _git(top, "stash", "create")
     base = base.strip()
     if rc != 0 or not base:
         rc, base, err = _git(top, "rev-parse", "HEAD")
@@ -287,12 +293,13 @@ def _make_copy(chat: dict, cwd: str, short: str) -> "tuple[dict | None, str | No
     ok, msg = git.worktree_add(top, path, branch, base)
     if not ok:
         return None, f"Couldn't make a copy of the code: {msg[:300]}"
+    links = []
     try:
-        _link_deps(top, path)
+        links = _link_deps(top, path)
     except OSError as e:
         print(f"[channel] deps: {e!r}", file=sys.stderr)
     rel = os.path.relpath(cwd, top)
-    return {"path": path, "branch": branch, "base": base, "top": top,
+    return {"path": path, "branch": branch, "base": base, "top": top, "links": links,
             "cwd": os.path.normpath(os.path.join(path, rel))}, None
 
 
@@ -330,7 +337,7 @@ def plan_tasks(chat: dict, tasks: list) -> "tuple[list, str | None]":
         agent, account = _agent_account(chat, profile)
         counts[(agent, account)] = counts.get((agent, account), 0) + 1
         out.append({"brief": brief, "name": t.get("name") or "", "write": bool(t.get("write")),
-                    "profile": profile, "agent": agent, "account": account})
+                    "profile": profile, "agent": agent, "account": account, "base": t.get("base"), "work": t.get("work"), "from_dir": t.get("from_dir")})
     why = _load_problem(chat, "", "", adding=len(out))
     for (agent, account), n in counts.items():
         why = why or _load_problem(chat, agent, account, adding=n)
@@ -377,10 +384,12 @@ def start(chat: dict, plan: list) -> list:
     for t in plan:
         name = _unique_name(chat, t["name"], t["agent"])
         short = uuid.uuid4().hex[:8]
-        parent_cwd = chat.get("work_cwd") or chat.get("cwd") or config.BASE_PATH
+        # Where its shell last went, unless that's gone: it may have been a helper's copy, since merged.
+        moved = chat.get("work_cwd")
+        parent_cwd = t.get("from_dir") or (moved if moved and os.path.isdir(moved) else None) or chat.get("cwd") or config.BASE_PATH
         copy = None
         if t["write"]:
-            copy, why = _make_copy(chat, parent_cwd, short)
+            copy, why = _make_copy(chat, parent_cwd, short, t.get("base"))
             if why:
                 lines.append(f"{name}: not started. {why}")
                 continue
@@ -389,7 +398,7 @@ def start(chat: dict, plan: list) -> list:
         mode = _helper_mode(chat, t["agent"], (t["profile"] or {}).get("mode"), t["write"])
         member = {"name": name, "write": t["write"], "brief": t["brief"], "state": "running",
                   "agent": t["agent"], "account": t["account"], "started": time.time(),
-                  "copy": copy, "short": short}
+                  "copy": copy, "short": short, **({"work": t["work"]} if t.get("work") else {})}
         s = store.create_member(chat, name=name, cwd=cwd, profile_id=pid or chat.get("profile_id"),
                                 permission_mode=mode, member=member)
         if t["agent"] == profiles.CLAUDE:
@@ -621,10 +630,31 @@ def on_turn_end(job) -> None:
         chat = _main_of(s)
         if s.get("parent_session") and chat:
             _helper_turn_ended(job, s, chat)
+        elif chat:
+            _manager_turn_ended(job, chat)
         if chat:
             flush(store.get_session(chat["id"]))
     except Exception as e:  # noqa: BLE001
         print(f"[channel] turn end: {e!r}", file=sys.stderr)
+
+
+def _manager_turn_ended(job, chat: dict) -> None:
+    """A work run's manager may need a nudge (bridge/workrun.py)."""
+    from bridge import workrun
+    try:
+        workrun.manager_ended(job, chat)
+    except Exception as e:  # noqa: BLE001
+        print(f"[channel] work run: {e!r}", file=sys.stderr)
+
+
+def _work_ended(member: dict, state: str) -> str:
+    """A work run's helper finished: its item moves, and its report says what's next."""
+    from bridge import workrun
+    try:
+        return workrun.helper_ended(member, state)
+    except Exception as e:  # noqa: BLE001
+        print(f"[channel] work run: {e!r}", file=sys.stderr)
+        return ""
 
 
 def _helper_turn_ended(job, s: dict, chat: dict) -> None:
@@ -640,7 +670,9 @@ def _helper_turn_ended(job, s: dict, chat: dict) -> None:
         words = data_views.strip_refs(job.result or (job.texts[-1] if job.texts else "") or "").strip()
         body = words[:_RESULT_MAX] or f"{name} finished without saying anything."
     _set_state(s["id"], state, ended=time.time())
-    if (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):
+    if m.get("work"):
+        body += _work_ended(m, state)
+    elif (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):
         stat = _diff_stat(m["copy"])
         if stat:
             body += (f"\n\nIt changed files in its own copy ({stat}). Review with review_helper_changes, "
@@ -690,6 +722,9 @@ def _member_by_name(chat: dict, name: str) -> "tuple[dict | None, dict]":
 def _stage_all(copy: dict) -> None:
     # The copy's own index: nothing the user touches.
     _git(copy["path"], "add", "-A", "--", ".", ":(exclude).mystical")
+    # Out of the index, and out of a commit if the helper made one with `git add -A`.
+    for rel in copy.get("links") or []:
+        _git(copy["path"], "rm", "--cached", "-q", "--ignore-unmatch", "--", rel)
 
 
 def _diff_stat(copy: dict) -> str:
@@ -735,6 +770,8 @@ def merge(chat: dict, name: str) -> str:
     s, m = _member_by_name(chat, name)
     if s is None:
         return f'No helper is called "{name}".'
+    if m.get("work"):
+        return f"{name} is working on a run's item. Use work_run with merge_item."
     copy = m.get("copy")
     if not copy or not os.path.isdir(copy.get("path") or ""):
         return f"{name} has no copy to merge (state: {m.get('state')})."
@@ -791,6 +828,8 @@ def discard(chat: dict, name: str) -> str:
         return f'No helper is called "{name}".'
     if _running(s["id"]):
         return f"{name} is still working. Stop it first."
+    if m.get("work"):
+        return f"{name} is working on a run's item. Use work_run with restart_item."
     copy = m.get("copy")
     if copy and os.path.isdir(copy.get("path") or ""):
         _remove_copy(copy)

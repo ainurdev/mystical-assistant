@@ -51,3 +51,16 @@ export const designCall = <T,>(session: string, path: string, body: Record<strin
 
 export const uploadImage = async (session: string, data: string) =>
   (await request<{ path: string }>("/api/chat-images/upload", { method: "POST", body: { session_id: session, data } })).path;
+
+/** Automations (bridge/automations.py). No session: they belong to you, not to a chat. */
+export const autoGet = <T,>() => request<T>("/api/automations");
+export const autoCall = <T,>(path: string, body: Record<string, unknown> = {}) =>
+  request<T>(`/api/automations/${path}`, { method: "POST", body });
+
+/** The project's work list and its run (bridge/worklist.py, workrun.py). */
+export const workGet = <T,>(session: string | null, project?: string | null) =>
+  request<T>(`/api/worklist?session=${encodeURIComponent(session ?? "")}&project=${encodeURIComponent(project ?? "")}`);
+export const workCall = <T,>(path: string, session: string | null, project: string | null | undefined, body: Record<string, unknown> = {}) =>
+  request<T>(`/api/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
+export const workSources = async (session: string | null) =>
+  (await request<{ sources: string[] }>(`/api/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;

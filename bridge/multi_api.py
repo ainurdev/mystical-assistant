@@ -13,9 +13,9 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
+from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, project_docs, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
-                    tool_policy)
+                    tool_policy, worklist)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
 _AGENTS_EXTRA = ("claude",)
@@ -69,6 +69,15 @@ def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
         return None
 
 
+def _work_root(chat_id: int, session: "str | None", project: "str | None") -> "tuple[str | None, str | None]":
+    """(the project's main checkout, the chat it's seen from). Named by an owned chat, or by the
+    project when you're the owner and no chat is open."""
+    s = _owned(chat_id, session)
+    if s:
+        return worklist.root_of(s.get("cwd")), _chat_of(s)["id"]
+    return (image_root(chat_id, None, project), None) if config.is_owner(chat_id) else (None, None)
+
+
 def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, int]":
     """The design view (bridge/design_board.py, design_audit.py)."""
     root = chat_images.root_of(s.get("cwd"))
@@ -81,6 +90,10 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
             return design_board.edit_comments(root, body)
         if path == "chat/design-boards":
             return design_board.listed(root)
+        if path == "chat/design-url":
+            return design_board.live(root, body)
+        if path == "chat/design-live":
+            return design_board.proxied(root, body)
         if path == "chat/design-delete":
             return design_board.delete(root, body.get("board"))
         if path == "chat/design-version":
@@ -114,6 +127,21 @@ def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, i
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "automations":
+        if not experimental.enabled():
+            return _OFF
+        return (automations.listed(), 200) if chat_id == config.DASH_CHAT_ID else ({"error": "Only the owner can see automations."}, 403)
+    if path == "worklist/sources":
+        if not experimental.enabled():
+            return _OFF
+        s = _owned(chat_id, _one(qs, "session"))
+        return {"sources": worklist.sources(s)}, 200
+    if path == "worklist":
+        if not experimental.enabled():
+            return _OFF
+        from bridge import workrun
+        root, chat = _work_root(chat_id, _one(qs, "session"), _one(qs, "project"))
+        return ({**worklist.view(root, chat), **workrun.run_view(root)}, 200) if root else ({"error": "No project here."}, 404)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -221,6 +249,24 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path.startswith("automations"):
+        return automations.api(path, body, chat_id) if experimental.enabled() else _OFF
+    if path.startswith("worklist"):
+        if not experimental.enabled():
+            return _OFF
+        root, chat = _work_root(chat_id, body.get("session_id"), body.get("project"))
+        if path.startswith("worklist/run/"):
+            from bridge import workrun
+            return workrun.api(path, body, root, store.get_session(chat) if chat else None)
+        if path.startswith("worklist/refine/"):
+            from bridge import workrefine, workrun
+            out, status = workrefine.api(path, body, root, chat, chat_id)
+            return ({**out, **workrun.run_view(root)}, status) if status == 200 else (out, status)
+        out, status = worklist.api(path, body, root, chat)
+        if status == 200:
+            from bridge import workrun
+            out.update(workrun.run_view(root))
+        return out, status
     if path == "design-theme":
         return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):
@@ -265,6 +311,11 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return chat_aside.explain(body, chat_id, s.get("cwd"))
     if path.startswith("chat/design"):
         return _post_design(path, body, s, chat_id)
+    if path in ("chat/docs", "chat/doc-read"):
+        root = chat_images.root_of(s.get("cwd"))
+        if not root:
+            return {"error": "This chat has no project folder."}, 400
+        return (project_docs.listed(root), 200) if path == "chat/docs" else project_docs.read(root, body)
     if path == "chat/view-save":
         return saved_views.save(chat_images.root_of(s.get("cwd")), body.get("view"))
     if path == "chat/config":
