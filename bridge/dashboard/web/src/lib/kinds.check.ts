@@ -85,4 +85,6 @@ console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claud
 console.assert(same(kindFacts("ask", ctx()), [{ text: "read-only, changes nothing" }]), "ask, no map");
 console.assert(text("build", ctx({ pack: true })) === "grill, then build here · working tree clean", "build with pack");
 console.assert(text("build", ctx({ git: git({ dirty: 2 }) })) === "builds here · 2 uncommitted", "build without pack");
+const mapped = text("ask", ctx({ mapBuiltAt: Date.now() / 1000 - 7300 }));
+console.assert(mapped === "read-only, changes nothing · map built 2h ago", `ask with a map: ${mapped}`);
 console.assert(KINDS.fix.verb === "Fix", "verbs");
