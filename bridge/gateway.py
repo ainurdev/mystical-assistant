@@ -186,9 +186,12 @@ WORK_RUN = _t("work_run", "Manage a run on the work list, once the user has star
               "and merge. status shows it. start_item gives an item a helper in its own copy of the code. review_item shows what it "
               "changed. merge_item merges it into the run's branch, never the user's. send_back returns it with what to change. "
               "block_item says it needs the user. restart_item drops its copy and puts it back up next. finish ends the run. You "
-              "can't start a run: only the user can.",
-              {"action": {"type": "string", "enum": ["status", "start_item", "review_item", "merge_item", "send_back", "block_item", "restart_item", "finish"]},
-               "id": {"type": "string", "description": "The item, for everything but status and finish."},
+              "can't start a run, but when the user asks for one in words, propose shows them a card to tap: `ids` and `parallel` are "
+              "optional, and it starts only if they press Start. Only propose when they asked.",
+              {"action": {"type": "string", "enum": ["propose", "status", "start_item", "review_item", "merge_item", "send_back", "block_item", "restart_item", "finish"]},
+               "ids": {"type": "array", "items": {"type": "string"}, "description": "propose: which tasks. Leave out for everything up next."},
+               "parallel": {"type": "integer", "description": "propose: helpers at once, 1 to 5."},
+               "id": {"type": "string", "description": "The item, for everything but propose, status and finish."},
                "brief": {"type": "string", "description": "start_item: anything to add to the task's own text. The helper sees nothing else."},
                "profile": {"type": "string", "description": "start_item: a profile name from list_agents, if the user asked for one."},
                "text": {"type": "string", "description": "send_back: what to change. block_item: what you need from the user."},
@@ -422,7 +425,7 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name == "work_run":
         from bridge import workrun
         try:
-            return _text(workrun.tool(s, a))
+            return _propose_run(s, job, a) if a.get("action") == "propose" else _text(workrun.tool(s, a))
         except worklist.Refused as e:
             return _text(str(e), error=True)
     if name == "find_tools":
@@ -437,6 +440,25 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name in gateway_tools.HANDLED:
         return gateway_tools.call(s, job, name, a)
     return _text(f"Unknown tool: {name}", error=True)
+
+
+def _propose_run(s: dict, job, a: dict) -> dict:
+    """A card: only the user's tap starts a run. Text in a ticket can get this far and no further."""
+    from bridge import workrun
+    wanted = [str(i) for i in a["ids"]] if isinstance(a.get("ids"), list) else None
+    questions = workrun.proposal(s, wanted, a.get("parallel"))
+    if job is None:
+        return _text("No turn is running to ask from.", error=True)
+
+    def on_answer(answers: list) -> str:
+        if not channel.approved(answers):
+            return "The user said not now. Nothing started."
+        try:
+            run = workrun.start(store.get_session(s["id"]), wanted, a.get("parallel"))
+        except worklist.Refused as e:
+            return f"It couldn't start: {e}"
+        return f"The run started on {run['branch']}. Your instructions as its manager arrive as a message: wait for them, then use work_run."
+    return _card(job, s, questions, on_answer)
 
 
 def _roster(chat: dict) -> str:

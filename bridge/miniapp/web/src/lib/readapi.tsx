@@ -1,4 +1,5 @@
 import { request } from "./api";
+import { useChatImage } from "./chatimg";
 import { ChatImage } from "../components/ChatImage";
 import { useChat } from "./chat";
 import type { DataEv } from "./dataview";
@@ -64,3 +65,9 @@ export const workCall = <T,>(path: string, session: string | null, project: stri
   request<T>(`/api/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await request<{ sources: string[] }>(`/api/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
+
+/** A picture a run kept (bridge/workrun.py _keep_evidence). Fetched with the init-data, as an img can't send it. */
+export function WorkPicture({ session, path, alt }: { session: string | null; path: string; alt: string }) {
+  const look = useChatImage({ session: session ?? undefined }, path);
+  return look.url ? <a href={look.url} target="_blank" rel="noreferrer"><img className="wl-pic" src={look.url} alt={alt} loading="lazy" /></a> : null;
+}

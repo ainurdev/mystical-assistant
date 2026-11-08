@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowRight, Ban, Check, ChevronLeft, CircleCheck, Circle, Eye, Inbox, LoaderCircle, Pencil, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
-import { useRefSession, workCall, workGet, workSources } from "../lib/readapi";
+import { useRefSession, workCall, WorkPicture, workGet, workSources } from "../lib/readapi";
 import { wordDiff } from "../lib/worddiff";
 import { Dialog } from "./DesignSystem";
 
@@ -17,13 +17,17 @@ type Message = { role: "user" | "agent" | "error"; text: string; options?: strin
 type Item = {
   id: string; title: string; detail: string; source: Source; depends_on: string[]; state: string; note: string; group: string;
   helper?: string; session_id?: string; refining?: boolean; refine?: { messages: Message[] };
+  report?: string; summary?: string; decisions?: string[]; unverified?: string[]; commit?: string | null;
+  evidence?: { dir: string; files: number; pictures: string[] };
 };
+type Check = { state: "running" | "done" | "failed"; command?: string; ok?: boolean; new?: string[]; same?: number; passed?: number | null; failed?: number | null; failures?: string[]; code?: number; log?: string };
 type Run = {
   id: string; chat: string; chat_title: string; state: "running" | "paused" | "finished"; branch: string; into: string; parallel: number;
   summary?: string; paused_why?: string; dirty?: boolean; items: string[]; merged: number;
+  baseline?: Check; check?: Check; leftovers?: { path: string; why: string }[];
 };
 type Listing = { items: Item[]; project: string; runs?: Run[] };
-type Screen = { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" };
+type Screen = { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" } | { k: "land"; run: string };
 type Call = (path: string, body: Record<string, unknown>) => Promise<boolean>;
 
 const ICON = { size: 13, strokeWidth: 2, "aria-hidden": true } as const;
@@ -54,8 +58,75 @@ function Head({ title, onBack }: { title: string; onBack: () => void }) {
   return <div className="wl-sheet-h"><button type="button" className="wl-ic" aria-label="Back to the list" onClick={onBack}><ChevronLeft size={16} aria-hidden /></button><b>{title}</b></div>;
 }
 
-function RunCard({ run, session, onRun, onOpen }: { run: Run; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void }) {
+/** What the finished branch's checks found, against where it started. */
+function checkWords(c?: Check): { tone: "ok" | "warn" | "wait"; text: string } | null {
+  if (!c) return null;
+  if (c.state === "running") return { tone: "wait", text: "Running the checks on the whole branch…" };
+  if (c.state === "failed") return { tone: "warn", text: "The checks couldn't finish, so this branch is unchecked." };
+  const n = [c.passed != null ? `${c.passed} passed` : "", c.failed ? `${c.failed} failed` : ""].filter(Boolean).join(", ");
+  if (c.ok) return { tone: "ok", text: `Checks: ${n || "passed"}${c.same ? `. The same ${c.same} failed where the run started, so none are new.` : "."}` };
+  if (c.new?.length) return { tone: "warn", text: `Checks: ${n}. New failures: ${c.new.slice(0, 5).join(", ")}${c.new.length > 5 ? ` and ${c.new.length - 5} more` : ""}.` };
+  return { tone: "warn", text: `The checks failed with exit code ${c.code}, and their output couldn't be read.${c.log ? ` See ${c.log}.` : ""}` };
+}
+
+function Evidence({ item, session }: { item: Item; session: string | null }) {
+  const e = item.evidence;
+  if (!e) return null;
+  return (
+    <div className="wl-ev">
+      <small>{e.files} file{e.files === 1 ? "" : "s"} kept in {e.dir}</small>
+      {e.pictures.length ? <div className="wl-pics">{e.pictures.map((p) => <WorkPicture key={p} session={session} path={p} alt={`From ${item.id}: ${p.split("/").pop()}`} />)}</div> : null}
+    </div>
+  );
+}
+
+/** What a helper said you'd want to know: decisions, what it couldn't check, then the whole reply. */
+function Report({ item, session }: { item: Item; session: string | null }) {
+  if (!item.report) return <Evidence item={item} session={session} />;
+  return (
+    <div className="wl-report">
+      {item.decisions?.length ? <div><h6>Decisions to check</h6><ul>{item.decisions.map((d, i) => <li key={i}>{d}</li>)}</ul></div> : null}
+      {item.unverified?.length ? <div data-warn=""><h6>Not verified</h6><ul>{item.unverified.map((d, i) => <li key={i}>{d}</li>)}</ul></div> : null}
+      <Evidence item={item} session={session} />
+      <details className="wl-full"><summary>The helper's full report</summary><p>{item.report}</p></details>
+    </div>
+  );
+}
+
+function Land({ run, items, session, onRun, onOpen, back }: { run: Run; items: Item[]; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void; back: () => void }) {
+  const inRun = items.filter((i) => run.items.includes(i.id));
+  const done = inRun.filter((i) => i.state === "done");
+  const rest = inRun.filter((i) => i.state !== "done");
+  const check = checkWords(run.check);
+  const bad = check?.tone === "warn";
+  return (
+    <div className="wl-sheet">
+      <Head title={`Merge into ${run.into || "your branch"}`} onBack={back} />
+      <div className="wl-sheet-b">
+        <p className="wl-lede">From <span className="wl-branch">{run.branch}</span>. Merging is local, and nothing is pushed. Uncommitted work in your folder is left alone: git refuses rather than touch it.</p>
+        {check ? <p className={`wl-check wl-${check.tone}`} role="status">{check.text}</p> : <p className="wl-check wl-warn">No check command is set for this project, so nothing checked the whole branch.</p>}
+        {done.map((i) => (
+          <div key={i.id} className="wl-land" data-s="done">
+            <StateTag state="done" />
+            <b>{i.title}</b>
+            <small>{i.id}{i.session_id && onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(i.session_id!)}>open its chat</button></> : null}</small>
+            {i.summary ? <p>{i.summary}</p> : null}
+            <Report item={i} session={session} />
+          </div>
+        ))}
+        {rest.length ? <div className="wl-land-rest"><h6>Not in this merge</h6><ul>{rest.map((i) => <li key={i.id}>{i.id}: {i.title} ({STATE[i.state]?.label ?? i.state})</li>)}</ul></div> : null}
+      </div>
+      <div className="wl-sheet-f wl-row">
+        <button type="button" className="dg-send wl-grow" disabled={!run.merged} onClick={() => { onRun("land"); back(); }}>{bad ? "Merge anyway" : `Merge ${done.length} task${done.length === 1 ? "" : "s"}`}</button>
+        <button type="button" className="dg-btn" onClick={back}>Not yet</button>
+      </div>
+    </div>
+  );
+}
+
+function RunCard({ run, session, onRun, onOpen, onLand }: { run: Run; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void; onLand: () => void }) {
   const [sure, setSure] = useState(false);
+  const check = checkWords(run.check);
   const here = run.chat === session;
   const n = `${run.merged} of ${run.items.length} merged`;
   return (
@@ -67,13 +138,16 @@ function RunCard({ run, session, onRun, onOpen }: { run: Run; session: string | 
       {run.summary ? (run.summary.length > 200
         ? <details className="wl-more"><summary>{run.summary.slice(0, 160).trimEnd()}…</summary><small>{run.summary}</small></details>
         : <small>{run.summary}</small>) : null}
+      {run.baseline?.state === "running" ? <small>Checking the starting point before the helpers begin…</small> : null}
+      {check ? <small className={check.tone === "warn" ? "wl-warn" : undefined}>{check.text}</small> : null}
       {run.state === "finished" ? <small>Your branch hasn't moved. Merging is local, and nothing is pushed.</small> : null}
+      {run.leftovers?.map((l) => <small key={l.path} className="wl-warn">Left behind: {l.path}. {l.why}</small>)}
       <div className="wl-row">
         {run.state === "running" ? <button type="button" className="dg-btn" onClick={() => onRun("pause")}>Pause</button> : null}
         {run.state === "paused" ? <button type="button" className="dg-send" disabled={!session} onClick={() => onRun("resume")}>{here ? "Resume" : "Take over here"}</button> : null}
         {run.state !== "finished" ? <button type="button" className="dg-btn" onClick={() => onRun("stop")}>Stop helpers</button> : null}
         {run.state === "paused" ? <button type="button" className="dg-btn" onClick={() => onRun("end")}>End the run</button> : null}
-        {run.state === "finished" ? <button type="button" className="dg-send" disabled={!run.merged} onClick={() => onRun("land")}>Merge into your branch</button> : null}
+        {run.state === "finished" ? <button type="button" className="dg-send" disabled={!run.merged} onClick={onLand}>Review and merge</button> : null}
         {run.state === "finished" ? (sure
           ? <button type="button" className="dg-btn dg-danger" onClick={() => onRun("discard")}>Really discard the code</button>
           : <button type="button" className="dg-btn" onClick={() => setSure(true)}>Discard</button>) : null}
@@ -109,8 +183,8 @@ function Starter({ items, onStart, onClose }: { items: Item[]; onStart: (ids: st
   );
 }
 
-function Card({ item, canUp, canDown, activeRun, onOpen, call, go, onMove }: {
-  item: Item; canUp: boolean; canDown: boolean; activeRun?: Run; onOpen?: (id: string) => void; call: Call; go: (s: Screen) => void; onMove: (up: boolean) => void;
+function Card({ item, session, canUp, canDown, activeRun, onOpen, call, go, onMove }: {
+  item: Item; session: string | null; canUp: boolean; canDown: boolean; activeRun?: Run; onOpen?: (id: string) => void; call: Call; go: (s: Screen) => void; onMove: (up: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [sure, setSure] = useState(false);
@@ -141,13 +215,15 @@ function Card({ item, canUp, canDown, activeRun, onOpen, call, go, onMove }: {
         {item.id}
         {item.group === "later" ? " · not in this run" : ""}
         {item.depends_on.length ? ` · after ${item.depends_on.join(", ")}` : ""}
-        {live && item.session_id && onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(item.session_id!)}>open its chat</button></> : null}
+        {item.session_id && onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(item.session_id!)}>open its chat</button></> : null}
       </small>
       {source?.url || source?.ref ? <small>{source.url ? <a className="au-link" href={source.url} target="_blank" rel="noreferrer">{source.kind ? `${source.kind} ` : ""}{source.ref || source.url}</a> : `${source.kind ? `${source.kind} ` : ""}${source.ref}`}</small> : null}
       {item.state === "blocked" && inRun && !open ? <div className="wl-row"><button type="button" className="dg-btn" onClick={() => { setOpen(true); setAnswering(true); }}>Answer</button></div> : null}
       {open ? (
         <>
+          {item.summary ? <p className="wl-detail wl-said">{item.summary}</p> : null}
           {item.detail ? <p className="wl-detail">{item.detail}</p> : null}
+          <Report item={item} session={session} />
           {answering ? (
             <form onSubmit={(e) => { e.preventDefault(); void sendAnswer(); }}>
               <label className="wl-f"><span>What it needs to know</span><textarea ref={fitBox} rows={2} autoFocus value={answer} onChange={(e) => { setAnswer(e.target.value); fitBox(e.target); }} /></label>
@@ -369,6 +445,15 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
       </div>
     );
   }
+  if (screen.k === "land") {
+    const run = runs.find((r) => r.id === screen.run);
+    if (run) return (
+      <div className="ds wl" data-sheet="">
+        {failed}
+        <Land run={run} items={items} session={session} onOpen={onOpen} back={back} onRun={(path) => void call(`run/${path}`, { run: run.id })} />
+      </div>
+    );
+  }
   if (screen.k === "add") return (
     <div className="ds wl" data-sheet="">
       {failed}
@@ -388,7 +473,7 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
   };
   const card = (i: Item) => {
     const at = todoIds.indexOf(i.id);
-    return <Card key={i.id} item={i} canUp={at > 0} canDown={at >= 0 && at < todoIds.length - 1} activeRun={activeRun} onOpen={onOpen} call={call} go={setScreen} onMove={(up) => move(i, up)} />;
+    return <Card key={i.id} item={i} session={session} canUp={at > 0} canDown={at >= 0 && at < todoIds.length - 1} activeRun={activeRun} onOpen={onOpen} call={call} go={setScreen} onMove={(up) => move(i, up)} />;
   };
   const counts = ORDER.map((s) => [s, items.filter((i) => i.state === s).length] as const).filter(([, n]) => n);
   return (
@@ -398,7 +483,7 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
         {!activeRun && upNext.length ? <button type="button" className="dg-send" disabled={!session} title={session ? undefined : "Open a chat: its agent manages the run"} onClick={() => setStarting(true)}>Run</button> : null}
       </div>
       {failed}
-      {runs.map((r) => <RunCard key={r.id} run={r} session={session} onOpen={onOpen} onRun={(path) => void call(`run/${path}`, { run: r.id })} />)}
+      {runs.map((r) => <RunCard key={r.id} run={r} session={session} onOpen={onOpen} onLand={() => setScreen({ k: "land", run: r.id })} onRun={(path) => void call(`run/${path}`, { run: r.id })} />)}
       {counts.length ? (
         <div className="wl-sum">
           <div className="wl-bar" aria-hidden>{counts.map(([s, n]) => <i key={s} data-s={s} style={{ flex: n }} />)}</div>
