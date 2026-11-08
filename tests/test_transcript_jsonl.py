@@ -477,6 +477,22 @@ def test_turn_carries_its_summed_token_usage():
     assert turn["tokens"] == {"in": 300, "out": 30, "cache_w": 4, "cache_r": 6}
 
 
+def test_a_message_written_as_several_records_counts_once():
+    """The CLI writes one record per content block, each with the whole message's
+    usage; summing records read a turn's cache 2-3x high on real sessions."""
+    one = {"input_tokens": 2, "output_tokens": 611,
+           "cache_creation_input_tokens": 29393, "cache_read_input_tokens": 17138}
+    recs = [USAGE_FIXTURE[0]] + [
+        {"type": "assistant", "uuid": f"b{i}", "timestamp": "2026-01-01T00:00:01Z",
+         "message": {"role": "assistant", "id": "msg_1", "model": "claude-opus-5",
+                     "content": [block], "usage": one}}
+        for i, block in enumerate([{"type": "thinking", "thinking": "hm"},
+                                   {"type": "tool_use", "id": "x1", "name": "Bash", "input": {}},
+                                   {"type": "tool_use", "id": "x2", "name": "Bash", "input": {}}])]
+    turn = T.parse_jsonl(_write(recs, "W.jsonl"))["turns"][0]
+    assert turn["tokens"] == {"in": 2, "out": 611, "cache_w": 29393, "cache_r": 17138}
+
+
 def test_turn_without_usage_reports_no_tokens():
     turn = T.parse_jsonl(_write(FIXTURE))["turns"][0]
     assert turn.get("tokens") is None

@@ -895,6 +895,8 @@ class Job:
         # None until a message actually reports usage, so a stream that never did
         # leaves the columns NULL — unknown rather than free.
         self.tokens: dict | None = None
+        self.msg_usage: dict = {}         # message id -> its usage, until a result covers it
+        self.result_tokens: dict | None = None   # the results' exact sums so far
         self.cwd: str | None = None       # where claude was spawned (set by _run_streaming)
         # The MCP server to switch on for this turn whatever the session's toggles
         # say (a Rivendell newspaper's `rivendell`), and argv extras for the child
@@ -2308,15 +2310,40 @@ _USAGE_KEYS = (("in", "input_tokens"), ("out", "output_tokens"),
                ("cache_r", "cache_read_input_tokens"))
 
 
-def _add_usage(job: "Job", usage: dict) -> None:
+def _add_usage(job: "Job", usage: dict, msg_id: "str | None" = None) -> None:
     """Add one message's usage to the turn's running total. Summed, not
     last-wins: the last message's figure is how full the window was, the sum is
-    what the turn spent. Both are wanted, for different readouts."""
+    what the turn spent. Both are wanted, for different readouts.
+
+    Counted once per message id: the CLI emits one `assistant` event per content
+    block, each repeating its message's usage, so summing events multiplied the
+    cache reads by the block count. That usage is also the message's as it
+    started, so output reads near zero here; each `result` brings the exact
+    figures for the requests it covers (_add_result_usage)."""
     if not isinstance(usage, dict) or not any(usage.get(k) for _, k in _USAGE_KEYS):
         return
-    acc = job.tokens or {key: 0 for key, _ in _USAGE_KEYS}
-    for key, src in _USAGE_KEYS:
-        acc[key] += usage.get(src) or 0
+    job.msg_usage[msg_id or f"#{len(job.msg_usage)}"] = usage
+    _sum_usage(job)
+
+
+def _add_result_usage(job: "Job", usage) -> None:
+    """A `result`'s usage: exact, and per query (a woken turn's second result
+    covers only its own requests, checked against the CLI 2026-11-08), so it adds
+    to the turn and replaces the estimate of the messages it covers. Main thread
+    only: helpers' spend is in their own transcripts (bridge/meter.py)."""
+    if not isinstance(usage, dict) or not any(usage.get(k) for _, k in _USAGE_KEYS):
+        return
+    base = job.result_tokens or {key: 0 for key, _ in _USAGE_KEYS}
+    job.result_tokens = {key: base[key] + (usage.get(src) or 0) for key, src in _USAGE_KEYS}
+    job.msg_usage.clear()
+    _sum_usage(job)
+
+
+def _sum_usage(job: "Job") -> None:
+    acc = dict(job.result_tokens or {key: 0 for key, _ in _USAGE_KEYS})
+    for u in job.msg_usage.values():
+        for key, src in _USAGE_KEYS:
+            acc[key] += u.get(src) or 0
     job.tokens = acc
     # Flushed per message, not only in the turn's finally: SPEND polls while the
     # turn runs, and a turn accounted only once it's over reads as "unknown" for
@@ -2486,7 +2513,7 @@ def _handle_event(job: Job, d: dict):
         ctx = _ctx_of(usage)
         if ctx:
             job.ctx_tokens = ctx      # last one wins; persisted at turn end
-        _add_usage(job, usage)        # and the running total; also at turn end
+        _add_usage(job, usage, d.get("message", {}).get("id"))   # and the running total; also at turn end
         for b in d.get("message", {}).get("content", []):
             if not isinstance(b, dict):
                 continue
@@ -2614,6 +2641,7 @@ def _handle_event(job: Job, d: dict):
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
+        _add_result_usage(job, d.get("usage"))
         if d.get("session_id"):
             job.session_id = d["session_id"]
         # An interrupted turn may report is_error; treat it as a clean stop.
