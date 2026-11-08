@@ -5,7 +5,7 @@ import type { Turn } from "../../chat";
  *  viewport thumb. Drag it or click the track to scroll. Checkpoint ticks used
  *  to live here too — a rect read per mark on every content resize, which is
  *  every frame while streaming or scrolling through unseen history. The right
- *  rail's TURNS tab (TurnsPanel) is the jump list now. */
+ *  rail's SESSION tab (SessionPanel) is the jump list now. */
 export function ScrollRail({
   turns, scrollRef,
 }: {

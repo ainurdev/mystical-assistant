@@ -81,6 +81,7 @@ PLACES = {
     "settings:integrations": "Rivendell, Claude Design",
     "settings:system": "the bridge itself, updates",
     "settings:move": "export and import to another machine",
+    "rail:session": "the session's turns, path, window, time and tokens",
     "rail:files": "the session's changed files",
     "rail:git": "branches, push and pull",
     "rail:rivendell": "Rivendell tasks and jobs",

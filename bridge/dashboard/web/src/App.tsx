@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Palette, Bookmark,
-  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Scale, Users,
+  Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
 } from "lucide-react";
 import {
   api,
@@ -109,8 +109,7 @@ import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
-import { stepRow, TurnsPanel } from "./components/hud/TurnsPanel";
-import { FlowPanel } from "./components/hud/FlowPanel";
+import { SessionPanel, stepRow } from "./components/hud/SessionPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
 import { BackPill, TeamBar } from "./components/TeamBar";
 import { ProjectPick } from "./components/ProjectPick";
@@ -1074,7 +1073,7 @@ export function App() {
     }
   }, [loadOlder]);
 
-  // ⌥↑ / ⌥↓: the previous / next of your turns, the TURNS tab open or not. A
+  // ⌥↑ / ⌥↓: the previous / next of your turns, the SESSION tab open or not. A
   // turn you're halfway down takes you back to its own start first. Not inside
   // a text field, where the same keys move the caret a paragraph.
   useEffect(() => {
@@ -1557,7 +1556,8 @@ export function App() {
   // that lives there (bridge/whatsnew.py PLACES). Settings shuts so the rail shows.
   useEffect(() => {
     const show = (e: Event) => {
-      const tab = (e as CustomEvent<unknown>).detail;
+      const was = (e as CustomEvent<unknown>).detail;
+      const tab = was === "turns" || was === "flow" ? "session" : was;   // the two tabs SESSION took in
       if (!RIGHT_TABS.includes(tab as RightTab)) return;
       setSettingsOpen(false);
       patchSettings({ rightTab: tab as RightTab, rightOpen: true });
@@ -2552,11 +2552,13 @@ export function App() {
       hint: "the time, the sky and what shipped today",
       render: () => <HomePanel clock={tele.clock} weather={weather} sky={homeSky} onClock={() => setAlmanacAsk((n) => n + 1)} onOpen={(id) => { openSession(id); toChat(); }} />,
     },
+    // TURNS and FLOW in one: the session's turns, path, window, time and tokens.
     {
-      id: "turns", short: "TURNS", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
+      id: "session", short: "SESSION", label: "Session", icon: <Activity {...RAIL} />, ownScroll: true, group: "session",
       ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
       render: () => (
-        <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+        <SessionPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+          max={selected?.ctx_window ?? 1_000_000}
           onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
           onCopy={(text) => {
             try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
@@ -2567,15 +2569,11 @@ export function App() {
             setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text);
             toChat();
             window.dispatchEvent(new Event("ask:focus"));
-          }} />
+          }}
+          // Behind a running turn it queues (send), so it never cuts one short.
+          onCompact={() => void send("/compact", [], { force: true, noPath: true })} />
       ),
     },
-    // Hidden while SKILL PATHS is off — no path is being set.
-    ...(ai.router ? [{
-      id: "flow", short: "FLOW", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
-      hint: "the path this session is on",
-      render: () => <FlowPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} ctxTokens={contextTokens} />,
-    }] : []),
     {
       id: "files", short: "FILES", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
