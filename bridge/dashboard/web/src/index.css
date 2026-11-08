@@ -5049,7 +5049,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    small AUTO), filled once picked; the others are glyphs named in their tooltips. */
 .pb-kind, .pb-kg { appearance: none; flex: none; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer;
                    font-family: inherit; color: var(--txl); }
-.pb-kg { width: 22px; display: grid; place-items: center; }
+/* 22px, giving way beside the widest lit kind (Design AUTO), so all five stay inside the fixed 188 (the mockup's) */
+.pb-kg { flex: 0 1 22px; min-width: 0; display: grid; place-items: center; }
 .pb-kg:hover:not(:disabled) { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .pb-kind { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 6px; font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
            color: color-mix(in oklab, var(--acc) 70%, var(--txb)); background: color-mix(in oklab, var(--acc) 13%, transparent); }
