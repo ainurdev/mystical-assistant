@@ -4,12 +4,14 @@ import { fmtReset, projectGivenName, projectLabelsFor, projectName, setProjectNa
 // Wall time, the way the answer meta prints it: seconds under a minute, else minutes to a tenth.
 console.assert(wall(45.4) === "45S" && wall(362.3) === "6.0M" && wall(59.6) === "60S", `wall: ${wall(45.4)} ${wall(362.3)} ${wall(59.6)}`);
 
+// Each time sits 5 s past its edge: fmtReset floors, so one exactly on an edge reads a
+// unit low once a millisecond passes before the check (it did, with the suite running).
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
 const cases: [string, string][] = [
   [at(2 * 3_600_000 + 14 * 60_000 + 5_000), "2H14M"],
-  [at(59 * 60_000), "0H59M"],
+  [at(59 * 60_000 + 5_000), "0H59M"],
   [at(128 * 3_600_000 + 3 * 60_000), "5D08H"],   // weekly window, not "128H03M"
-  [at(24 * 3_600_000), "1D00H"],
+  [at(24 * 3_600_000 + 5_000), "1D00H"],
   [at(-5_000), "now"],
 ];
 for (const [iso, want] of cases) {
@@ -19,8 +21,8 @@ for (const [iso, want] of cases) {
 console.assert(fmtReset(null) === "—", "null → —");
 
 const both = windowLabels({
-  five_hour: { percent: 5, resets_at: at(31 * 60_000) },
-  seven_day: { percent: 30, resets_at: at(128 * 3_600_000) },
+  five_hour: { percent: 5, resets_at: at(31 * 60_000 + 5_000) },
+  seven_day: { percent: 30, resets_at: at(128 * 3_600_000 + 5_000) },
 });
 console.assert(both.join(" · ") === "5H 95% 0H31M · WK 70% 5D08H", `windows → ${both}`);
 console.assert(windowLabels({ five_hour: null, seven_day: null }).length === 0, "no meter → no labels");
