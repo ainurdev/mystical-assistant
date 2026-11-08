@@ -626,10 +626,10 @@ export function Composer({
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
   }, [openDrop]);
-  const { compact, lead, composer, sendKey } = useChatChrome();
+  const { compact, lead, sendKey } = useChatChrome();
   const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
-  // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
-  const shelled = compact && composer !== "classic";
+  // COMPACT wears the TABS shell; DEFAULT keeps the old markup.
+  const shelled = compact;
   // MODEL rows grouped by usage pool, each with what it has left on the login
   // the session is spending, whichever account that is.
   const modelOpts = useMemo(
@@ -1677,43 +1677,11 @@ export function Composer({
       </>)}
     </div>
   );
-  // CONSOLE and CLASSIC set the editor in a row, so the caption hangs under it in a column of its own.
+  // DEFAULT sets the editor in a row, so the caption hangs under it in a column of its own.
   const editorCol = <div className="pb-ed">{editor}{routeLine}</div>;
-  // While a route shows, the caption says what the keys do, in CONSOLE's hint's stead
-  // (kept in place, unseen, so the editor's width doesn't move).
-  const hint = (
-    <span className="pb-hint" aria-hidden style={capt ? { visibility: "hidden" } : undefined}>
-      {sendKey === "ctrl-enter" ? `⌘↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ↵ newline` : `↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ⇧↵ newline`}
-    </span>
-  );
-
-  // The two new COMPACT composers (CLASSIC is the old markup further down).
-  // The lead (tile, title, project, branch, PR, running app) arrives flattened
-  // from Terminal; .pb-lead lays it out per shell in index.css.
+  // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
+  // arrives flattened from Terminal; .pb-lead lays it out in index.css.
   const shell =
-    composer === "console" ? (
-      <>
-        {dock}
-        {embedNote}
-        {attachRow}
-        <div {...boxProps} className="cmdbox pb-cmd">
-          {pfx}
-          {popovers}
-          {editorCol}
-          {hint}
-          <div className="pb-acts">{actions(true)}</div>
-        </div>
-        <div className="pb-place pb-lead">{lead}</div>
-        {ledger("pb-activity")}
-        <div className="pb-set">
-          {ctxBlock}
-          {runTrigger}
-          {settingsChips(false)}
-          <span className="sp" />
-          {plusBtn}
-        </div>
-      </>
-    ) : (
       <>
         <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
         {dock}
@@ -1727,14 +1695,13 @@ export function Composer({
               what keeps this footer on one line at 787px with both sidebars open. */}
           <div className="pb-foot"><div className="pb-l">{plusBtn}{settingsChips(false)}</div><div className="pb-r">{runTrigger}{actions(!running)}</div></div>
         </div>
-      </>
-    );
+      </>;
 
   return (
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
-    <div className="composer" data-pb={shelled ? composer : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+    <div className="composer" data-pb={shelled ? "tabs" : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
       {openDrop && <div onClick={() => setOpenDrop("")}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}

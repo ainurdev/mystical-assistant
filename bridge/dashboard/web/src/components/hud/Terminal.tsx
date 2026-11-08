@@ -344,7 +344,7 @@ export function Terminal({
   const compact = hud?.layout === "compact";
   // COMPACT's TABS and CONSOLE composers lay the nameplate's pieces out
   // themselves; CLASSIC keeps it whole, as the row it always was.
-  const flat = compact && (hud?.composer ?? "tabs") !== "classic";
+  const flat = compact;
   // A fresh session's whole screen is a drop target: a file dragged anywhere on
   // it lands where a drop on the prompt box would. Files only — a row or text
   // drag passes through untouched.
@@ -777,7 +777,7 @@ export function Terminal({
         <>
           {body}
           {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
-          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, composer: hud?.composer ?? "tabs", sendKey: hud?.sendKey ?? "enter" }}>
+          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>
         </>

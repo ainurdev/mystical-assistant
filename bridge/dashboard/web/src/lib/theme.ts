@@ -15,6 +15,7 @@
 // `data-theme` names the colouring and `data-fam` the family; CRT effects
 // (scanlines / sweep / glow) belong to AURORA and default on when you pick it.
 
+import type { KindId, KindRun } from "./kinds";
 import { toIndicator, type Indicator } from "./indicator";
 import { toIntro, type Intro } from "./intro";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
@@ -392,8 +393,8 @@ export interface HudSettings {
   // right, replies capped short of the far edge, the header shrunk to a pill of
   // readouts, and model/permission/effort folded into one popover over SEND.
   layout: ChatLayout;
-  // COMPACT's composer shell (COMPOSER_STYLES).
-  composer: ComposerStyle;
+  // Per-kind overrides of the prompt box's run knobs (lib/kinds); a kind not here uses its own defaults.
+  kindPresets?: Partial<Record<KindId, Partial<KindRun>>>;
   // Which key sends from the composer. "enter": Enter sends, Shift+Enter is a
   // newline. "ctrl-enter": Enter is a newline, Ctrl/Cmd+Enter sends.
   sendKey: SendKey;
@@ -408,28 +409,6 @@ export type ChatLayout = "default" | "compact";
 export type SendKey = "enter" | "ctrl-enter";
 
 export const CHAT_LAYOUTS: ChatLayout[] = ["default", "compact"];
-
-/** How COMPACT's composer carries the session (.mystical/design-drafts/
- *  prompt-box/SPEC.md). TABS: the title, branch, PR, running app and context
- *  meter as folder tabs on the box's top edge. CONSOLE: a bare command line,
- *  a place line and a settings line under it. CLASSIC: the composer as it
- *  was, the nameplate sharing one row with the tools. TABS is the default: it
- *  is the shape every chat box already has, so it costs no learning, keeps the
- *  text full width and SEND labelled, and holds its height from session to
- *  session. A STUB layout (the session as a ticket stub down the box's left)
- *  was tried and dropped: its height followed each session's content, so the
- *  box jumped on every switch. A stored "stub" falls back to TABS. DEFAULT
- *  keeps its nameplate header and never reads this. */
-export const COMPOSER_STYLES = ["tabs", "console", "classic"] as const;
-export type ComposerStyle = (typeof COMPOSER_STYLES)[number];
-
-/** `?composer=console` on the URL, like `?layout=`. */
-function urlComposer(): ComposerStyle | null {
-  try {
-    const v = new URLSearchParams(window.location.search).get("composer");
-    return COMPOSER_STYLES.includes(v as ComposerStyle) ? (v as ComposerStyle) : null;
-  } catch { return null; }
-}
 
 /** `?layout=compact` (or `default`) on the dashboard URL sets the layout and
  *  the setting remembers it — a link can switch a browser you are not sat at. */
@@ -449,7 +428,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, chatBg: "none",
-  layout: "default", composer: "tabs", sendKey: "enter", clocks: [],
+  layout: "default", kindPresets: {}, sendKey: "enter", clocks: [],
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -556,7 +535,7 @@ export function loadSettings(): HudSettings {
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         clocks: toClocks(p.clocks),
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
-        composer: urlComposer() ?? (COMPOSER_STYLES.includes(p.composer as ComposerStyle) ? (p.composer as ComposerStyle) : "tabs"),
+        kindPresets: p.kindPresets && typeof p.kindPresets === "object" ? p.kindPresets : {},
       };
     }
   } catch {
@@ -565,11 +544,11 @@ export function loadSettings(): HudSettings {
   // Migrate the old single-key theme if present.
   try {
     const old = localStorage.getItem("hud-theme");
-    if (old) return { ...DEFAULTS, theme: toTheme(old), layout: urlLayout() ?? "default", composer: urlComposer() ?? "tabs" };
+    if (old) return { ...DEFAULTS, theme: toTheme(old), layout: urlLayout() ?? "default" };
   } catch {
     /* ignore */
   }
-  return { ...DEFAULTS, layout: urlLayout() ?? "default", composer: urlComposer() ?? "tabs" };
+  return { ...DEFAULTS, layout: urlLayout() ?? "default" };
 }
 
 export function saveSettings(s: HudSettings): void {
