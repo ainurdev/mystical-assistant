@@ -537,9 +537,10 @@ def test_branch_prs_reads_the_repo_twice_and_never_pings(monkeypatch):
     monkeypatch.setattr(prstatus, "_pings", lambda *a: pytest.fail("branch_prs must not ping"))
     prs = prstatus.branch_prs("/r")
     assert prs == {"feat/x": {"number": 9, "state": "OPEN", "status": "failing", "sha": "aaa", "failed": 1,
-                              "url": "https://github.com/acme/rivendell/pull/9"},
+                              "url": "https://github.com/acme/rivendell/pull/9", "base": "main",
+                              "title": "Inbox: group action items by client"},
                    "feat/done": {"number": 8, "state": "MERGED", "status": "merged", "sha": "bbb", "failed": 0,
-                                 "url": "https://github.com/acme/rivendell/pull/8"}}
+                                 "url": "https://github.com/acme/rivendell/pull/8", "base": "", "title": ""}}
     assert prstatus.branch_prs("/r") == prs and len(calls) == 2      # cached
 
 

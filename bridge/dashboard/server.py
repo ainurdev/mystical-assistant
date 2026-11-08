@@ -966,11 +966,13 @@ class Handler(BaseHTTPRequestHandler):
                                "current": git.current_branch(abs_p),
                                "default": git.default_branch(abs_p)})
         if path == "/local/git/branchstatus":
-            # The BRANCHES rail tab: every branch and checkout, status only.
+            # The BRANCHES rail tab: every branch and checkout against where it goes.
+            # A PR's base (cached, no gh here) sets that, and your Target ▸ pick beats it.
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json(git.branch_status(abs_p))
+            picks = project_config.branch_targets(browser.rel(git.main_checkout(abs_p) or abs_p))
+            return self._json(git.branch_status(abs_p, {**prstatus.cached_bases(abs_p), **picks}))
         if path == "/local/github/prs":
             # The BRANCHES tab's PR chips: one cached read per repo, no pings.
             abs_p = _abs_project(qs.get("project", [None])[0])
@@ -2188,6 +2190,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.checkout(abs_p, (body.get("ref") or "").strip())
             return self._json({"ok": ok, "output": output})
+        if path == "/local/git/branch/target":
+            # Target ▸: the branch this one goes into ("" none, null back to the guess),
+            # kept per repo, so every worktree of it agrees.
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            branch, target = (body.get("branch") or "").strip(), body.get("target")
+            names = set(git.branches(abs_p))
+            if branch not in names or (target is not None and not isinstance(target, str)):
+                return self._json({"error": "unknown branch"}, 400)
+            target = target.strip() if isinstance(target, str) else None
+            if target and (target == branch or target not in names):
+                return self._json({"error": "unknown target"}, 400)
+            rel = browser.rel(git.main_checkout(abs_p) or abs_p)
+            return self._json({"targets": project_config.set_branch_target(rel, branch, target)})
         if path == "/local/git/branch/delete":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
@@ -2216,10 +2233,14 @@ class Handler(BaseHTTPRequestHandler):
             wt = os.path.realpath((body.get("path") or "").strip())
             if not browser.within_base(wt):
                 return self._json({"error": "invalid path"}, 400)
+            if store.running_in(wt):
+                return self._json({"ok": False, "output": "A session is working in that worktree, so it stays."})
+            # archive: its git-ignored scratch (.mystical, .superpowers) moves to the repo's archive first
+            kept = git.archive_scratch(abs_p, wt) if body.get("archive") else ""
             ok, output = git.worktree_remove(abs_p, wt)
             if ok and body.get("delete_branch") and body.get("branch"):
                 git.delete_branch(abs_p, (body.get("branch") or "").strip(), force=True)
-            return self._json({"ok": ok, "output": output})
+            return self._json({"ok": ok, "output": output, "kept": kept})
         if path == "/local/github/pr":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

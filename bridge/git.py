@@ -604,13 +604,13 @@ def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-def merge_check(cwd: str) -> "list[str] | None":
-    """The files merging the upstream into HEAD would clash in, from a dry run:
-    `git merge-tree --write-tree` merges in memory and touches no file, index or
-    ref (the merged objects it writes are left for gc). [] = merges cleanly;
-    None = couldn't tell (git before 2.38, no upstream)."""
+def merge_check(cwd: str, ours: str = "HEAD", theirs: str = "@{u}") -> "list[str] | None":
+    """The files merging `theirs` (the upstream) into `ours` (HEAD) would clash in,
+    from a dry run: `git merge-tree --write-tree` merges in memory and touches no
+    file, index or ref (the merged objects it writes are left for gc). [] = merges
+    cleanly; None = couldn't tell (git before 2.38, no upstream)."""
     rc, out, _ = _run(cwd, "merge-tree", "-z", "--write-tree", "--name-only", "--no-messages",
-                      "HEAD", "@{u}", timeout=20)
+                      "--end-of-options", ours, theirs, timeout=20)
     return [p for p in out.split("\0")[1:] if p] if rc in (0, 1) else None
 
 
@@ -859,34 +859,69 @@ def merged_branches(cwd: str, base: str = "") -> list[str]:
     return [b for b in (x.strip() for x in out.splitlines()) if b and b != base and not b.startswith("(")]
 
 
-def _left_right(cwd: str, base: str, ref: str) -> tuple[int, int]:
-    """(ahead, behind) of `ref` against `base`; (0, 0) when git can't say."""
+def _left_right(cwd: str, base: str, ref: str) -> "tuple[int, int] | None":
+    """(ahead, behind) of `ref` against `base`; None when git can't say."""
     rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{ref}")
     parts = out.split() if rc == 0 else []
-    return (int(parts[1]), int(parts[0])) if len(parts) == 2 else (0, 0)
+    return (int(parts[1]), int(parts[0])) if len(parts) == 2 else None
 
 
-def branch_status(cwd: str) -> dict:
-    """Every local branch, and every detached checkout, with what it has against
-    the default branch: the dashboard's BRANCHES tab in one call.
+_CREATED = re.compile(r"branch: Created from (.+)$")
+
+
+def _made_from(cwd: str, name: str, local: set, remote: set) -> tuple[str, bool]:
+    """Where `name` was made from, read off its reflog's first entry ("branch:
+    Created from origin/staging"), as a ref this repo has: the local branch, else
+    origin's copy. A gone remote's name ("nr/release/x") falls back to origin's.
+    "" when it says HEAD (which names no branch) or the reflog expired (90 days).
+    Also whether the branch ever moved after it was made: a worktree opened a
+    minute ago sits on its start commit and looks merged, but it holds no work
+    (True when the reflog can't say)."""
+    rc, out, _ = _run(cwd, "reflog", "show", "--format=%gs", f"refs/heads/{name}", "--")
+    lines = [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else []
+    m = _CREATED.match(lines[-1].strip()) if lines else None
+    src = m.group(1).strip() if m else ""
+    for pre in ("refs/heads/", "refs/remotes/"):
+        src = src[len(pre):] if src.startswith(pre) else src
+    cands = [c for c in (src, src.split("/", 1)[1] if "/" in src else "") if c and c != "HEAD"]
+    hit = next((c for c in cands if c in local), "") or next(
+        (r for c in cands for r in (c, f"origin/{c}") if r in remote), "")
+    return ("" if hit == name else hit), (len(lines) != 1)
+
+
+def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
+    """Every local branch, and every detached checkout, with where it goes and what
+    it has against that: the dashboard's BRANCHES tab in one call.
+
+    Each branch goes into its own `target`: `targets` first (the route passes a
+    PR's base, then the user's pick, "" for none), else the branch it was made
+    from (its reflog), else the repo's base; the base itself goes nowhere. One
+    base for all was wrong outside this repo: efas features read "62 ahead of
+    main" while their PRs go to staging, where they were 3 ahead (2026-11-08).
 
     A row: `name` ("" for a detached checkout, which carries `head`), `at` (last
     commit, epoch s), `subject` (its first line), `sha` (the branch's tip, which
-    the tab matches against a merged PR's head), `ahead`/`behind` against the base, `upstream` with
-    `unpushed` (its commits the remote lacks; None when it was never pushed or
-    its remote branch is gone), `worktree` (the checkout holding it, else None),
-    `main` (that checkout is the repo folder itself), `dirty` (uncommitted files
-    there, None without a checkout) and `merged` (contained in the base).
+    the tab matches against a merged PR's head), `target`, `ahead`/`behind`
+    against it, `merged` (contained in it), `worked` (it moved after it was
+    made), `clash` (the files a merge into its target would clash in, from a dry
+    run: [] = clean, None = not asked or git can't say), `upstream` with
+    `unpushed` (its commits the remote lacks; None when it was never pushed or its
+    remote branch is gone), `worktree` (the checkout holding it, else None),
+    `main` (that checkout is the repo folder itself) and `dirty` (uncommitted
+    files there, None without a checkout).
 
-    One `for-each-ref` for the names, dates and upstreams, then a rev-list per
-    branch and a status per checkout. ponytail: a repo with hundreds of
-    branches pays one git call each; fold them into one `rev-list` if that bites."""
+    One `for-each-ref` for the names, dates and upstreams, then a rev-list and a
+    reflog read per branch, a status per checkout, and a dry-run merge per branch
+    with work to land. ponytail: a repo with hundreds of branches pays a few git
+    calls each; fold them into one `rev-list` if that bites."""
     if not is_repo(cwd):
         return {"base": "", "branches": []}
     base = default_branch(cwd)
     trees = worktrees(cwd)
     held = {w["branch"]: w for w in trees if w["branch"]}
-    merged = set(merged_branches(cwd, base))
+    want = targets or {}
+    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+    remote = {r.strip() for r in out.splitlines() if r.strip()} if rc == 0 else set()
 
     def dirty(path: str) -> int:   # porcelain v2: "#" lines are the branch header
         return sum(1 for ln in (_porcelain(path) or "").splitlines() if ln and not ln.startswith("#"))
@@ -895,33 +930,51 @@ def branch_status(cwd: str) -> dict:
     fmt = ("%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
            "%09%(objectname)%09%(subject)")
     rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
+    lines = out.splitlines() if rc == 0 else []
+    local = {ln.split("\t", 1)[0] for ln in lines}
+
+    def known(t: str) -> str:      # a target as a ref git can read: local, else origin's copy
+        return t if t in local else f"origin/{t}" if f"origin/{t}" in remote else t if t in remote else ""
+
     rows: list[dict] = []
-    for line in out.splitlines() if rc == 0 else []:
+    dry = 12   # dry-run merges per read: the newest branches with work to land
+    for line in lines:
         name, at, up, track, sha, subject = (line.split("\t", 5) + [""] * 6)[:6]
         if not name:
             continue
         gone = track.strip() == "gone"
         m = re.search(r"ahead (\d+)", track)
-        ahead, behind = _left_right(cwd, base, name)
+        start, worked = _made_from(cwd, name, local, remote)
+        target = "" if name == base else known(want[name]) if name in want else start or base
+        if target == name:
+            target = ""
+        lr = _left_right(cwd, target, name) if target else None
+        ahead, behind = lr or (0, 0)
+        clash = None
+        if lr and ahead:
+            clash = [] if not behind else merge_check(cwd, target, name) if dry > 0 else None
+            dry -= 1 if behind else 0
         w = held.get(name)
         rows.append({
             "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
-            "ahead": ahead, "behind": behind,
+            "target": target, "ahead": ahead, "behind": behind,
+            "merged": bool(lr) and ahead == 0, "worked": worked, "clash": clash,
             "upstream": "" if gone else up,
             "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
             "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
-            "dirty": dirty(w["path"]) if w else None, "merged": name in merged,
+            "dirty": dirty(w["path"]) if w else None,
         })
     for w in trees:
         if not w["detached"]:
             continue
-        ahead, behind = _left_right(cwd, base, w["head"])
+        ahead, behind = _left_right(cwd, base, w["head"]) or (0, 0)
         rc, log, _ = _run(cwd, "log", "-1", "--format=%ct%x09%s", w["head"])
         at, subject = (log.strip().split("\t", 1) + [""])[:2] if rc == 0 else ("", "")
         rows.append({
             "name": "", "head": w["head"][:7], "at": int(at or 0), "subject": subject, "sha": w["head"],
-            "ahead": ahead, "behind": behind, "upstream": "", "unpushed": None,
-            "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]), "merged": False,
+            "target": base, "ahead": ahead, "behind": behind, "merged": False, "worked": True, "clash": None,
+            "upstream": "", "unpushed": None,
+            "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]),
         })
     return {"base": base, "branches": rows}
 
@@ -1098,6 +1151,28 @@ def worktree_remove(cwd: str, path: str, force: bool = True) -> tuple[bool, str]
     args = ["worktree", "remove"] + (["--force"] if force else []) + ["--end-of-options", path]
     rc, out, err = _run(cwd, *args, timeout=20)
     return rc == 0, (out + err).strip()
+
+
+SCRATCH = (".mystical", ".superpowers")   # git-ignored, so a forced remove would delete them
+
+
+def archive_scratch(cwd: str, path: str) -> str:
+    """Move a worktree's git-ignored scratch (screenshots, probe kits, a plan's
+    ledger) into the repo folder's .mystical/archive/<worktree>/ before the
+    worktree goes, as the user's own clean-ups do by hand. Returns where it went,
+    "" when there was nothing to keep. A clash with an older archive gets -2, -3."""
+    found = [d for d in SCRATCH if os.path.isdir(os.path.join(path, d))]
+    main = next((w["path"] for w in worktrees(cwd) if w["is_main"]), "")
+    if not found or not main or os.path.realpath(main) == os.path.realpath(path):
+        return ""
+    dest = base = os.path.join(main, ".mystical", "archive", os.path.basename(path.rstrip("/")))
+    n = 2
+    while os.path.exists(dest):
+        dest, n = f"{base}-{n}", n + 1
+    os.makedirs(dest)
+    for d in found:
+        shutil.move(os.path.join(path, d), os.path.join(dest, d))
+    return dest
 
 
 def diff_ref(cwd: str, base: str, head: str, path: str) -> str:

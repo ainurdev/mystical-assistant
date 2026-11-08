@@ -464,7 +464,9 @@ def branch_prs(repo_dir: str) -> dict:
     still doesn't ping. `sha` lets the tab tell a branch that is done (its PR
     merged at its tip) from one that moved on after an older PR merged.
     Forks' same-named branches are skipped, as gh pr view skips them.
-    {branch: {"number", "state", "status", "sha", "failed", "url"}}; {} when gh can't say.
+    {branch: {"number", "state", "status", "sha", "failed", "url", "base", "title"}}; {} when
+    gh can't say. `base` is where the PR goes, which makes it the branch's target
+    (cached_bases); `title` names a branch called only "EFA-300".
     shortcut: the newest 100 PRs only; a branch whose PR is older shows no chip."""
     slug = github.remote_slug(repo_dir)
     if not slug:
@@ -475,10 +477,10 @@ def branch_prs(repo_dir: str) -> dict:
             return hit["prs"]
         prs, ttl = {}, ERR_TTL
         rc, out, _ = _gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json",
-                         "number,state,url,headRefName,headRefOid,isCrossRepository")
+                         "number,state,url,headRefName,headRefOid,isCrossRepository,baseRefName,title")
         rc2, out2, _ = _gh("pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json",
                            "number,state,url,headRefName,headRefOid,isCrossRepository,isDraft,"
-                           "mergeable,statusCheckRollup,reviewDecision,reviewRequests")
+                           "mergeable,statusCheckRollup,reviewDecision,reviewRequests,baseRefName,title")
         if rc == 0 and rc2 == 0:
             try:
                 live = {r["number"]: r for r in json.loads(out2)}
@@ -487,9 +489,17 @@ def branch_prs(repo_dir: str) -> dict:
                     if not b or b in prs or raw.get("isCrossRepository"):
                         continue
                     pr = normalize(live.get(raw["number"], raw))
-                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed", "url")}
+                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed", "url", "base", "title")}
                 ttl = LIST_TTL
             except (ValueError, KeyError, TypeError):
                 prs = {}
         _lists[repo_dir] = {"at": time.time(), "ttl": ttl, "prs": prs}
         return prs
+
+
+def cached_bases(repo_dir: str) -> dict:
+    """{branch: its PR's base} from the last branch_prs read, without calling gh:
+    git.branch_status measures each branch against where its PR goes. {} until
+    the tab has read the PRs once; the tab reads the branches again then."""
+    hit = _lists.get(repo_dir)
+    return {b: p["base"] for b, p in (hit["prs"] if hit else {}).items() if p.get("base")}

@@ -96,7 +96,7 @@ def test_branch_status_endpoint(monkeypatch):
     name, d = _mkproject("proj_branches")
     h, box = _handler()
     from bridge import git
-    monkeypatch.setattr(git, "branch_status", lambda cwd: {"base": "main", "branches": [], "cwd": cwd})
+    monkeypatch.setattr(git, "branch_status", lambda cwd, targets=None: {"base": "main", "branches": [], "cwd": cwd})
     h._get_api("/local/git/branchstatus", {"project": [name]})
     assert box["code"] == 200 and box["obj"]["base"] == "main"
     assert os.path.realpath(box["obj"]["cwd"]) == os.path.realpath(d)

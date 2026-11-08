@@ -67,6 +67,36 @@ def _set_field(project: str, branch: "str | None", field: str, value: str) -> "s
     return value or None
 
 
+def branch_targets(project: str) -> dict:
+    """The BRANCHES tab's Target ▸ picks: {branch: the branch it goes into}, ""
+    for none (a long-lived branch like staging that nothing should land into
+    main by itself). Branches with no pick follow their PR or where they were made."""
+    t = get(project).get("branch_targets")
+    return {k: v for k, v in t.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(t, dict) else {}
+
+
+def set_branch_target(project: str, branch: str, target: "str | None") -> dict:
+    """Pin `branch` to `target` ("" = none); None drops the pick. Returns them all."""
+    with _lock:
+        data = _load()
+        entry = data.get(project, {})
+        picks = entry.get("branch_targets") if isinstance(entry.get("branch_targets"), dict) else {}
+        if target is None:
+            picks.pop(branch, None)
+        else:
+            picks[branch] = target
+        if picks:
+            entry["branch_targets"] = picks
+        else:
+            entry.pop("branch_targets", None)
+        if entry:
+            data[project] = entry
+        else:
+            data.pop(project, None)
+        _save(data)
+    return dict(picks)
+
+
 def run_cmd(project: str, branch: "str | None" = None) -> "str | None":
     """The configured dev/run command for a project (optionally branch), or None."""
     return _get_field(project, branch, "run_cmd")

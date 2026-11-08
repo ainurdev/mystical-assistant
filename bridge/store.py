@@ -1550,6 +1550,18 @@ def running_session_ids(chat_id: int) -> list[str]:
     return [r["session_id"] for r in rows]
 
 
+def running_in(path: str) -> bool:
+    """Whether a running turn works inside `path`: in its session's checkout, or in
+    the worktree its shell moved into (work_cwd). The dashboard won't remove a
+    worktree out from under one."""
+    want = os.path.realpath(path).rstrip(os.sep) + os.sep
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT s.cwd, s.work_cwd FROM turns t JOIN sessions s ON s.id=t.session_id "
+                         "WHERE t.status='running'").fetchall()
+    return any((os.path.realpath(p).rstrip(os.sep) + os.sep).startswith(want)
+               for r in rows for p in (r["cwd"], r["work_cwd"]) if p)
+
+
 def claim_orphaned_turns() -> list[dict]:
     """Turns left 'running' at startup were orphaned by a restart: a run whose
     Claude child died while the bridge was going down skips finish_turn
