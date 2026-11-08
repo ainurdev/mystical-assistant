@@ -793,7 +793,7 @@ export function Composer({
   const slashOn = slash !== null;
   // A box that leads with a /word needs the list too, to draw it as a command
   // (MarkdownInput): a draft can come back with one already in it.
-  const leadsSlash = text.startsWith("/");
+  const leadsSlash = text.trimStart().startsWith("/");
   // The list is Claude's (.claude/skills, commands, plugins, CLI builtins): an
   // agent session's / would run none of them, so it gets no list.
   const onAgent = !!agentPick;

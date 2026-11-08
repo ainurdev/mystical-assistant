@@ -1801,7 +1801,7 @@ export function App() {
     try {
       await startIn(project, h.text,
                     { images: h.images, title: h.title ?? undefined, force: true,
-                      cwd: h.cwd ?? undefined });
+                      cwd: h.cwd ?? undefined, kind: h.kind });
     } finally {
       setHeldBusy(false);
     }
@@ -1930,7 +1930,7 @@ export function App() {
 
   async function startIn(
     project: string, prompt: string,
-    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
+    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string; kind?: HeldPrompt["kind"] },
   ): Promise<boolean> {
     openBlank(project);
     try {
@@ -1943,7 +1943,8 @@ export function App() {
       const picks = runPicks(session, { model: settings.model, perm: settings.perm, effort: settings.effort },
                              profiles?.profiles.find((p) => p.id === session.profile_id) ?? null);
       return await send(prompt, opts?.images ?? [],
-                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude", picks });
+                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude",
+                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, pickOnce: true } : { picks }) });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);

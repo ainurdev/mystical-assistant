@@ -104,7 +104,7 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
     case "design":
       return [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
     case "build":
-      return [{ text: c.pack ? "grill, then build here" : "builds here" }, uncommitted(g) ?? { text: "working tree clean" }];
+      return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...(g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [])];
     case "fix":
       return c.lastCheck
         ? [{ text: `last check ${c.lastCheck.line}${c.lastCheck.at ? ` · ${hhmm(c.lastCheck.at)}` : ""}`, tone: c.lastCheck.ok ? undefined : "err" }]
