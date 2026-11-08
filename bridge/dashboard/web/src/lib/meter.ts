@@ -91,13 +91,16 @@ export const KIND: Record<string, string> = {
   helpers: "Helpers", you: "You", summary: "Summary", web: "Web", search: "Search", mcp: "MCP tools", other: "Other",
 };
 
-/** ON WHAT's rows, biggest first: the top `n`, the rest folded into one "other". */
+/** ON WHAT's rows, biggest first: the top `n` kinds, then one "other" holding the
+ *  rest and the meter's own "other", so it is always the last row and only one. */
 export function kindRows(kinds: Record<string, number>, n = 5): { kind: string; tokens: number; folded: string[] }[] {
   const all = Object.entries(kinds).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  if (all.length <= n + 1) return all.map(([kind, tokens]) => ({ kind, tokens, folded: [] }));
-  const rest = all.slice(n);
-  return [...all.slice(0, n).map(([kind, tokens]) => ({ kind, tokens, folded: [] as string[] })),
-    { kind: "other", tokens: rest.reduce((s, [, v]) => s + v, 0), folded: rest.map(([k]) => k) }];
+  const named = all.filter(([k]) => k !== "other");
+  const keep = named.length <= n + 1 && !all.some(([k]) => k === "other") ? named : named.slice(0, n);
+  const rest = all.filter(([k]) => !keep.some(([q]) => q === k));
+  const rows = keep.map(([kind, tokens]) => ({ kind, tokens, folded: [] as string[] }));
+  if (rest.length) rows.push({ kind: "other", tokens: rest.reduce((s, [, v]) => s + v, 0), folded: rest.map(([k]) => k) });
+  return rows;
 }
 
 /** Seconds per who, from the strip (the meter sends them summed; a live turn's

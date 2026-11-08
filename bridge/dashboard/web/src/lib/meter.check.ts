@@ -39,6 +39,9 @@ ok(bands([{ prompt: "hi", started: 5 }], [{ n: 1, started: 5 }, { n: 2, started:
 const rows = kindRows({ claude: 76, startup: 66, commands: 42, files: 33, skills: 7, mcp: 1, other: 2 });
 ok(rows.length === 6 && rows[5].kind === "other" && rows[5].tokens === 3 && rows[5].folded.join() === "other,mcp", "past five kinds, the rest fold into other");
 ok(kindRows({ claude: 5, files: 1 }).length === 2, "few kinds are all listed");
+const big = kindRows({ other: 90, claude: 76, startup: 66, commands: 42, files: 33, skills: 7 });
+ok(big.filter((r) => r.kind === "other").length === 1 && big.at(-1)!.kind === "other" && big.at(-1)!.tokens === 90 && big.length === 6,
+  "a big 'other' of the meter's own still sits last, once, with the rest folded in");
 
 ok(timeOf(segs).you === 13 * 3600 && timeOf(segs).tools === 100, "time sums the strip");
 ok(toNow(segs, 99999 + 13 * 3600, true).at(-1)![1] === 99999 + 13 * 3600, "a live strip runs to now");
