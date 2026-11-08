@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users } from "lucide-react";
-import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
-import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
+import { Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, type LucideIcon } from "lucide-react";
+import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
+import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset, hhmm } from "../lib/surfaces";
@@ -69,15 +70,16 @@ const COMPACT_SUGGEST = 0.75;
 // as fast as a bar at a tenth of the width, and the width is the point — the
 // old full-bleed bar spent a whole row of the composer to render "1%".
 const CTX_SEGMENTS = 8;
+// The prompt box's kinds of work (lib/kinds), each with its glyph on the rail.
+const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
-// small pill after it (the run sheet's PROFILE, on the row the profile sets)
+// small pill after it (PRESET's PROFILE, on the row the profile sets)
 type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string; tone?: string; hint?: string; tag?: string };
 
-/** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
- *  layout's run popover, which lists the same models (with the same usage
- *  meters) and the same permission modes inline. */
+/** The rows of a picker menu: every chip dropdown's (Drop), PRESET's model
+ *  and mode selects among them, with the same usage meters on the models. */
 function MenuRows<T extends string>({ options, value, onPick }: {
   options: DropOption<T>[];
   value: T;
@@ -144,11 +146,12 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu, className,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu, className, face,
 }: {
   label: string;
-  // On the chip's wrapper, for a layout that treats this chip apart (TABS'
-  // footer lets the PROFILE name give way first, .pb-l .drop-prof).
+  // The chip's whole face, when the field draws its own (the rail's usage ring); the menu is unchanged.
+  face?: ReactNode;
+  // A class on the chip's wrapper, for a layout that treats this chip apart.
   className?: string;
   // A field glyph printed inside the chip. The identity of the field then
   // travels with the control instead of sitting beside it as a separate span,
@@ -201,11 +204,13 @@ function Drop<T extends string>({
   return (
     <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
-        {code && <span className="ctrl-fld">{code}</span>}
-        <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
-        {dot && <OverrideDot />}
-        {meter}
-        <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
+        {face ?? <>
+          {code && <span className="ctrl-fld">{code}</span>}
+          <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
+          {dot && <OverrideDot />}
+          {meter}
+          <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
+        </>}
       </button>
       {open && (
         <div
@@ -355,6 +360,25 @@ function ClaudeLogo({ size = 12 }: { size?: number }) {
   );
 }
 
+/** The rail's usage (prompt-kinds R3 · RAIL): a 12px ring of what the login's window has left, its
+ *  %, and when it refills. Spent, the whole ring takes the tone (err) and the clock is the refill time.
+ *  The track is the theme's neutral --line2, as the mockup's; a theme without one tints it. */
+function UsageRing({ left, tone, clock }: { left: number; tone: string; clock: string }) {
+  const r = 4.5, c = 2 * Math.PI * r, w = 2.4;
+  return (
+    <span className="pb-ring">
+      <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden>
+        <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={left > 0 ? `var(--line2, color-mix(in srgb, ${tone} 22%, transparent))` : tone} />
+        {/* round caps reach half a stroke past each end, so the dash is a stroke shorter: 92% keeps its gap */}
+        {left > 0 && <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={tone} strokeLinecap="round"
+          strokeDasharray={`${Math.max(0, (c * left) / 100 - w)} ${c}`} transform="rotate(-90 6 6)" />}
+      </svg>
+      <span className="pb-pc" style={{ color: tone }}>{left}%</span>
+      <span className="pb-clock">{clock}</span>
+    </span>
+  );
+}
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
@@ -373,28 +397,6 @@ const chip: CSSProperties = {
 export function SteerIcon({ size = 13 }: { size?: number }) {
   return <Merge size={size} strokeWidth={1.8} style={{ transform: "rotate(90deg)", flex: "none" }} aria-hidden />;
 }
-
-/** COMPACT layout's one run control, in two pieces: the chip in the footer
- *  (RunTrigger) and the sheet it opens (RunSheet), which the Composer renders
- *  among the cmdbox's popovers so it spans the box in every layout — hung from
- *  the chip, a sheet this wide ran off the column. Model, mode and effort are
- *  all on show at once, each under its own head with a word on what it
- *  decides, nothing nested: the popover this replaces opened the two lists
- *  inside itself one at a time, reflowing under an effort slider whose stops
- *  had no names. A pick applies at once and the sheet stays open (it is a
- *  settings sheet, not a menu — all three get set in one visit); a click
- *  away or Esc closes it. Design: drafts/run-picker. */
-type RunProps<M extends string> = {
-  model: M;
-  modelOpts: DropOption<M>[];
-  perm: string;
-  permOpts: DropOption<string>[];
-  effort: EffortLevel | "";
-  /** Another agent: modelOpts/permOpts are already its own; its effort is its
-   *  own list (or none), and its name stands in for an unset model. */
-  agent?: AgentPickers | null;
-  overrides?: string[]; // the knobs set by hand over the session's profile (OverrideDot)
-};
 
 /** What the composer does differently with Settings ▸ Experimental on. null/absent
  *  while it's off: then every check below reads as it always did. */
@@ -417,111 +419,12 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
   return EFFORTS.find((e) => e.id === effort) ?? EFFORTS[0];
 }
 
-function RunTrigger<M extends string>({ open, onToggle, model, modelOpts, perm, permOpts, effort, agent, overrides }: RunProps<M> & {
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const own = (k: string) => !!overrides?.includes(k);
-  const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
-  const modelName = agent && !model ? agent.label : cur ? cur.short ?? cur.label : String(model);
-  const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
-  const effRow = effortRow(effort, agent);
-  const sep = <span className="run-sep" aria-hidden>·</span>;
-  return (
-    // A chip like the PROFILE and PONYTAIL chips beside it: the field's glyph
-    // in a tile, the model bold, the mode and effort quieter, a caret.
-    <button className="run-trigger" onClick={onToggle}
-      title={`Model ${modelName} · mode ${permRow.label} · effort ${effRow.label}`}
-      style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
-               fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 7, color: "var(--txd)",
-               whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
-      <span className="ctrl-fld"><SlidersHorizontal size={12} /></span>
-      <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}{own("model") && <OverrideDot />}</span>
-      {perm !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{permRow.label}{own("permission_mode") && <OverrideDot />}</span></>}
-      {effort !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{effRow.label}{own("effort") && <OverrideDot />}</span></>}
-      <span className="run-car" aria-hidden style={{ color: open ? "var(--acc)" : "var(--txl)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
-    </button>
-  );
-}
-
-function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides, profile, extra }: RunProps<M> & {
-  /** A row under the three: the chat's helper limits (HelpersRow). */
-  extra?: ReactNode;
-  onModel: (m: M) => void;
-  onPerm: (p: string) => void;
-  onEffort: (e: EffortLevel | "") => void;
-  /** The profile the session is bound to: what a knob set by hand overrides. */
-  profile?: { model: string; mode: string; effort: string } | null;
-}) {
-  const own = (k: string) => !!overrides?.includes(k);
-  const effOpts: DropOption<string>[] = agent ? agent.effort ?? [] : EFFORTS;
-  // The profile's own value for a knob this session overrides — the row the
-  // OverrideDot's "pick the profile's value to follow it again" means, which
-  // nothing named before. null while the knob follows the profile, or the
-  // profile leaves it unset.
-  const from = {
-    model: own("model") && profile?.model ? profile.model : null,
-    perm: own("permission_mode") && profile?.mode ? profile.mode : null,
-    effort: own("effort") && profile?.effort ? profile.effort : null,
-  };
-  const tagged = <T extends string>(opts: DropOption<T>[], id: string | null) =>
-    id === null ? opts : opts.map((o) => (o.id === id ? { ...o, tag: "PROFILE" } : o));
-  const head = (label: string, hint: string, opts: { id: string; label: string }[], id: string | null) => (
-    <div className="rp-hd">
-      <b>{label}</b>
-      {id === null
-        ? <i>{hint}</i>
-        : <i title={OVERRIDE_TIP}><span className="rp-dot">•</span> set here · profile: {opts.find((o) => o.id === id)?.label ?? id.replace(/^claude-/, "")}</i>}
-    </div>
-  );
-  return (
-    <div role="dialog" aria-label="Model, mode and effort" className="rp-sheet"
-      style={{
-        position: "absolute", left: -1, right: -1, bottom: "calc(100% + 9px)", zIndex: 30,
-        border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-        background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-        boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-      }}>
-      <div className="rp-grid">
-        <div className="rp-sec">
-          {head("MODEL", "what runs the turn", modelOpts, from.model)}
-          <div className="rp-list">
-            {modelOpts.length
-              ? <MenuRows options={tagged(modelOpts, from.model)} value={model} onPick={onModel} />
-              : <div className="rp-none">this agent hasn't listed its models yet — TEST it in Settings ▸ Accounts</div>}
-          </div>
-        </div>
-        {permOpts.length > 0 && (
-          <div className="rp-sec">
-            {head("MODE", "what it may do without asking", permOpts, from.perm)}
-            <div className="rp-list"><MenuRows options={tagged(permOpts, from.perm)} value={perm} onPick={onPerm} /></div>
-          </div>
-        )}
-      </div>
-      {effOpts.length > 0 && (
-        <div className="rp-eff">
-          {head("EFFORT", "how hard it thinks", effOpts, from.effort)}
-          {/* One named stop per level — the slider it replaces had ticks and no names. */}
-          <div className="rp-seg" role="group" aria-label="Effort">
-            {effOpts.map((e) => (
-              <button key={e.id || "auto"} type="button" className="rp-sg" aria-pressed={e.id === effort}
-                data-on={e.id === effort ? "" : undefined} data-prof={e.id === from.effort ? "" : undefined}
-                title={e.id === from.effort ? "your profile's pick" : undefined}
-                onClick={() => onEffort(e.id as EffortLevel | "")}>{e.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {extra}
-    </div>
-  );
-}
-
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, flowQueued, smartZone, multi,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, multi, git, lastCheck, designLinked,
+  kindPresets, onSaveKindPreset,
 }: {
   /** Multi-agent chats (ComposerMulti). */
   multi?: ComposerMulti | null;
@@ -572,7 +475,8 @@ export function Composer({
   contextWindow?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
-  onSend: (text: string, images: string[], noPath?: boolean) => void;
+  /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). */
+  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -612,25 +516,41 @@ export function Composer({
   flowQueued?: boolean;
   /** Sub-switch: the 150k mark on the CTX meter. */
   smartZone?: boolean;
+  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
+   *  check, and whether its project is linked to Claude Design (null: not known yet). */
+  git?: GitStatus | null;
+  lastCheck?: LastCheck | null;
+  designLinked?: boolean | null;
+  /** The open session is a helper: its next turn runs on its own picks, so the kinds dim like an agent's. */
+  helper?: boolean;
+  /** The kinds' presets this browser saved (settings), over the defaults (lib/kinds presetFor). */
+  kindPresets?: Partial<Record<KindId, Partial<KindRun>>>;
+  /** PRESET's "Save as <Kind>'s preset": keep this run as the kind's preset in this browser. */
+  onSaveKindPreset?: (k: KindId, r: KindRun) => void;
 }) {
   const text = draft;
   const setText = onDraft;
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued" | "fits" | "helpers">("");
-  // The run sheet stays open across picks, so it takes a dialog's Esc as well
-  // as a click away; the other drops close on their pick.
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers">("");
+  // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
+  // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
+  const [ppList, setPpList] = useState<"" | "model" | "mode">("");
+  const [ppAt, setPpAt] = useState(0);
+  useEffect(() => setPpList(""), [openDrop]);
+  // PRESET stays open across picks, so it takes a dialog's Esc as well as a
+  // click away; the other drops close on their pick.
   useEffect(() => {
-    if (openDrop !== "run") return;
+    if (openDrop !== "preset") return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
   }, [openDrop]);
-  const { compact, lead, composer, sendKey } = useChatChrome();
+  const { compact, lead, sendKey } = useChatChrome();
   const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
-  // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
-  const shelled = compact && composer !== "classic";
+  // COMPACT wears the TABS shell; DEFAULT keeps the old markup.
+  const shelled = compact;
   // MODEL rows grouped by usage pool, each with what it has left on the login
   // the session is spending, whichever account that is.
   const modelOpts = useMemo(
@@ -649,6 +569,7 @@ export function Composer({
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
+  const escRef = useRef(false);   // the last editor key was Esc: the next Tab is the browser's
   // Images on their way into the text (SYSTEM ▸ Send images: In the chat).
   useChatImages();
   const [embedErr, setEmbedErr] = useState<string | null>(null);
@@ -797,7 +718,7 @@ export function Composer({
   const slashOn = slash !== null;
   // A box that leads with a /word needs the list too, to draw it as a command
   // (MarkdownInput): a draft can come back with one already in it.
-  const leadsSlash = text.startsWith("/");
+  const leadsSlash = text.trimStart().startsWith("/");
   // The list is Claude's (.claude/skills, commands, plugins, CLI builtins): an
   // agent session's / would run none of them, so it gets no list.
   const onAgent = !!agentPick;
@@ -826,14 +747,15 @@ export function Composer({
     return () => { live = false; };
   }, [slashOn, leadsSlash, project, noList, skillPrefix, goals, cwd]);
   // The router has it read up front, once per project, so a command it puts in front draws as one at once.
+  // COMPACT's kinds read it too: whether Matt's pack is listed decides FIX's command and BUILD's fact.
   useEffect(() => {
-    if (!routing || onAgent) return;
+    if ((!routing && !shelled) || onAgent) return;
     let live = true;
     void api.commands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [routing, project, onAgent]);
+  }, [routing, shelled, project, onAgent]);
   const slashQ = slash ? (skillPrefix ? skillQuery(slash.q, skillPrefix) : slash.q) : "";
   const shits = slash && !noList ? rankCommands(cmds, slashQ) : [];
   const slashOpen = !!slash && !noList && !slashDismissed && (shits.length > 0 || cmdsStale);
@@ -875,7 +797,10 @@ export function Composer({
   // Never while a turn runs (steer or queue) or a docked ask takes the text, never over
   // a /command, never for an agent (its / runs none of these), and not at all (no caption
   // row either) while the project's / list has none of Matt's commands to offer.
+  // COMPACT has no auto pick and no typed-text suggestion: its kinds take the typed text.
+  // The empty box's ghost stays, its caption on the rail.
   const pack = cmds.some((c) => c.name.startsWith("mattpocock-skills:"));
+  const diagnose = cmds.some((c) => c.name === "mattpocock-skills:diagnosing-bugs");
   const routeOn = !!routing && pack && !!routeCtx && !onAgent && !running && !ask?.send;
   // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
   const ctxKey = useMemo(() => (routeOn ? JSON.stringify([sessionId, routeCtx]) : ""), [routeOn, sessionId, routeCtx]);
@@ -884,6 +809,10 @@ export function Composer({
   const [dropped, setDropped] = useState(false);                // no auto pick for this draft: one was taken out, or it wasn't typed fresh here
   const [hidden, setHidden] = useState(false);                  // Esc on the route on show, until the box empties or fills
   const [noPath, setNoPath] = useState(false);                 // Esc took an auto pick out of this draft: its send says "no path"
+  const [kindPick, setKindPick] = useState<KindPick>(null);     // COMPACT: the kind you tapped or Tabbed to; null = guess it from the text
+  // PRESET's edits to a kind's run, per session; they win over the saved preset (lib/kinds presetFor).
+  // shortcut: in memory, a reload drops them; persist per session if that's missed
+  const [runEdits, setRunEdits] = useState<Record<string, Partial<Record<KindId, Partial<KindRun>>>>>({});
   const [fitPick, setFitPick] = useState(0);
   const fitsId = useId();
   const routeSeq = useRef(0);
@@ -905,7 +834,7 @@ export function Composer({
       }).then(({ route }) => {
         if (stale()) return;
         setHeld(route && { r: route, for: text, ctx: ctxKey });
-        if (route && shouldAutoApply(text, route, now.current.dropped)) {
+        if (route && !shelled && shouldAutoApply(text, route, now.current.dropped)) {
           taRef.current?.prepend(`/${route.name} `);
           setApplied(route);
           landed.current = `/${route.name} ${text}`;
@@ -918,20 +847,30 @@ export function Composer({
   useEffect(() => { if (!blank && isDropped(text, applied?.name ?? null)) setDropped(true); }, [text, applied, blank]);
   useEffect(() => { if (text !== landed.current) landed.current = null; }, [text]);
   // Hiding lasts until the box empties or fills; an emptied box is a fresh draft.
-  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); setNoPath(false); } }, [blank]);
+  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); setNoPath(false); setKindPick(null); } }, [blank]);
   // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
   useEffect(() => {
-    setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== "");
+    setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== ""); setKindPick(null);
+    // PRESET edits made before a session existed (the blank screen) belong to no session: they go.
+    setRunEdits((m) => { if (!("" in m)) return m; const next = { ...m }; delete next[""]; return next; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
   const live = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
-  // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
-  // A flow step already queued is the next step: its ghost would offer it twice.
-  const ghost = live && blank && !(flowQueued && live.kind === "next") ? ghostFor("", live) : null;
-  const rowRoute = live && !blank && ghostFor(text, live) ? live : null;
-  const auto = routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
+  const auto = !shelled && routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
   // What you typed, without the auto pick: DESIGN, GRILL and COMPACT put their own command in front.
   const typed = auto ? swapLead(text, auto.name, null) : text;
+  // The kind of work on show (COMPACT only; DEFAULT has no rail to show one). An answer to a
+  // docked ask, an agent's session and a typed /command go as typed: no kind, the kinds dim.
+  const kindsOn = shelled && !onAgent && !helper && !ask?.send && !leadsSlash;
+  const { kind, how: kindHow } = kindsOn ? shownKind(kindPick, typed, { start: routeCtx?.first === true, design: !!plugins.design }) : { kind: null, how: "none" as const };
+  const run = kind ? presetFor(kind, kindPresets, runEdits[sessionId ?? ""]?.[kind]) : null;
+  // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
+  const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
+  // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
+  // A flow step already queued is the next step: its ghost would offer it twice.
+  // A starter on show wins: the kind you picked outranks a suggestion.
+  const ghost = live && blank && !starter && !(flowQueued && live.kind === "next") ? ghostFor("", live) : null;
+  const rowRoute = !shelled && live && !blank && ghostFor(text, live) ? live : null;
   const shown = auto ?? (ghost ? live : rowRoute);   // what the caption and the list of other fits are about
   const how = auto ? "auto" : ghost ? "inline" : "row";
   // The list of other fits goes with the command it is for (⌫ while it is open), backdrop and all.
@@ -1000,6 +939,30 @@ export function Composer({
       return take();
     }
     return false;
+  }
+
+  /** COMPACT's kinds: Tab and Shift+Tab walk them while the box has text (design … ask, then
+   *  plain, then round again), Esc drops the one on show. On an empty box Tab writes a picked
+   *  kind's starter, and Esc goes back to guessing. An open list or menu keeps its keys. */
+  function kindKey(e: KeyboardEvent): boolean {
+    // CodeMirror's convention: after Esc the next Tab leaves the editor; any other key re-arms the cycling.
+    if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return false;
+    const afterEsc = escRef.current;
+    escRef.current = e.key === "Escape";
+    if (afterEsc && e.key === "Tab") return false;
+    if (!kindsOn || openDrop || e.altKey || e.ctrlKey || e.metaKey) return false;
+    if (e.key === "Tab" && starter && !e.shiftKey) setText(starter);
+    else if (e.key === "Tab" && !blank) {
+      const dir = e.shiftKey ? -1 : 1;
+      let n = nextKind(kind, dir);
+      if (n === "design" && !plugins.design) n = nextKind(n, dir);   // no Claude Design, no DESIGN kind
+      setKindPick(n ?? "plain");
+    }
+    else if (e.key === "Escape" && kind) setKindPick(blank ? null : "plain");
+    else return false;
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
   }
 
   // --- Ctrl+R: reverse prompt search ---------------------------------------
@@ -1120,7 +1083,9 @@ export function Composer({
       return;
     }
     if (!t || disabled) return;
-    onSend(t, images, noPath || undefined);
+    // The kind on show puts its command in front and sends its preset with the prompt.
+    const plan = sendPlan({ kind, text: t, diagnose, answering: !!ask?.send, agent: onAgent, run });
+    onSend(plan.text, images, noPath || undefined, plan.run, t);
     setText("");
     setImages([]);
   }
@@ -1194,8 +1159,8 @@ export function Composer({
 
 
   // Pieces both layouts place: DEFAULT strings them along one control row;
-  // COMPACT moves the profile and ponytail chips to the row's right end and
-  // folds model / mode / effort into the run sheet (RunTrigger + RunSheet) over SEND. A profile the
+  // COMPACT ends its rail with the profile chip as a usage ring and folds model /
+  // mode / effort / trim into the PRESET popover (presetBtn + presetPop). A profile the
   // list doesn't have (it failed to load) shows as its id, and a session
   // bound to none as NO PROFILE. Re-picking the
   // current one is no change: a bind would also drop the knobs set by hand.
@@ -1215,13 +1180,13 @@ export function Composer({
   const chipAcct = chipSlot === null ? undefined : accounts?.find((a) => a.slot === chipSlot);
   const chipWins = loginWindows(chipAcct);
   const chipWin = chipWindow(chipWins);
+  const chipTone = chipWin ? meterTone(chipWin.left, chipWin.severity, chipAcct?.status) : "";
+  const chipClock = !chipWin ? "" : chipWin.left === 0 && chipWin.resets_at ? hhmm(Date.parse(chipWin.resets_at) / 1000) : fmtReset(chipWin.resets_at);
   const chipMeter = chipWin
     ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, flex: "none" }}>
         {chipAcct?.live && <i className="meter-live" aria-hidden />}
-        <span style={{ color: meterTone(chipWin.left, chipWin.severity, chipAcct?.status) }}>{chipWin.left}%</span>
-        <span style={{ color: "var(--txd)" }}>
-          {chipWin.left === 0 && chipWin.resets_at ? hhmm(Date.parse(chipWin.resets_at) / 1000) : fmtReset(chipWin.resets_at)}
-        </span>
+        <span style={{ color: chipTone }}>{chipWin.left}%</span>
+        <span style={{ color: "var(--txd)" }}>{chipClock}</span>
       </span>
     : chipAcct && chipAcct.left === null && !chipAcct.disabled
       ? <span className="ctrl-meter" style={{ flex: "none", color: "var(--txd)" }}><Spinner className="h-[9px] w-[9px] border-[1.5px] opacity-100" /></span>
@@ -1250,8 +1215,10 @@ export function Composer({
     else if (id !== profile) onProfile(id);
     setOpenDrop("");
   };
-  const profileDrop = (right: boolean) => profiles && (
-    <Drop label="PROFILE" className="drop-prof" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
+  // ring: the rail's usage face (UsageRing), while the login has a reading and isn't expired.
+  const profileDrop = (right: boolean, ring = false) => profiles && (
+    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
+      face={ring && chipWin && boundDead === null ? <UsageRing left={chipWin.left} tone={chipTone} clock={chipClock} /> : undefined}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
       title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}
@@ -1292,11 +1259,14 @@ export function Composer({
     </div>
   );
   const verbMenu = openDrop === "verbs" && menuOf(verbs);
+  // GRILL stays DEFAULT's: COMPACT's + drops it, the kinds carry the work there (docs/superpowers/specs/prompt-kinds.md).
+  const plusVerbs = verbs.filter((v) => v.key !== "grill");
+  // Over the open-menu backdrop (z 25), as the rail is, so a second tap toggles directly.
   const plusBtn = (
-    <div style={{ position: "relative", flex: "none" }}>
+    <div style={{ position: "relative", flex: "none", zIndex: 26 }}>
       <button className="pb-plus" onClick={() => setOpenDrop((d) => (d === "plus" ? "" : "plus"))}
-        title={["Attach a file", ...verbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
-      {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...verbs])}
+        title={["Attach a file", ...plusVerbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
+      {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...plusVerbs])}
     </div>
   );
   // Claude's window and Claude's /compact: an agent's meter would divide its
@@ -1404,14 +1374,15 @@ export function Composer({
   ) : (
     <>
       {withDesign && designBtn}
-      <button className="act-pri caps" onClick={submit} disabled={disabled || !text.trim()} title="SEND (Enter)">
-        Send <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      {/* COMPACT's key says the kind it sends as; DEFAULT has no kind, so it always reads Send. */}
+      <button className="act-pri caps" onClick={submit} disabled={disabled || !text.trim()} title={`${kind ? KINDS[kind].name : "SEND"} (Enter)`}>
+        {kind ? KINDS[kind].verb : "Send"} <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
     </>
   );
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
   const helpersRow = multi?.helpers && multi.onHelpers
     ? <HelpersRow config={multi.helpers} onChange={multi.onHelpers} /> : null;
-  // DEFAULT has no run sheet to hold that row, so it gets a chip of its own.
+  // DEFAULT has no PRESET to hold that row, so it gets a chip of its own.
   const helpersChip = helpersRow && (
     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
       <button className="drop-btn ma-helpers-chip" aria-expanded={openDrop === "helpers"} title="Helpers and their limits for this chat"
@@ -1427,13 +1398,6 @@ export function Composer({
   // Pieces the compact shells arrange (.mystical/design-drafts/prompt-box):
   // every row the composer can show, as one node each, placed by TABS and
   // CONSOLE below. DEFAULT keeps its own markup further down.
-  const pausedPill = paused && (
-    <span className="pb-paused" title={running ? "this turn finishes; nothing starts after it" : "nothing starts on its own"}>
-      <Pause size={10} strokeWidth={0} fill="currentColor" aria-hidden />
-      paused{queued && queued.length > 0 ? ` · ${queued.length} held` : ""}
-      {onTogglePause && <button onClick={onTogglePause} title="Let queued prompts and goal nudges run again">RESUME</button>}
-    </span>
-  );
   // The login this chat spends is dry: a send dies in a second, then is handed
   // over or parked (the transcript's limit card). Said here before you send,
   // with the login that has room one tap away (design-drafts/limit-chat, C).
@@ -1457,31 +1421,45 @@ export function Composer({
       )}
     </span>
   );
-  // Not positioned itself: the list anchors to .pb-ledger's left edge, so it
-  // never runs off the column when the chip sits late in a wrapped line.
-  const queuedChip = queued && queued.length > 0 && (
-    <div>
-      <button className="pb-queued" onClick={() => setOpenDrop((d) => (d === "queued" ? "" : "queued"))} title={queued.map((q) => q.text).join("\n")}>
-        {queued.length} queued <span aria-hidden style={{ fontSize: "var(--t8)", opacity: .8 }}>▾</span>
-      </button>
-      {openDrop === "queued" && (
-        <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 260, maxWidth: 440, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease" }}>
-          {queued.map((q) => (
-            <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", fontSize: "var(--t105)", color: "var(--txh)" }}>
-              <span title={q.text} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
-              {running && onSteerQueued && <button onClick={() => onSteerQueued(q.id)} title="Steer — fold this into the turn that's running now" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", lineHeight: 1, padding: 0, flex: "none", display: "flex" }}><SteerIcon size={11} /></button>}
-              {onEjectQueued && <button onClick={() => onEjectQueued(q.id)} title="Run in a new session" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>}
-              {onCancelQueued && <button onClick={() => onCancelQueued(q.id)} title="Remove from queue" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>✕</button>}
-            </div>
-          ))}
-        </div>
+  // The turn's own tab, between the lead and CTX (prompt-kinds spec): "working" while a turn
+  // runs, "· N queued ▾" while prompts wait, "paused · N held" while paused. No clock: nothing
+  // here knows when the turn began. Its list hangs from the tab row's left edge, so it never
+  // runs off the column wherever the tab sits.
+  const nq = queued?.length ?? 0;
+  const workTab = (running || paused || nq > 0) && (
+    <div className="pb-work" data-paused={paused ? "" : undefined}
+      title={paused ? (running ? "this turn finishes; nothing starts after it" : "nothing starts on its own") : undefined}>
+      {/* .pb-ww: the words a narrow box drops (index.css), the glyphs and the count stay */}
+      {paused ? <><Pause size={9} strokeWidth={0} fill="currentColor" aria-hidden /><span className="pb-ww">paused</span></>
+        : running && <><i aria-hidden /><span className="pb-ww">working</span></>}
+      {nq > 0 && (
+        <button type="button" aria-expanded={openDrop === "queued"} title={queued!.map((q) => q.text).join("\n")}
+          onClick={() => setOpenDrop((d) => (d === "queued" ? "" : "queued"))}>
+          {(running || paused) && <span className="pb-ww">· </span>}{nq} {paused ? "held" : "queued"} <i aria-hidden>▾</i>
+        </button>
       )}
+      {paused && onTogglePause && (
+        <button type="button" className="pb-resume" onClick={onTogglePause} aria-label="Resume" title="Let queued prompts and goal nudges run again">
+          <Play size={8} strokeWidth={0} fill="currentColor" aria-hidden /><span className="pb-ww">RESUME</span></button>
+      )}
+    </div>
+  );
+  const queuedList = openDrop === "queued" && nq > 0 && (
+    <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 12, zIndex: 30, minWidth: 260, maxWidth: 440, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease" }}>
+      {queued!.map((q) => (
+        <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", fontSize: "var(--t105)", color: "var(--txh)" }}>
+          <span title={q.text} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+          {running && onSteerQueued && <button onClick={() => onSteerQueued(q.id)} title="Steer — fold this into the turn that's running now" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", lineHeight: 1, padding: 0, flex: "none", display: "flex" }}><SteerIcon size={11} /></button>}
+          {onEjectQueued && <button onClick={() => onEjectQueued(q.id)} title="Run in a new session" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>}
+          {onCancelQueued && <button onClick={() => onCancelQueued(q.id)} title="Remove from queue" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>✕</button>}
+        </div>
+      ))}
     </div>
   );
   // CSS hides an empty ledger and, past one live item, every pill's
   // description (.pill-desc) — busy means terse.
   const ledger = (className: string) => (
-    <div className={`pb-ledger ${className}`}>{dryPill}{pills}{pausedPill}{queuedChip}</div>
+    <div className={`pb-ledger ${className}`}>{dryPill}{pills}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1505,20 +1483,8 @@ export function Composer({
         </div>
       : <div className="ma-set-note" role="status" style={{ marginTop: 0, marginBottom: 6 }}>saving image…</div>
   );
-  const settingsChips = (right: boolean) => (<>{profileDrop(right)}{ponyDrop(right)}</>);
-  const runTrigger = (
-    <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
-      model={model} modelOpts={modelOpts} perm={perm} permOpts={permOpts} effort={effort}
-      agent={agentPick} overrides={overrides} />
-  );
   const popovers = (
     <>
-      {openDrop === "run" && (
-        <RunSheet model={model} modelOpts={modelOpts} onModel={onModel}
-          perm={perm} permOpts={permOpts} onPerm={onPerm}
-          effort={effort} onEffort={onEffort}
-          agent={agentPick} overrides={overrides} profile={bound} extra={helpersRow} />
-      )}
       {rsearch !== null && (
         <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
@@ -1629,7 +1595,7 @@ export function Composer({
       ghost={ghost}
       onCmdClick={shown ? openFits : undefined}
       onKeyDown={(e) => {
-        if (mentionKey(e) || slashKey(e) || routeKey(e)) return;
+        if (mentionKey(e) || slashKey(e) || routeKey(e) || kindKey(e)) return;
         // Ctrl+R is the browser's reload; in the command line it's the shell's
         // history search, which is what the hands in this box expect.
         if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
@@ -1644,7 +1610,7 @@ export function Composer({
         if (text.includes("\n")) void askConfirm("Clear the draft?", { ok: "Clear", danger: true }).then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
-      placeholder={ask?.placeholder ?? (disabled ? "working…" : running
+      placeholder={ask?.placeholder ?? (disabled ? "working…" : starter ? `${starter} · Tab writes it` : running
         ? bg ? `queue a prompt — it goes in once the ${bg === 1 ? "background task finishes" : `${bg} background tasks finish`}…`
           : "queue a prompt — runs after the current turn…"
         : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
@@ -1690,64 +1656,149 @@ export function Composer({
       </>)}
     </div>
   );
-  // CONSOLE and CLASSIC set the editor in a row, so the caption hangs under it in a column of its own.
+  // DEFAULT sets the editor in a row, so the caption hangs under it in a column of its own.
   const editorCol = <div className="pb-ed">{editor}{routeLine}</div>;
-  // While a route shows, the caption says what the keys do, in CONSOLE's hint's stead
-  // (kept in place, unseen, so the editor's width doesn't move).
-  const hint = (
-    <span className="pb-hint" aria-hidden style={capt ? { visibility: "hidden" } : undefined}>
-      {sendKey === "ctrl-enter" ? `⌘↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ↵ newline` : `↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ⇧↵ newline`}
-    </span>
+  // COMPACT's rail under the text (docs/superpowers/specs/prompt-kinds.md, R3 · RAIL): the kinds,
+  // the lit one's live facts, the run preset, the login's usage, on one line where only the facts
+  // give way. While the empty box shows the router's next step, its caption takes the facts' place;
+  // the segment is a live region, so that caption is still the ghost's announcement.
+  const profileChip = profileDrop(true, true);
+  // PRESET: the run the next send goes with, which the segment reads and the popover edits. A lit
+  // kind's is its preset (lib/kinds presetFor), and a pick here is this session's edit of it. With
+  // no kind it is the session's own picks, and a pick sets them.
+  const pre = run ?? { model, perm, effort, ponytail };
+  const PreGlyph = kind ? KIND_ICON[kind] : SlidersHorizontal;
+  const trimOn = showPonytail && !onAgent;
+  const optLabel = (opts: DropOption<string>[], id: string) => { const o = opts.find((x) => x.id === id); return o && (o.short ?? o.label); };
+  const preModel = optLabel(modelOpts, pre.model) ?? (agentPick && !kind && !pre.model ? agentPick.label : modelName(pre.model));
+  const preRest = [
+    pre.perm && (optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label),
+    pre.effort && effortRow(pre.effort, kind ? null : agentPick).label,
+    trimOn && pre.ponytail && (PONYTAILS.find((p) => p.id === pre.ponytail)?.label ?? pre.ponytail),
+  ].filter(Boolean).join(" · ");
+  // A kind's preset names its effort; with no kind lit, Auto is a pick again, as in the run sheet.
+  const preEffs: DropOption<string>[] = kind ? EFFORTS.filter((e) => e.id) : agentPick ? agentPick.effort ?? [] : EFFORTS;
+  // With no kind lit, a knob set here over the bound profile wears the OverrideDot, and the
+  // profile's own value a PROFILE mark: picking that follows the profile again (OVERRIDE_TIP).
+  const setHere = (k: "model" | "perm" | "effort") => !kind && own(k === "perm" ? "permission_mode" : k);
+  const profPick = (k: "model" | "perm" | "effort") => (setHere(k) && bound?.[k === "perm" ? "mode" : k]) || null;
+  const preEdit = (k: keyof KindRun, v: string) => {
+    const sid = sessionId ?? "";
+    if (kind) setRunEdits((m) => ({ ...m, [sid]: { ...m[sid], [kind]: { ...m[sid]?.[kind], [k]: v } } }));
+    else if (k === "model") onModel(v);
+    else if (k === "perm") onPerm(v);
+    else if (k === "effort") onEffort(v as EffortLevel | "");
+    else onPonytail(v);
+  };
+  // A select is the chips' own Drop: its MenuRows list opens over the popover.
+  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => {
+    const list = k === "model" ? "model" : "mode", prof = profPick(k);
+    return (
+      <div className="pb-pr"><b>{label}{setHere(k) && <OverrideDot />}</b>
+        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} fallback={{ id: pre[k], label: shown }}
+          options={prof === null ? opts : opts.map((o) => (o.id === prof ? { ...o, tag: "PROFILE" } : o))}
+          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { preEdit(k, v); setPpList(""); }} />
+      </div>
+    );
+  };
+  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => {
+    const prof = k === "effort" ? profPick(k) : null;
+    return (
+      <div className="pb-pr"><b>{label}{k === "effort" && setHere(k) && <OverrideDot />}</b>
+        <div className="pb-sg" role="group" aria-label={label}>
+          {opts.map((o) => (
+            <button key={o.id || "-"} type="button" aria-pressed={o.id === pre[k]} onClick={() => preEdit(k, o.id)}
+              data-prof={o.id === prof ? "" : undefined} title={o.id === prof ? "your profile's pick" : undefined}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+  const presetPop = openDrop === "preset" && (
+    // overflow: the select lists hang out of it (FLINT's popover rule would clip them).
+    <div className="pb-pp" role="dialog" aria-label={kind ? `${KINDS[kind].verb}'s preset` : "This session's run"}
+      style={{ ["--pp-at" as string]: `${ppAt}px`, overflow: "visible" }}>
+      <h4><PreGlyph size={10} strokeWidth={2.2} aria-hidden />{kind ? `${KINDS[kind].verb} preset` : "This session"}<span>{kind ? "for this session" : "prompts with no kind"}</span></h4>
+      {modelOpts.length > 0 && preSel("model", "Model", modelOpts, preModel)}
+      {permOpts.length > 0 && preSel("perm", "Mode", permOpts, pre.perm ? optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label : "Session")}
+      {preEffs.length > 0 && preSeg("effort", "Effort", preEffs)}
+      {trimOn && preSeg("ponytail", "Trim", PONYTAILS)}
+      {kind && (
+        <div className="pb-pf">A change here wins in this session.
+          {onSaveKindPreset && <button type="button" onClick={() => { onSaveKindPreset(kind, run!); setOpenDrop(""); }}>Save as {KINDS[kind].verb}'s preset</button>}
+        </div>
+      )}
+      {/* The chat's helper limits are the session's, not a kind's: they stay with its own picks. */}
+      {!kind && helpersRow}
+    </div>
   );
-
-  // The two new COMPACT composers (CLASSIC is the old markup further down).
-  // The lead (tile, title, project, branch, PR, running app) arrives flattened
-  // from Terminal; .pb-lead lays it out per shell in index.css.
+  const presetBtn = (
+    <button type="button" className="pb-run" aria-haspopup="dialog" aria-expanded={openDrop === "preset"}
+      title={`${kind ? `${KINDS[kind].verb}'s preset` : "This session's picks"}: ${[preModel, preRest].filter(Boolean).join(" · ")}`}
+      onClick={(e) => {
+        setPpAt(e.currentTarget.closest(".pb-card")!.getBoundingClientRect().right - e.currentTarget.getBoundingClientRect().right);
+        setOpenDrop((d) => (d === "preset" ? "" : "preset"));
+      }}>
+      <PreGlyph size={12} strokeWidth={kind ? 2 : 1.8} aria-hidden />
+      <b>{preModel}</b>
+      {preRest && <span>· {preRest}</span>}
+      <i aria-hidden>▾</i>
+    </button>
+  );
+  const facts = ghost && capt
+    ? <span className="pb-route"><b data-tone={capt.tone}>{capt.tag}</b>{capt.why && <span className="why">{capt.why}</span>}
+        {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
+    : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
+    : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
+        mapBuiltAt: graph?.exists ? graph.built_at : null, pack, askPerm: run?.perm ?? "" })
+        .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
+  const rail = (
+    <div className="pb-rail">
+      <div className="pb-seg pb-kinds" role="group" aria-label="Kind of work" data-dim={kindsOn ? undefined : ""}>
+        {KIND_ORDER.map((id) => {
+          const Icon = KIND_ICON[id];
+          const lit = id === kind;
+          const off = !kindsOn || (id === "design" && !plugins.design);   // no Claude Design, no DESIGN kind
+          // The editor keeps the focus (and the caret) through a tap.
+          return (
+            <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
+              disabled={off} aria-pressed={lit && kindHow === "picked"}
+              title={lit ? `${KINDS[id].name} — ${blank ? "click to go back to guessing" : "click to send as typed"}` : KINDS[id].name}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => setKindPick(lit ? (blank ? null : "plain") : id)}>
+              <Icon size={lit ? 11 : 12} strokeWidth={2} aria-hidden />
+              {lit && <><span>{KINDS[id].verb}</span>{kindHow === "auto" && <i>auto</i>}</>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="pb-seg pb-facts" role="status">{facts}</div>
+      <div className="pb-seg pb-preset" data-open={openDrop === "preset" ? "" : undefined}>{presetBtn}</div>
+      {profileChip && <div className="pb-seg pb-use">{profileChip}</div>}
+    </div>
+  );
+  // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
+  // arrives flattened from Terminal; .pb-lead lays it out in index.css.
   const shell =
-    composer === "console" ? (
       <>
-        {dock}
-        {embedNote}
-        {attachRow}
-        <div {...boxProps} className="cmdbox pb-cmd">
-          {pfx}
-          {popovers}
-          {editorCol}
-          {hint}
-          <div className="pb-acts">{actions(true)}</div>
-        </div>
-        <div className="pb-place pb-lead">{lead}</div>
-        {ledger("pb-activity")}
-        <div className="pb-set">
-          {ctxBlock}
-          {runTrigger}
-          {settingsChips(false)}
-          <span className="sp" />
-          {plusBtn}
-        </div>
-      </>
-    ) : (
-      <>
-        <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
+        <div className="pb-tabs pb-lead">{lead}{workTab}{queuedList}{ctxBlock}</div>
         {dock}
         {embedNote}
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
-          {attachRow}
-          <div className="pb-line">{pfx}{popovers}{editor}</div>
-          {routeLine}
-          {/* DESIGN steps out while a turn runs (it could only queue): that is
-              what keeps this footer on one line at 787px with both sidebars open. */}
-          <div className="pb-foot"><div className="pb-l">{plusBtn}{settingsChips(false)}</div><div className="pb-r">{runTrigger}{actions(!running)}</div></div>
+          <div className="pb-line">
+            {plusBtn}{pfx}{popovers}{presetPop}
+            <div className="pb-body">{attachRow}{editor}</div>
+            <div className="pb-keys">{actions(false)}</div>
+          </div>
+          {rail}
         </div>
-      </>
-    );
+      </>;
 
   return (
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
-    <div className="composer" data-pb={shelled ? composer : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+    <div className="composer" data-pb={shelled ? "tabs" : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
       {openDrop && <div onClick={() => setOpenDrop("")}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}
@@ -1815,25 +1866,6 @@ export function Composer({
           make. The context meter closes the row as an instrument rather than
           spending a whole row of its own on a track that is empty most of the
           time. Layout ladder lives in index.css. */}
-      {compact ? (
-        // CLASSIC: the session's nameplate on the left (moved down from the
-        // header), everything left in this row packed to the right.
-        <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
-          <div className="ctrl-row ctrl-row-compact">
-            <div className="ctrl-lead">{lead}</div>
-            <div className="ctrl-verbs ctrl-verbs-compact">
-              <button className="ctrl-more" onClick={() => setOpenDrop((d) => (d === "verbs" ? "" : "verbs"))}
-                title="More actions">···</button>
-              {verbMenu}
-            </div>
-            {ctxBlock}
-            <div className="ctrl-set">
-              {profileDrop(true)}
-              {ponyDrop(true)}
-            </div>
-          </div>
-        </div>
-      ) : (
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
@@ -1882,7 +1914,6 @@ export function Composer({
           {ctxBlock}
         </div>
       </div>
-      )}
 
       {/* command line */}
       {dock}
@@ -1890,16 +1921,7 @@ export function Composer({
         {pfx}
         {popovers}
         {editorCol}
-        {compact ? (
-          // CLASSIC: the run popover's trigger sits over the send cluster, on
-          // its own line, so the box's right edge reads model-then-send.
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none", maxWidth: "50%", position: "relative", zIndex: 27 }}>
-            {runTrigger}
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              {actionCluster}
-            </div>
-          </div>
-        ) : actionCluster}
+        {actionCluster}
       </div>
       </>
       )}

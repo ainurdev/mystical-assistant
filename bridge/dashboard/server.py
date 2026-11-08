@@ -2477,8 +2477,10 @@ class Handler(BaseHTTPRequestHandler):
         # save_pick, so a pick that matches the bound profile follows it
         # instead of pinning an override.
         s = store.get_session(job.store_session_id) or {"id": job.store_session_id}
-        for field, value in (("model", model), ("permission_mode", permission_mode),
-                             ("effort", effort)):
+        # pick_once: a kind's preset is for that prompt only; the session's own picks change only by hand.
+        for field, value in (() if body.get("pick_once") is True else
+                             (("model", model), ("permission_mode", permission_mode),
+                              ("effort", effort))):
             profiles.save_pick(s, field, value)
             s = store.get_session(job.store_session_id) or s
         self._json({"job_id": job.id, "session_id": job.store_session_id})
@@ -2542,9 +2544,15 @@ class Handler(BaseHTTPRequestHandler):
             images = body.get("images") or []
             if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
                 return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
-            # No model or mode: a queued prompt runs on the session's when it
-            # starts, so a pick made while it waits still applies.
+            # A plain prompt takes the session's model and mode when it starts, so a
+            # pick made while it waits still applies; a kind prompt carries its own.
             _ok, _model, effort = normalize_model_effort(None, body.get("effort"))
+            model = permission_mode = None
+            if body.get("model") or body.get("permission_mode"):
+                err, model, permission_mode, _e = profiles.run_values(
+                    body.get("model"), body.get("permission_mode"), None)
+                if err:
+                    return self._json({"error": err}, 400)
             agent = (body.get("agent") or "").strip()
             try:
                 from bridge import ladder
@@ -2563,8 +2571,8 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 width = 0
             item_id = queue_manager.enqueue(
-                sid, text=(text or prompt), prompt=prompt, images=paths, model=None,
-                effort=effort, permission_mode=None, width=width, sel=sel,
+                sid, text=(text or prompt), prompt=prompt, images=paths, model=model,
+                effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
                 agent=agent or None)

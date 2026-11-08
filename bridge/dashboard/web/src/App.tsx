@@ -165,6 +165,7 @@ import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
+import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
 
 
@@ -270,6 +271,9 @@ interface HeldPrompt {
   reason: string;
   title: string | null;
   noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
+  // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
+  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string };
+  typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
 
 export function App() {
@@ -1726,9 +1730,11 @@ export function App() {
     text: string, images: string[],
     // newAgent: the agent of a session minted for this prompt (startIn), which
     // this render's `sessions` doesn't know yet; picks: that session's own,
-    // where the composer's are still the session you left's.
+    // where the composer's are still the session you left's, or a kind's preset (lib/kinds),
+    // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
-             picks?: { model: string; perm: string; effort: string } },
+             picks?: { model: string; perm: string; effort: string }; ponytail?: string;
+             pickOnce?: boolean; typed?: string },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1780,12 +1786,14 @@ export function App() {
     // browser doesn't know its picks: its next turn runs on its own, never on these.
     const knobs = sendPicks(targetAgent, agentPick?.agent, opts?.newAgent !== undefined) && !briefOf(sid)?.parent_session;
     // No model or mode: a queued prompt runs on the session's when it starts,
-    // so a pick made while it waits still applies. Resolves whether the prompt
-    // got into the queue; a miss says so here.
+    // so a pick made while it waits still applies. Picks sent with the prompt
+    // (a kind's preset) are the exception: they queue with it. Resolves whether
+    // the prompt got into the queue; a miss says so here.
     const enqueue = async () => {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
+        ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1801,8 +1809,9 @@ export function App() {
       const res = await api.run({
         prompt: text, images, project,
         session_id: sid, model: (knobs && pk.model) || undefined, effort: (knobs && pk.effort) || undefined,
-        permission_mode: (knobs && pk.perm) || undefined, ponytail: ponytail || undefined,
+        permission_mode: (knobs && pk.perm) || undefined, ponytail: (opts?.ponytail ?? ponytail) || undefined,
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
+        pick_once: opts?.pickOnce || undefined,
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -1810,7 +1819,8 @@ export function App() {
         setHeldMap((m) => ({
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
-                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath },
+                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath, typed: opts?.typed,
+                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail } : undefined },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -1820,7 +1830,7 @@ export function App() {
       // The run saved these picks to the session (/local/run); mirror that here,
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this browser's defaults meanwhile.
-      if (knobs) setSessions((prev) => prev.map((s) => (s.id === sid
+      if (knobs && !opts?.pickOnce) setSessions((prev) => prev.map((s) => (s.id === sid
         ? { ...s, model: pk.model, permission_mode: pk.perm || s.permission_mode, effort: pk.effort || null } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
@@ -1886,7 +1896,7 @@ export function App() {
     try {
       await startIn(project, h.text,
                     { images: h.images, title: h.title ?? undefined, force: true,
-                      cwd: h.cwd ?? undefined });
+                      cwd: h.cwd ?? undefined, kind: h.kind });
     } finally {
       setHeldBusy(false);
     }
@@ -2015,7 +2025,7 @@ export function App() {
 
   async function startIn(
     project: string, prompt: string,
-    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
+    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string; kind?: HeldPrompt["kind"] },
   ): Promise<boolean> {
     openBlank(project);
     try {
@@ -2028,7 +2038,8 @@ export function App() {
       const picks = runPicks(session, { model: settings.model, perm: settings.perm, effort: settings.effort },
                              profiles?.profiles.find((p) => p.id === session.profile_id) ?? null);
       return await send(prompt, opts?.images ?? [],
-                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude", picks });
+                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude",
+                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, pickOnce: true } : { picks }) });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);
@@ -2488,6 +2499,16 @@ export function App() {
     const id = setInterval(tick, 10000);
     return () => { live = false; clearInterval(id); };
   }, [sessionProject, sessionBranch, gitNonce]);
+
+  // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
+  // status above: the session's newest check, and whether its project is linked to Claude
+  // Design, held per project and read again on each visit (null until the first answer).
+  const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
+  const [designLinks, setDesignLinks] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (sessionProject) api.projectSettings({ project: sessionProject })
+      .then((s) => setDesignLinks((m) => ({ ...m, [sessionProject]: !!s.design_project })), () => {});
+  }, [sessionProject]);
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
@@ -3546,9 +3567,10 @@ export function App() {
                         onStartNew={() => void heldStartNew(held)}
                         onContinue={() => {
                           setHeldMap((m) => omit(m, held.sid));
-                          void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid });
+                          void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid,
+                            ...(held.kind ? { ...held.kind, pickOnce: true } : {}) });
                         }}
-                        onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
+                        onDismiss={() => { feed([held.typed ?? held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
                     {jobBar && !dockLive && selected?.job ? (
@@ -3607,7 +3629,14 @@ export function App() {
                       onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
-                      onSend={(t, i, noPath) => void send(t, i, noPath ? { noPath: true } : undefined)} onStop={() => void stop()}
+                      // A kind's preset rides with its prompt, and never becomes this browser's picks.
+                      onSend={(t, i, noPath, run, typed) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed } : {}),
+                        ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
+                      onStop={() => void stop()}
+                      kindPresets={settings.kindPresets}
+                      onSaveKindPreset={(k, r) => patchSettings({ kindPresets: { ...settings.kindPresets, [k]: r } })}
+                      git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
+                      designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental), nor one that has answered while
                       // background tasks run: SEND queues instead.
@@ -3622,7 +3651,7 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx}
+                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
