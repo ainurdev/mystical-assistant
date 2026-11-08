@@ -86,7 +86,20 @@ function Rows({ items, active, onClose, onRow }: {
    viewport: any ancestor with a transform (the rail's slide-in animations, for
    one) becomes the containing block instead, and the menu lands hundreds of
    pixels off-screen. Mounting outside the tree is the only way `fixed` means
-   what it says wherever a panel decides to open one. */
+   what it says wherever a panel decides to open one.
+
+   A right click while a menu is open closes it and leaves the event to the
+   browser, so its own menu (copy, inspect, spellcheck) is one more click away.
+   Handled here because every menu is this component, and in the capture phase
+   on window because the row handlers that open menus stop propagation and call
+   preventDefault: they must not see this click, or it opens a menu of ours.
+   isTrusted: Strip, Terminal and BranchesPanel dispatch synthetic contextmenus
+   to open menus from a left click, and those aren't the user's second click.
+   The press goes through the scrim as well, or the browser's menu would be for
+   the scrim, with no copy or open-link for what's under the pointer. It
+   hit-tests when contextmenu fires, which is after pointerdown everywhere.
+   ponytail: ctrl+click on a Mac has no button 2, so that native menu opens on
+   the scrim, and is the page's rather than the element's. */
 export function ContextMenu({ ctx, items, closing, onClose }: {
   ctx: CtxState;
   items: CtxItem[];
@@ -96,6 +109,34 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
   const [sub, setSub] = useState<{ i: number; top: number } | null>(null);
   const shut = useRef(0);
   useEffect(() => () => clearTimeout(shut.current), []);
+
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (closing) return;
+    const press = (e: PointerEvent) => {
+      if (e.button !== 2 || !e.isTrusted || !root.current) return;
+      root.current.style.pointerEvents = "none";
+    };
+    // A release with no contextmenu after it (let go outside the window on a
+    // system that fires on release) mustn't leave a menu that clicks pass under.
+    const release = (e: PointerEvent) => {
+      if (e.button !== 2) return;
+      window.setTimeout(() => { if (root.current) root.current.style.pointerEvents = ""; }, 300);
+    };
+    const secondClick = (e: MouseEvent) => {
+      if (!e.isTrusted) return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("pointerdown", press, true);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("contextmenu", secondClick, true);
+    return () => {
+      window.removeEventListener("pointerdown", press, true);
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("contextmenu", secondClick, true);
+    };
+  }, [closing, onClose]);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   // Clamped to the viewport — the list scrolls when it doesn't fit.
@@ -117,7 +158,7 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
   const subY = Math.max(6, Math.min(open?.top ?? 0, vh - subH - 8));
 
   return createPortal(
-    <>
+    <div ref={root} style={{ display: "contents" }}>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
       <div data-ctxmenu="1"
         style={{ ...PANEL, left: x, top: y, zIndex: 97, animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
@@ -142,7 +183,7 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
           </div>
         </div>
       )}
-    </>,
+    </div>,
     document.body,
   );
 }
