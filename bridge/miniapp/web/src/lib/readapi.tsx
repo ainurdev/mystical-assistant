@@ -62,3 +62,5 @@ export const workGet = <T,>(session: string | null, project?: string | null) =>
   request<T>(`/api/worklist?session=${encodeURIComponent(session ?? "")}&project=${encodeURIComponent(project ?? "")}`);
 export const workCall = <T,>(path: string, session: string | null, project: string | null | undefined, body: Record<string, unknown> = {}) =>
   request<T>(`/api/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
+export const workSources = async (session: string | null) =>
+  (await request<{ sources: string[] }>(`/api/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;

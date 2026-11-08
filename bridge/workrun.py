@@ -685,6 +685,31 @@ def discard(root: str, run: dict) -> None:
     worklist.mutate(root, go)
 
 
+def answer(root: str, run: dict, iid: str, text: str) -> None:
+    """Your answer to a blocked item goes to the manager, and the item is open again: back up next if
+    it never started, or back in review if a helper's copy is waiting."""
+    text = text.strip()
+    if not text:
+        raise Refused("Say what it needs to know.")
+    if run["state"] == "finished":
+        raise Refused("That run is finished. Put the task back on the list instead.")
+    chat = store.get_session(run["chat"])
+    if not chat:
+        raise Refused("The chat managing this run is gone. Take the run over from another one.")
+
+    def go(d: dict) -> dict:
+        r = _run_of(d, run["id"])
+        i = _item_in(d, r, iid)
+        if i["state"] != "blocked":
+            raise Refused(f"{iid} isn't waiting for you.")
+        i.update(state="review" if i.get("session_id") else "todo", note="", updated=time.time())
+        _touch(r)
+        return dict(i)
+    i = worklist.mutate(root, go)
+    next_step = "Use review_item, then merge_item or send_back." if i["state"] == "review" else "Use start_item when you're ready."
+    channel.human_message(chat, channel.MAIN, f"About {iid}, {i['title']}: {text}\n\n{next_step}")
+
+
 def run_view(root: str) -> dict:
     """What the sidebar needs about runs: the one going, and any finished one still to decide on."""
     data = worklist.load(root)
@@ -726,6 +751,8 @@ def api(path: str, body: dict, root: "str | None", chat: "dict | None") -> "tupl
                 _stop(root, run)
             elif path == "worklist/run/end":
                 _finish_by_hand(root, run)
+            elif path == "worklist/run/answer":
+                answer(root, run, str(body.get("id") or ""), str(body.get("text") or ""))
             elif path == "worklist/run/land":
                 land(root, run)
             elif path == "worklist/run/discard":

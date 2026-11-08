@@ -26,6 +26,23 @@ Agents use one tool, `work_list`, with `read`, `add`, `update`, `remove`, `repla
 `reorder`. `replace` is "create it anew": items it names by id or source ref keep their state,
 unnamed open items go, and finished ones stay unless told otherwise. Helpers don't get it.
 
+## The panel
+
+Every task says its state in words, with an icon and a colored edge, and a count bar sits on top.
+Refining, editing and adding each take over the panel instead of expanding in it, so the mode is
+never in doubt and the panel stays the only scroller. That last part isn't taste: WebKitGTK, the
+Linux window's engine, holds a whole wheel gesture on a box that scrolls, even at its end.
+
+## Refining
+
+A task nobody has started has a Refine button. You give ideas, corrections and questions, and an
+agent that can read the project asks back or suggests a new title and detail, with the differences
+marked. Nothing changes until you press Use this.
+
+Each message is a one-shot in plan mode, with the conversation kept on the item (`workrefine.py`).
+It isn't a chat, so it adds nothing to yours and can run while yours is busy. A tracker's text can
+reach it, so it can read and nothing else.
+
 ## A run
 
 Only you start one: the sidebar's Run, `/work run` in the composer, or `/work run` on Telegram.

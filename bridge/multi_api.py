@@ -131,6 +131,11 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         if not experimental.enabled():
             return _OFF
         return (automations.listed(), 200) if chat_id == config.DASH_CHAT_ID else ({"error": "Only the owner can see automations."}, 403)
+    if path == "worklist/sources":
+        if not experimental.enabled():
+            return _OFF
+        s = _owned(chat_id, _one(qs, "session"))
+        return {"sources": worklist.sources(s)}, 200
     if path == "worklist":
         if not experimental.enabled():
             return _OFF
@@ -253,6 +258,10 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         if path.startswith("worklist/run/"):
             from bridge import workrun
             return workrun.api(path, body, root, store.get_session(chat) if chat else None)
+        if path.startswith("worklist/refine/"):
+            from bridge import workrefine, workrun
+            out, status = workrefine.api(path, body, root, chat, chat_id)
+            return ({**out, **workrun.run_view(root)}, status) if status == 200 else (out, status)
         out, status = worklist.api(path, body, root, chat)
         if status == 200:
             from bridge import workrun

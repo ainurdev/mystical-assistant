@@ -22,6 +22,9 @@ Stdlib only.
 
 import json
 import os
+import re
+import shutil
+import sys
 import threading
 import time
 
@@ -263,7 +266,9 @@ def view(root: str, chat: "str | None" = None) -> dict:
     """Everything, with each item's sidebar group, so both apps group it alike."""
     data = load(root)
     run = active_run(data)
-    return {"items": [{**i, "group": _group(i, run, chat)} for i in data["items"]], "project": os.path.basename(root), "root": root}
+    from bridge import workrefine
+    return {"items": [{**i, "group": _group(i, run, chat), "refining": workrefine.refining(root, i["id"])} for i in data["items"]],
+            "project": os.path.basename(root), "root": root}
 
 
 def briefly(root: str) -> str:
@@ -278,6 +283,27 @@ def briefly(root: str) -> str:
         deps = f" (after {', '.join(i['depends_on'])})" if i.get("depends_on") else ""
         lines.append(f"{i['id']} · {i['state']} · {i['title']}{tail}{deps}" + (f"\n  {i['detail']}" if i.get("detail") else "") + (f"\n  note: {i['note']}" if i.get("note") else ""))
     return "\n".join(lines)
+
+
+_TRACKER = re.compile(r"jira|linear|github|gitlab|notion|asana|trello|sentry|shortcut|clickup", re.I)
+
+
+def sources(s: "dict | None") -> list:
+    """What Bring in can honestly offer: what an agent here could read. Best-effort, as your notes
+    always work, and the box takes anything else you can describe."""
+    out = []
+    try:
+        from bridge import gateway, mcp_share
+        if s and gateway._rivendell_on(s):
+            out.append("Rivendell")
+        if shutil.which("gh"):
+            out.append("GitHub issues")
+        for name in mcp_share.definitions((s or {}).get("cwd")):
+            if _TRACKER.search(name) and name.title() not in out:
+                out.append(name.title())
+    except Exception as e:  # noqa: BLE001
+        print(f"[worklist] sources: {e!r}", file=sys.stderr)
+    return out + ["My notes"]
 
 
 def tool(s: dict, a: dict) -> str:

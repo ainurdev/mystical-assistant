@@ -219,44 +219,102 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .ds-dialog[data-wide] > .dc-read { margin-inline: 22px; }
 .dc-intro { margin: 0 0 12px; color: var(--txm); line-height: 1.5; }
 
-/* The work list (components/WorkPanel). */
-.wl { padding: 8px 10px 12px; }
-.wl-add { display: flex; gap: 4px; margin-bottom: 8px; }
-.wl-add input { flex: 1; min-width: 0; }
-.wl-ask { margin-bottom: 10px; }
-.wl-ask textarea { width: 100%; }
-.wl-group { margin: 12px 0 0; }
-.wl-group > h5 { display: flex; justify-content: space-between; margin: 0 0 3px; font: inherit; font-size: var(--t105, 10.5px); letter-spacing: 0.06em; text-transform: uppercase; color: var(--txd); }
-.wl-group ul { list-style: none; margin: 0; padding: 0; }
-.wl-item { padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); }
-.wl-top { display: flex; align-items: baseline; gap: 6px; }
-.wl-id { flex: none; font-size: var(--t105, 10.5px); color: var(--txd); }
-.wl-title { flex: 1; min-width: 0; padding: 0; background: none; border: 0; font: inherit; color: var(--txb); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-.wl-title:hover, .wl-title:focus-visible { color: var(--acc); outline: none; }
-.wl-item[data-state="done"] .wl-title, .wl-item[data-state="dropped"] .wl-title { color: var(--txd); }
-.wl-item[data-state="dropped"] .wl-title { text-decoration: line-through; }
-.wl-item small { display: block; margin-top: 2px; color: var(--txd); line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
-.wl-note { color: var(--warn) !important; }
-.wl-open { padding: 6px 0 0; }
-.wl-open textarea, .wl-open input { width: 100%; }
-.wl-open textarea { display: block; overflow: hidden; resize: none; }
-.wl-detail { margin: 0; color: var(--txm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.wl-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.wl-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--txl); transform: translateY(-1px); }
-.wl-item[data-state="doing"] .wl-dot { background: var(--acc); animation: mpulse 2.4s infinite; }
-.wl-item[data-state="review"] .wl-dot { background: var(--acc); }
-.wl-item[data-state="blocked"] .wl-dot { background: var(--warn); }
-.wl-item[data-state="done"] .wl-dot { background: color-mix(in srgb, var(--acc) 45%, transparent); }
-@media (prefers-reduced-motion: reduce) { .wl-item[data-state="doing"] .wl-dot { animation: none; } }
-.wl-run { margin: 0 0 10px; padding: 8px 9px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--dg-r); }
-.wl-run[data-state="running"] { border-color: var(--acc); }
+/* The work list (components/WorkPanel). Every state is a color, an icon and a word. */
+.wl { --wl-c: var(--txl); --wl-r: calc(var(--dg-r, 8px) * 0.8); display: flex; flex-direction: column; min-height: 100%; padding: 0; }
+.wl [data-s="blocked"] { --wl-c: var(--warn); }
+.wl [data-s="doing"] { --wl-c: var(--acc); }
+.wl [data-s="review"] { --wl-c: var(--info, var(--ask)); }
+.wl [data-s="todo"] { --wl-c: var(--txl); }
+.wl [data-s="done"] { --wl-c: var(--ok); }
+.wl [data-s="dropped"] { --wl-c: var(--txl); }
+.wl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 9px 12px; }
+.wl-top b { font-weight: 600; color: var(--txb); overflow-wrap: anywhere; }
+.wl-top b span { font-weight: 400; color: var(--txd); }
+.wl-err { margin: 6px 12px !important; }
+.wl-st { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t11, 11px); font-weight: 600; color: var(--wl-c); white-space: nowrap; }
+.wl-st[data-s="todo"], .wl-st[data-s="dropped"] { color: var(--txd); }
+.wl-st[data-s="doing"] svg, .wl-think svg { animation: wl-spin 1.6s linear infinite; }
+@keyframes wl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wl-st svg, .wl-think svg { animation: none !important; } }
+.wl-sum { padding: 0 12px 10px; border-bottom: 1px solid var(--border); }
+.wl-bar { display: flex; gap: 2px; height: 6px; margin-bottom: 6px; }
+.wl-bar i { display: block; min-width: 4px; border-radius: 2px; background: var(--wl-c); }
+.wl-leg { display: flex; flex-wrap: wrap; gap: 4px 11px; }
+.wl-body { flex: 1; padding: 10px; }
+.wl-cards { list-style: none; margin: 0; padding: 0; }
+.wl-card { padding: 8px 10px 9px; margin: 0 0 7px; background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--wl-c); border-radius: var(--wl-r); }
+.wl-ch { display: flex; align-items: center; justify-content: space-between; min-height: 22px; }
+.wl-ord { display: flex; margin: -4px -6px -4px 0; }
+.wl-ord .wl-ic { width: 26px; height: 26px; }
+.wl-title { display: block; width: 100%; margin-top: 2px; padding: 0; background: none; border: 0; font: inherit; line-height: 1.35; color: var(--txb); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.wl-title:hover { color: var(--acc); }
+.wl-title:focus-visible, .wl-ic:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.wl-card[data-s="done"] .wl-title, .wl-card[data-s="dropped"] .wl-title { color: var(--txm); }
+.wl-card[data-s="dropped"] .wl-title { text-decoration: line-through; }
+.wl-card small, .wl-run small { display: block; margin-top: 3px; font-size: var(--t11, 11px); line-height: 1.4; color: var(--txd); overflow-wrap: anywhere; }
+.wl .wl-warn, .wl-card small.wl-warn, .wl-run small.wl-warn { color: var(--warn); }
+.wl-detail { margin: 7px 0 0; line-height: 1.45; color: var(--txm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
+.wl-gap { flex: 1; }
+.wl-grow { flex: 1; }
+.wl-i { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.wl-ic { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; background: none; border: 0; border-radius: var(--wl-r); color: var(--txm); cursor: pointer; }
+.wl-ic:hover:not(:disabled) { background: var(--panel); color: var(--txb); }
+.wl-ic:disabled { opacity: 0.3; cursor: default; }
+.wl-earlier { margin-top: 10px; color: var(--txd); }
+.wl-earlier summary { padding: 3px 0 8px; cursor: pointer; font-size: var(--t11, 11px); font-weight: 600; }
+.wl-dock { position: sticky; bottom: 0; display: flex; gap: 6px; padding: 9px 10px; background: var(--panel); border-top: 1px solid var(--border-bright); }
+.wl-dock button { flex: 1; min-height: 32px; }
+.wl-run { margin: 0 10px 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--wl-r); background: var(--panel2); color: var(--txm); }
+.wl-run b { font-weight: 600; color: var(--txb); }
+.wl-run[data-state="running"] { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 8%, transparent); }
 .wl-run[data-state="paused"] { border-color: var(--warn); }
-.wl-run small { display: block; margin-top: 3px; color: var(--txd); line-height: 1.4; overflow-wrap: anywhere; }
-.wl-run .au-top small { margin: 0; flex: none; }
 .wl-branch { font-family: var(--mono, monospace); }
+.wl-more { margin-top: 3px; font-size: var(--t11, 11px); color: var(--txd); line-height: 1.4; }
+.wl-more summary { cursor: pointer; overflow-wrap: anywhere; }
+.wl-more[open] summary { display: none; }
 .wl-pick { margin: 0 0 11px; padding: 0; border: 0; }
 .wl-pick legend { padding: 0; margin-bottom: 4px; color: var(--txm); }
 .wl-pick label { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; overflow-wrap: anywhere; cursor: pointer; }
-.wl-more { margin-top: 3px; color: var(--txd); line-height: 1.4; }
-.wl-more summary { cursor: pointer; overflow-wrap: anywhere; }
-.wl-more[open] summary { display: none; }
+.wl-sheet { display: flex; flex: 1; flex-direction: column; min-height: 100%; }
+.wl-sheet-h { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 8px 10px 8px 6px; border-bottom: 1px solid var(--border); }
+.wl-sheet-h b { font-weight: 600; color: var(--txb); }
+.wl-sheet-b { flex: 1; padding: 11px 12px; }
+.wl-sheet-f { position: sticky; bottom: 0; margin-top: 0; padding: 10px 12px; background: var(--panel); border-top: 1px solid var(--border-bright); }
+.wl-editing { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 12px; background: var(--acc); color: var(--acc-on, var(--canvas)); }
+.wl-editing b { flex: 1; font-weight: 600; }
+.wl-editing span { font-size: var(--t11, 11px); font-weight: 600; }
+.wl-f { display: block; margin: 0 0 12px; }
+.wl-sheet-f .wl-f { margin-bottom: 0; }
+.wl-f > span { display: block; margin-bottom: 4px; font-size: var(--t11, 11px); font-weight: 600; color: var(--txm); }
+.wl-f em { font-style: normal; font-weight: 400; color: var(--txd); }
+.wl-f .wl-row { margin-top: 0; }
+.wl-f input, .wl-f textarea { display: block; width: 100%; padding: 7px 9px; background: var(--canvas); color: var(--txb); border: 1px solid var(--border-bright); border-radius: var(--wl-r); font: inherit; line-height: 1.4; }
+.wl-f textarea { overflow: hidden; resize: none; }
+.wl-f input::placeholder, .wl-f textarea::placeholder { color: var(--txl); opacity: 1; }
+.wl-f input:focus, .wl-f textarea:focus { outline: none; border-color: var(--acc); }
+.wl-lede { margin: 0 0 12px; line-height: 1.45; color: var(--txd); }
+.wl-tabs { display: flex; gap: 2px; padding: 3px; margin-bottom: 12px; background: var(--canvas); border-radius: var(--wl-r); }
+.wl-tabs button { flex: 1; min-height: 28px; padding: 0 6px; background: none; border: 0; border-radius: var(--wl-r); font: inherit; color: var(--txm); cursor: pointer; }
+.wl-tabs button[aria-selected="true"] { background: var(--panel); color: var(--txb); font-weight: 600; }
+.wl-was { padding: 8px 9px; margin-bottom: 12px; font-size: var(--t11, 11.5px); line-height: 1.4; color: var(--txd); border: 1px dashed var(--border-bright); border-radius: var(--wl-r); overflow-wrap: anywhere; }
+.wl-was b { font-weight: 600; color: var(--txm); }
+.wl-was p { margin: 3px 0 0; white-space: pre-wrap; }
+.wl-me { margin: 0 0 9px 22px; padding: 7px 9px; background: var(--panel); border-radius: var(--wl-r); line-height: 1.4; color: var(--txb); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wl-agent { margin: 0 0 9px; line-height: 1.45; color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wl-opts { margin: -2px 0 10px; }
+.wl-prop { padding: 9px; margin-bottom: 10px; border: 1px solid var(--acc); border-radius: var(--wl-r); line-height: 1.45; overflow-wrap: anywhere; }
+.wl-prop[data-used] { border-color: var(--border); color: var(--txd); }
+.wl-prop h6 { margin: 0 0 5px; font-size: var(--t11, 11px); font-weight: 600; color: var(--acc); }
+.wl-prop[data-used] h6 { color: var(--ok); }
+.wl-prop p { margin: 0 0 6px; white-space: pre-wrap; }
+.wl-prop .wl-prop-t { font-weight: 600; color: var(--txb); }
+.wl-prop[data-used] .wl-prop-t { color: var(--txm); }
+.wl-prop del { color: var(--txl); }
+.wl-prop ins { text-decoration: none; color: var(--txb); background: color-mix(in srgb, var(--acc) 24%, transparent); }
+.wl-think { display: flex; align-items: center; gap: 6px; margin: 0 0 9px; color: var(--txd); }
+.wl-end { scroll-margin-bottom: 160px; }   /* clears the pinned message box, or it hides Use this */
+.wl-after .dg-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+/* The Mini App's page scrolls with 12px of padding (routes/root), which a sticky bar stops short of,
+   and its --panel is see-through. Without this, cards show around the bar. */
+.wl-dock, .wl-sheet-f { bottom: -12px; background: var(--background); }

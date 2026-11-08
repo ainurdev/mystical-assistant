@@ -82,6 +82,13 @@ FEATURES = (
      "about": "Select words in an agent's message and press Explain. It answers in a "
               "popover from that message alone, and adds nothing to the chat. Nothing "
               "runs until you press it. Part of the experimental chats."},
+    {"key": "refine", "env": "REFINE_ENABLE", "label": "REFINE A TASK",
+     "hint": "talks a work list task through with you, and suggests a rewrite",
+     "cost": "1 sonnet call per message you send",
+     "tokens": "~40k tokens",
+     "about": "Press Refine on a work list task nobody has started. It can read the project "
+              "and nothing else, and the task only changes when you press Use this. Nothing "
+              "runs unless you send a message. Part of the experimental chats."},
     {"key": "design_critic", "env": "DESIGN_CRITIC_ENABLE", "label": "DESIGN CRITIC",
      "hint": "an independent review of a design, scored against your references",
      "cost": "1 sonnet call per review",
