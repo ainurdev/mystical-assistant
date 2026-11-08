@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Minus, Plus, Users } from "lucide-react";
 import { clampLimit, LIMIT_KEYS, LIMITS, type HelperConfig, type HelperMode, type LimitKey } from "../lib/multi";
 
-/* The run sheet's helper limits: one row, live, per chat (plan decision 6). The
-   sheet's own note says nothing nests, so this is one line that opens the three
-   steppers under itself. A change goes as you make it, and lowering a limit
-   stops nothing already running. */
+/* The chat's helper limits: one row, live, per chat (plan decision 6), in
+   COMPACT's PRESET with no kind lit and in DEFAULT's helpers chip. Nothing
+   nests, so this is one line that opens the three steppers under itself. A
+   change goes as you make it, and lowering a limit stops nothing already running. */
 
 const MODES: { id: HelperMode; label: string; tip: string }[] = [
   { id: "off", label: "Off", tip: "No helpers in this chat." },

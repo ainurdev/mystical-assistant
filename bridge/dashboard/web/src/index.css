@@ -1458,17 +1458,6 @@ input {
    PROFILE chip's usage reading goes (its menu still has it). */
 @container (max-width: 700px) { .drop-btn { min-width: 0; } .ctrl-meter { display: none; } }
 
-/* COMPACT layout's control row: the session's nameplate on the left, the tools
-   packed right. The nameplate is the one thing allowed to shrink. The verbs
-   always sit behind their ···, whatever the width. */
-.ctrl-row-compact { flex-wrap: nowrap; gap: 12px; }
-.ctrl-lead { flex: 1 1 auto; min-width: 0; display: flex; }
-.ctrl-row-compact .ctrl-ctx { margin-left: 0; }
-.ctrl-verbs-compact { padding-left: 0; border-left: 0; }
-.ctrl-verbs-compact .ctrl-more { display: inline-flex; }
-.ctrl-row-compact .ctrl-set { flex: none; }
-@container (max-width: 560px) { .ctrl-row-compact .ctrl-ctx .seg { display: none; } }
-.run-trigger:hover > span { color: var(--acc) !important; }
 
 /* Composer action cluster — exactly one primary. STOP and PAUSE are rare,
    modal, and one of them is destructive: they stay recessive until reached
@@ -4459,17 +4448,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .cmdbox[data-drag] { border-color: var(--acc) !important; }
 [data-fam] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
 [data-fam]:not([data-fam="aurora"]) .cmdbox > span:first-child { display: none; }
-/* the run sheet's trigger is a chip like its neighbours: glyph tile, model
-   first, then mode and effort as quieter words, a caret */
-[data-fam] .run-trigger { padding: 5px 8px 5px 5px !important; gap: 7px !important; align-items: center !important; }
-[data-fam] .run-trigger > span:not(.run-car) { font-size: var(--t11) !important; }
-[data-fam] .run-trigger > .run-sep { color: var(--txg); }
-[data-fam] .drop-btn, [data-fam] .run-trigger {
+[data-fam] .drop-btn {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
   font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
   padding-block: 5px !important;
 }
-[data-fam] .drop-btn:hover, [data-fam] .run-trigger:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
+[data-fam] .drop-btn:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
 [data-fam] .ctrl-fld { color: var(--acc); }
 [data-fam] .ctrl-verb, [data-fam] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
 [data-fam] .ctrl-ctx .seg i { border-radius: 2px; }
@@ -4483,7 +4467,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .act-pri.danger { background: var(--err); }
 [data-fam] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
 
-/* ── every floating surface: menus, popovers, the run popover, the context
+/* ── every floating surface: menus, popovers, PRESET, the context
    menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
    Popover exists), and all of them name --shadow-pop in their inline style —
    so that string is the selector. A new popover that follows the recipe is
@@ -4990,7 +4974,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .act-pri.queue:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--ask) 40%, transparent); }
 [data-fam="aurora"] .act-pri.danger:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--err) 40%, transparent); }
 [data-fam="aurora"] :is(.ctrl-verb, .ctrl-more) { letter-spacing: .14em; text-transform: uppercase; }
-[data-fam="aurora"] :is(.drop-btn, .run-trigger) { letter-spacing: .06em !important; }
+[data-fam="aurora"] .drop-btn { letter-spacing: .06em !important; }
 [data-fam="aurora"] .lanehead > span:nth-child(2) { font-weight: 400; letter-spacing: .2em !important; }
 [data-fam="aurora"] [data-ctxmenu] button span { letter-spacing: .1em !important; }
 
@@ -5002,11 +4986,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .movesweep { animation: movesweep 2.2s linear infinite; }
 @keyframes movesweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .movesweep { animation: none; } }
-
-/* CLASSIC: under a full row the nameplate can be narrower than the PR chip. The
-   names give way first; then the chip shrinks inside its own border, so it is
-   cut by its box, never by the row's edge. */
-.ctrl-lead .np-pr { flex: 0 0.1 auto !important; min-width: 48px; overflow: hidden; white-space: nowrap; }
 
 /* ── COMPACT composer shell (.mystical/design-drafts/prompt-box/SPEC.md). The composer
    carries data-pb="tabs" in COMPACT. Terminal hands the
@@ -5100,13 +5079,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-pp > h4 > span { margin-left: auto; font-size: var(--t9); font-weight: 400; letter-spacing: .2px; text-transform: none; color: var(--txl); }
 .pb-pr { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 8px; }
 .pb-pr > b { font-size: var(--t8); font-weight: 700; line-height: 1; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
+.pb-pr > b > span { margin-left: 3px; font-size: var(--t11); letter-spacing: 0; }   /* the OverrideDot: set here, over the profile */
 .pb-sel { min-width: 0; }
 .pb-sel > .drop-btn { flex: 1; min-width: 0; }
 .pb-sg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
-.pb-sg > button { appearance: none; cursor: pointer; flex: 1; min-width: 0; height: 20px; padding: 0 4px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
+.pb-sg > button { position: relative; appearance: none; cursor: pointer; flex: 1; min-width: max-content; height: 20px; padding: 0 4px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
                   background: transparent; font: inherit; font-size: var(--t10); font-weight: 600; color: var(--txd); }
 .pb-sg > button:hover { color: var(--txh); }
 .pb-sg > button[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 22%, transparent); color: var(--txb); }
+/* PRESET with no kind lit: the profile's own pick, while this session overrides it, a dot under the stop */
+.pb-sg > button[data-prof]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--txl); }
 .pb-pf { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line, var(--border)); font-size: var(--t9); line-height: 1.35; color: var(--txl); }
 .pb-pf > button { appearance: none; cursor: pointer; margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-weight: 700;
                   color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
@@ -5143,7 +5125,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
                 padding: 2px 5px 1px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-bottom-width: 2px; border-radius: 4px;
                 background: color-mix(in oklab, black 16%, transparent); }
 
-/* the ledger: goal, agents, paused, queued on one wrapping line, absent when
+/* the ledger: a dry login, goal, agents, waits on one wrapping line, absent when
    nothing is live (the pill strip always renders; its pills do not). Busy
    means terse: past one live item every description goes, and the words stay
    in each chip's title and popover. */
@@ -5280,7 +5262,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 999px 999px 0 !important; border-left: 0 !important; }
 [data-fam="pebble"] .cmdbox { --pb-sh: rgb(0 0 0 / 22%); box-shadow: 0 1px 1px -.5px var(--pb-sh), 0 3px 3px -1.5px var(--pb-sh), 0 6px 6px -3px var(--pb-sh), 0 12px 12px -6px var(--pb-sh) !important; }
 :root[data-light] [data-fam="pebble"] .cmdbox { --pb-sh: color-mix(in srgb, var(--txb) 6%, transparent); }
-[data-fam="pebble"] :is(.drop-btn, .run-trigger) { border-radius: 999px !important; }
+[data-fam="pebble"] .drop-btn { border-radius: 999px !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
@@ -5878,26 +5860,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .pm-check > button:disabled { color: var(--txl); cursor: default; }
 
-/* ── the run sheet (Composer RunSheet): MODEL beside MODE, EFFORT along the
-   foot, over the cmdbox in every layout. Rows are MenuRows, restyled here
-   (their inline paddings need the !important). Under 560px of composer the
-   two columns stack. ── */
-.rp-sheet { font-family: var(--ui-font, inherit); overflow: hidden; }
-.rp-grid { display: grid; grid-template-columns: 46fr 54fr; }
-.rp-grid > .rp-sec + .rp-sec { border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
-.rp-sec { padding: 10px 8px 8px; min-width: 0; }
-.rp-hd { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; white-space: nowrap; min-width: 0; }
-.rp-hd b { font-weight: 600; font-size: var(--t10); letter-spacing: .12em; color: var(--txm); text-transform: uppercase; }
-.rp-hd i { font-style: italic; font-size: var(--t105); color: var(--txd); overflow: hidden; text-overflow: ellipsis; }
-.rp-dot { color: var(--acc); font-style: normal; font-weight: 600; }
-.rp-list > button { border-radius: var(--f-rad-s, 0) !important; padding: 6px 8px !important; min-height: 28px; font-size: var(--t11) !important; }
-.rp-list > button > span:first-child { width: 10px !important; text-align: center; }
-.rp-list > div { padding: 7px 8px 4px !important; border-bottom: 0 !important; font-weight: 600; font-size: var(--t9) !important;
-                 letter-spacing: .08em !important; text-transform: uppercase; }
-.rp-none { padding: 6px 8px; font-size: var(--t10); color: var(--txd); white-space: normal; }
-.rp-eff { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 9px 14px 10px;
-          border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
-.rp-eff .rp-hd { padding: 0; }
+/* ── a segmented row of named stops (HelpersRow), and MenuRows' hint and tag ── */
 .rp-seg { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px;
           border: 1px solid var(--line, color-mix(in srgb, var(--acc) 16%, transparent)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
 .rp-sg { position: relative; appearance: none; cursor: pointer; height: 22px; padding: 0 10px; border: 0; border-radius: var(--f-rad-s, 0);
@@ -5906,17 +5869,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .rp-sg:hover { color: var(--txh); background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); }
 [data-fam] .rp-sg[data-on], .rp-sg[data-on] { background: color-mix(in oklab, var(--acc) 20%, var(--panel)) !important; color: var(--acc);
                                               box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 35%, transparent); }
-/* the profile's own pick, while this session's overrides it: a dot under the stop */
-.rp-sg[data-prof]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--txl); }
 .mr-hint { display: block; font-size: var(--t10); color: var(--txd); margin-top: 2px; letter-spacing: 0; white-space: normal; }
 .mr-tag { display: inline-flex; align-items: center; height: 15px; padding: 0 6px; margin-left: 6px; border-radius: 999px; vertical-align: 1px;
           font: 600 var(--t85) var(--ui-font, inherit); letter-spacing: .08em; background: var(--panel3); color: var(--txd);
           box-shadow: inset 0 0 0 1px var(--line2, color-mix(in srgb, var(--acc) 25%, transparent)); }
-@container (max-width: 560px) {
-  .rp-grid { grid-template-columns: 1fr; }
-  .rp-grid > .rp-sec + .rp-sec { border-left: 0; border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
-  .rp-seg { margin-left: 0; }
-}
+@container (max-width: 560px) { .rp-seg { margin-left: 0; } }
 
 /* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
    An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,
@@ -7010,11 +6967,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    their capital back; where CSS can't (text straight inside a flex button, a
    label carrying an acronym) the markup says it and wears .caps. */
 [data-fam="pebble"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
-[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-fh b,
+[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .ntf-verb, .pm-knobs, .gp-fh b,
   [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
-[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-fh b,
+[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .ntf-verb, .pm-knobs, .gp-fh b,
   [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="pebble"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
@@ -7034,7 +6991,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 5px 12px"] { border-radius: 999px; margin: 4px 0 4px 6px; padding: 2px 12px !important; }
 /* headings in the popovers read as titles, like the slabs' Files and Git */
 [data-fam="pebble"] :is(.ntf-head .t) { font: 700 var(--t13) var(--ui-font) !important; color: var(--txb) !important; }
-[data-fam="pebble"] .rp-hd b { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txh) !important; }
 [data-fam="pebble"] .gp-fh b { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txh) !important; }
 [data-fam="pebble"] :is(.dwork-lab, .res-lab) { font-weight: 700 !important; color: var(--txm) !important; }
 [data-fam="pebble"] .setgroup { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txd) !important; }
@@ -7349,11 +7305,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 [data-fam="middle-earth"] .jump-latest { font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
-[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-fh b,
+[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .ntf-verb, .pm-knobs, .gp-fh b,
   [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
-[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-fh b,
+[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .ntf-verb, .pm-knobs, .gp-fh b,
   [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="middle-earth"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,

@@ -74,12 +74,11 @@ const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: 
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
-// small pill after it (the run sheet's PROFILE, on the row the profile sets)
+// small pill after it (PRESET's PROFILE, on the row the profile sets)
 type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string; tone?: string; hint?: string; tag?: string };
 
-/** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
- *  layout's run popover, which lists the same models (with the same usage
- *  meters) and the same permission modes inline. */
+/** The rows of a picker menu: every chip dropdown's (Drop), PRESET's model
+ *  and mode selects among them, with the same usage meters on the models. */
 function MenuRows<T extends string>({ options, value, onPick }: {
   options: DropOption<T>[];
   value: T;
@@ -364,13 +363,14 @@ function ClaudeLogo({ size = 12 }: { size?: number }) {
 /** The rail's usage (prompt-kinds R3 · RAIL): a 12px ring of what the login's window has left, its
  *  %, and when it refills. Spent, the whole ring takes the tone (err) and the clock is the refill time. */
 function UsageRing({ left, tone, clock }: { left: number; tone: string; clock: string }) {
-  const r = 4.5, c = 2 * Math.PI * r;
+  const r = 4.5, c = 2 * Math.PI * r, w = 2.4;
   return (
     <span className="pb-ring">
       <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden>
-        <circle cx={6} cy={6} r={r} fill="none" strokeWidth={2.4} stroke={left > 0 ? `color-mix(in srgb, ${tone} 22%, transparent)` : tone} />
-        {left > 0 && <circle cx={6} cy={6} r={r} fill="none" strokeWidth={2.4} stroke={tone} strokeLinecap="round"
-          strokeDasharray={`${(c * left) / 100} ${c}`} transform="rotate(-90 6 6)" />}
+        <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={left > 0 ? `color-mix(in srgb, ${tone} 22%, transparent)` : tone} />
+        {/* round caps reach half a stroke past each end, so the dash is a stroke shorter: 92% keeps its gap */}
+        {left > 0 && <circle cx={6} cy={6} r={r} fill="none" strokeWidth={w} stroke={tone} strokeLinecap="round"
+          strokeDasharray={`${Math.max(0, (c * left) / 100 - w)} ${c}`} transform="rotate(-90 6 6)" />}
       </svg>
       <span className="pb-pc" style={{ color: tone }}>{left}%</span>
       <span className="pb-clock">{clock}</span>
@@ -397,28 +397,6 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
   return <Merge size={size} strokeWidth={1.8} style={{ transform: "rotate(90deg)", flex: "none" }} aria-hidden />;
 }
 
-/** COMPACT layout's one run control, in two pieces: the chip in the footer
- *  (RunTrigger) and the sheet it opens (RunSheet), which the Composer renders
- *  among the cmdbox's popovers so it spans the box in every layout — hung from
- *  the chip, a sheet this wide ran off the column. Model, mode and effort are
- *  all on show at once, each under its own head with a word on what it
- *  decides, nothing nested: the popover this replaces opened the two lists
- *  inside itself one at a time, reflowing under an effort slider whose stops
- *  had no names. A pick applies at once and the sheet stays open (it is a
- *  settings sheet, not a menu — all three get set in one visit); a click
- *  away or Esc closes it. Design: drafts/run-picker. */
-type RunProps<M extends string> = {
-  model: M;
-  modelOpts: DropOption<M>[];
-  perm: string;
-  permOpts: DropOption<string>[];
-  effort: EffortLevel | "";
-  /** Another agent: modelOpts/permOpts are already its own; its effort is its
-   *  own list (or none), and its name stands in for an unset model. */
-  agent?: AgentPickers | null;
-  overrides?: string[]; // the knobs set by hand over the session's profile (OverrideDot)
-};
-
 /** What the composer does differently with Settings ▸ Experimental on. null/absent
  *  while it's off: then every check below reads as it always did. */
 export interface ComposerMulti {
@@ -438,106 +416,6 @@ export interface ComposerMulti {
 function effortRow(effort: string, agent?: AgentPickers | null): { id: string; label: string } {
   if (agent) return agent.effort?.find((o) => o.id === effort) ?? { id: effort, label: effort || "AGENT DEFAULT" };
   return EFFORTS.find((e) => e.id === effort) ?? EFFORTS[0];
-}
-
-function RunTrigger<M extends string>({ open, onToggle, model, modelOpts, perm, permOpts, effort, agent, overrides }: RunProps<M> & {
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const own = (k: string) => !!overrides?.includes(k);
-  const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
-  const modelName = agent && !model ? agent.label : cur ? cur.short ?? cur.label : String(model);
-  const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
-  const effRow = effortRow(effort, agent);
-  const sep = <span className="run-sep" aria-hidden>·</span>;
-  return (
-    // A chip like the PROFILE and PONYTAIL chips beside it: the field's glyph
-    // in a tile, the model bold, the mode and effort quieter, a caret.
-    <button className="run-trigger" onClick={onToggle}
-      title={`Model ${modelName} · mode ${permRow.label} · effort ${effRow.label}`}
-      style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
-               fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 7, color: "var(--txd)",
-               whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
-      <span className="ctrl-fld"><SlidersHorizontal size={12} /></span>
-      <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}{own("model") && <OverrideDot />}</span>
-      {perm !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{permRow.label}{own("permission_mode") && <OverrideDot />}</span></>}
-      {effort !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{effRow.label}{own("effort") && <OverrideDot />}</span></>}
-      <span className="run-car" aria-hidden style={{ color: open ? "var(--acc)" : "var(--txl)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
-    </button>
-  );
-}
-
-function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides, profile, extra }: RunProps<M> & {
-  /** A row under the three: the chat's helper limits (HelpersRow). */
-  extra?: ReactNode;
-  onModel: (m: M) => void;
-  onPerm: (p: string) => void;
-  onEffort: (e: EffortLevel | "") => void;
-  /** The profile the session is bound to: what a knob set by hand overrides. */
-  profile?: { model: string; mode: string; effort: string } | null;
-}) {
-  const own = (k: string) => !!overrides?.includes(k);
-  const effOpts: DropOption<string>[] = agent ? agent.effort ?? [] : EFFORTS;
-  // The profile's own value for a knob this session overrides — the row the
-  // OverrideDot's "pick the profile's value to follow it again" means, which
-  // nothing named before. null while the knob follows the profile, or the
-  // profile leaves it unset.
-  const from = {
-    model: own("model") && profile?.model ? profile.model : null,
-    perm: own("permission_mode") && profile?.mode ? profile.mode : null,
-    effort: own("effort") && profile?.effort ? profile.effort : null,
-  };
-  const tagged = <T extends string>(opts: DropOption<T>[], id: string | null) =>
-    id === null ? opts : opts.map((o) => (o.id === id ? { ...o, tag: "PROFILE" } : o));
-  const head = (label: string, hint: string, opts: { id: string; label: string }[], id: string | null) => (
-    <div className="rp-hd">
-      <b>{label}</b>
-      {id === null
-        ? <i>{hint}</i>
-        : <i title={OVERRIDE_TIP}><span className="rp-dot">•</span> set here · profile: {opts.find((o) => o.id === id)?.label ?? id.replace(/^claude-/, "")}</i>}
-    </div>
-  );
-  return (
-    <div role="dialog" aria-label="Model, mode and effort" className="rp-sheet"
-      style={{
-        position: "absolute", left: -1, right: -1, bottom: "calc(100% + 9px)", zIndex: 30,
-        border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-        background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-        boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-      }}>
-      <div className="rp-grid">
-        <div className="rp-sec">
-          {head("MODEL", "what runs the turn", modelOpts, from.model)}
-          <div className="rp-list">
-            {modelOpts.length
-              ? <MenuRows options={tagged(modelOpts, from.model)} value={model} onPick={onModel} />
-              : <div className="rp-none">this agent hasn't listed its models yet — TEST it in Settings ▸ Accounts</div>}
-          </div>
-        </div>
-        {permOpts.length > 0 && (
-          <div className="rp-sec">
-            {head("MODE", "what it may do without asking", permOpts, from.perm)}
-            <div className="rp-list"><MenuRows options={tagged(permOpts, from.perm)} value={perm} onPick={onPerm} /></div>
-          </div>
-        )}
-      </div>
-      {effOpts.length > 0 && (
-        <div className="rp-eff">
-          {head("EFFORT", "how hard it thinks", effOpts, from.effort)}
-          {/* One named stop per level — the slider it replaces had ticks and no names. */}
-          <div className="rp-seg" role="group" aria-label="Effort">
-            {effOpts.map((e) => (
-              <button key={e.id || "auto"} type="button" className="rp-sg" aria-pressed={e.id === effort}
-                data-on={e.id === effort ? "" : undefined} data-prof={e.id === from.effort ? "" : undefined}
-                title={e.id === from.effort ? "your profile's pick" : undefined}
-                onClick={() => onEffort(e.id as EffortLevel | "")}>{e.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {extra}
-    </div>
-  );
 }
 
 export function Composer({
@@ -652,16 +530,16 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "preset" | "plus" | "queued" | "fits" | "helpers">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers">("");
   // PRESET's model or mode list, open inside it; and where it hangs: over the card, its right edge
   // on the preset segment's (measured as it opens; index.css keeps it inside the card).
   const [ppList, setPpList] = useState<"" | "model" | "mode">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
-  // The run sheet and PRESET stay open across picks, so they take a dialog's Esc
-  // as well as a click away; the other drops close on their pick.
+  // PRESET stays open across picks, so it takes a dialog's Esc as well as a
+  // click away; the other drops close on their pick.
   useEffect(() => {
-    if (openDrop !== "run" && openDrop !== "preset") return;
+    if (openDrop !== "preset") return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -956,6 +834,8 @@ export function Composer({
   // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
   useEffect(() => {
     setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== ""); setKindPick(null);
+    // PRESET edits made before a session existed (the blank screen) belong to no session: they go.
+    setRunEdits((m) => { if (!("" in m)) return m; const next = { ...m }; delete next[""]; return next; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
   const live = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
@@ -1475,7 +1355,7 @@ export function Composer({
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
   const helpersRow = multi?.helpers && multi.onHelpers
     ? <HelpersRow config={multi.helpers} onChange={multi.onHelpers} /> : null;
-  // DEFAULT has no run sheet to hold that row, so it gets a chip of its own.
+  // DEFAULT has no PRESET to hold that row, so it gets a chip of its own.
   const helpersChip = helpersRow && (
     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
       <button className="drop-btn ma-helpers-chip" aria-expanded={openDrop === "helpers"} title="Helpers and their limits for this chat"
@@ -1576,19 +1456,8 @@ export function Composer({
         </div>
       : <div className="ma-set-note" role="status" style={{ marginTop: 0, marginBottom: 6 }}>saving image…</div>
   );
-  const runTrigger = (
-    <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
-      model={model} modelOpts={modelOpts} perm={perm} permOpts={permOpts} effort={effort}
-      agent={agentPick} overrides={overrides} />
-  );
   const popovers = (
     <>
-      {openDrop === "run" && (
-        <RunSheet model={model} modelOpts={modelOpts} onModel={onModel}
-          perm={perm} permOpts={permOpts} onPerm={onPerm}
-          effort={effort} onEffort={onEffort}
-          agent={agentPick} overrides={overrides} profile={bound} extra={helpersRow} />
-      )}
       {rsearch !== null && (
         <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
@@ -1769,7 +1638,7 @@ export function Composer({
   const profileChip = profileDrop(true, true);
   // PRESET: the run the next send goes with, which the segment reads and the popover edits. A lit
   // kind's is its preset (lib/kinds presetFor), and a pick here is this session's edit of it. With
-  // no kind it is the session's own picks, and a pick sets them, as the run sheet's did.
+  // no kind it is the session's own picks, and a pick sets them.
   const pre = run ?? { model, perm, effort, ponytail };
   const PreGlyph = kind ? KIND_ICON[kind] : SlidersHorizontal;
   const trimOn = showPonytail && !onAgent;
@@ -1780,7 +1649,12 @@ export function Composer({
     pre.effort && effortRow(pre.effort, kind ? null : agentPick).label,
     trimOn && pre.ponytail && (PONYTAILS.find((p) => p.id === pre.ponytail)?.label ?? pre.ponytail),
   ].filter(Boolean).join(" · ");
-  const preEffs: DropOption<string>[] = !kind && agentPick ? agentPick.effort ?? [] : EFFORTS.filter((e) => e.id);
+  // A kind's preset names its effort; with no kind lit, Auto is a pick again, as in the run sheet.
+  const preEffs: DropOption<string>[] = kind ? EFFORTS.filter((e) => e.id) : agentPick ? agentPick.effort ?? [] : EFFORTS;
+  // With no kind lit, a knob set here over the bound profile wears the OverrideDot, and the
+  // profile's own value a PROFILE mark: picking that follows the profile again (OVERRIDE_TIP).
+  const setHere = (k: "model" | "perm" | "effort") => !kind && own(k === "perm" ? "permission_mode" : k);
+  const profPick = (k: "model" | "perm" | "effort") => (setHere(k) && bound?.[k === "perm" ? "mode" : k]) || null;
   const preEdit = (k: keyof KindRun, v: string) => {
     const sid = sessionId ?? "";
     if (kind) setRunEdits((m) => ({ ...m, [sid]: { ...m[sid], [kind]: { ...m[sid]?.[kind], [k]: v } } }));
@@ -1791,21 +1665,28 @@ export function Composer({
   };
   // A select is the chips' own Drop: its MenuRows list opens over the popover.
   const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => {
-    const list = k === "model" ? "model" : "mode";
+    const list = k === "model" ? "model" : "mode", prof = profPick(k);
     return (
-      <div className="pb-pr"><b>{label}</b>
-        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} options={opts} fallback={{ id: pre[k], label: shown }}
+      <div className="pb-pr"><b>{label}{setHere(k) && <OverrideDot />}</b>
+        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} fallback={{ id: pre[k], label: shown }}
+          options={prof === null ? opts : opts.map((o) => (o.id === prof ? { ...o, tag: "PROFILE" } : o))}
           open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { preEdit(k, v); setPpList(""); }} />
       </div>
     );
   };
-  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => (
-    <div className="pb-pr"><b>{label}</b>
-      <div className="pb-sg" role="group" aria-label={label}>
-        {opts.map((o) => <button key={o.id || "-"} type="button" aria-pressed={o.id === pre[k]} onClick={() => preEdit(k, o.id)}>{o.label}</button>)}
+  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => {
+    const prof = k === "effort" ? profPick(k) : null;
+    return (
+      <div className="pb-pr"><b>{label}{k === "effort" && setHere(k) && <OverrideDot />}</b>
+        <div className="pb-sg" role="group" aria-label={label}>
+          {opts.map((o) => (
+            <button key={o.id || "-"} type="button" aria-pressed={o.id === pre[k]} onClick={() => preEdit(k, o.id)}
+              data-prof={o.id === prof ? "" : undefined} title={o.id === prof ? "your profile's pick" : undefined}>{o.label}</button>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
   const presetPop = openDrop === "preset" && (
     // overflow: the select lists hang out of it (FLINT's popover rule would clip them).
     <div className="pb-pp" role="dialog" aria-label={kind ? `${KINDS[kind].verb}'s preset` : "This session's run"}
@@ -1820,7 +1701,7 @@ export function Composer({
           {onSaveKindPreset && <button type="button" onClick={() => { onSaveKindPreset(kind, run!); setOpenDrop(""); }}>Save as {KINDS[kind].verb}'s preset</button>}
         </div>
       )}
-      {/* The chat's helper limits are the session's, not a kind's: they stay with its own picks, as in the run sheet. */}
+      {/* The chat's helper limits are the session's, not a kind's: they stay with its own picks. */}
       {!kind && helpersRow}
     </div>
   );
@@ -1956,25 +1837,6 @@ export function Composer({
           make. The context meter closes the row as an instrument rather than
           spending a whole row of its own on a track that is empty most of the
           time. Layout ladder lives in index.css. */}
-      {compact ? (
-        // CLASSIC: the session's nameplate on the left (moved down from the
-        // header), everything left in this row packed to the right.
-        <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
-          <div className="ctrl-row ctrl-row-compact">
-            <div className="ctrl-lead">{lead}</div>
-            <div className="ctrl-verbs ctrl-verbs-compact">
-              <button className="ctrl-more" onClick={() => setOpenDrop((d) => (d === "verbs" ? "" : "verbs"))}
-                title="More actions">···</button>
-              {verbMenu}
-            </div>
-            {ctxBlock}
-            <div className="ctrl-set">
-              {profileDrop(true)}
-              {ponyDrop(true)}
-            </div>
-          </div>
-        </div>
-      ) : (
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
@@ -2023,7 +1885,6 @@ export function Composer({
           {ctxBlock}
         </div>
       </div>
-      )}
 
       {/* command line */}
       {dock}
@@ -2031,16 +1892,7 @@ export function Composer({
         {pfx}
         {popovers}
         {editorCol}
-        {compact ? (
-          // CLASSIC: the run popover's trigger sits over the send cluster, on
-          // its own line, so the box's right edge reads model-then-send.
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none", maxWidth: "50%", position: "relative", zIndex: 27 }}>
-            {runTrigger}
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              {actionCluster}
-            </div>
-          </div>
-        ) : actionCluster}
+        {actionCluster}
       </div>
       </>
       )}
