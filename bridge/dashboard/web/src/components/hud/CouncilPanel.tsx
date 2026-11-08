@@ -5,7 +5,7 @@ import { columns, hero, rules } from "../../lib/council";
 import { ICON_BODY } from "../../lib/fileicons.gen";
 import { openSettings } from "../../lib/opensettings";
 import { notify } from "./Notifications";
-import { FRAME, RULE } from "./TurnsPanel";
+import { FRAME, RULE } from "./SessionPanel";
 
 /* The COUNCIL tab (docs/superpowers/specs/council-tab.md; design:
    .mystical/design-drafts/council-tab, A · SCOREBOARD). The score leads: a

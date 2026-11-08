@@ -524,8 +524,7 @@ def _parse_full(path: str, sidechain: bool = False) -> dict:
         cur = {"id": tid, "seq": len(turns), "prompt": prompt, "attachments": [],
                "status": "done", "cost": None, "elapsed": None,
                "started": _ts(rec), "model": None,
-               "_last_ts": _ts(rec), "_seen_usage": False,
-               "_usage": {"in": 0, "out": 0, "cw": 0, "cr": 0}}
+               "_last_ts": _ts(rec), "_seen_usage": False, "_umsg": {}}
         turns.append(cur)
         state["turn"] = cur
 
@@ -572,11 +571,10 @@ def _parse_full(path: str, sidechain: bool = False) -> dict:
                     state["turn"]["model"] = _short_model(msg.get("model"))
                 usage = msg.get("usage")
                 if isinstance(usage, dict):
-                    acc = state["turn"]["_usage"]
-                    acc["in"] += usage.get("input_tokens") or 0
-                    acc["out"] += usage.get("output_tokens") or 0
-                    acc["cw"] += usage.get("cache_creation_input_tokens") or 0
-                    acc["cr"] += usage.get("cache_read_input_tokens") or 0
+                    # One record per content block, each repeating its message's
+                    # usage: a message counts once, by id.
+                    um = state["turn"]["_umsg"]
+                    um[msg.get("id") or f"#{len(um)}"] = usage
                     state["turn"]["_seen_usage"] = True
                 for b in (content or []):
                     if not isinstance(b, dict):
@@ -623,7 +621,10 @@ def _parse_full(path: str, sidechain: bool = False) -> dict:
     # Finalize per-turn metrics (cost from usage tokens, elapsed from timestamps)
     # and drop the scratch accumulators so the turn shape matches the store's.
     for cur in turns:
-        usage = cur.pop("_usage", None)
+        umsg = cur.pop("_umsg", None) or {}
+        usage = {k: sum(u.get(src) or 0 for u in umsg.values()) for k, src in
+                 (("in", "input_tokens"), ("out", "output_tokens"),
+                  ("cw", "cache_creation_input_tokens"), ("cr", "cache_read_input_tokens"))}
         seen = cur.pop("_seen_usage", False)
         last_ts = cur.pop("_last_ts", None)
         if seen and usage:

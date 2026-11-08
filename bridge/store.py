@@ -1460,7 +1460,7 @@ def turn_metrics(session_id: str) -> list[dict]:
     up. Ordered by seq so a caller can attribute per turn as well as per session."""
     with closing(_connect()) as c:
         return [dict(r) for r in c.execute(
-            "SELECT seq, status, elapsed, started, tok_in, tok_out, tok_cache_w, "
+            "SELECT id, seq, status, elapsed, started, tok_in, tok_out, tok_cache_w, "
             "tok_cache_r FROM turns WHERE session_id=? ORDER BY seq",
             (session_id,)).fetchall()]
 

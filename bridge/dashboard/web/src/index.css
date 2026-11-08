@@ -6734,14 +6734,14 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .us-note { padding: 4px 12px 12px; font: 400 var(--t10)/1.45 var(--f); color: var(--txl); }
 /* MIDDLE-EARTH reads natural case, as its PROFILE menu does (.pm-wtag, .pm-reset, .pm-tag) */
 
-/* === TURNS TAB =================================================================
-   The right rail's TURNS panel (hud/TurnsPanel; spec right-rail-reimagine,
-   Turns · MOMENTS): the GIT tab's bones (.gp root), a now bar while the latest
-   turn works or waits on you, then the stream newest first down one 2px line —
-   a 38px header per turn, its number tile on the line, and under it the moments
-   that mattered, 28px each, their icons on the line. --tn-bg is the column's
-   ground, which the tiles and icons cut the line with. FLOW shares the .tn root
-   and .tn-none (FlowPanel). */
+/* === SESSION TAB ===============================================================
+   The right rail's SESSION panel (hud/SessionPanel; design session-tab, B · CURVE
+   round 2): TURNS and FLOW in one. The GIT tab's bones (.gp root) and TURNS' now
+   bar and find (.tn), then a 132px hero like every rail tab's: the window on the
+   clock, a strip of who was working, the path's steps as bands. Then TIME, ON
+   WHAT, HELPERS, TURNS and the path's NEXT step. Theme colours only: Claude the
+   accent, tools --info, helpers --purple, waiting on you the ask hue. --tn-bg is
+   the column's ground. */
 .tn { --askc: var(--ask, var(--warn)); --tn-bg: var(--canvas, var(--panel2)); }
 [data-fam="pebble"] .tn { --tn-bg: var(--panel2); }
 .tn .gp-title { margin-right: 0; }
@@ -6769,52 +6769,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn .tn-now.ask > button { color: var(--acc-on); background: var(--c); }
 .tn-now > button:hover { filter: brightness(1.08); }
 .tn-now > button:focus-visible { outline: 2px solid color-mix(in srgb, var(--c) 60%, transparent); outline-offset: 2px; }
-/* the stream, on one line down the tiles' and icons' centres */
-.tn-st { position: relative; padding: 4px 12px 16px 14px; }
-.tn-st::before { content: ""; position: absolute; left: 25px; top: 20px; bottom: 16px; width: 2px; border-radius: 1px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 26%, transparent) 30%, var(--l)); }
-/* a day line on top: the line still starts at the first tile */
-.tn-st.day::before { top: 49px; }
-.tn-h { position: relative; isolation: isolate; display: flex; align-items: center; gap: 8px; height: 38px; cursor: pointer;
-  font: 800 var(--t125)/1.25 var(--f); color: var(--txb); }
-.tn-h::after { content: ""; position: absolute; inset: 4px -6px 4px 30px; border-radius: 8px; z-index: -1; }
-/* .on: the turn the chat is showing */
-.tn-h:is(:hover, .sel, .on)::after { background: var(--wash); }
-.tn-n { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; box-shadow: 0 0 0 3px var(--tn-bg);
-  font: normal 800 var(--t11)/1 var(--f); color: var(--txb); background: color-mix(in srgb, var(--acc) 26%, var(--tn-bg)); }
-.tn-h.run .tn-n { color: var(--acc-on); background: var(--acc); animation: tnglow 1.6s ease-in-out infinite; }
-.tn-h.ask .tn-n { color: var(--acc-on); background: var(--askc); box-shadow: 0 0 0 3px var(--tn-bg), 0 0 14px color-mix(in srgb, var(--askc) 55%, transparent); }
-.tn-h.err .tn-n { color: var(--err); background: color-mix(in srgb, var(--err) 22%, var(--tn-bg)); }
-@keyframes tnglow { 50% { box-shadow: 0 0 0 3px var(--tn-bg), 0 0 14px color-mix(in srgb, var(--acc) 60%, transparent); } }
-.tn-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tn-h.err .tn-p { color: var(--txl); }
-.tn-w { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); white-space: nowrap; }
-.tn-h.err .tn-w { color: var(--err); }
-/* copy · send again: over the line's end on hover, so the line never reflows */
-.tn-acts { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none; gap: 1px; padding: 1px; border-radius: var(--r);
-  background: var(--panel2); box-shadow: 0 0 0 1px var(--l); }
-.tn-h:is(:hover, :focus-within) .tn-acts { display: flex; }
-.tn-acts .gp-ib { width: 20px; height: 20px; }
-/* a moment: its icon on the line in its tone (--c), what it did, when */
-.tn-m { --c: var(--acc); position: relative; isolation: isolate; display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 0 0 4px; cursor: pointer;
-  font: 600 var(--t115)/1.2 var(--f); color: var(--txm); }
-.tn-m.ask { --c: var(--askc); }
-.tn-m.ok { --c: var(--ok); }
-.tn-m.err { --c: var(--err); }
-.tn-m:hover::after { content: ""; position: absolute; inset: 2px -6px 2px 26px; border-radius: 7px; z-index: -1; background: var(--wash); }
-.tn-i { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: var(--c); background: var(--tn-bg);
-  box-shadow: inset 0 0 0 1.5px currentColor; font: 800 var(--t9)/1 var(--f); }
-.tn-x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tn-x b { font-weight: 700; color: var(--tx); }
-.tn-m.ask .tn-x, .tn-m.ask .tn-x b { color: var(--txb); }
-.tn-m.err .tn-x b { color: var(--err); }
-.tn-m > small { flex: none; font: 700 var(--t10)/1 var(--f); color: var(--txg); }
-/* +N more / N moments: unfolds the turn's moments in place */
-.tn .tn-m.more { --c: var(--txg); width: 100%; border: 0; border-radius: 0; background: none; text-align: left; appearance: none; color: var(--txg); font-weight: 700; }
-.tn-m.more:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: -2px; }
-/* AWAY 1H 41M · the day: what passed between a turn and the one before it */
-.tn-gap { display: flex; align-items: center; height: 26px; padding-left: 36px; overflow: hidden; white-space: nowrap;
-  font: 800 var(--t9)/1 var(--f); letter-spacing: 1.3px; text-transform: uppercase; color: var(--txg); }
 .tn mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: var(--txb); border-radius: 2px; padding: 0 1px; }
 /* find */
 .tn-find { display: flex; align-items: center; gap: 6px; height: 30px; flex: none; margin: 9px 10px 3px; padding: 0 4px 0 9px; border-radius: var(--r);
@@ -6825,7 +6779,151 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-find > em { font: normal 400 var(--t95)/1 var(--m); color: var(--txl); white-space: nowrap; }
 .tn-hint { flex: none; padding: 4px 12px 2px; font: 400 var(--t95)/1.4 var(--f); color: var(--txl); }
 .tn-hint kbd { font: 500 var(--t85)/1 var(--m); padding: 1px 4px; border-radius: 3px; border: 1px solid var(--l2); color: var(--txd); }
-@media (prefers-reduced-motion: reduce) { .tn-dot, .tn-h.run .tn-n { animation: none; } }
+/* the hero: one height in every state, so nothing under it moves */
+.ss-hero { flex: none; height: 132px; box-sizing: border-box; margin: 2px 12px 6px; overflow: hidden; }
+.ss-top { display: flex; align-items: center; gap: 5px; height: 20px; font: 700 var(--t105)/1 var(--f); color: var(--txl); white-space: nowrap; }
+.ss-k { font: 800 var(--t95)/1 var(--f); letter-spacing: .12em; }
+.ss-top > b { font: 800 var(--t15)/1 var(--f); color: var(--txb); }
+.ss-top > .ss-r, .ss-compact { margin-left: auto; }
+.ss-compact { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--l2);
+  background: none; cursor: pointer; font: 800 var(--t10)/1 var(--f); color: var(--tx); }
+.ss-compact:hover, .ss-compact:focus-visible { border-color: var(--warn); color: var(--txb); }
+.ss-curve { display: block; margin-top: 3px; overflow: visible; }
+.ss-a0 { stop-color: var(--acc); stop-opacity: .38; }
+.ss-a1 { stop-color: var(--acc); stop-opacity: .03; }
+.ss-line { fill: none; stroke: var(--acc); stroke-width: 1.5; stroke-linejoin: round; }
+.ss-base { stroke: color-mix(in srgb, var(--txl) 30%, transparent); }
+.ss-zone { stroke: var(--warn); stroke-dasharray: 4 3; opacity: .85; }
+.ss-zt, .ss-ft, .ss-axis, [class^="ss-bt-"] { font: 800 8.5px var(--f); letter-spacing: .04em; }
+.ss-zt { fill: var(--warn); }
+.ss-ft { fill: var(--askc); }
+.ss-axis { font-weight: 700; fill: var(--txl); letter-spacing: 0; }
+.ss-gap { fill: var(--tn-bg); }
+.ss-cut { fill: none; stroke: color-mix(in srgb, var(--askc) 55%, transparent); stroke-width: 1.2; }
+.ss-f0 { fill: color-mix(in srgb, var(--askc) 12%, transparent); }
+.ss-f1 { fill: color-mix(in srgb, var(--askc) 55%, transparent); }
+/* who was working, in the strip, TIME's bar and its legend */
+.ss-w-claude { fill: var(--acc); background: var(--acc); }
+.ss-w-tools { fill: var(--info); background: var(--info); }
+.ss-w-helpers { fill: var(--purple); background: var(--purple); }
+.ss-w-you { fill: var(--askc); background: var(--askc); }
+.ss-w-away { fill: color-mix(in srgb, var(--txl) 20%, transparent);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--txl) 10%, transparent) 0 3px, color-mix(in srgb, var(--txl) 35%, transparent) 3px 4px); }
+/* the path's steps (or the turns) under the strip */
+.ss-b-done { fill: color-mix(in srgb, var(--ok) 16%, transparent); }
+.ss-bt-done { fill: var(--ok); }
+.ss-b-now { fill: color-mix(in srgb, var(--acc) 24%, transparent); }
+.ss-bt-now { fill: var(--acc); }
+.ss-b-turn { fill: color-mix(in srgb, var(--txl) 14%, transparent); }
+.ss-bt-turn { fill: var(--txm); }
+.ss-b-compact { fill: color-mix(in srgb, var(--warn) 45%, transparent); }
+.ss-b-next { fill: none; stroke: color-mix(in srgb, var(--txl) 45%, transparent); stroke-dasharray: 3 3; }
+.ss-bt-next { fill: var(--txl); }
+.ss-cmp rect { fill: var(--panel2); stroke: color-mix(in srgb, var(--warn) 50%, transparent); }
+.ss-cmp svg { color: var(--warn); }
+.ss-now0 { fill: color-mix(in srgb, var(--acc) 20%, transparent); }
+.ss-now1 { fill: var(--acc); }
+/* a section's label: TIME, ON WHAT, HELPERS, TURNS */
+.ss-lbl { display: flex; align-items: center; gap: 6px; padding: 14px 14px 7px; font: 800 var(--t95)/1 var(--f); letter-spacing: .13em; color: var(--txl); }
+.ss-tag { letter-spacing: .02em; font-weight: 700; color: var(--txm); }
+.ss-lbl > .ss-r { margin-left: auto; letter-spacing: .02em; font-weight: 700; color: var(--txg); }
+.ss-lbl > .ss-r b { color: var(--txb); }
+.ss-tbar { display: flex; height: 8px; margin: 0 14px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--txl) 8%, transparent); }
+.ss-tbar > i { display: block; height: 100%; }
+.ss-tleg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 9px 14px 0; font: 700 var(--t11)/1 var(--f); color: var(--txm); }
+.ss-tleg > span { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.ss-tleg em { margin-left: auto; font-style: normal; font-weight: 800; color: var(--txb); }
+.ss-dot { flex: none; width: 7px; height: 7px; border-radius: 2px; }
+.ss-tleg .ss-dot { border-radius: 50%; }
+/* ON WHAT: two lenses stacked in one cell, so switching never resizes the box */
+.ss-switch { display: flex; margin: 0 12px 6px; padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--txl) 6%, transparent); box-shadow: inset 0 0 0 1px var(--l); }
+.ss-switch > button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; height: 24px; border: 0; border-radius: 7px; background: none;
+  cursor: pointer; font: 800 var(--t95)/1 var(--f); letter-spacing: .08em; color: var(--txl); }
+.ss-switch > button em { font-style: normal; letter-spacing: .01em; font-size: var(--t11); color: var(--txm); }
+.ss-switch > button.on { background: var(--panel); color: var(--acc); box-shadow: 0 4px 12px -6px rgba(0, 0, 0, .6); }
+.ss-switch > button.on em { color: var(--txb); }
+.ss-lenses { display: grid; }
+.ss-lens { grid-area: 1 / 1; min-width: 0; }
+.ss-lens.off { visibility: hidden; }
+.ss-kr { display: flex; align-items: center; gap: 8px; width: 100%; height: 24px; padding: 0 14px; border: 0; background: none; cursor: pointer; text-align: left;
+  font: 700 var(--t115)/1 var(--f); color: var(--tx); }
+.ss-kr:hover, .ss-kr.open { background: var(--wash); }
+.ss-kn { width: 92px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-kb { flex: 1; height: 7px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--txl) 8%, transparent); }
+.ss-kb > i { display: block; height: 100%; border-radius: 2px; }
+.ss-kr > em { width: 40px; flex: none; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
+.ss-kc { flex: none; color: var(--txg); transition: transform .15s; }
+.ss-kr.open .ss-kc { transform: rotate(90deg); color: var(--txm); }
+.ss-k-claude { background: var(--acc); }
+.ss-k-startup { background: var(--txl); }
+.ss-k-commands { background: var(--info); }
+.ss-k-files { background: color-mix(in srgb, var(--ok) 70%, var(--info)); }
+.ss-k-skills { background: color-mix(in srgb, var(--purple) 55%, var(--err)); }
+.ss-k-helpers { background: var(--purple); }
+.ss-k-you { background: var(--txh); }
+.ss-k-summary { background: color-mix(in srgb, var(--warn) 60%, var(--txl)); }
+.ss-k-web, .ss-k-search, .ss-k-mcp, .ss-k-other { background: var(--txg); }
+/* a kind's biggest items: size, and in SPENT how many requests read it */
+.ss-big { margin: 0 12px 4px 30px; padding: 2px 0 4px; border-left: 1.5px solid var(--l2); }
+.ss-bi { display: flex; align-items: center; gap: 7px; width: 100%; height: 21px; padding: 0 2px 0 10px; border: 0; background: none; text-align: left; cursor: pointer;
+  white-space: nowrap; font: 500 var(--t105)/1 var(--m); color: var(--txm); }
+.ss-bi:disabled { cursor: default; }
+.ss-bi:not(:disabled):hover { color: var(--txb); }
+.ss-bx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ss-bw { flex: none; font: 700 var(--t10)/1 var(--f); color: var(--txg); }
+.ss-bi > em { flex: none; width: 38px; text-align: right; font: normal 800 var(--t11)/1 var(--f); color: var(--txb); }
+.ss-bi.none { font-family: var(--f); font-style: italic; color: var(--txl); cursor: default; }
+/* HELPERS: running first; a tap opens its run in AGENTS */
+.ss-h { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 14px; border: 0; background: none; cursor: pointer; text-align: left;
+  font: 700 var(--t115)/1 var(--f); color: var(--tx); }
+.ss-h:hover { background: var(--wash); }
+.ss-hi { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; color: var(--purple);
+  background: color-mix(in srgb, var(--purple) 13%, transparent); }
+.ss-hi.run::after { content: ""; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
+  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s ease-in-out infinite; }
+.ss-ht { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-h > small { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
+.ss-h > em { flex: none; width: 40px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
+.ss-h.more { color: var(--txg); }
+.ss-h.more .ss-hi { background: none; }
+/* TURNS: one line each, its moments as marks; .on is the turn the chat is showing */
+.ss-turns { border-top: 1px solid var(--l); }
+.ss-t { position: relative; display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border-bottom: 1px solid var(--l); cursor: pointer;
+  font: 700 var(--t12)/1 var(--f); color: var(--tx); }
+.ss-t:is(:hover, .sel, .on) { background: var(--wash); }
+.ss-t.on { box-shadow: inset 2px 0 0 var(--acc); }
+.ss-n { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font: normal 800 var(--t10)/1 var(--f); color: var(--txb);
+  background: color-mix(in srgb, var(--acc) 26%, var(--tn-bg)); }
+.ss-t.run .ss-n { color: var(--acc-on); background: var(--acc); animation: ssglow 1.6s ease-in-out infinite; }
+.ss-t.ask .ss-n { color: var(--acc-on); background: var(--askc); }
+.ss-t.err .ss-n { color: var(--err); background: color-mix(in srgb, var(--err) 22%, var(--tn-bg)); }
+.ss-t.err .ss-p { color: var(--txl); }
+@keyframes ssglow { 50% { box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 60%, transparent); } }
+.ss-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-cmd { color: var(--acc); font-weight: 800; }
+.ss-mk { display: flex; gap: 3px; flex: none; }
+.ss-m { --c: var(--acc); display: grid; place-items: center; width: 14px; height: 14px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  color: var(--c); box-shadow: inset 0 0 0 1.3px currentColor; font: 800 8px/1 var(--f); }
+.ss-m.ask { --c: var(--askc); }
+.ss-m.ok { --c: var(--ok); }
+.ss-m.err { --c: var(--err); }
+.ss-t > small { flex: none; min-width: 40px; text-align: right; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
+.ss-t.err > small { color: var(--err); }
+.ss-t > em { flex: none; width: 38px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
+/* copy · send again: over the line's end on hover, so the line never reflows */
+.ss-acts { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 1px; padding: 1px; border-radius: var(--r);
+  background: var(--panel2); box-shadow: 0 0 0 1px var(--l); }
+.ss-t:is(:hover, :focus-within) .ss-acts { display: flex; }
+.ss-acts .gp-ib { width: 20px; height: 20px; }
+/* the path's next step, and AUTO */
+.ss-next { display: flex; align-items: center; gap: 7px; height: 32px; margin: 10px 12px 12px; padding: 0 6px 0 10px; border-radius: 9px;
+  box-shadow: inset 0 0 0 1px var(--l2); font: 800 var(--t95)/1 var(--f); letter-spacing: .12em; color: var(--txl); }
+.ss-next > b { color: var(--tx); letter-spacing: .1em; }
+.ss-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t105)/1 var(--f); letter-spacing: 0; color: var(--txl); }
+.ss-auto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 0; border-radius: 7px; cursor: pointer;
+  font: 800 var(--t9)/1 var(--f); letter-spacing: .06em; color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.ss-auto.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 15%, transparent); }
+@media (prefers-reduced-motion: reduce) { .tn-dot, .ss-t.run .ss-n, .ss-hi.run::after { animation: none; } }
 
 /* === COUNCIL TAB ===============================================================
    The right rail's COUNCIL panel (hud/CouncilPanel; design: .mystical/design-
@@ -7859,18 +7957,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 :root[data-wco="linux"] { --wco-l: 0px; --wco-r: 0px; }
 .lxclose:hover { color: var(--err) !important; background: color-mix(in srgb, var(--err) 12%, transparent) !important; }
 
-/* RailHero: the 132px box atop every right-rail tab. Its height never changes,
-   in any state, so switching tabs never moves the list under it. */
-.rh { position: relative; flex: none; height: 132px; box-sizing: border-box; margin: 4px 12px 10px; padding: 10px 12px; overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); border-radius: 10px; container-type: inline-size;
-  background: radial-gradient(260px 120px at 85% -20%, color-mix(in srgb, var(--acc) 12%, transparent), transparent 70%),
-    color-mix(in srgb, var(--txl) 4%, transparent); }
-.rh-top { display: flex; align-items: center; gap: 7px; height: 16px; min-width: 0; }
-/* the top line's left label, shared by every hero */
-.rh-k { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* the one pulse every hero's live dot or block uses */
 @keyframes rhpulse { 50% { opacity: .45; } }
-@media (prefers-reduced-motion: reduce) { .rh *, .rh { animation: none !important; transition: none !important; } }
 /* Git DELIVERY TRACKER (hud/GitTracker) and the panel's sections under it. Colours are theme variables only. */
 .gt-trk { flex: none; margin: 2px 12px 0; padding: 13px 12px 12px; border-radius: 14px; min-width: 0; container-type: inline-size;
   background: radial-gradient(260px 120px at 0% -20%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%), var(--panel2, var(--panel));
@@ -8056,67 +8144,6 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tf-to:focus-within { outline: 2px solid var(--acc); outline-offset: 1px; }
 .tf-go { flex: none; appearance: none; cursor: pointer; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 9px; background: var(--acc); color: var(--acc-on, var(--canvas)); }
 .tf-go:hover, .tf-go:focus-visible { filter: brightness(1.12); }
-
-/* FLOW tab: the path map hero, then the steps under it. Colours are tokens only;
-   the pulse is the shared rhpulse, which .rh switches off under reduced motion. */
-.fl-none { position: absolute; inset: 28px 12px 10px; display: grid; place-items: center; text-align: center; font: italic 400 var(--t115)/1.4 var(--f); color: var(--txl); }
-.fl-n { flex: none; }
-.rh-k b { color: var(--acc); font-weight: 800; }
-.fl-auto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 7px; border-radius: 8px; border: 0; cursor: pointer;
-  font: 800 var(--t9)/1 var(--f); letter-spacing: .06em; color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
-.fl-auto.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
-.fl-map { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-.fl-st { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.fl-tag { height: 11px; display: flex; align-items: center; font-size: var(--t8); font-weight: 800; color: var(--acc); }
-.fl-st.you .fl-tag { color: var(--warn); }
-.fl-mk { position: relative; z-index: 1; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
-  background: var(--canvas); border: 1.6px solid color-mix(in srgb, var(--txl) 60%, transparent); }
-.fl-st.done .fl-mk { background: var(--ok); border-color: var(--ok); color: var(--canvas); }
-.fl-st.now .fl-mk { border-color: var(--acc); background: radial-gradient(circle, var(--acc-on) 0 2.5px, var(--acc) 3px); }
-.fl-st.now .fl-mk::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--acc); animation: rhpulse 1.6s ease-in-out infinite; }
-.fl-st.you .fl-mk { border-color: var(--warn); background: radial-gradient(circle, var(--warn) 0 2.5px, var(--canvas) 3px); }
-/* the line from the step before, centred on the markers (tag 11px + marker 8px) */
-.fl-st + .fl-st::before { content: ""; position: absolute; top: 18px; left: calc(-50% + 11px); right: calc(50% + 11px); border-top: 2px dotted color-mix(in srgb, var(--txl) 40%, transparent); }
-.fl-st.done::before { border-top: 2px solid var(--ok); }
-.fl-st.now::before { border-top: 2px dashed var(--acc); }
-.fl-lb { max-width: 100%; margin-top: 5px; font-size: var(--t8); font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: clip; }
-.fl-st.done .fl-lb { color: var(--ok); }
-.fl-st.now .fl-lb { color: var(--acc); }
-.fl-st.you .fl-lb { color: var(--warn); }
-/* a narrow rail has no room for six names: only the running step keeps its own */
-@container (max-width: 215px) { .fl-st:not(.now) .fl-lb { display: none; } }
-.fl-cap { position: absolute; left: 12px; right: 12px; bottom: 9px; display: flex; align-items: baseline; gap: 6px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; }
-.fl-cap b { color: var(--txb); font-weight: 800; text-transform: uppercase; }
-.fl-cap span { overflow: hidden; text-overflow: ellipsis; }
-.fl-dot { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); animation: rhpulse 1.4s ease-in-out infinite; }
-.fl-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 10px; display: flex; flex-direction: column; gap: 8px; }
-.fl-why { display: flex; gap: 7px; font-size: var(--t11); line-height: 1.4; color: var(--txd); }
-.fl-why svg { flex: none; margin-top: 2px; color: var(--acc); }
-.fl-why b { color: var(--txb); font-weight: 600; }
-.fl-done { display: flex; align-items: center; gap: 7px; font-size: var(--t10); color: var(--txl); min-width: 0; }
-.fl-done svg { flex: none; color: var(--ok); }
-.fl-done b { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.fl-done span { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.fl-now { border: 1px solid var(--acc); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--acc) 8%, transparent); }
-.fl-now .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.fl-now .n { font-size: var(--t10); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
-.fl-now .cmd { font: 400 var(--t10)/1 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.fl-now .r { margin-left: auto; }
-.fl-now .act { font-size: var(--t11); color: var(--txb); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-now .act i { font-style: normal; color: var(--txl); margin-right: 4px; }
-.fl-now .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.fl-pill { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 16px; padding: 0 7px; border-radius: 8px; font-size: var(--t9); font-weight: 700; white-space: nowrap;
-  color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
-.fl-pill.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
-.fl-pill.you { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
-.fl-next { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px dashed color-mix(in srgb, var(--txl) 25%, transparent); min-width: 0; }
-.fl-next .n { font-size: var(--t10); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); }
-.fl-next .d { flex: 1; min-width: 0; font: 400 var(--t10)/1 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-zone { flex: none; padding: 8px 12px 10px; font-size: var(--t9); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); }
-.fl-zone.over { color: var(--warn); }
-.fl-zone .bar { margin-top: 5px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--txl) 18%, transparent); overflow: hidden; }
-.fl-zone .bar i { display: block; height: 100%; background: var(--acc); }
-.fl-zone.over .bar i { background: var(--warn); }
 
 /* TICKETS mode (components/hud/TicketsMode.tsx): a set's card, its ticket stubs, the folded finished set.
    --tk-side is the sidebar's own ground, so the stub notches read as holes punched through it. */

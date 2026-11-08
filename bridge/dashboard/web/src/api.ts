@@ -16,6 +16,22 @@ export const TOKEN = params.get("token") ?? "";
 export const AUTH_REQUIRED =
   (window as Window & { __DASH_AUTH_REQUIRED__?: boolean }).__DASH_AUTH_REQUIRED__ === true;
 
+/** GET /local/sessions/<id>/meter (bridge/meter.py). Times are epoch seconds. */
+export type MeterWho = "claude" | "tools" | "helpers" | "you" | "away";
+export interface MeterItem { label: string; tokens: number; size?: number; reads?: number; turn: string | null }
+export interface MeterHelper { id: string; what: string; start: number; end: number; running: boolean; tokens: number; requests: number; turn: string | null }
+export interface Meter {
+  series: [number, number][];                       // [when, window] per request
+  segs: [number, number, MeterWho][];               // who was working, start to end
+  time: Record<MeterWho, number>;                   // seconds
+  window: { total: number; kinds: Record<string, number> };
+  spent: { total: number; fresh: number; reread: number; kinds: Record<string, number> };
+  biggest: { window: Record<string, MeterItem[]>; spent: Record<string, MeterItem[]> };
+  helpers: MeterHelper[];
+  turns: Record<string, { spent: number; requests: number; from: number; to: number; peak: number }>;
+  compactions: [number, number | null][];
+}
+
 export interface Project {
   rel: string;
   name: string;
@@ -2034,6 +2050,8 @@ export const api = {
       }),
   // The FLOW tab: the session's skill path, and the switch that holds or releases its auto-start.
   getFlow: (id: string) => req<{ flow: Flow | null; set: FlowSet | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
+  // The SESSION tab's window, time and spend (bridge/meter.py); {} when there's no transcript yet.
+  getMeter: (id: string) => req<Meter | Record<string, never>>(`/local/sessions/${encodeURIComponent(id)}/meter`),
   setFlowAuto: (id: string, on: boolean) =>
     req<{ ok: boolean }>("/local/flow/auto", { method: "POST", body: { session: id, on } }),
   // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than

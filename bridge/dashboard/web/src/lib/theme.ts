@@ -340,7 +340,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["home", "turns", "flow", "files", "git", "council", "branches", "learn", "rivendell", "team", "usage"] as const;
+export const RIGHT_TABS = ["home", "session", "files", "git", "council", "branches", "learn", "rivendell", "team", "usage"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";
@@ -506,6 +506,10 @@ const toClocks = (v: unknown): WorldClock[] =>
 
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
+// Tabs SESSION took in: a stored order or hide list names SESSION once, where the first of them stood.
+const TOOK = new Set(["turns", "flow"]);
+const tookIn = (ids: string[]) => [...new Set(ids.map((id) => (TOOK.has(id) ? "session" : id)))];
+
 export function loadSettings(): HudSettings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -518,10 +522,12 @@ export function loadSettings(): HudSettings {
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
         leftOpen: p.leftOpen ?? true,
-        // "changes" was its own tab until the GIT tab took it in (2026-10-18)
-        rightTab: (p.rightTab as string) === "changes" ? "git" : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
-        rightOrder: strs(p.rightOrder),
-        rightHidden: strs(p.rightHidden),
+        // "changes" was its own tab until the GIT tab took it in (2026-10-18);
+        // TURNS and FLOW until SESSION did (2026-11-08)
+        rightTab: (p.rightTab as string) === "changes" ? "git" : TOOK.has(p.rightTab as string) ? "session"
+          : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
+        rightOrder: tookIn(strs(p.rightOrder)),
+        rightHidden: tookIn(strs(p.rightHidden)),
         rightW: typeof p.rightW === "number" && p.rightW >= RIGHT_W.min && p.rightW <= RIGHT_W.max ? p.rightW : 0,
         indicator: toIndicator(p.indicator),
         nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
