@@ -1,0 +1,28 @@
+#!/bin/sh
+# A commit that changes a web app runs that app's `npm run check` (tsc + every *.check.ts) on the
+# staged files, exported to a temp dir: another session's unstaged edits in a shared checkout
+# must neither fail nor pass it. Enable per clone: git config core.hooksPath .githooks
+# Only in Claude Code's shells (CLAUDECODE=1): the bridge's own commits time out at 8 s
+# (bridge/git.py), and the dashboard's check takes about 10.
+[ "$CLAUDECODE" = 1 ] || exit 0
+apps=$(git diff --cached --name-only | sed -nE 's#^bridge/(dashboard|miniapp)/web/.*#\1#p' | sort -u)
+[ -n "$apps" ] || exit 0
+root=$(git rev-parse --show-toplevel)
+main=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)   # a worktree borrows the main checkout's node_modules
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/mystical-precommit.XXXXXX") || exit 1
+trap 'rm -rf "$tmp"' EXIT
+git ls-files -z -- bridge/dashboard/web bridge/miniapp/web | git checkout-index -z --stdin --prefix="$tmp/"
+for app in $apps; do
+  nm=$root/bridge/$app/web/node_modules
+  [ -d "$nm" ] || nm=$main/bridge/$app/web/node_modules
+  if [ ! -d "$nm" ]; then
+    echo "pre-commit: no node_modules for bridge/$app/web, so its check didn't run"
+    continue
+  fi
+  ln -s "$nm" "$tmp/bridge/$app/web/node_modules"
+  if ! (cd "$tmp/bridge/$app/web" && npm run check >"$tmp/$app.log" 2>&1); then
+    tail -n 60 "$tmp/$app.log"
+    echo "pre-commit: bridge/$app/web fails npm run check on the staged files; fix them and commit again"
+    exit 1
+  fi
+done

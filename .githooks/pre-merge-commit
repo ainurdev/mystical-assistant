@@ -1,0 +1,3 @@
+#!/bin/sh
+# A merge that commits on its own runs this hook, not pre-commit: give it the same check.
+exec "$(dirname "$0")/pre-commit"
