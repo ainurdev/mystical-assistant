@@ -117,7 +117,9 @@ import { ProjectPick } from "./components/ProjectPick";
 import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
-import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
+import { BranchesPanel, branchMenu, type BranchView } from "./components/hud/BranchesPanel";
+import { useAutoClean, useBranches } from "./components/hud/useBranches";
+import { branchActivity, branchTree, landable, shownRows } from "./lib/branchrows";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
 import { arrange } from "./lib/rail";
@@ -2309,6 +2311,22 @@ export function App() {
   // the worktree its shell moved into, else its run dir.
   const filesEdits = useMemo(() => sessionEdits(turns, selected?.work_cwd || selected?.cwd),
     [turns, selected?.work_cwd, selected?.cwd]);
+  // BRANCHES (lib/branchrows): one read of the open repo's branches feeds the tab,
+  // the rail tile's LAND n and auto clean-up (the tab header's broom).
+  const branchData = useBranches(sessionProject, gitNonce, settings.rightOpen && settings.rightTab === "branches");
+  const branchView = useMemo<BranchView | null>(() => {
+    if (!branchData.data) return null;
+    const who = branchActivity(sessions, statusMap, sessionProject);
+    const rows = shownRows(branchData.data.branches, branchData.data.base, sessionBranch ?? null, who.activity, branchData.prs, who.titles);
+    return { base: branchData.data.base, rows, tree: branchTree(rows), picks: branchData.data.picks ?? {}, live: who.live, byBranch: who.byBranch };
+  }, [branchData.data, branchData.prs, sessions, statusMap, sessionProject, sessionBranch]);
+  const landCount = branchView?.rows.filter(landable).length ?? 0;
+  // a branch someone used in the last half hour isn't cleaned up under them
+  const recentBranches = useMemo(() => {
+    const since = Date.now() / 1000 - 1800;
+    return new Set(sessions.filter((s) => s.project === sessionProject && s.branch && s.updated > since).map((s) => s.branch!));
+  }, [sessions, sessionProject]);
+  useAutoClean(settings.autoClean, sessionProject, branchView?.rows ?? null, recentBranches, branchData.load);
   // The MAP chip and the window's MAP tab show only where the repo's own switch
   // (SETTINGS ▸ Projects ▸ Project map) is on; re-read when SETTINGS closes.
   const [mapOn, setMapOn] = useState(false);
@@ -2632,12 +2650,14 @@ export function App() {
           onPushed={() => setGitNonce((n) => n + 1)} />
       ),
     },
-    // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.
+    // Every branch under the branch it goes into, and its next step (lib/branchrows); ⋯ and right-click hold the rest.
     {
       id: "branches", short: "BRANCH", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
+      hint: landCount ? `${landCount} ready to land` : undefined,
+      badge: landCount ? `LAND ${landCount}` : undefined,
       render: () => (
-        <BranchesPanel project={sessionProject} branch={sessionBranch}
-          sessions={sessions} status={statusMap} nonce={gitNonce}
+        <BranchesPanel project={sessionProject} view={branchView} err={branchData.err} onReload={() => void branchData.load()}
+          autoClean={settings.autoClean} onAutoClean={(on) => patchSettings({ autoClean: on })}
           onOpen={(s) => { selectSession(s); toChat(); }}
           // a checkout gets a session in it; a branch without one gets a worktree first
           onNew={(r) => { if (!sessionProject) return;

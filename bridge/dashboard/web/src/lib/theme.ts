@@ -399,6 +399,9 @@ export interface HudSettings {
   sendKey: SendKey;
   // The Almanac's world clocks (components/hud/Almanac.tsx), at most two.
   clocks: WorldClock[];
+  // BRANCHES: landed branches nothing holds any more clean up by themselves
+  // (lib/branchrows autoClean); the broom in the tab's header turns it off.
+  autoClean: boolean;
 }
 
 /** A world clock: an IANA zone, and whether the header shows it beside the Clock too. */
@@ -449,7 +452,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, chatBg: "none",
-  layout: "default", composer: "tabs", sendKey: "enter", clocks: [],
+  layout: "default", composer: "tabs", sendKey: "enter", clocks: [], autoClean: true,
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -555,6 +558,7 @@ export function loadSettings(): HudSettings {
         chatBg: toChatBg(p.chatBg),
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         clocks: toClocks(p.clocks),
+        autoClean: p.autoClean !== false,
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
         composer: urlComposer() ?? (COMPOSER_STYLES.includes(p.composer as ComposerStyle) ? (p.composer as ComposerStyle) : "tabs"),
       };

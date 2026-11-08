@@ -2553,10 +2553,18 @@ export const api = {
       "/local/git/worktree",
       { method: "POST", body: { project, branch, parent, create } },
     ),
-  worktreeRemove: (project: string, path: string, branch?: string, delete_branch = false) =>
-    req<{ ok: boolean; output: string }>("/local/git/worktree/remove", {
+  // archive: the worktree's git-ignored scratch (.mystical, .superpowers) moves to the
+  // repo's .mystical/archive first; `kept` says where. Refused while a turn runs in it.
+  worktreeRemove: (project: string, path: string, branch?: string, delete_branch = false, archive = false) =>
+    req<{ ok: boolean; output: string; kept?: string }>("/local/git/worktree/remove", {
       method: "POST",
-      body: { project, path, branch, delete_branch },
+      body: { project, path, branch, delete_branch, archive },
+    }),
+  // BRANCHES ⋯ Target ▸: the branch this one goes into ("" none, null back to the guess).
+  setBranchTarget: (project: string, branch: string, target: string | null) =>
+    req<{ targets: Record<string, string> }>("/local/git/branch/target", {
+      method: "POST",
+      body: { project, branch, target },
     }),
   createPr: (project: string, head: string, base: string, title: string, body?: string) =>
     req<{ ok: boolean; url: string; number: number | null; output: string }>(
