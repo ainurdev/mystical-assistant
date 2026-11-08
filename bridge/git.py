@@ -869,20 +869,32 @@ def _left_right(cwd: str, base: str, ref: str) -> "tuple[int, int] | None":
 _CREATED = re.compile(r"branch: Created from (.+)$")
 
 
-def _made_from(cwd: str, name: str, local: set, remote: set) -> tuple[str, bool]:
+def _made_from(cwd: str, name: str, local: set, remote: set, base: str) -> tuple[str, bool]:
     """Where `name` was made from, read off its reflog's first entry ("branch:
     Created from origin/staging"), as a ref this repo has: the local branch, else
     origin's copy. A gone remote's name ("nr/release/x") falls back to origin's.
-    "" when it says HEAD (which names no branch) or the reflog expired (90 days).
+    "Created from HEAD" names whatever a checkout had out: the base when the start
+    commit is in its history, else the branch whose own reflog stood on that
+    commit (a stack: pins cut from the videos branch's worktree). "" when nothing
+    says, or the reflog expired (90 days).
     Also whether the branch ever moved after it was made: a worktree opened a
     minute ago sits on its start commit and looks merged, but it holds no work
     (True when the reflog can't say)."""
-    rc, out, _ = _run(cwd, "reflog", "show", "--format=%gs", f"refs/heads/{name}", "--")
+    rc, out, _ = _run(cwd, "reflog", "show", "--format=%H%x09%gs", f"refs/heads/{name}", "--")
     lines = [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else []
-    m = _CREATED.match(lines[-1].strip()) if lines else None
+    sha, _, said = (lines[-1].partition("\t") if lines else ("", "", ""))
+    m = _CREATED.match(said.strip())
     src = m.group(1).strip() if m else ""
     for pre in ("refs/heads/", "refs/remotes/"):
         src = src[len(pre):] if src.startswith(pre) else src
+    if src == "HEAD" and sha:
+        if base and _run(cwd, "merge-base", "--is-ancestor", sha, base)[0] == 0:
+            return ("" if base == name else base), len(lines) != 1
+        rc, held, _ = _run(cwd, "for-each-ref", "--contains", sha, "--format=%(refname:short)", "refs/heads")
+        for c in (held.split() if rc == 0 else []):
+            if c != name and sha in _run(cwd, "reflog", "show", "--format=%H", f"refs/heads/{c}", "--")[1].split():
+                return c, len(lines) != 1
+        return "", len(lines) != 1
     cands = [c for c in (src, src.split("/", 1)[1] if "/" in src else "") if c and c != "HEAD"]
     hit = next((c for c in cands if c in local), "") or next(
         (r for c in cands for r in (c, f"origin/{c}") if r in remote), "")
@@ -944,7 +956,7 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
             continue
         gone = track.strip() == "gone"
         m = re.search(r"ahead (\d+)", track)
-        start, worked = _made_from(cwd, name, local, remote)
+        start, worked = _made_from(cwd, name, local, remote, base)
         target = "" if name == base else known(want[name]) if name in want else start or base
         if target == name:
             target = ""

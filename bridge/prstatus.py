@@ -498,8 +498,10 @@ def branch_prs(repo_dir: str) -> dict:
 
 
 def cached_bases(repo_dir: str) -> dict:
-    """{branch: its PR's base} from the last branch_prs read, without calling gh:
-    git.branch_status measures each branch against where its PR goes. {} until
-    the tab has read the PRs once; the tab reads the branches again then."""
+    """{branch: its open PR's base} from the last branch_prs read, without calling
+    gh: git.branch_status measures each branch against where its PR goes. Open
+    PRs only: a closed one says where it didn't go (apex #300 into main, closed,
+    after #299 merged into release/dashboard-v1). {} until the tab has read the
+    PRs once; the tab reads the branches again then."""
     hit = _lists.get(repo_dir)
-    return {b: p["base"] for b, p in (hit["prs"] if hit else {}).items() if p.get("base")}
+    return {b: p["base"] for b, p in (hit["prs"] if hit else {}).items() if p.get("base") and p.get("state") == "OPEN"}

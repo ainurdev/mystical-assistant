@@ -63,6 +63,23 @@ def test_each_branch_is_measured_against_the_branch_it_was_made_from():
     assert rows[base]["target"] == "" and rows[base]["merged"] is False
 
 
+def test_created_from_head_finds_the_branch_it_was_cut_from():
+    d = _repo()
+    base = git.current_branch(d)
+    _git(d, "checkout", "-q", "-b", "videos")
+    _commit(d, "v.txt", "v", "videos work")
+    _git(d, "checkout", "-q", "-b", "pins")           # reflog: "branch: Created from HEAD", HEAD = videos
+    _commit(d, "p.txt", "p", "pins work")
+    _git(d, "checkout", "-q", base)
+    _git(d, "checkout", "-q", "-b", "plain")          # from HEAD = the base: the base
+    _commit(d, "q.txt", "q", "plain work")
+    _git(d, "checkout", "-q", base)
+    _, rows = _rows(d)
+    assert rows["pins"]["target"] == "videos" and (rows["pins"]["ahead"], rows["pins"]["behind"]) == (1, 0)
+    assert rows["plain"]["target"] == base
+    assert rows["videos"]["target"] == base
+
+
 def test_a_pick_or_a_pr_base_beats_where_it_was_made():
     d = _repo()
     base = git.current_branch(d)
@@ -129,8 +146,9 @@ def test_cached_bases_reads_the_last_pr_list_without_gh():
     prstatus._lists.clear()
     assert prstatus.cached_bases("/r") == {}
     prstatus._lists["/r"] = {"at": 0, "ttl": 60, "prs": {
-        "feat/a": {"base": "staging"}, "feat/b": {"base": ""}, "feat/c": {"base": "main"}}}
-    assert prstatus.cached_bases("/r") == {"feat/a": "staging", "feat/c": "main"}
+        "feat/a": {"base": "staging", "state": "OPEN"}, "feat/b": {"base": "", "state": "OPEN"},
+        "feat/c": {"base": "main", "state": "OPEN"}, "feat/d": {"base": "main", "state": "CLOSED"}}}
+    assert prstatus.cached_bases("/r") == {"feat/a": "staging", "feat/c": "main"}   # a closed PR says where it didn't go
     prstatus._lists.clear()
 
 

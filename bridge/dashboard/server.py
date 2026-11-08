@@ -972,7 +972,8 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             picks = project_config.branch_targets(browser.rel(git.main_checkout(abs_p) or abs_p))
-            return self._json(git.branch_status(abs_p, {**prstatus.cached_bases(abs_p), **picks}))
+            return self._json({**git.branch_status(abs_p, {**prstatus.cached_bases(abs_p), **picks}),
+                               "picks": picks})
         if path == "/local/github/prs":
             # The BRANCHES tab's PR chips: one cached read per repo, no pings.
             abs_p = _abs_project(qs.get("project", [None])[0])
