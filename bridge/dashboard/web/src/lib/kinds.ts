@@ -119,6 +119,6 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
       return out;
     }
     case "ask":
-      return [{ text: "read-only, changes nothing" }, ...(c.mapBuiltAt ? [{ text: `map built ${ago(c.mapBuiltAt)}` }] : [])];
+      return [{ text: "read-only, changes nothing" }, ...(c.mapBuiltAt ? [{ text: `map built ${ago(c.mapBuiltAt)} ago` }] : [])];
   }
 }
