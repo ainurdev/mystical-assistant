@@ -199,7 +199,17 @@ CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's 
 GRAB_STYLE = _t("grab_style", "Read a public page's fonts, sizes, colours, radii and spacing, with a screenshot, as a direction "
                 "to work from when the user says \"like this\". Don't copy its code or content.",
                 {"url": _S, "note": _S}, ["url"])
-EXTRA_ALL = (DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
+DOCS_OUTLINE = _t("docs_outline", "Set the project's table of contents, before writing any docs page. The user sees it in their Docs tab, and "
+                  "only asks for pages after looking it over. Pages already written keep their text if their id stays.",
+                  {"location": {"type": "string", "description": "hidden, or a folder in the project like docs. Only needed the first time."},
+                   "title": _S, "pages": {"type": "array", "items": {"type": "object"}, "description": "[{id, title, group, summary, sources: [files it's about]}]."}}, ["pages"])
+DOC_PAGE = _t("doc_page", "Write one docs page from the contents, as Markdown. Read the code first. A fenced ```view block holding show_data's "
+              "arguments as JSON draws a live chart, table or diagram, and is checked as you save.",
+              {"id": _S, "markdown": _S, "sources": {"type": "array", "items": {"type": "string"}, "description": "The files it's about, so it can tell when it's gone stale."}}, ["id", "markdown"])
+READ_DOCS = _t("read_docs", "The project's docs: with no arguments the contents and what's stale, with id or path a page, with query the pages "
+               "mentioning it. Models wrote them: where they disagree with the code, trust the code.",
+               {"id": _S, "path": _S, "query": _S}, [])
+EXTRA_ALL = (DOCS_OUTLINE, DOC_PAGE, READ_DOCS, DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
 # the session by its Claude id, so an agent session has nothing to send.
 EXTRA_AGENT = (WAIT_SESSION, SCREENSHOT, RECORD)
@@ -419,6 +429,33 @@ def _grab_style(s: dict, job, a: dict) -> dict:
     if code != 200:
         return _text(out.get("error") or "Couldn't read it.", error=True)
     return _text(json.dumps(out["reference"], ensure_ascii=False, indent=1))
+
+
+def _docs(s: dict, a: dict, name: str) -> dict:
+    from bridge import project_docs
+    try:
+        root = _design_root(s)
+        if name == "read":
+            return _text(project_docs.for_agents(root, a))
+        if name == "outline":
+            got = project_docs.outline(root, a)
+            return _text(f"The contents are in the user's Docs tab, with {got['pages']} pages in {got['folder']}. Don't write pages until they ask.")
+        got = project_docs.write_page(root, a)
+        return _text(f"Saved {got['path']}, with {got['views']} live view(s). It's in their Docs tab now.")
+    except (project_docs.Refused, OSError) as e:
+        return _text(str(e), error=True)
+
+
+def _docs_outline(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "outline")
+
+
+def _doc_page(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "page")
+
+
+def _read_docs(s: dict, job, a: dict) -> dict:
+    return _docs(s, a, "read")
 
 
 def _show_image(s: dict, job, a: dict) -> dict:
@@ -784,7 +821,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "offer_review": _offer_review, "design_context": _design_context,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,

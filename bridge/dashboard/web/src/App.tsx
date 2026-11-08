@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Timer, Palette, Bookmark,
+import { BookOpen, Timer, Palette, Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
@@ -118,6 +118,7 @@ import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
+import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -2477,6 +2478,11 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // The project's docs, generated or found (components/DocsPanel).
+    ...(multiOn ? [{
+      id: "docs", label: "Docs", icon: <BookOpen {...RAIL} />, scope: "project" as const,
+      render: () => <DocsPanel onAsk={(text) => { void send(text, [], { force: true }); }} />,
+    }] : []),
     // Your timers, listeners and commands that run agents (components/AutomationsPanel).
     ...(multiOn ? [{
       id: "automations", label: "Automations", icon: <Timer {...RAIL} />,

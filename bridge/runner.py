@@ -202,6 +202,7 @@ _EXPERIMENTAL_NOTE = (
     "sees it live and can point, draw and comment on it. If the request is open, show three rough directions first and "
     "ask which way to go. inspect_ui and critique_design are there for checking a design. When the user asks to run the app and "
     "work on it together, start its dev server and call show_design with pages [{name, url}]: they can point at the real app.\n\n"
+    "A project may have generated docs: read_docs (find_tools) lists them, and where they disagree with the code, trust the code.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
     "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
     "tested and just needs a check, go ahead normally.")

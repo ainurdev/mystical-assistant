@@ -13,7 +13,7 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, experimental,
+from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, project_docs, experimental,
                     handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
@@ -275,6 +275,11 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return chat_aside.explain(body, chat_id, s.get("cwd"))
     if path.startswith("chat/design"):
         return _post_design(path, body, s, chat_id)
+    if path in ("chat/docs", "chat/doc-read"):
+        root = chat_images.root_of(s.get("cwd"))
+        if not root:
+            return {"error": "This chat has no project folder."}, 400
+        return (project_docs.listed(root), 200) if path == "chat/docs" else project_docs.read(root, body)
     if path == "chat/view-save":
         return saved_views.save(chat_images.root_of(s.get("cwd")), body.get("view"))
     if path == "chat/config":

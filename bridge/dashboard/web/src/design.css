@@ -197,3 +197,24 @@
 .dg-url input { flex: 1; min-width: 0; }
 .dg-open { display: flex; gap: 4px; margin-bottom: 8px; }
 .dg-open input { flex: 1; min-width: 0; background: var(--panel2); color: var(--tx); border: 1px solid var(--border); border-radius: var(--prad, 0px); font: inherit; font-size: var(--t115, 11.5px); min-height: 28px; padding: 3px 6px; }
+
+/* the docs tab (components/DocsPanel.tsx) */
+.dc-where { color: var(--txd); }
+.dc-do { margin-bottom: 10px; }
+.dc-group { margin-bottom: 10px; }
+.dc-group h5 { margin: 0 0 3px; font: inherit; font-size: var(--t105, 10.5px); letter-spacing: 0.04em; color: var(--txd); }
+.dc-group ul, .dc-found { list-style: none; margin: 0; padding: 0; }
+.dc-group li { padding: 3px 0; }
+.dc-group li small { display: block; color: var(--txd); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-group li .dc-stale { display: inline; margin-left: 6px; color: var(--warn); }
+.dc-group li .au-link { margin-left: 6px; }
+.dc-page { padding: 0; background: none; border: 0; color: var(--txb); font: inherit; text-align: left; overflow-wrap: anywhere; }
+button.dc-page { cursor: pointer; }
+button.dc-page:hover { color: var(--acc); text-decoration: underline; }
+li[data-unwritten] > .dc-page { color: var(--txd); }
+.dc-found li { padding: 2px 0; }
+.dc-found .dc-page { color: var(--txm); }
+.dc-warn { margin: 0 0 12px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: var(--dg-r); color: var(--warn); line-height: 1.45; }
+.dc-read { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 4px 18px; font-size: var(--t13, 13px); }
+.ds-dialog[data-wide] > .dc-read { margin-inline: 22px; }
+.dc-intro { margin: 0 0 12px; color: var(--txm); line-height: 1.5; }

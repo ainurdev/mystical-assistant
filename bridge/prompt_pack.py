@@ -55,7 +55,8 @@ SHOW = (
     "talking about, when you'd write a list of numbers or a table, like coverage by folder or a comparison, call "
     "show_data instead: it draws a live chart, sheet with progress bars, kanban board, flowchart or timeline in the chat. For UI "
     "you design, read design_context, then call show_design: the user sees it live and can comment on it. If the "
-    "request is open, show three rough directions first and ask which way to go. If you think a feature is complex "
+    "request is open, show three rough directions first and ask which way to go. A project may have generated docs: read_docs (find_tools) "
+    "lists them. If you think a feature is complex "
     "enough to warrant a review loop, ask the user with offer_review as your last step: they get a button after your "
     "answer. If it isn't, or it's reasonably tested and just needs a check, go ahead normally.")
 
