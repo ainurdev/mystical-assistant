@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Keys } from "./ui/Keys";
 
 export interface Command {
   id: string;
@@ -6,8 +7,19 @@ export interface Command {
   group: string;
   icon: string;
   iconColor?: string;
+  /** Its shortcut (lib/shortcuts notation), drawn as keycaps before the group. */
+  keys?: string;
   run: () => void;
 }
+
+/* The palette's box, shared with its twin, the ⌘/ shortcut sheet (ShortcutSheet). */
+export const PALETTE_BOX = {
+  backdrop: { position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 70%, transparent)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh" },
+  panel: { width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)" },
+  head: { display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" },
+  input: { flex: 1, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t135)" },
+  esc: { fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 7px" },
+} satisfies Record<string, CSSProperties>;
 
 /* COMMAND PALETTE — matches the HUD design mock (hud.dc.html lines 1259–1282):
    backdrop + panel with prompt row, ESC badge, and a scrolling command list. */
@@ -69,14 +81,14 @@ export function CommandPalette({
   return (
     <div
       onClick={requestClose}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 70%, transparent)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
+      style={{ ...PALETTE_BOX.backdrop, animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ ...PALETTE_BOX.panel, animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
+        <div style={PALETTE_BOX.head}>
           <span style={{ color: "var(--acc)" }}>~ ❯</span>
           <input
             autoFocus
@@ -99,9 +111,9 @@ export function CommandPalette({
               }
             }}
             placeholder="search projects, sessions, or run a command…"
-            style={{ flex: 1, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t135)" }}
+            style={PALETTE_BOX.input}
           />
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 7px" }}>ESC</span>
+          <span style={PALETTE_BOX.esc}>ESC</span>
         </div>
         <div className="mscroll" style={{ maxHeight: "46vh", overflowY: "auto", padding: 6 }}>
           {filtered.length === 0 ? (
@@ -122,6 +134,7 @@ export function CommandPalette({
               >
                 <span style={{ fontSize: "var(--t11)", color: c.iconColor ?? "var(--acc)", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>
                 <span style={{ flex: 1, fontSize: "var(--t125)", color: "var(--txh)" }}>{c.label}</span>
+                {c.keys && <Keys k={c.keys} />}
                 <span style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txl)" }}>{c.group.toUpperCase()}</span>
               </button>
             ))

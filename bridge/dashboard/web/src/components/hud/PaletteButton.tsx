@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
 
 /** ⌘K at the foot of the right rail, under UPDATE. It used to sit in a 34px
  *  footer track of its own under the side columns, alongside the usage meter
@@ -11,7 +12,8 @@ export function PaletteButton({ onPalette }: { onPalette: () => void }) {
     <div className="flex h-[38px] items-center justify-center">
       <button
         onClick={onPalette}
-        title="⌘K — command palette"
+        title="Command palette"
+        {...keyAttrs(SHORTCUTS.palette.keys)}
         aria-label="Command palette"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}

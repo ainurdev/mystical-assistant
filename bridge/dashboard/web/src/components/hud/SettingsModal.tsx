@@ -102,6 +102,7 @@ import { takeSettingsFocus } from "../../lib/opensettings";
 import { testText } from "../../lib/rivendelltasks";
 import { PromptBubble } from "../PromptBubble";
 import { FinalResult } from "../RunStream";
+import { Keys } from "../ui/Keys";
 
 export interface SettingsModalProps {
   /** The open session's folder: which project's servers and skills EXPERIMENTAL lists. */
@@ -258,7 +259,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
   { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
   { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
-  { tab: "mac", sec: "WINDOW", terms: "mac app windows app title bar session name dock icon keep cmd-tab space tray hotkey summon shortcut win ctrl a" },
+  { tab: "mac", sec: "WINDOW", terms: "mac app windows app title bar session name dock icon keep cmd-tab space tray hotkey summon shortcut win ctrl a cmd control" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space window" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
@@ -1428,7 +1429,7 @@ function MacPanel() {
           )}
           {mac.hotkey !== undefined && (
             <Row
-              label="SUMMON WITH WIN+CTRL+A"
+              label={<>Summon with <Keys k={mac.platform === "windows" ? "Win+Ctrl+A" : "Control+Ctrl+A"} /></>}
               desc="A system-wide shortcut raises the dashboard from any app, and hides it again when it's already in front."
             >
               <Switch on={mac.hotkey} onClick={() => flip("hotkey")} />

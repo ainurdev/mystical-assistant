@@ -13,7 +13,7 @@ One prompt and everything the agent does in answer to it, until it stops.
 _Avoid_: run, job
 
 **Ask**:
-A question or permission card a session waits on before its turn can go on.
+A question or permission a session waits on before its turn can go on. It waits docked on the message box, or as a card in the stream where it can't dock (device runs, TEAM sessions).
 _Avoid_: request, prompt
 
 **Mystical MCP**:
@@ -63,3 +63,21 @@ _Avoid_: settings modal, preferences, config dialog
 **Settings page**:
 One entry in the Settings rail, such as Appearance, Projects or System, and everything it shows when picked.
 _Avoid_: tab, category
+
+## Shortcuts
+
+**Shortcut**:
+A key, or keys pressed together, that does one thing in the dashboard while it is in front. One fixed set, the same for everyone.
+_Avoid_: key binding, hotkey, keybind, chord
+
+**Summon shortcut**:
+The one shortcut that works from any app: it brings the dashboard to the front, or hides it when it is already there. A switch in the Mac or Windows app's settings.
+_Avoid_: hotkey, global hotkey, global shortcut
+
+**Shortcut sheet**:
+The sheet that lists every shortcut, grouped by where it works.
+_Avoid_: cheat sheet, key list, keyboard help
+
+**Shortcut nudge**:
+A short note naming a control's shortcut, shown when you click that control instead of pressing its key; it stops once you have used the key or seen it three times.
+_Avoid_: hint, tip, toast

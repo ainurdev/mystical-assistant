@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from "react";
 import { rightBodyW, rbody } from "../lib/shell";
 import { clampRightW, moveTo } from "../lib/rail";
+import { keyAttrs } from "../lib/shortcuts";
 
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -281,7 +282,6 @@ export function RightPanel({
           const on = open && t.id === current?.id;
           const word = t.alert ? "!" : t.ask ? "ASK" : t.badge || null;
           const tone = t.tone ?? (t.alert ? "err" : t.ask ? "ask" : t.badge ? (t.low ? "warn" : "acc") : undefined);
-          const key = i < 9 ? `  ⌥${i + 1}` : "";
           return (
             <Fragment key={t.id}>
               {i > 0 && t.group !== list[i - 1].group && <span className="rail-rule" aria-hidden />}
@@ -303,7 +303,8 @@ export function RightPanel({
                 onPointerMove={dragMove}
                 onPointerUp={dragEnd}
                 onPointerCancel={dragEnd}
-                title={[t.label + key, t.hint, on ? "click to collapse" : ""].filter(Boolean).join("\n")}
+                title={[t.label, t.hint, on ? "click to collapse" : ""].filter(Boolean).join("\n")}
+                {...(i < 9 ? keyAttrs(`Alt+${i + 1}`) : {})}
                 aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 aria-current={on}
                 className={`rtile relative flex h-[50px] flex-col items-center justify-start gap-[2px] border-l-2 pt-[7px] text-[length:var(--t13)] hover:bg-accent ${

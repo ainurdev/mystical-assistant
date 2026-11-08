@@ -7,6 +7,8 @@ import { ImageLightbox } from "./ImageLightbox";
 import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
+import { askAt, askEnter, SHORTCUTS } from "../lib/shortcuts";
+import { Keys, useAskKeys } from "./ui/Keys";
 
 /* The Rivendell note's push question (header "Task",
    docs/superpowers/specs/rivendell-task-check.md) wears the board's mark, the
@@ -211,8 +213,9 @@ export function TextPreview({ q, texts, picked }: { q: Question; texts: string[]
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
-// Live only: once answered (or never answered) a question is drawn as AskDock's
-// AskRecord, and where the prompt box can take it, it docks there instead (AskDock).
+// Most live questions never show here: they dock on the prompt box (AskDock's
+// QuestionDock). This card is live only where App's askDocked is false (device
+// runs, TEAM sessions, jobs, a dismissed dock); answered, it's AskDock's AskRecord.
 export function QuestionCard({
   questions,
   requestId,
@@ -261,9 +264,25 @@ export function QuestionCard({
   }
 
   // The options are Claude's guesses; when none fits, free text counts as the answer.
-  const ready = questions.every(
-    (_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "",
-  );
+  const answered = questions.map((_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "");
+  const ready = answered.every(Boolean);
+  // ⌘1–9 pick on the first question not done, ⌘↵ moves past a pick-several one or
+  // sends (lib/shortcuts askAt / askEnter), when this is the live Ask on top (ui/Keys).
+  const [passed, setPassed] = useState<Set<number>>(() => new Set());
+  const at = askAt(questions, answered, passed);
+  const mark = useAskKeys((k) => {
+    if (sending) return false;
+    if (k === "enter") {
+      const next = askEnter(questions, answered, passed);
+      if (next === "send") void submit();
+      else if (next !== null) setPassed((p) => new Set(p).add(next));
+      return next !== null;
+    }
+    const q = questions[at];
+    const o = q?.options[Number(k) - 1];
+    if (o) toggle(q, at, o.label);
+    return !!o;
+  });
   const multi = questions.some((q) => q.multiSelect);
   // One staged question: the button names what goes back ("Send · B HEADER").
   const solo = questions.length === 1 && staged(questions[0]) && sel[0]?.[0];
@@ -300,27 +319,31 @@ export function QuestionCard({
           {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
           <div className="flex flex-col gap-1.5">
             {staged(q) && <Stage q={q} chosen={sel[qi] ?? []} onPick={(l) => toggle(q, qi, l)} sending={sending} />}
-            {!staged(q) && q.options.map((o) => {
+            {!staged(q) && q.options.map((o, oi) => {
               const picked = (sel[qi] ?? []).includes(o.label);
               return (
                 <button
                   key={o.label}
                   onClick={() => toggle(q, qi, o.label)}
                   disabled={sending}
-                  className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
+                  className={`qopt${picked ? " qopt-on" : ""} flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                     picked
                       ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
                       : "bg-[var(--tg-bg)]"
                   }`}
                 >
-                  <div className="font-medium">{task ? taskLabel(o.label, true) : o.label}</div>
-                  {o.description && (
-                    <div
-                      className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
-                    >
-                      {o.description}
-                    </div>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{task ? taskLabel(o.label, true) : o.label}</div>
+                    {o.description && (
+                      <div
+                        className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
+                      >
+                        {o.description}
+                      </div>
+                    )}
+                  </div>
+                  {/* every option keeps its caps' room, so the rows don't reflow as the keys move on */}
+                  {oi < 9 && <span style={{ visibility: qi === at ? "visible" : "hidden" }}><Keys k={`Ctrl+${oi + 1}`} hover /></span>}
                 </button>
               );
             })}
@@ -380,6 +403,7 @@ export function QuestionCard({
         </div>
         );
       })}
+      <span ref={mark} data-ask-keys hidden />
       <Button className="w-full" disabled={!ready || sending} onClick={() => void submit()}>
         {sending ? (
           <span className="inline-flex items-center gap-1.5">
@@ -387,6 +411,7 @@ export function QuestionCard({
           </span>
         ) : (task && taskVerb(questions[0], sel[0]?.[0]))
           || (soloKey ? `Send · ${soloKey.key} ${soloKey.name}` : multi ? "Submit" : "Send answer")}
+        {!sending && <Keys k={SHORTCUTS.next.keys} hover />}
       </Button>
     </Card>
   );

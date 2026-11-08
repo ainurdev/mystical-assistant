@@ -11,8 +11,10 @@ public struct MacPrefs: Equatable {
     public var floating = false
     /// The window title is the open session's.
     public var titleFollowsSession = false
+    /// The summon shortcut: ⌃⌘A raises the window from any app (SummonShortcut.swift).
+    public var hotkey = true
 
-    public static let keys = ["keepInDock", "floating", "titleFollowsSession"]
+    public static let keys = ["keepInDock", "floating", "titleFollowsSession", "hotkey"]
 
     public init() {}
 
@@ -29,6 +31,7 @@ public struct MacPrefs: Equatable {
         case "keepInDock": keepInDock = value
         case "floating": floating = value
         case "titleFollowsSession": titleFollowsSession = value
+        case "hotkey": hotkey = value
         default: return false
         }
         return true
@@ -40,6 +43,6 @@ public struct MacPrefs: Equatable {
 
     /// What the page gets back.
     public var dict: [String: Bool] {
-        ["keepInDock": keepInDock, "floating": floating, "titleFollowsSession": titleFollowsSession]
+        ["keepInDock": keepInDock, "floating": floating, "titleFollowsSession": titleFollowsSession, "hotkey": hotkey]
     }
 }

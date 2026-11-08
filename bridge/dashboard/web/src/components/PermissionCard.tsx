@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Wrench } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
+import { Keys, useAskKeys } from "./ui/Keys";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
-// Live only: answered, it's AskDock's AskRecord; where the box can take it, it docks (AskDock).
+// Most live permissions dock on the prompt box instead (AskDock's PermissionDock):
+// this card is live only where App's askDocked is false. Answered, it's AskDock's AskRecord.
 export function PermissionCard({
   toolName,
   summary,
@@ -27,6 +29,13 @@ export function PermissionCard({
     setSending(which);
     if ((await fn()) === false) setSending(null);
   }
+  // ⌘1 allows, ⌘2 denies, as a click would, when this is the live Ask on top
+  // (ui/Keys). The Mini App's twin has no keyboard to serve, so it stays without.
+  const mark = useAskKeys((k) => {
+    if (sending || (k !== "1" && k !== "2")) return false;
+    void (k === "1" ? answer("allow", onAllow) : answer("deny", onDeny));
+    return true;
+  });
   return (
     <Card className="chatcard pcard pcard-live space-y-2 border border-[var(--tg-button)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
@@ -48,11 +57,12 @@ export function PermissionCard({
         </pre>
       )}
       <div className="flex gap-2">
+        <span ref={mark} data-ask-keys hidden />
         <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
-          {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
+          {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : <>Allow <Keys k="Ctrl+1" hover /></>}
         </Button>
         <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
-          {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
+          {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <>Deny <Keys k="Ctrl+2" hover /></>}
         </Button>
       </div>
     </Card>

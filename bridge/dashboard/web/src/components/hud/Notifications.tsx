@@ -12,6 +12,7 @@ import {
 import { ProjectTile } from "../ui/ProjectTile";
 import { useIntegrations } from "../../lib/integrations";
 import { useStyle } from "../../lib/stylerun";
+import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
 
 /* The bell, its toasts and the pills (docs/superpowers/specs/notifications.md).
  *
@@ -501,7 +502,8 @@ export function NotificationCenter() {
   return (
     <span ref={wrapRef} style={{ position: "relative", flex: "none", display: "flex" }}>
       <button className={`ntf-bell${open ? " on" : ""}`} onClick={() => (open ? close() : setOpen(true))}
-        title={b.kind === "count" ? `${b.n} waiting on you` : "notifications"} aria-label="notifications">
+        title={b.kind === "count" ? `${b.n} waiting on you` : "notifications"} aria-label="notifications"
+        {...(b.kind === "count" ? keyAttrs(SHORTCUTS.needs.keys) : {})}>
         {ICON}
         {b.kind === "count" && <span className="ntf-badge">{b.n > 9 ? "9+" : b.n}</span>}
         {b.kind === "dot" && <span className="ntf-dot" />}

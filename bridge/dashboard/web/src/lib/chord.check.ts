@@ -34,4 +34,10 @@ eq(chord(ev({ key: "s", code: "KeyS", ctrlKey: true, metaKey: true })), "Ctrl+S"
 eq(chord(ev({ key: "o", code: "KeyO", ctrlKey: true, shiftKey: true, altKey: true })), "Ctrl+Shift+Alt+O",
   "Ctrl before Shift before Alt");
 
+
+// A digit comes off `code` too: macOS types £ for Alt-3 and AZERTY & for Cmd-1,
+// and the right rail's Alt+3 and an Ask card's Cmd+1 must still match.
+eq(chord(ev({ key: "£", code: "Digit3", altKey: true })), "Alt+3", "macOS Alt-3 names the digit, not the £ it types");
+eq(chord(ev({ key: "&", code: "Digit1", metaKey: true })), "Ctrl+1", "AZERTY's Cmd-1 is still Cmd-1");
+
 console.log("\nall chord checks passed");

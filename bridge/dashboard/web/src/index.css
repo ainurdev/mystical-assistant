@@ -8628,3 +8628,15 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 @media (prefers-reduced-motion: reduce) { .home-emblem .ring, .home-rune, .home-now .dot { animation: none; } }
 /* The cap merged into HOME: no rule under its left half, in every family. */
 .rcap[data-home], .rcap[data-home] > div:first-child { border-bottom-color: transparent !important; }
+/* Keycaps (ui/Keys): one small box per key, the ⌘K palette's ESC badge. On a
+   picked option or a filled button they take the text's colour. */
+.kc { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.kc-set { display: inline-flex; gap: 3px; }
+.kc i { font-style: normal; font-size: var(--t95); line-height: 1; letter-spacing: 0; color: var(--txm);
+  min-width: 17px; height: 18px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--acc) 26%, transparent); background: color-mix(in srgb, var(--acc) 5%, transparent); }
+.qopt-on .kc i, .bg-primary .kc i, .ad-btn[data-pri] .kc i { color: inherit; border-color: color-mix(in srgb, currentColor 40%, transparent); background: transparent; }
+@media (hover: none) { .kc-hover { display: none; } }
+/* the dock's option rows put their keycaps in a column of their own, beside the label and its line */
+.ad-row[data-keys] { grid-template-columns: 24px minmax(0, 1fr) auto; }
+.ad-row[data-keys] > .kc { grid-column: 3; grid-row: 1 / span 2; align-self: center; }

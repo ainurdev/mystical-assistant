@@ -49,6 +49,19 @@ node macos/eyes/compare.mjs /tmp/eyes-before /tmp/eyes-after '.setdlg,.setpage' 
   is its URL (the upstream's host:port comes later in it, so don't grep). A
   server started in the background dies when your turn ends, so start it in the
   same command as its captures.
+- **An Ask waiting on you.** `node macos/eyes/asks.mjs /tmp/eyes-after 0` is
+  roserve with five canned sessions in front of the live list: a pick-one question,
+  a pick-several one, three questions in one ask, a permission, and a question
+  asked in prose. Their ids follow the URL line; land on one with
+  `hud-last-session` (below). An answer prints as `RESPOND <turn> <body>` and
+  clears the ask, so a click or key flow checks end to end; any other write
+  prints as `REFUSED` and gets the 405.
+- **What a key does inside Mystical.app.** `swiftc macos/eyes/keyprobe.swift -o /tmp/keyprobe`,
+  then `/tmp/keyprobe <url> <waitMs> ctrl+tab cmd+. esc` prints, per key, whether
+  the page got it and called preventDefault, and what AppKit got back
+  (`cancelOperation` leaves full screen, `selectNextKeyView` moves focus). The
+  window is hidden and takes no focus; `PRELOAD=` as below. It has no main menu,
+  so a menu key like Window ▸ Dashboard ⌘1 never takes a key there.
 - **As the user sees it.** `node macos/eyes/user.mjs preload` prints a
   `hud-settings` seed (theme, font, layout) from a clone of Mystical.app's WebKit
   store, deleted straight after because it holds drafts; `user.mjs size` prints the
@@ -71,6 +84,7 @@ node macos/eyes/compare.mjs /tmp/eyes-before /tmp/eyes-after '.setdlg,.setpage' 
 - **Headless Chrome focus and hover:** `el.focus()` fires no focus events until
   `Emulation.setFocusEmulationEnabled`; at DPR 2 a CDP hover changes the DOM but not
   the screenshot, which DPR 1 does show.
-- **macOS has no `timeout`.** Run commands without it.
+- **`timeout`** is a perl stand-in in agent shells (~/.zshenv): whole seconds or
+  30s / 5m / 1h, and a command that runs out exits 142, not GNU's 124.
 - **Recording:** `bridge/rec.mjs` and the Record tool need WSL's Playwright build,
   and neither runs here.

@@ -37,6 +37,8 @@ export type MarkdownInputHandle = {
   setSelectionRange(from: number, to: number): void;
   /** Insert `s` in front of the text, the caret staying with the text it was in. */
   prepend(s: string): void;
+  /** Focus and type `s` at the caret, as if typed here (a letter typed elsewhere, App). */
+  type(s: string): void;
   /** Hold the caret's place for an image still uploading (lib/cmembeds). */
   holdSpot(): number | null;
   /** Its markdown goes where the place was held, as one undo step. */
@@ -329,6 +331,12 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
       const changes = v.state.changes({ from: 0, insert: s });
       v.dispatch({ changes, selection: v.state.selection.map(changes, 1) });
     },
+    type: (s) => {
+      const v = viewRef.current;
+      if (!v) return;
+      v.focus();
+      v.dispatch(v.state.replaceSelection(s), { scrollIntoView: true, userEvent: "input.type" });
+    },
     holdSpot: () => (viewRef.current ? holdSpot(viewRef.current) : null),
     fillSpot: (id, markdown) => { if (viewRef.current) fillSpot(viewRef.current, id, markdown); },
     dropSpot: (id) => { if (viewRef.current) dropSpot(viewRef.current, id); },
@@ -342,7 +350,8 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
 
   return (
     <>
-      <div ref={hostRef} data-ctx-type="editor" data-ctx-id="composer" data-ctx-label="prompt" style={{ flex: 1, minWidth: 0 }} />
+      <div ref={hostRef} data-ctx-type="editor" data-ctx-id="composer" data-ctx-label="prompt"
+        data-empty={props.value === "" ? "" : undefined} style={{ flex: 1, minWidth: 0 }} />
       {pop !== null && viewRef.current && (
         <EmbedPopover view={viewRef.current} pos={pop} scope={{ session: props.imageSession, project: props.imageProject }}
           onClose={() => setPop(null)} />
