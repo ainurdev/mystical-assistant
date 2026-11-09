@@ -3297,6 +3297,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # a nudge that would run against the same exhausted account. The
             # nudge reads the session's model and mode when it starts.
             resumed = _continue_after_turn(job, effort) or resumed
+        # Last, and at every turn end: a carry-on for an MCP the turn switched
+        # on, unless something above already starts the next turn.
+        from bridge import carry_on  # local import: runner<->* cycle
+        resumed = carry_on.after_turn(job, resumed or restart_killed) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
