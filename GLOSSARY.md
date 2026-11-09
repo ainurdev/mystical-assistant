@@ -17,12 +17,20 @@ A question or permission a session waits on before its turn can go on. It waits 
 _Avoid_: request, prompt
 
 **Mystical MCP**:
-The one tool server every Mystical session gets, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
-_Avoid_: goals server, verify server, mystical-ux, bridge MCPs
+The one tool server every Mystical session gets, whichever agent runs it, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
+_Avoid_: gateway, goals server, verify server, mystical-ux, bridge MCPs
+
+**Helper**:
+An agent a session starts to take one task inside that session; it reports back as a message and shows under that session, not as its own row in the sidebar. A session that another session starts is a normal **Session**, not a helper.
+_Avoid_: subagent, child session, worker
 
 **To-do**:
 Something only you can do, that no session can do for you: turn a setting on, add a file, give someone what their message asked for. A reply lists its to-dos in one box at its very top, and a reply with none has no box; a choice the session needs from you is an **Ask**, not a to-do.
 _Avoid_: action item, task, highlight, important part
+
+**Carry-on**:
+A message Mystical sends a session on its own, marked as Mystical's, after the session switched a tool server on, so the session goes on with the new tools; waiting for you to nudge it is never a **To-do**.
+_Avoid_: nudge, "go", auto-resume
 
 **Needs you**:
 Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in. It is worked out fresh each time, and a reply's to-dos are not part of it.
