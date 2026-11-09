@@ -149,7 +149,8 @@ REPORT = _t("show_report", "Present a Markdown file you wrote (a report, a revie
             ["path", "title"])
 SEARCH = _t("search_chats", "Search earlier chats and saved lessons: what was decided, what was tried.",
             {"query": _S, "project_only": {"type": "boolean"}}, ["query"])
-READ_CHAT = _t("read_chat", "Read an earlier chat that search_chats found: its prompts and answers.",
+READ_CHAT = _t("read_chat", "Read an earlier chat that search_chats found: its prompts and answers, each turn's "
+               "mode and model, and the permission and question cards it raised.",
                {"id": _S, "last": {"type": "integer", "description": "How many of its newest turns. Default 10."}},
                ["id"])
 WAIT = _t("wait_for", "Stop waiting by hand: end your turn after this, and you're woken when it's true. Waits on "
@@ -682,8 +683,20 @@ def _read_chat(s: dict, job, a: dict) -> dict:
     if not rows:
         return _text("No chat has that id.", error=True)
     turns = store.turns_of(rows[0]["id"])[-min(int(a.get("last") or 10), 50):]
-    blocks = [handoff._turn_block(rows[0], t, tools=False) for t in turns]
+    blocks = [handoff._turn_block(rows[0], t, tools=False) + _asked(rows[0], t) for t in turns]
     return _text(f"{rows[0].get('title')}\n\n" + "\n\n".join(b for b in blocks if b)[:40000])
+
+
+def _asked(s: dict, t: dict) -> str:
+    """What a turn ran with and the cards it raised. Why a session asked is recorded only
+    in these events (the CLI transcript keeps no cards); handoff prompts leave it out."""
+    lines = [f"- ran with mode {t.get('permission_mode') or 'unrecorded'}, model {t.get('model') or 'unrecorded'}"]
+    for e in store.events_of_turn(s["id"], t["id"]):
+        if e["type"] == "permission":
+            lines.append(f"- asked to allow {e.get('tool_name')}: {str(e.get('summary') or '')[:160]}")
+        elif e["type"] == "question":
+            lines.append(f"- asked: {str(((e.get('questions') or [{}])[0]).get('question') or '')[:200]}")
+    return "\n" + "\n".join(lines)
 
 
 # ------- waiting -------------------------------------------------------------------------

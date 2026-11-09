@@ -1778,7 +1778,7 @@ def turns_of(session_id: str) -> list:
     """A session's turns, oldest first, with what a history needs."""
     with closing(_connect()) as c:
         return [dict(r) for r in c.execute(
-            "SELECT id, seq, prompt, status, started, runtime, model FROM turns "
+            "SELECT id, seq, prompt, status, started, runtime, model, permission_mode FROM turns "
             "WHERE session_id=? ORDER BY started, seq", (session_id,)).fetchall()]
 
 

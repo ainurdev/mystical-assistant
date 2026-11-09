@@ -218,6 +218,20 @@ def test_search_and_read_chat(tmp_path):
     assert chat_search.search(CHAT, "100%_x") == []         # LIKE's wildcards are literal
 
 
+def test_read_chat_shows_each_turns_mode_model_and_cards(tmp_path):
+    # Why a session asked lives only in the bridge's events: the CLI transcript keeps no cards.
+    s, _ = _session(tmp_path)
+    other = store.create_session(CHAT, "/proj", cwd=str(tmp_path))
+    store.start_turn(other["id"], f"t{time.time_ns()}", "can you check sentry?", [],
+                     model="claude-sonnet-5-5", permission_mode="plan")
+    tid = store.latest_turn_id(other["id"])
+    store.append_event(other["id"], tid, {"type": "permission", "tool_name": "Bash", "summary": "curl sentry.io/api"})
+    store.append_event(other["id"], tid, {"type": "question", "questions": [{"question": "Push it?"}]})
+    out = text(gt.call(s, None, "read_chat", {"id": other["id"][:12]}))
+    assert "- ran with mode plan, model claude-sonnet-5-5" in out
+    assert "- asked to allow Bash: curl sentry.io/api" in out and "- asked: Push it?" in out
+
+
 # ---- waits -------------------------------------------------------------------------
 
 def test_wait_for_time_wakes_and_a_prompt_cancels(tmp_path, monkeypatch):

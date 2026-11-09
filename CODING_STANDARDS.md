@@ -38,3 +38,8 @@ conventions in CLAUDE.md apply as well.
 
 - **A known limit gets a comment**: `shortcut: <the limit>, <when to upgrade>`. Older
   ones say `ponytail:`. `/ponytail-debt` lists them.
+- **A guess keeps the session's permission mode.** A preset, default or guess that sends
+  a `permission_mode` for the user sends `""` (the session's own) unless the user picked
+  one. The cost of a stricter mode is invisible in the code: in a bridge session, plan
+  raises a plan card and then an Allow/Deny card for every Bash call, even after the
+  plan is approved, and acceptEdits asks for every Bash call.
