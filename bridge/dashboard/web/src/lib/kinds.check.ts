@@ -56,12 +56,20 @@ console.assert(nextKind(null, -1) === "ask", "plain back to ask");
 console.assert(nextKind("build", 1) === "fix", "forward");
 
 // --- presetFor ---------------------------------------------------------------
-console.assert(same(presetFor("design"), { model: "claude-opus-5-5", perm: "acceptEdits", effort: "high", ponytail: "" }), "design default");
+console.assert(same(presetFor("design"), { model: "claude-opus-5-5", perm: "", effort: "high", ponytail: "" }), "design default");
 console.assert(same(presetFor("build"), { model: "claude-opus-5-5", perm: "bypassPermissions", effort: "max", ponytail: "" }), "build default");
-console.assert(same(presetFor("ask"), { model: "claude-sonnet-5-5", perm: "plan", effort: "medium", ponytail: "" }), "ask default");
+console.assert(same(presetFor("ask"), { model: "claude-sonnet-5-5", perm: "", effort: "medium", ponytail: "" }), "ask default");
 console.assert(presetFor("fix", { fix: { effort: "high" } }).effort === "high", "saved beats default");
 console.assert(presetFor("fix", { fix: { effort: "high" } }, { effort: "low" }).effort === "low", "session beats saved");
 console.assert(presetFor("fix", { ship: { effort: "low" } }).effort === "max", "another kind's save is ignored");
+// A Bypass session never gets a kind's mode that asks: today's EFAS "?" prompts went out in plan,
+// and each turn raised a plan-approval card plus an Allow/Deny card per Bash call (perm "" = the session's mode).
+for (const [t, c] of [["can you check sentry for finding a real case?", MID], ["cant we fix it using logs from sentry?", MID],
+  ["wait until he send files, how we can continue to resolve tasks?", START], ["better ui for the plugins tab", START]] as const) {
+  const kind = guessKind(t, c)!;
+  const perm = sendPlan({ kind, text: t, diagnose: true, answering: false, agent: false, run: presetFor(kind) }).run!.perm;
+  console.assert(perm === "" || perm === "bypassPermissions", `${kind} (${JSON.stringify(t)}) runs a bypass session in ${perm}`);
+}
 
 // --- sendPlan ----------------------------------------------------------------
 const run = presetFor("build");

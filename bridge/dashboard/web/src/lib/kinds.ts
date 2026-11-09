@@ -28,12 +28,14 @@ const OPUS = "claude-opus-5-5", SONNET = "claude-sonnet-5-5";
 const k = (id: KindId, name: string, verb: string, starter: string, model: string, perm: string, effort: string): Kind =>
   ({ id, name, verb, starter, preset: { model, perm, effort, ponytail: "" } });
 
+// perm "" = the session's own mode. A guess must never make a Bypass session ask: plan raised a
+// plan card plus an Allow/Deny card per Bash call even after approval; acceptEdits asks per Bash call.
 export const KINDS: Record<KindId, Kind> = {
-  design: k("design", "DESIGN", "Design", "screens · states · what must not change", OPUS, "acceptEdits", "high"),
+  design: k("design", "DESIGN", "Design", "screens · states · what must not change", OPUS, "", "high"),
   build: k("build", "BUILD", "Build", "what · why · done when", OPUS, "bypassPermissions", "max"),
   fix: k("fix", "FIX", "Fix", "expected · got · where — paste a screenshot", OPUS, "bypassPermissions", "max"),
   ship: k("ship", "SHIP", "Ship", "merge this branch, then clean up", OPUS, "bypassPermissions", "high"),
-  ask: k("ask", "ASK", "Ask", "ask about the code, a branch, a decision…", SONNET, "plan", "medium"),
+  ask: k("ask", "ASK", "Ask", "ask about the code, a branch, a decision…", SONNET, "", "medium"),
 };
 
 /** null = guessing; "plain" = the user dropped the kind. */

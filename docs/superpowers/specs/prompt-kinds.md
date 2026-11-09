@@ -32,11 +32,11 @@ and for the three PROMPT BOX shells to go.
 
 | Kind | Key | Starter | Default preset (model · mode · effort · trim) |
 |---|---|---|---|
-| DESIGN | Design | screens · states · what must not change | claude-opus-5-5 · acceptEdits · high · default |
+| DESIGN | Design | screens · states · what must not change | claude-opus-5-5 · the session's mode · high · default |
 | BUILD | Build | what · why · done when | claude-opus-5-5 · bypassPermissions · max · default |
 | FIX | Fix | expected · got · where — paste a screenshot | claude-opus-5-5 · bypassPermissions · max · default |
 | SHIP | Ship | merge this branch, then clean up | claude-opus-5-5 · bypassPermissions · high · default |
-| ASK | Ask | ask about the code, a branch, a decision… | claude-sonnet-5-5 · plan · medium · default |
+| ASK | Ask | ask about the code, a branch, a decision… | claude-sonnet-5-5 · the session's mode · medium · default |
 
 ## Live facts (rail, one line, ellipsised)
 
@@ -46,7 +46,7 @@ and for the three PROMPT BOX shells to go.
 | BUILD | the session's GitStatus; Matt's pack listed | `grill, then build here · ` + (`working tree clean` / `N uncommitted` warn); without the pack, `builds here · …` |
 | FIX | the newest `checks` event in the open session | `last check <checksLine> · HH:MM` (err when not ok), else `no checks run in this session yet` |
 | SHIP | the session's GitStatus | `N uncommitted` (warn) when dirty, then `N to push · N to pull` with an upstream, `N unpublished` without one, `in sync` when both 0 |
-| ASK | the project map's `built_at` | `read-only, changes nothing` + ` · map built <ago>` when a map exists |
+| ASK | the project map's `built_at` | `read-only, changes nothing` when its mode is plan, + ` · map built <ago>` when a map exists |
 
 With an empty box and a NEXT step ghost from the router, the facts segment shows that step's caption instead.
 
