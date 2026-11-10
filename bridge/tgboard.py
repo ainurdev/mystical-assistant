@@ -69,6 +69,7 @@ _lock = threading.Lock()
 _seen: "set[str]" = set()     # sessions running at the last look: a turn start is one not in here
 _sent: dict = {}              # what the recorded board last got: data (minus "at"), at, caption, kb
 _wait = [0.0]                 # no board call before this time: Telegram's "retry after"
+# shortcut: refusals are matched on Telegram's English text (tg drops parameters.retry_after); if Telegram rewords them, read the structured fields in tg
 GONE = ("message with widget to edit not found", "message to edit not found")
 
 
@@ -186,23 +187,27 @@ def look(now: "float | None" = None) -> None:
         board = rec["board"]
         d, cap, kb = data(found, now), caption(found), buttons(chat)
         body = {k: v for k, v in d.items() if k != "at"}
-        if board is None:
-            if started and config.NOTIFY_ENABLE:
-                _send(rec, chat, d, body, cap, kb, now)
+        if board is not None:
+            _edit(rec, board, d, body, cap, kb, bool(found), now)
+        if rec["board"] is None and started and config.NOTIFY_ENABLE and now >= _wait[0]:
+            _send(rec, chat, d, body, cap, kb, now)    # also when this look found the board gone
+
+
+def _edit(rec: dict, board: dict, d: dict, body: dict, cap: str, kb: "dict | None",
+          busy: bool, now: float) -> None:
+    if body != _sent.get("data") or (busy and now - _sent.get("at", 0) >= REFRESH_S):
+        ok = _answer(telegram.tg("editMessageWidgetData", chat_id=board["chat"],
+                                 message_id=board["msg"], chat_data=dump(d)), rec, now)
+        if ok is None:
             return
-        if body != _sent.get("data") or (found and now - _sent.get("at", 0) >= REFRESH_S):
-            ok = _answer(telegram.tg("editMessageWidgetData", chat_id=board["chat"],
-                                     message_id=board["msg"], chat_data=dump(d)), rec, now)
-            if ok is None:
-                return
-            if ok:
-                _sent.update(data=body, at=now)
-        if (cap, kb) != (_sent.get("caption"), _sent.get("kb")):
-            ok = _answer(telegram.tg("editMessageCaption", chat_id=board["chat"], message_id=board["msg"],
-                                     caption=cap, reply_markup=json.dumps(kb or {"inline_keyboard": []})),
-                         rec, now)
-            if ok:
-                _sent.update(caption=cap, kb=kb)
+        if ok:
+            _sent.update(data=body, at=now)
+    if (cap, kb) != (_sent.get("caption"), _sent.get("kb")):
+        ok = _answer(telegram.tg("editMessageCaption", chat_id=board["chat"], message_id=board["msg"],
+                                 caption=cap, reply_markup=json.dumps(kb or {"inline_keyboard": []})),
+                     rec, now)
+        if ok:
+            _sent.update(caption=cap, kb=kb)
 
 
 def _answer(result, rec: dict, now: float) -> "bool | None":

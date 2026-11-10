@@ -171,7 +171,7 @@ def test_any_other_refusal_is_tried_again_on_a_later_look(tg):
     assert tgboard.record()["board"]["msg"] == 900
 
 
-def test_neither_a_refusal_nor_an_exception_ends_the_watcher(monkeypatch):
+def test_a_look_that_raises_does_not_end_the_watcher(monkeypatch):
     looks, parked = [], threading.Event()
 
     def look():
@@ -201,3 +201,14 @@ def test_with_notifications_off_a_recorded_board_is_kept_up_to_date(tg, monkeypa
     job.events.append({"type": "tool", "name": "Read"})
     tgboard.look(NOW + 5)
     assert methods(tg) == ["editMessageWidgetData"]
+
+
+def test_a_turn_starting_in_the_look_that_finds_the_board_gone_sends_a_new_one(tg):
+    turn()
+    tgboard.look(NOW)
+    tg.clear()
+    restart()                             # deleted while the bridge was down: resumed turns are starting
+    tg.refuse["editMessageWidgetData"] = GONE
+    tgboard.look(NOW + 5)
+    assert methods(tg) == ["editMessageWidgetData", "sendWidget", "pinChatMessage"]
+    assert tgboard.record()["board"]["msg"] == 901
