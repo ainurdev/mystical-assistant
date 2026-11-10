@@ -77,8 +77,9 @@ interface Props {
 type Mode = "attention" | "projects" | "plugins" | "tickets" | "recent";
 /** Which pieces of a row's provenance it prints. Independent, because the four
  *  presets this replaced could not express the obvious wants — a sidebar that
- *  names the project but not the branch was simply not on the menu. */
-type Detail = { proj: boolean; branch: boolean; wt: boolean };
+ *  names the project but not the branch was simply not on the menu. `agents`
+ *  is no fact on the row: it is the list under it (AgentTree). */
+type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean };
 // "recent" is most recent: the chat you prompt goes to the top of its project
 // and the project to the top of the list. It was newest-started for a while,
 // which held rows still but sank the chat you worked in under idle ones; the
@@ -97,6 +98,7 @@ const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "proj", label: "project name", tip: "Name the project on every row" },
   { k: "branch", label: "branch", tip: "Print the branch on every row" },
   { k: "wt", label: "worktree", tip: "Mark rows working in a worktree rather than the main checkout" },
+  { k: "agents", label: "agents", tip: "List a session's agents under its row" },
 ];
 /** PROJECTS rows sit under a header that already names the project, so that tick
  *  is not offered there — the other two tabs mix projects and need it. */
@@ -104,13 +106,14 @@ const fieldsFor = (mode: Mode) => (mode === "projects" ? FIELDS.filter((f) => f.
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
  *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
- *  own stream again. */
+ *  own stream again. Agents start off in every tab, and PLUGINS, which has no
+ *  menu to tick them on in, never lists them. */
 const DETAIL_DEFAULT: Record<Mode, Detail> = {
-  attention: { proj: true, branch: true, wt: true },
-  projects: { proj: false, branch: true, wt: true },
-  plugins: { proj: true, branch: true, wt: true },
-  tickets: { proj: true, branch: true, wt: true },
-  recent: { proj: true, branch: true, wt: true },
+  attention: { proj: true, branch: true, wt: true, agents: false },
+  projects: { proj: false, branch: true, wt: true, agents: false },
+  plugins: { proj: true, branch: true, wt: true, agents: false },
+  tickets: { proj: true, branch: true, wt: true, agents: false },
+  recent: { proj: true, branch: true, wt: true, agents: false },
 };
 
 /** Rivendell jobs wear the PLUGINS lane's purple, apart from your own projects'. */
@@ -631,7 +634,8 @@ export function SessionsPanel(props: Props) {
   // machine you work on — one repo on one branch wants less than fifteen.
   // ponytail: new key per shape change, no migration — useStickyObj merges one
   // level deep, so a stored preset string would survive as a Detail that has no
-  // fields and silently print nothing. Three ticks are cheaper to re-pick.
+  // fields and silently print nothing. Three ticks are cheaper to re-pick. A new
+  // tick is no shape change: a saved Detail without it takes its default below.
   const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-fields", DETAIL_DEFAULT);
   const detail = { ...DETAIL_DEFAULT[mode], ...detailPrefs[mode] };
   const toggleField = (k: keyof Detail) =>
@@ -913,7 +917,9 @@ export function SessionsPanel(props: Props) {
   };
 
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => {
-    drawn.current.push(s.id);
+    // AGENTS unticked: no list under a row and no poll for one, a helper that
+    // waits on you included (hidden means hidden).
+    if (detail.agents) drawn.current.push(s.id);
     return (
     <Fragment key={s.id}>
     <SessionRow
@@ -925,7 +931,7 @@ export function SessionsPanel(props: Props) {
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
     />
-    <AgentTree chatId={s.id} selectedId={selectedSessionId} />
+    {detail.agents && <AgentTree chatId={s.id} selectedId={selectedSessionId} />}
     </Fragment>
     );
   };
@@ -1324,7 +1330,7 @@ export function SessionsPanel(props: Props) {
                     const on = detail[f.k];
                     return (
                       // Ticks, not a preset list — the menu stays open so you can
-                      // set all three against the rows changing behind it.
+                      // set them all against the rows changing behind it.
                       <button
                         key={f.k} onClick={() => toggleField(f.k)} title={f.tip}
                         role="menuitemcheckbox" aria-checked={on}
