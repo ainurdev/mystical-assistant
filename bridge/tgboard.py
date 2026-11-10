@@ -35,7 +35,7 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - The footer (`u`) is the 5-hour and weekly windows of the login the newest running
   turn uses, or the default login when nothing runs: percent, reset (epoch, 0 when
   unknown) and severity (0 normal, 1 warning, 2 exceeded), null for a window the meter
-  doesn't name. It is read from the meter's cache only (usage.cached): a look every
+  doesn't name or that has reset since the reading. It is read from the meter's cache only (usage.cached): a look every
   LOOK_S must never spawn claude, and a turn's own rate-limit events keep the cache live.
   No reading, no footer. The login is named (alias, else email) only when the registry
   holds a second login: list_accounts() would ask the Keychain on every look.
@@ -103,7 +103,7 @@ def _title(sess: "dict | None", sid: str) -> str:
 
 def rows(chat: int) -> list:
     """Every session with a turn or a helper in flight, newest first, as board rows
-    (unkeyed: `sid` is dropped before sending)."""
+    (unkeyed: `sid` and `slot`, the turn's login, are dropped before sending)."""
     snap = runner.running_snapshot(chat, scan=False)
     status = snap.get("status") or {}
     out, helpers = {}, {}
@@ -143,17 +143,21 @@ def _login(slot: "int | None") -> "str | None":
         return None
     if not slot or int(slot) == accounts.DEFAULT_SLOT:
         return accounts._email_at(accounts.IDENTITY) or "default login"
-    e = reg.get(int(slot)) or {}
-    return e.get("alias") or e.get("email") or f"login {slot}"
+    e = reg.get(int(slot)) or {}       # the profile's own email outranks the registry's, as in list_accounts()
+    return e.get("alias") or accounts._email_at(os.path.join(accounts.profile_dir(int(slot)), ".claude.json")) \
+        or e.get("email") or f"login {slot}"
 
 
 def footer(found: list) -> "dict | None":
     """The usage footer for the newest running turn's login, or None with no reading."""
     slot = next((r.get("slot") for r in found if r["c"] == "r"), None)
-    m = usage.cached(accounts.credentials_path(slot))
-    w = [[b["percent"], int(usage.resets_epoch(b.get("resets_at")) or 0), SEV.get(b.get("severity"), 0)]
-         if isinstance(b, dict) and b.get("percent") is not None else None
-         for b in (m.get("five_hour"), m.get("seven_day"))] if m.get("available") else [None, None]
+    m, now = usage.cached(accounts.credentials_path(slot)), time.time()
+    w = []
+    for b in (m.get("five_hour"), m.get("seven_day")) if m.get("available") else (None, None):
+        reset = int(usage.resets_epoch((b or {}).get("resets_at")) or 0)
+        # a window that has reset since this reading (a turn's last word can be hours old) is no reading
+        fresh = isinstance(b, dict) and b.get("percent") is not None and not 0 < reset <= now
+        w.append([b["percent"], reset, SEV.get(b.get("severity"), 0)] if fresh else None)
     if w == [None, None]:
         return None
     name = _login(slot)

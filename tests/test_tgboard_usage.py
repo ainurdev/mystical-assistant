@@ -2,6 +2,7 @@
 windows of the right login, from the meter's cached reading only."""
 
 import json
+import os
 import time
 import uuid
 
@@ -12,8 +13,8 @@ from bridge import accounts, config, experimental, machine, runner, state, store
 store.init()
 CHAT = config.DASH_CHAT_ID
 NOW = 1794300000.0
-FIVE = "2026-11-11T18:00:00+00:00"
-WEEK = "2026-11-15T09:00:00+00:00"
+FIVE = int(time.time()) + 2 * 3600       # resets ahead of the real clock: the board drops a window already reset
+WEEK = int(time.time()) + 4 * 86400
 
 
 @pytest.fixture
@@ -61,8 +62,8 @@ def sent(calls):
     return [json.loads(p["chat_data"]) for m, p in calls if m in ("sendWidget", "editMessageWidgetData")]
 
 
-def epoch(iso):
-    return int(usage.resets_epoch(iso))
+def epoch(at):
+    return int(usage.resets_epoch(at))
 
 
 def test_the_footer_carries_both_windows_percent_reset_and_severity(tg):
@@ -135,3 +136,19 @@ def test_seven_full_rows_and_the_footer_fit_and_rows_go_when_they_dont():
     big = {**u, "l": "x" * 400}                   # only a footer this size squeezes rows out
     d = tgboard.data(rows, NOW, big)
     assert len(tgboard.dump(d).encode()) <= tgboard.DATA_MAX and len(d["rows"]) < 7
+
+
+def test_a_window_reset_since_the_reading_is_dropped(tg):
+    reading(five=(97, int(time.time()) - 60, "exceeded"))
+    usage._entry(accounts.credentials_path(None))["live_at"] = time.time() - 3 * 3600
+    assert tgboard.footer([])["w"] == [None, [61, epoch(WEEK), 1]]
+    reading(five=(97, int(time.time()) - 60, "exceeded"), week=None)
+    assert tgboard.footer([]) is None
+
+
+def test_a_logins_own_email_outranks_the_registrys(tg, monkeypatch):
+    monkeypatch.setattr(accounts, "_load", lambda: {"2": {"email": "old@x.io"}})
+    monkeypatch.setattr(accounts, "_email_at", lambda path: "new@x.io" if path.endswith(os.path.join("2", ".claude.json")) else None)
+    reading(2)
+    turn(slot=2)
+    assert tgboard.footer(tgboard.rows(CHAT))["l"] == "new@x.io"
