@@ -1604,16 +1604,18 @@ def bridge_status(chat_id: int) -> dict:
                          running_jobs(chat_id), [], {})
 
 
-def running_snapshot(chat_id: int) -> dict:
+def running_snapshot(chat_id: int, scan: bool = True) -> dict:
     """The full /running payload: external sessions + bridge jobs + bridge-running
     ids + awaiting list + the unified status map. Both servers return this verbatim
-    so the dashboard and Mini App show identical per-session status."""
-    external = machine.list_running()
+    so the dashboard and Mini App show identical per-session status. scan=False
+    leaves out VS Code and terminal sessions (no process scan): the Live board's
+    view (bridge/tgboard.py)."""
+    external = machine.list_running() if scan else []
     bridge_running = store.running_session_ids(chat_id)
     awaiting = awaiting_input()
     jobs = running_jobs(chat_id)
     status = _build_status(bridge_running, awaiting, jobs, external,
-                           native_activity.snapshot())
+                           native_activity.snapshot() if scan else {})
     # Same blind spot as the native branch of _build_status, one layer over: a
     # bridge session whose turn ended while background agents keep running holds
     # no job and appends nothing to its transcript, so the agents in flight are
@@ -1625,7 +1627,7 @@ def running_snapshot(chat_id: int) -> dict:
             continue
         if n := _running_agents(csid):
             status[sess["id"]] = {"state": "working", "kind": None, "source": "bridge",
-                                  "label": f"{n} agent{'s' if n > 1 else ''} working"}
+                                  "label": f"{n} agent{'s' if n > 1 else ''} working", "agents": n}
     return {"external": external, "bridge_running": bridge_running,
             "jobs": jobs, "awaiting": awaiting, "status": status}
 
