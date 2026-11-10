@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types --no-warnings src/lib/agenttools.check.ts
 import {
   agentsNoRuleReaches, canReset, cellWhy, columnNotes, copyTargets, cwdOf, gridClick, groupRules, heldByChatSwitch, hookAgents, hookBody, hookProblem, hookQuery,
-  levelTag, matches, mcpNeedsLogin, nextOn, ownPatterns, parseFocus, atFocus, patchCell, patternProblem, pickedState, ruleReach, ruleWrite,
+  levelTag, levelLetter, levelChanges, isSharedRow, reaches, scriptLabel, hookScripts, matches, mcpNeedsLogin, nextOn, ownPatterns, parseFocus, atFocus, patchCell, patternProblem, pickedState, ruleReach, ruleWrite,
   scopeBody, scopeQuery, secTab, type HookListing, type HookRow, type RuleRow, type Scope,
 } from "./agenttools.ts";
 
@@ -119,3 +119,18 @@ eq(cwdOf(c, "/x", () => "/y"), "/x", "a chat's folder");
 eq(cwdOf(p, "/x", () => "/y"), "/y", "a project's");
 eq(cwdOf({ ...m, project: null }, "/x", () => "/y"), null, "the machine has none");
 console.log("all ok");
+
+eq(levelLetter({ state: "shared", level: "project" }), "P", "a project pick tags P");
+eq(levelLetter({ state: "off", level: "default" }), "", "a default carries no tag");
+eq(levelLetter({ state: "off", level: null }), "", "nor does no pick");
+eq(levelLetter({ state: "installed", level: "machine" }), "", "nor installed");
+ok(reaches({ state: "installed" }) && reaches({ state: "login" }) && !reaches({ state: "off" }) && !reaches({ state: "cant" }) && !reaches(undefined), "reach: own, shared, login count; off and can't don't");
+ok(isSharedRow({ claude: { state: "installed" }, codex: { state: "shared" } }), "a shared cell makes a shared row");
+ok(!isSharedRow({ claude: { state: "installed" }, codex: { state: "off" } }), "installed alone isn't shared");
+eq(levelChanges({ mcp: [{ cells: { a: { state: "shared", level: "project" }, b: { state: "off", level: "machine" } } }] as never, tools: [{ cells: { a: { state: "off", level: "project" } } }] as never, mystical: [] }, "project"), 2, "changes count this level's own picks");
+eq(scriptLabel("/Users/x/.claude/hooks/peon.sh --flag"), "peon.sh", "a path names its file");
+eq(scriptLabel("curl -s -H 'x' https://n.sh/a"), "curl", "an inline command names its first word");
+eq(scriptLabel("~/bin/cc-status"), "cc-status", "a home path too");
+const hl = (id: string, event: string, command: string, scope = "user"): HookRow => ({ id, agent: "claude", scope, event, matcher: "", type: "command", command, timeout: null, can_block: false, editable: true });
+const scripts = hookScripts({ hooks: [hl("1", "Stop", "a.sh"), hl("2", "PreToolUse", "a.sh"), hl("3", "Stop", "b.sh"), hl("4", "Stop", "a.sh", "project"), { ...hl("5", "Stop", "k.sh"), agent: "kimi" }], own: [], events: {}, can_block: {} }, "claude");
+eq(scripts.map((s) => [s.command, s.scope, Object.keys(s.byEvent)]), [["a.sh", "user", ["Stop", "PreToolUse"]], ["b.sh", "user", ["Stop"]], ["a.sh", "project", ["Stop"]]], "one row per script and scope, one agent");

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, Search, TriangleAlert, X } from "lucide-react";
+import { ChevronRight, Plus, Search, TriangleAlert, X } from "lucide-react";
 import {
-  AT_TABS, LEVEL_LABEL, columnNotes, cwdOf, heldByChatSwitch, matches, nextOn, parseFocus, patchCell, pickedState, secTab, shareKey,
+  AT_TABS, LEVEL_LABEL, columnNotes, cwdOf, heldByChatSwitch, isSharedRow, levelChanges, matches, reaches, nextOn, parseFocus, patchCell, pickedState, secTab, shareKey,
   type AgentRef, type AtTab, type Cell, type Level, type McpGridRow, type MysticalGridRow, type Scope, type Section,
   type SkillGridRow, type ToolGrid, type ToolGridRow,
 } from "../../lib/agenttools";
@@ -16,7 +16,7 @@ import { PatternRules } from "./PatternRules";
 import { RulesTab } from "./RulesTab";
 import { McpPanel } from "./SettingsModal";
 import { SkillsPage } from "./SkillsFold";
-import { GridLoading, ToolGridTable, type GridRow } from "./ToolGridTable";
+import { AgentMark, GridLoading, ToolGridTable, type GridRow } from "./ToolGridTable";
 import { McpDetail, MysticalDetail, SkillDetail, ToolDetail } from "./ToolRowDetail";
 
 /* SETTINGS ▸ Agent Tools: one page for what each agent can reach, and who said so. Behind
@@ -29,6 +29,9 @@ import { McpDetail, MysticalDetail, SkillDetail, ToolDetail } from "./ToolRowDet
    includes the wider ones, so the picked level is always the nearest one in view, and a
    click there always takes effect. A cell is drawn from the answer; a pick lands at once and
    the next read confirms it. A skill has no levels, and its tab says so. */
+
+const SHARED = "Shared";
+const UNSHARED = "Not shared yet";
 
 export interface ChatInfo { title?: string | null; project?: string | null; cwd?: string | null; disabled_tools?: string[] }
 
@@ -88,6 +91,9 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
   const [mcpFold, setMcpFold] = useState(openSec === "MCP SERVERS" || openSec === "ADD A SERVER");
   const [skillFold, setSkillFold] = useState(!!startProject || openSec === "SKILLS");
   const seq = useRef(0);
+  const foldRef = useRef<HTMLDivElement>(null);
+  /** The agent card picked over the grid: whose "share all" the unshared group offers. */
+  const [focusAgent, setFocusAgent] = useState<string | null>(null);
 
   const load = useCallback(() => {
     const mine = ++seq.current;
@@ -155,6 +161,62 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
     } finally { mark(key, false); }
   };
 
+  /** Share every unshared row with one agent: one question for all of them, then each
+   *  pick in turn, the way a click would send it. A refusal stops the run and says so. */
+  const shareAll = async (what: "mcp" | "skills", ids: string[], a: AgentRef) => {
+    if (!grid) return;
+    const rows = what === "mcp" ? grid.mcp.filter((r) => ids.includes(r.name) && r.cells[a.id]?.state === "off")
+      : grid.skills.filter((r) => ids.includes(r.key) && r.cells[a.id]?.state === "off");
+    if (!rows.length) return;
+    const claudeOnly = what === "skills" ? (rows as SkillGridRow[]).filter((r) => r.claude_only).length : 0;
+    const text = what === "mcp"
+      ? `Share ${rows.length} servers with ${a.label}? Their keys stay with Mystical, but what their tools return goes to ${a.label}'s vendor.`
+      : `Share ${rows.length} skills with ${a.label}?${claudeOnly ? ` ${claudeOnly} of them were written with Claude in mind and may name tools ${a.label} doesn't have.` : ""}`;
+    if (!await askConfirm(text, { ok: "Share all" })) return;
+    setProblem(null);
+    for (const r of rows) {
+      const name = "key" in r ? r.key : r.name;
+      mark(`${name}|${a.id}`, true);
+      try {
+        if (what === "mcp") { await at.pick(scope, "mcp", name, a.id, true); setWarned((s) => new Set(s).add(shareKey(name, a.id))); }
+        else await multi.skillSet(name, true, cwd);
+      } catch (e) {
+        setProblem(`${name}: ${(e as Error).message}`);
+        mark(`${name}|${a.id}`, false);
+        break;
+      }
+      mark(`${name}|${a.id}`, false);
+    }
+    await load();
+  };
+  const others = agents.filter((a) => a.id !== "claude");
+  const target = others.find((a) => a.id === focusAgent) ?? others[0];
+  const shareEnd = (what: "mcp" | "skills") => (g: string, rows: GridRow[]) =>
+    g === UNSHARED && target && rows.some((r) => r.cells[target.id]?.state === "off")
+      ? <button type="button" className="ma-link" onClick={() => void shareAll(what, rows.map((r) => r.id), target)}>Share all with {target.label}</button>
+      : null;
+  const grouped = <R extends { cells: Record<string, Cell> }>(rows: R[]) =>
+    [...rows.filter((r) => isSharedRow(r.cells)), ...rows.filter((r) => !isSharedRow(r.cells))];
+  const groupOf = (cells: Record<string, Cell>) => (isSharedRow(cells) ? SHARED : UNSHARED);
+
+  /** Who reaches how much of this list: a card per agent, the picked one's "share all" below. */
+  const strip = (rows: { cells: Record<string, Cell> }[]) => (
+    <div className="at-agstrip" role="group" aria-label="What each agent reaches here">
+      {agents.map((a) => {
+        const n = rows.filter((r) => reaches(r.cells[a.id])).length;
+        const on = a.id !== "claude" && target?.id === a.id;
+        return (
+          <button key={a.id} type="button" className="at-agc" data-on={on || undefined} aria-pressed={a.id === "claude" ? undefined : on}
+            disabled={a.id === "claude"} title={a.id === "claude" ? `${a.label}: where these live` : `Pick ${a.label}: the unshared group offers to share all with it`}
+            onClick={() => setFocusAgent(a.id)}>
+            <AgentMark agent={a} /><b>{a.label}</b><span className="at-agn"><b>{n}</b>/{rows.length}</span>
+            <span className="at-agmeter" aria-hidden><i style={{ width: `${rows.length ? (n / rows.length) * 100 : 0}%` }} /></span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const reset = async (section: PolicySection, gridKey: "mcp" | "tools" | "mystical", name: string, agent: AgentRef) => pick(section, gridKey, name, agent, null);
 
   const noMatch = (n: number, what: string) => (
@@ -176,13 +238,18 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
     const byName = new Map(all.map((r) => [r.name, r]));
     return (
       <div data-sec="MCP">
-        {all.length > 0 && searchBar(rows.length, all.length, "servers")}
+        {all.length > 0 && strip(all)}
+        <div className="at-searchrow">
+          {all.length > 0 && searchBar(rows.length, all.length, "servers")}
+          <button type="button" className="at-btn" onClick={() => { setMcpFold(true); requestAnimationFrame(() => foldRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })); }}><Plus size={12} aria-hidden />Add a server</button>
+        </div>
         {all.length === 0 && <div className="at-emptybox"><TriangleAlert size={18} strokeWidth={1.4} aria-hidden /><span>No MCP servers are installed for any agent yet. Add one for Claude below; an agent&apos;s own config shows up here too.</span></div>}
         {noMatch(rows.length, "the servers")}
         {notes(all)}
         {rows.length > 0 && (
           <ToolGridTable section="mcp" nameHead="Server" agents={agents} level={level} busy={busy} open={open} onOpen={setOpen}
-            rows={rows.map((r) => ({ id: r.name, title: r.name, sub: `${r.transport} · in ${agents.find((a) => a.id === r.home)?.label ?? r.home}`, cells: r.cells }))}
+            rows={grouped(rows).map((r) => ({ id: r.name, title: r.name, sub: `${r.transport} · in ${agents.find((a) => a.id === r.home)?.label ?? r.home}`, group: groupOf(r.cells), cells: r.cells }))}
+            groupEnd={shareEnd("mcp")}
             onCell={(row, a, c) => { const r = byName.get(row.id)!; if (c.state === "login") login(r.name); else void onMcpCell(r, a, c); }}
             onReset={(row, a) => void reset("mcp", "mcp", row.id, a)}
             detail={(row) => {
@@ -190,6 +257,7 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
               return <McpDetail row={r} agents={agents} scope={scope} cwd={cwd} onReset={(a) => void reset("mcp", "mcp", r.name, a)} onLogin={() => login(r.name)} onLogout={() => logout(r.name)} />;
             }} />
         )}
+        <div ref={foldRef} />
         <Fold sec="MCP SERVERS" title="Claude's own servers" hint="add one, log in again, remove: claude mcp" open={mcpFold} onToggle={() => setMcpFold((o) => !o)}>
           <McpPanel />
         </Fold>
@@ -204,12 +272,14 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
     return (
       <div data-sec="SKILLS">
         <div className="at-scopenote">A skill is one folder link, so a share holds for the whole machine at every level. The level above only picks whose project skills are listed.</div>
+        {all.length > 0 && strip(all)}
         {all.length > 0 && searchBar(rows.length, all.length, "skills")}
         {all.length === 0 && <div className="at-emptybox"><TriangleAlert size={18} strokeWidth={1.4} aria-hidden /><span>No skills are installed yet. The catalog is below.</span></div>}
         {noMatch(rows.length, "the skills")}
         {rows.length > 0 && (
           <ToolGridTable section="skills" nameHead="Skill" agents={agents} level={level} busy={busy} open={open} onOpen={setOpen}
-            rows={rows.map((r) => ({ id: r.key, title: r.name, sub: `${r.scope === "project" ? "this project" : "all projects"} · from ${r.home === "claude" ? "Claude" : ".agents"}`, cells: r.cells }))}
+            rows={grouped(rows).map((r) => ({ id: r.key, title: r.name, sub: `${r.scope === "project" ? "this project" : "all projects"} · from ${r.home === "claude" ? "Claude" : ".agents"}`, group: groupOf(r.cells), cells: r.cells }))}
+            groupEnd={shareEnd("skills")}
             onCell={(row, a, c) => void onSkillCell(byKey.get(row.id)!, a, c)}
             onReset={() => {}}
             detail={(row) => <SkillDetail row={byKey.get(row.id)!} agents={agents} scope={scope} />} />
@@ -227,6 +297,7 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
     const byName = new Map<string, ToolGridRow>(all.map((r) => [r.name, r]));
     return (
       <div data-sec="BUILT-IN TOOLS">
+        {all.length > 0 && strip(all)}
         {searchBar(rows.length, all.length, "tools")}
         {all.length === 0 && <div className="at-emptybox"><TriangleAlert size={18} strokeWidth={1.4} aria-hidden /><span>This bridge lists no built-in tools.</span></div>}
         {noMatch(rows.length, "the tools")}
@@ -249,6 +320,7 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
     const byName = new Map<string, MysticalGridRow>(all.map((r) => [r.name, r]));
     return (
       <div data-sec="MYSTICAL TOOLS">
+        {all.length > 0 && strip(all)}
         {all.length > 0 && searchBar(rows.length, all.length, "Mystical tools")}
         {all.length === 0 && <div className="at-emptybox"><TriangleAlert size={18} strokeWidth={1.4} aria-hidden /><span>This bridge lists no Mystical tools.</span></div>}
         {noMatch(rows.length, "Mystical's tools")}
@@ -273,6 +345,7 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
 
   const count: Partial<Record<AtTab, number>> = grid ? { mcp: grid.mcp.length, skills: grid.skills.length, tools: grid.tools.length, mystical: grid.mystical.length } : {};
   const levelled = tab !== "hooks";
+  const changes = grid ? levelChanges(grid, level) : 0;
   const levels: Level[] = chatId ? ["machine", "project", "chat"] : ["machine", "project"];
   const select = (
     <select className="ma-input at-projsel" value={picked ?? ""} aria-label="Project" onChange={(e) => setPicked(e.target.value || null)}>
@@ -296,7 +369,9 @@ export function AgentToolsPage({ projects, currentProject, sessionId, chatInfo, 
           <div className="at-seg" role="radiogroup" aria-label="Level">
             {levels.map((l) => (
               <button key={l} type="button" role="radio" aria-checked={level === l} data-on={level === l || undefined}
-                disabled={l === "project" && projects.length === 0} onClick={() => setLevel(l)}>{LEVEL_LABEL[l]}</button>
+                disabled={l === "project" && projects.length === 0} onClick={() => setLevel(l)}>
+                {LEVEL_LABEL[l]}{l === level && l !== "machine" && changes > 0 && <em className="at-chg" title={`${changes} picks made at this level`}>{changes} {changes === 1 ? "change" : "changes"}</em>}
+              </button>
             ))}
           </div>
           {level === "project" && select}
