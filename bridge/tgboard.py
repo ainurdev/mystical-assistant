@@ -68,6 +68,10 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   LOOK_S must never spawn claude, and a turn's own rate-limit events keep the cache live.
   No reading, no footer. The login is named (alias, else email) only when the registry
   holds a second login: list_accounts() would ask the Keychain on every look.
+- A session managing a running work run (workrun's "_work" mark) shows it on its row, kind
+  "w": the item in progress as its step, "p" = [done, total, more in progress], timed from
+  the run's start. Its Stop is "w:<row key>" and does what /work stop does (workrun._stop).
+  A paused run has no row; the manager's turn or its helpers are what make the row exist.
 
 Limit cards (ticket 08). Both usage-limit notices (runner's park, ladder's choice) ask
 limit_card first: with the board on, in the owner's chat, the notice is a widget
@@ -79,8 +83,6 @@ session (_card_state) and edits it only when that changes; once it reads "Resume
 "No longer parked" the record is dropped. A choice whose answer came from elsewhere
 loses its Switch and Wait buttons on the next look; one answered on the card itself
 already had them taken off by the handler (card_caption).
-
-Not here yet (later tickets): work-run rows (09).
 """
 
 import json
@@ -90,7 +92,7 @@ import sys
 import threading
 import time
 
-from bridge import accounts, config, experimental, limits, notices, runner, store, telegram, usage
+from bridge import accounts, config, experimental, limits, notices, runner, store, telegram, usage, worklist, workrun
 
 LOOK_S = 5
 REFRESH_S = 60
@@ -182,7 +184,31 @@ def rows(chat: int, snap: "dict | None" = None) -> list:
         if sid not in out:
             out[sid] = {"sid": sid, "c": "h", "t": _title(store.get_session(sid), sid),
                         "s": f"{h['n']} helper{'s' if h['n'] != 1 else ''} working", "a": h["a"]}
+    for r in out.values():
+        _work_row(r)
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
+
+
+def _managed_run(sid: str) -> "tuple":
+    """(project, its work list, the run) for the running work run this session manages
+    (workrun._mark_chat), or Nones."""
+    mark = store.parse_json((store.get_session(sid) or {}).get("chat_config")).get("_work") or {}
+    root = mark.get("root")
+    data = worklist.load(root) if root else {"runs": []}
+    run = next((r for r in data["runs"] if r.get("id") == mark.get("run")), None)
+    return (root, data, run) if run and run.get("state") == "running" else (None, None, None)
+
+
+def _work_row(r: dict) -> None:
+    """A manager's row, while its run is running, becomes a work-run row: counts, an item in
+    progress and the run's start (the page composes the words, so the title keeps its bytes)."""
+    _, data, run = _managed_run(r["sid"])
+    if not run:
+        return
+    items = [i for i in data["items"] if i["id"] in run.get("items", [])]
+    doing = [i["title"] for i in items if i["state"] == "doing"]   # not review: that waits on the manager
+    r.update(c="w", s=doing[0] if doing else "", a=run.get("started"), n="",   # no tokens on a work-run row
+             p=[sum(i["state"] == "done" for i in items), len(items), max(len(doing) - 1, 0)])
 
 
 # Needs-you kinds as the row's verb ("asks: which layout?"); the rest read as the bell's verb.
@@ -227,7 +253,7 @@ def _login(slot: "int | None") -> "str | None":
 
 def footer(found: list) -> "dict | None":
     """The usage footer for the newest running turn's login, or None with no reading."""
-    slot = next((r.get("slot") for r in found if r["c"] == "r"), None)
+    slot = next((r.get("slot") for r in found if "slot" in r), None)    # turn rows (work-run ones too) carry their login
     m, now = usage.cached(accounts.credentials_path(slot)), time.time()
     w = []
     for b in (m.get("five_hour"), m.get("seven_day")) if m.get("available") else (None, None):
@@ -260,6 +286,8 @@ def data(found: list, now: float, u: "dict | None" = None, need: list = (), ende
                 row["n"] = r["n"]
             if r.get("v"):
                 row["v"] = r["v"]
+            if r.get("p"):
+                row["p"] = r["p"]
             shown.append(row)
         d = {"v": PAGE_V, "at": int(now), "rows": shown}
         if total > len(shown):
@@ -346,7 +374,7 @@ def look(now: "float | None" = None) -> None:
         if rec["board"] is None and started and config.NOTIFY_ENABLE and now >= _wait[0]:
             _send(rec, chat, found, *pic, now)    # also when this look found the board gone
         if rec["cards"] and now >= _wait[0]:
-            _cards(rec, {r["sid"] for r in found if r["c"] == "r"}, now)
+            _cards(rec, {r["sid"] for r in found if "slot" in r}, now)    # sessions with a turn running
 
 
 def status(chat: int, private: bool, now: "float | None" = None) -> bool:
@@ -455,9 +483,10 @@ def _send(rec: dict, chat: int, found: list, d: dict, body: dict, cap: str, kb: 
 
 
 def _keys(found: list, d: dict) -> dict:
-    """The row keys a Stop may name, as the board was last sent them: running rows only."""
-    shown = {r["k"] for r in d["rows"] if r["c"] == "r"}
-    return {r["sid"][:8]: r["sid"] for r in found if r["sid"][:8] in shown}
+    """The requests a Stop may send, as the board was last sent: s:<key> on running rows,
+    w:<key> on work-run rows."""
+    act = {r["k"]: {"r": "s", "w": "w"}.get(r["c"]) for r in d["rows"]}
+    return {f"{act[r['sid'][:8]]}:{r['sid'][:8]}": r["sid"] for r in found if act.get(r["sid"][:8])}
 
 
 def on_query(q: dict) -> None:
@@ -486,10 +515,16 @@ def _stop(q: dict) -> str:
     chat = (q.get("chat") or {}).get("id")
     if not board or chat != config.DASH_CHAT_ID or chat != board["chat"] or q.get("message_id") != board["msg"]:
         return "no"
-    act, _, key = str(q.get("data") or "").partition(":")
-    sid = (_sent.get("keys") or {}).get(key)
-    if act != "s" or not sid:
+    req = str(q.get("data") or "")
+    sid = (_sent.get("keys") or {}).get(req)
+    if not sid:
         return "no"
+    if req.startswith("w:"):            # what /work stop does: the run pauses, its turns stop
+        root, _, run = _managed_run(sid)
+        if not run:
+            return "gone"
+        workrun._stop(root, run)
+        return "ok"
     job = runner.live_job(sid)
     return "ok" if job and job.interrupt() else "gone"
 

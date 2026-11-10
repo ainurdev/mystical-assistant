@@ -41,11 +41,12 @@ function li(r,s,right,t){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<
 var K={
 r:function(r,now,open){return open==r.k?ask(r):li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),S[r.k]?"Stopping…":clock(now-r.a)+sq(r))},
 h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")},
-n:function(r,now){return li(r,'<span class="v">'+esc(r.v)+":</span> "+esc(r.s),r.a?wait(now-r.a):"")}};
+n:function(r,now){return li(r,'<span class="v">'+esc(r.v)+":</span> "+esc(r.s),r.a?wait(now-r.a):"")},
+w:function(r,now,open){var p=r.p;return K.r({k:r.k,t:r.t,a:r.a,s:"work run · "+p[0]+" of "+p[1]+" done"+(r.s?" · "+r.s:"")+(p[2]?" +"+p[2]:"")},now,open)}};
 function bt(c,a,k,l,t){return'<span class="'+c+'" role="button" aria-label="'+l+" "+t+'" data-a="'+a+'" data-k="'+esc(k)+'">'+(c=="x"?"■":l)+"</span>"}
 function sq(r){return bt("x","x",r.k,"Stop",esc(r.t))}
 function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k",r.k,"Keep",t)+bt("b","s",r.k,"Stop",t),"Stop "+t+"?")}
-function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){for(var i in D.rows)if(D.rows[i].k==k)S[k]=D.rows[i].a;T.request("s:"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
+function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){var c="s";for(var i in D.rows)if(D.rows[i].k==k){S[k]=D.rows[i].a;if(D.rows[i].c=="w")c="w"}T.request(c+":"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
 function left(d){return'<div class="empty">'+(d.left=="off"?"The Live board is off.":"This board moved down the chat.")+"</div>"}
