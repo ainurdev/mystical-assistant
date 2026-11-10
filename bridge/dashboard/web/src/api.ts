@@ -505,6 +505,13 @@ export interface GitStatus {
   // is no origin to publish to.
   unpublished?: number | null;
 }
+/** The GIT tab's line under the working tree (bridge/git.py ledger()). base "" = no base to compare with. */
+export interface LedgerCommit { sha: string; subject: string; ts: number }
+export interface GitLedger {
+  base: string; ref: string; ahead: number; behind: number;
+  local: LedgerCommit[]; shipped: LedgerCommit[]; shipped_n: number;
+  branches: string[];   // what the base menu offers
+}
 // One node of the commit graph — `parents` is what the lane layout walks.
 export interface GitCommit {
   sha: string;
@@ -2329,6 +2336,18 @@ export const api = {
     req<{ ok: boolean; output: string; clash: string[] }>("/local/git/merge-upstream", {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
+    }),
+  gitLedger: (project: string, branch?: string) =>
+    req<GitLedger>(`/local/git/ledger?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`),
+  // Update: the base merged into this branch (a clash changes nothing and names its files).
+  gitUpdateBase: (project: string, base: string, branch?: string) =>
+    req<{ ok: boolean; output: string; clash: string[] }>("/local/git/update-base", {
+      method: "POST", body: { project, base, ...(branch ? { branch } : {}) },
+    }),
+  // The newest unpushed commit taken back, its changes kept staged.
+  gitUndoCommit: (project: string, branch?: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/undo-commit", {
+      method: "POST", body: { project, ...(branch ? { branch } : {}) },
     }),
   // COMING IN: origin's commits HEAD lacks. Diverged, the merge's dry run too:
   // [] merges cleanly, files = they'd clash, null = couldn't tell.

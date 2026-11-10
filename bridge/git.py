@@ -614,20 +614,20 @@ def merge_check(cwd: str, ours: str = "HEAD", theirs: str = "@{u}") -> "list[str
     return [p for p in out.split("\0")[1:] if p] if rc in (0, 1) else None
 
 
-def merge_upstream(cwd: str) -> tuple[bool, str, list[str]]:
+def merge_upstream(cwd: str, theirs: str = "@{u}") -> tuple[bool, str, list[str]]:
     """The GIT tab's Merge on a diverged branch: the upstream merged into HEAD as
     a merge commit, never a rebase, so this branch's commits keep their shas.
     A clash never starts: the dry run says so first, and one it missed (a race)
     is undone at once (`merge --abort`). Either way its files come back and the
     tree is as it was. Without a dry run (old git) it won't merge over
     uncommitted edits, since an abort can't always give those back."""
-    clash = merge_check(cwd)
+    clash = merge_check(cwd, theirs=theirs)
     if clash:
         return False, "Merging would clash, so nothing was changed.", clash
     if clash is None and _run(cwd, "status", "--porcelain", "--untracked-files=no")[1].strip():
         return False, ("This git can't test a merge before running it, so it won't merge "
                        "over uncommitted changes. Commit or stash them first."), []
-    ok, output = merge(cwd, "@{u}")
+    ok, output = merge(cwd, theirs)
     if ok or _run(cwd, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] != 0:
         return ok, output, []
     _, names, _ = _run(cwd, "diff", "-z", "--name-only", "--diff-filter=U")
@@ -657,6 +657,53 @@ def outgoing(cwd: str, limit: int = 20) -> list[dict]:
     """The mirror: commits here that the upstream doesn't have — what a push
     sends (newest first). Empty without an upstream, like status()'s ahead."""
     return _commits(cwd, "@{u}..HEAD", limit)
+
+
+def base_ref(cwd: str, base: str) -> str:
+    """The ref a branch is compared with: origin's copy of `base` when there is
+    one (what a PR lands on), else the local branch; "" when neither exists."""
+    for ref in (f"origin/{base}", base):
+        if base and _run(cwd, "rev-parse", "-q", "--verify", f"{ref}^{{commit}}")[0] == 0:
+            return ref
+    return ""
+
+
+def ledger(cwd: str, base: str = "", limit: int = 30) -> dict:
+    """The GIT tab's line below the working tree. `local`: commits only on this
+    machine (what a push sends; with no upstream, everything `base` lacks).
+    `shipped`: on origin but not in `base` yet. `ahead`/`behind`: HEAD against
+    `base` (behind = the base moved). base "" (the branch is its own base, or
+    none is set) gives the local list alone."""
+    has_up = _run(cwd, "rev-parse", "-q", "--verify", "@{u}")[0] == 0
+    ref = base_ref(cwd, base)
+    out = {"base": base if ref else "", "ref": ref, "ahead": 0, "behind": 0, "shipped": [], "shipped_n": 0,
+           "local": _commits(cwd, "@{u}..HEAD" if has_up else f"{ref}..HEAD", limit) if has_up or ref else []}
+    if not ref:
+        return out
+    out["ahead"], out["behind"] = _left_right(cwd, ref, "HEAD") or (0, 0)
+    if has_up:
+        # Not `ref..@{u}`: behind origin, that would list commits this checkout doesn't have.
+        rc, mb, _ = _run(cwd, "merge-base", "HEAD", "@{u}")
+        if rc == 0 and mb.strip():
+            out["shipped"] = _commits(cwd, f"{ref}..{mb.strip()}", limit)
+            rc, n, _ = _run(cwd, "rev-list", "--count", f"{ref}..{mb.strip()}")
+            out["shipped_n"] = int(n) if rc == 0 and n.strip().isdigit() else len(out["shipped"])
+    return out
+
+
+def undo_commit(cwd: str) -> tuple[bool, str]:
+    """Take the newest commit back, keeping its changes staged (`reset --soft`).
+    Only a commit that never left this machine, and never a merge: undoing a
+    pushed commit would need a force push, and a merge's second parent is lost."""
+    rc, parents, _ = _run(cwd, "rev-list", "--parents", "-1", "HEAD")
+    if rc != 0 or len(parents.split()) != 2:
+        return False, "Only a plain commit with a parent can be undone here."
+    if _run(cwd, "rev-parse", "-q", "--verify", "@{u}")[0] == 0:
+        rc, n, _ = _run(cwd, "rev-list", "--count", "@{u}..HEAD")
+        if rc != 0 or n.strip() in ("", "0"):
+            return False, "That commit is already on origin, so it stays."
+    rc, out, err = _run(cwd, "reset", "--soft", "HEAD~1")
+    return rc == 0, (out + err).strip()
 
 
 _LOG_FMT = "%H\x1f%P\x1f%an\x1f%at\x1f%D\x1f%s"

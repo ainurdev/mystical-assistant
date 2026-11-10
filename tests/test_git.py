@@ -395,7 +395,7 @@ def test_merge_upstream_undoes_a_clash_the_dry_run_missed(monkeypatch):
     aborted at once and its files come back; nothing is left half-merged."""
     d = _diverged(clash=True)
     before = _head(d)
-    monkeypatch.setattr(g, "merge_check", lambda cwd: [])
+    monkeypatch.setattr(g, "merge_check", lambda cwd, **kw: [])
     ok, out, clash = g.merge_upstream(d)
     assert ok is False and clash == ["a.txt"] and "CONFLICT" in out, out
     assert _head(d) == before and g.status(d)["files"] == []
@@ -412,7 +412,7 @@ def test_merge_upstream_keeps_your_edits_safe(monkeypatch):
     assert open(os.path.join(d, "a.txt")).read() == "my uncommitted edit\n"
     d2 = _diverged(clash=False)
     _write(d2, "b.txt", "edited, not committed\n")
-    monkeypatch.setattr(g, "merge_check", lambda cwd: None)
+    monkeypatch.setattr(g, "merge_check", lambda cwd, **kw: None)
     ok, out, clash = g.merge_upstream(d2)
     assert ok is False and "uncommitted" in out and clash == []
     assert open(os.path.join(d2, "b.txt")).read() == "edited, not committed\n"
@@ -818,3 +818,57 @@ def test_drop_pr_copy_deletes_a_review_copy_only_when_nothing_is_lost():
     _run(d, "fetch", "-q", "origin")
     assert g.drop_pr_copy(d, 11) is True
     assert sorted(g.branches(d)) == sorted([base, "pr-8", "pr-9"])
+
+
+def _feature():
+    """origin has main; `feat` (made from it) has one pushed and one local commit,
+    and main moved on by one since."""
+    bare, d, branch = _published()
+    _run(d, "checkout", "-q", "-b", "feat")
+    _write(d, "f1.txt", "1\n"); _run(d, "add", "-A"); _run(d, "commit", "-q", "-m", "pushed one")
+    _run(d, "push", "-q", "-u", "origin", "feat")
+    _write(d, "f2.txt", "2\n"); _run(d, "add", "-A"); _run(d, "commit", "-q", "-m", "local one")
+    _run(d, "checkout", "-q", branch)
+    _write(d, "m.txt", "m\n"); _run(d, "add", "-A"); _run(d, "commit", "-q", "-m", "main moved")
+    _run(d, "push", "-q", "origin", branch)
+    _run(d, "checkout", "-q", "feat")
+    return d, branch
+
+
+def test_ledger_splits_local_from_shipped_and_counts_the_base():
+    d, base = _feature()
+    got = g.ledger(d, base)
+    assert [c["subject"] for c in got["local"]] == ["local one"], got
+    assert [c["subject"] for c in got["shipped"]] == ["pushed one"] and got["shipped_n"] == 1, got
+    assert (got["ahead"], got["behind"], got["ref"]) == (2, 1, f"origin/{base}"), got
+    # No base (the branch is its own, or the name is unknown): only what a push sends.
+    for none in ("", "nope"):
+        bare = g.ledger(d, none)
+        assert bare["base"] == "" and bare["shipped"] == [] and len(bare["local"]) == 1, bare
+
+
+def test_ledger_without_an_upstream_lists_everything_the_base_lacks():
+    _bare, d, base = _published()
+    _run(d, "checkout", "-q", "-b", "solo")
+    _write(d, "s.txt", "s\n"); _run(d, "add", "-A"); _run(d, "commit", "-q", "-m", "never pushed")
+    got = g.ledger(d, base)
+    assert [c["subject"] for c in got["local"]] == ["never pushed"] and got["shipped"] == [] and got["ahead"] == 1, got
+
+
+def test_update_from_the_base_merges_it_in():
+    d, base = _feature()
+    ok, out, clash = g.merge_upstream(d, g.base_ref(d, base))
+    assert ok is True and clash == [], out
+    assert g.ledger(d, base)["behind"] == 0 and os.path.exists(os.path.join(d, "m.txt"))
+
+
+def test_undo_commit_takes_back_only_an_unpushed_commit():
+    d, _base = _feature()
+    ok, out = g.undo_commit(d)
+    assert ok is True, out
+    st = g.status(d)
+    assert st["ahead"] == 0 and [f["path"] for f in st["files"]] == ["f2.txt"], st   # its change is kept, staged
+    _run(d, "stash", "-q", "-u")
+    before = _head(d)
+    ok, out = g.undo_commit(d)
+    assert ok is False and "origin" in out and _head(d) == before

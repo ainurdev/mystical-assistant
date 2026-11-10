@@ -7960,85 +7960,91 @@ button.ss-fold:hover { color: var(--txb); }
 
 /* the one pulse every hero's live dot or block uses */
 @keyframes rhpulse { 50% { opacity: .45; } }
-/* Git DELIVERY TRACKER (hud/GitTracker) and the panel's sections under it. Colours are theme variables only. */
-.gt-trk { flex: none; margin: 2px 12px 0; padding: 13px 12px 12px; border-radius: 14px; min-width: 0; container-type: inline-size;
-  background: radial-gradient(260px 120px at 0% -20%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%), var(--panel2, var(--panel));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 35%, transparent); }
-.gt-say { font: 800 var(--t13, 15px)/1.25 var(--f); color: var(--txb); }
-.gt-next { margin-top: 4px; min-height: 15px; font: 600 var(--t115)/1.3 var(--f); color: var(--txm); }
-.gt-steps { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
-.gt-ln { position: absolute; left: 16.667%; right: 16.667%; top: 11px; height: 3px; border-radius: 2px;
-  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--txl) 45%, transparent) 0 5px, transparent 5px 9px); }
-.gt-ln b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, var(--acc), color-mix(in srgb, var(--acc) 35%, transparent)); }
-.gt-s { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; text-align: center; }
-.gt-s i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--panel);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--txl) 45%, transparent); color: var(--txl); }
-.gt-s.done i { box-shadow: inset 0 0 0 2px var(--ok); color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel)); }
-.gt-s.on i { background: var(--acc); color: var(--acc-on); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 14px var(--acc); animation: gtpulse 2s ease-in-out infinite; }
-.gt-s.on.warn i { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 25%, transparent), 0 0 14px var(--warn); }
-@keyframes gtpulse { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--acc) 10%, transparent), 0 0 14px var(--acc); } }
-.gt-s > b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 var(--t8, 9px)/1.2 var(--f); letter-spacing: 1px; text-transform: uppercase; color: var(--txl); }
-.gt-s.on > b { color: var(--acc); }
-.gt-s > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 var(--t115)/1 var(--f); color: var(--txb); }
-.gt-s > span.ok { color: var(--ok); } .gt-s > span.warn { color: var(--warn); } .gt-s > span.dim { color: var(--txl); }
-.gt-bt { display: flex; gap: 7px; margin-top: 14px; }
-.gt-btn { flex: 1 1 0; min-width: 0; height: 32px; padding: 0 8px; border: 0; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  font: 800 var(--t115)/1 var(--f); white-space: nowrap; cursor: pointer; appearance: none; }
-.gt-btn span { overflow: hidden; text-overflow: ellipsis; }
-.gt-btn.pri { color: var(--acc-on); background: var(--acc); box-shadow: 0 6px 16px -8px var(--acc); }
-.gt-btn.pri.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent); box-shadow: inset 0 0 0 1px var(--warn); }
-.gt-btn.soft { color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); }
-.gt-btn:hover:not(:disabled) { filter: brightness(1.1); }
-.gt-btn:focus-visible { outline: 1.5px solid var(--acc); outline-offset: 2px; }
-.gt-btn:disabled { opacity: .5; cursor: not-allowed; }
-@container (max-width: 200px) { .gt-s i svg { display: none; } .gt-s > b { letter-spacing: .4px; } }
-@media (prefers-reduced-motion: reduce) { .gt-s.on i { animation: none; } }
-/* kicker bits */
+/* === GIT LEDGER (hud/GitPanel, /design-first git-reimagine) =====================
+   One line read downward: your edits, the commits only here (hollow), where
+   origin is, what the base lacks, the base. Colours are theme variables only:
+   --acc yours to move, --warn came from elsewhere or wants you, --ok landed. */
 .tabkick .gp-branch { flex: 0 1 auto; min-width: 0; }
 .gt-when { font: 600 var(--t10)/1 var(--f); color: var(--txl); white-space: nowrap; }
-/* section heads: the fold head, drawn as a small-caps label with a count and a right end */
-.gp-fh.gt-lbl { height: 34px; padding: 10px 8px 0 12px; background: none; border: 0; }
-.gp-fh.gt-lbl > b { font: 800 var(--t95)/1 var(--f); letter-spacing: 1.4px; color: var(--txl); white-space: nowrap; }
-.gp-fh.gt-lbl > em { font: 700 var(--t10)/1 var(--m); color: var(--txg); }
 .gt-fig { display: flex; gap: 5px; font: 600 var(--t10)/1 var(--m); }
 .gt-fig i { font-style: normal; } .gt-fig i:first-child { color: var(--ok); } .gt-fig i:last-child { color: var(--err); }
-.gt-go { display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 4px; border: 0; border-radius: 6px; background: none;
-  font: 800 var(--t10)/1 var(--f); color: var(--acc); cursor: pointer; appearance: none; }
-.gt-go:hover { background: var(--wash); }
-.gt-fold .gp-row, .gt-wrow { height: 30px; border-top: 1px solid var(--l); box-sizing: border-box; }
-.gt-wrow { display: flex; align-items: center; gap: 9px; padding: 0 12px; min-width: 0; font: 600 var(--t115)/1 var(--f); color: var(--txh); }
-.gt-wrow > i { width: 8px; height: 8px; border-radius: 2px; flex: none; background: color-mix(in srgb, var(--acc) 60%, transparent); }
-.gt-wrow > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gt-wrow > em { flex: none; font: 400 var(--t10)/1 var(--m); font-style: normal; color: var(--txl); }
-button.gt-wrow { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; color: var(--acc); cursor: pointer; appearance: none; text-align: left; }
-.gt-none { padding: 8px 12px; font: 400 var(--t105)/1.4 var(--f); color: var(--txl); }
-.gt-fold .gp-cbox { flex: none; border-top: 1px solid var(--l); border-bottom: 0; }
-/* Diverged: the hero's FORK (your lane and origin's joining at a merge node), the dry run's
-   line, the clash list, and COMING IN's amber rows. Geometry: lanes at y 27 / 61, node at 44. */
-.gt-fork { position: relative; height: 88px; margin-top: 14px; }
-.gt-lane { position: absolute; left: 0; display: flex; align-items: baseline; gap: 6px; max-width: calc(100% - 40px); white-space: nowrap; overflow: hidden; }
-.gt-lane.me { top: 0; } .gt-lane.them { bottom: 0; }
-.gt-lane b { font: 800 var(--t8, 9px)/1.2 var(--f); letter-spacing: 1px; text-transform: uppercase; color: var(--txl); }
-.gt-lane span { font: 800 var(--t115)/1 var(--f); overflow: hidden; text-overflow: ellipsis; }
-.gt-lane.me span { color: var(--acc); } .gt-lane.them span { color: var(--warn); }
-.gt-node { position: absolute; left: 0; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; }
-.gt-node.me { top: 15px; color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, var(--panel)); box-shadow: inset 0 0 0 2px var(--acc); }
-.gt-node.them { top: 49px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--panel)); box-shadow: inset 0 0 0 2px var(--warn); }
-.gt-rail { position: absolute; left: 24px; right: 46px; height: 3px; }
-.gt-rail.me { top: 25.5px; color: var(--acc); background: var(--acc); } .gt-rail.them { top: 59.5px; color: var(--warn); background: var(--warn); }
-.gt-rail::after { content: ""; position: absolute; left: 14px; right: 6px; top: -3.5px; height: 10px;
-  background: radial-gradient(circle at 5px 5px, var(--panel2, var(--panel)) 0 2.2px, currentColor 2.6px 3.8px, transparent 4.2px) 0 0 / 32px 10px repeat-x; }
-.gt-rail.them::after { background-size: 42px 10px; background-position: 12px 0; }   /* off the top lane's beat: two histories, not a ladder */
-.gt-join { position: absolute; right: 0; top: 0; overflow: visible; }
-.gt-join path { fill: none; stroke-width: 3; stroke-linecap: round; }
-.gt-mnode { position: absolute; right: 2px; top: 29px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--warn); color: var(--acc-on); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 25%, transparent), 0 0 14px var(--warn); }
-.gt-mnode.clash { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); box-shadow: inset 0 0 0 2px var(--warn), 0 0 0 4px color-mix(in srgb, var(--warn) 14%, transparent); }
-.gt-mlbl { position: absolute; right: 0; top: 66px; width: 34px; text-align: center; font: 800 var(--t8, 9px)/1.2 var(--f); letter-spacing: .6px; text-transform: uppercase; color: var(--warn); }
-.gt-chk { display: flex; align-items: center; gap: 6px; margin-top: 10px; min-width: 0; font: 700 var(--t105)/1.25 var(--f); color: var(--txl); }
-.gt-chk svg { flex: none; } .gt-chk span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gt-chk.ok { color: var(--ok); } .gt-chk.warn { color: var(--warn); }
-.gt-wrow.in > i { background: color-mix(in srgb, var(--warn) 75%, transparent); }
+.gl { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 2px 0 10px; }
+.gl-line { position: relative; }
+.gl-line::before { content: ""; position: absolute; left: 20px; top: 16px; bottom: 14px; width: 2px; border-radius: 2px;
+  background: linear-gradient(var(--acc) 0, color-mix(in srgb, var(--acc) 35%, var(--l2)) 45%, var(--l2) 100%); }
+.gl-line.calm::before { background: var(--l2); }
+.gl-s { position: relative; padding: 0 0 6px 38px; min-width: 0; }
+.gl-h { display: flex; align-items: center; gap: 7px; min-height: 32px; padding-right: 10px; min-width: 0; }
+.gl-h > b { font: 800 var(--t12, 13px)/1 var(--f); color: var(--txb); white-space: nowrap; }
+.gl-h > b.calm { color: var(--txm); }
+.gl-h > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t105)/1 var(--f); color: var(--txl); }
+.gl-h > .gl-r { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; overflow: visible; }
+.gl-n { position: absolute; left: 12px; top: 7px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--panel2, var(--panel)); color: var(--txl); box-shadow: inset 0 0 0 1.5px var(--l2); }
+.gl-n.me { background: var(--acc); color: var(--acc-on); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acc) 22%, transparent), 0 0 14px var(--acc); }
+.gl-n.out { color: var(--acc); box-shadow: inset 0 0 0 2px var(--acc); }
+.gl-n.in { color: var(--warn); box-shadow: inset 0 0 0 2px var(--warn); }
+.gl-b { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: max(var(--r), 0px);
+  font: 800 var(--t105)/1 var(--f); letter-spacing: 0; text-transform: none; white-space: nowrap; cursor: pointer; appearance: none; text-decoration: none; flex: none; }
+.gl-b.grow { flex: 1 1 0; min-width: 0; }
+.gl-b.pri { color: var(--acc-on); background: var(--acc); box-shadow: 0 6px 16px -8px var(--acc); }
+.gl-b.soft { color: var(--acc); background: color-mix(in srgb, var(--acc) 13%, transparent); }
+.gl-b.ghost { color: var(--txh); background: none; box-shadow: inset 0 0 0 1px var(--l2); }
+.gl-b.ghost.err { color: var(--err); }
+.gl-b.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.gl-b:hover:not(:disabled) { filter: brightness(1.12); }
+.gl-b:focus-visible, .gl-c:focus-visible, .gl-tag:focus-visible { outline: 1.5px solid var(--acc); outline-offset: 1px; }
+.gl-b:disabled { opacity: .5; cursor: not-allowed; }
+.gl-c { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 12px 0 0; border: 0; background: none;
+  text-align: left; font: 500 var(--t115)/1 var(--f); color: var(--txh); appearance: none; min-width: 0; }
+button.gl-c { cursor: pointer; }
+.gl-c::before { content: ""; position: absolute; left: -21px; top: 9.5px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--panel2, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--acc); }
+.gl-c.on::before { background: var(--txl); box-shadow: none; }
+.gl-c.in::before { background: var(--warn); box-shadow: none; }
+.gl-c.dim::before { background: var(--l2); box-shadow: none; }
+.gl-c > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-c > em { flex: none; font: 600 var(--t10)/1 var(--f); font-style: normal; color: var(--txl); }
+button.gl-c:hover > span { color: var(--txb); }
+.gl-c[aria-expanded="true"] > span { color: var(--txb); font-weight: 700; }
+.gl-c.more { color: var(--acc); font-weight: 700; font-size: var(--t105); } .gl-c.more > span { flex: 0 1 auto; color: inherit; }
+.gl-c.more.dim { color: var(--txl); }
+.gl-open { margin: 2px 10px 6px 0; padding: 6px 0; border-radius: calc(var(--r) * 1.5); background: var(--panel2, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 40%, transparent); min-width: 0; }
+.gl-open .gp-row { padding: 0 10px; } .gl-open .gg-diff { margin: 2px 10px 6px; max-height: 240px; overflow: auto; }
+.gl-meta { padding: 2px 10px 4px; font: 500 var(--t10)/1.3 var(--m); color: var(--txl); }
+.gl-acts { display: flex; gap: 6px; padding: 6px 10px 2px 0; } .gl-open .gl-acts, .gl-pr .gl-acts { padding: 8px 0 0; } .gl-open .gl-acts { padding: 6px 10px 2px; }
+.gl-chk { display: flex; align-items: center; gap: 6px; padding: 4px 10px 0 0; min-width: 0; font: 700 var(--t105)/1.25 var(--f); color: var(--txl); }
+.gl-chk svg { flex: none; } .gl-chk span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-chk.ok { color: var(--ok); } .gl-chk.warn { color: var(--warn); }
+.gl-mk { position: relative; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px 0 9px; margin: 2px 0 4px; min-width: 0; }
+.gl-tag { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border: 0; border-radius: 99px;
+  background: var(--panel2, var(--panel)); box-shadow: inset 0 0 0 1px var(--l2); font: 700 var(--t105)/1 var(--f); letter-spacing: 0; text-transform: none; color: var(--txh); white-space: nowrap;
+  max-width: 60%; overflow: hidden; text-overflow: ellipsis; appearance: none; flex: none; }
+button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
+.gl-tag.base { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 45%, transparent); }
+.gl-mk::after { content: ""; order: 2; flex: 1 1 12px; height: 1px; background: repeating-linear-gradient(90deg, var(--l2) 0 4px, transparent 4px 8px); }
+.gl-mk > em { order: 3; flex: none; font: 600 var(--t10)/1 var(--f); font-style: normal; color: var(--txl); white-space: nowrap; }
+.gl-lnk { order: 4; flex: none; padding: 0; border: 0; background: none; font: 800 var(--t105)/1 var(--f); color: var(--warn); cursor: pointer; appearance: none; }
+.gl-lnk:disabled { opacity: .5; cursor: not-allowed; }
+.gl-s .gp-row { padding-left: 0; height: 28px; } .gl-s .gp-group { padding-left: 0; }
+.gl-s .gp-cbox { padding: 6px 10px 4px 0; border: 0; }
+.gl-s .gp-note { margin: 6px 10px 2px 0; }
+.gl-pr { margin: 4px 10px 6px 0; padding: 10px 11px; border-radius: calc(var(--r) * 1.5); background: var(--panel2, var(--panel)); box-shadow: inset 0 0 0 1px var(--l2); min-width: 0; }
+.gl-pr-t { font: 800 var(--t115)/1.3 var(--f); color: var(--txb); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-pr-s { margin: 2px 0 6px; font: 600 var(--t105)/1.3 var(--f); color: var(--txl); }
+.gl-ck { display: flex; align-items: center; gap: 7px; height: 24px; font: 600 var(--t11)/1 var(--f); color: var(--txh); min-width: 0; }
+.gl-ck > i { width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; flex: none; box-shadow: inset 0 0 0 1.5px var(--warn); }
+.gl-ck.pass > i { box-shadow: none; background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.gl-ck.fail > i { box-shadow: none; background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+.gl-ck > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-ck > em { flex: none; font: 600 var(--t10)/1 var(--f); font-style: normal; color: var(--txl); }
+.gl-form input, .gl-form textarea { display: block; width: 100%; margin-bottom: 6px; padding: 6px 8px; border: 1px solid var(--l2); border-radius: var(--r);
+  background: var(--panel); color: var(--txh); font: 500 var(--t11)/1.4 var(--f); resize: vertical; box-sizing: border-box; }
+.gl-form input:focus, .gl-form textarea:focus { outline: none; border-color: var(--acc); }
+.gl-foot { padding-bottom: 0; }
+.gl-graph { border-top: 1px solid var(--l); margin-top: 6px; }
+.gl > .gp-rd:empty { display: none; }
 .gp-clash { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 38%, transparent); background: color-mix(in srgb, var(--warn) 6%, transparent); }
 .gp-clash-h { display: flex; align-items: center; gap: 7px; padding: 9px 10px 8px 12px; color: var(--warn); font: 800 var(--t95)/1 var(--f); letter-spacing: 1.2px; text-transform: uppercase; }

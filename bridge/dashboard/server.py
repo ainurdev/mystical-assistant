@@ -735,6 +735,22 @@ class Handler(BaseHTTPRequestHandler):
             diverged = st.get("ahead", 0) > 0 and st.get("behind", 0) > 0
             return self._json({"commits": git.incoming(cwd) if st.get("behind") else [],
                                "clash": git.merge_check(cwd) if diverged else None})
+        if path == "/local/git/ledger":
+            # The GIT tab's line: commits only here, commits on origin the base
+            # lacks, and how far the base moved. The base is your Target pick,
+            # else the PR's, else the default branch; a branch is never its own.
+            project, branch = qs.get("project", [None])[0], (qs.get("branch", [""])[0] or "").strip()
+            cwd = _worktree_cwd(project, branch)
+            abs_p = _abs_project(project)
+            if cwd is None or abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            name = git.current_branch(cwd)
+            picks = project_config.branch_targets(browser.rel(git.main_checkout(abs_p) or abs_p))
+            base = {**prstatus.cached_bases(abs_p), **picks}.get(name)
+            if base is None:
+                base = git.default_branch(abs_p)
+            return self._json({**git.ledger(cwd, "" if base == name else base),
+                               "branches": [b for b in git.branches(abs_p) if b != name]})
         if path == "/local/git/show":
             # One commit from the graph: its changed files, or one file's diff.
             cwd = _worktree_cwd(qs.get("project", [None])[0],
@@ -1819,6 +1835,21 @@ class Handler(BaseHTTPRequestHandler):
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.pull(cwd)
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/git/update-base":
+            # The ledger's Update: the base merged into this branch, as Merge does
+            # with the upstream (dry run first; a clash changes nothing).
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            ref = git.base_ref(cwd, (body.get("base") or "").strip()) if cwd else ""
+            if not ref:
+                return self._json({"error": "invalid project or base"}, 400)
+            ok, output, clash = git.merge_upstream(cwd, ref)
+            return self._json({"ok": ok, "output": output, "clash": clash})
+        if path == "/local/git/undo-commit":
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output = git.undo_commit(cwd)
             return self._json({"ok": ok, "output": output})
         if path == "/local/git/merge-upstream":
             # The GIT tab's Merge on a diverged branch: a merge commit, never a
