@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}
+body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans-serif;padding:10px 12px 4px;font-variant-numeric:tabular-nums}
+.wh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.wh b{font-weight:600;font-size:15px}
+.wh span,.s,.r,.more{color:var(--tg-theme-hint-color);font-size:13px}
+.li{display:grid;grid-template-columns:30px 1fr auto;gap:0 11px;align-items:center;padding:7px 0;position:relative}
+.li+.li:before{content:"";position:absolute;left:41px;right:0;top:0;height:1px;background:var(--tg-theme-section-separator-color)}
+.li>div{min-width:0}
+.ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:600}
+.t{font-size:15px}
+.t,.s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
+.more{padding:2px 0 6px 41px}
+</style><div id="b"></div><script>
+var T=window.TelegramWidget,D=null,O=null;
+var C=["#ff885e,#ff516a","#ffcd6a,#ffa85c","#a695e7,#7c6fd3","#a0de7e,#54cb68","#53edd6,#28c9b7","#72d5fd,#2a9ef1","#e0a2f3,#d669ed"];
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return"&#"+c.charCodeAt(0)+";"})}
+function two(n){return(n<10?"0":"")+n}
+function clock(s){s=Math.max(0,s|0);var h=s/3600|0,m=s%3600/60|0;return(h?h+":"+two(m):m)+":"+two(s%60)}
+function ago(s){return s<5?"just now":s<60?(s|0)+"s ago":s<3600?(s/60|0)+"m ago":(s/3600|0)+"h ago"}
+function ic(r){for(var i=0,n=0;i<r.k.length;i++)n+=r.k.charCodeAt(i);return'<span class="ic" style="background:linear-gradient('+C[n%7]+')">'+esc((Array.from(r.t||"?")[0]||"?").toUpperCase())+"</span>"}
+function li(r,s,right){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<div><div class="t" dir="auto">'+esc(r.t)+'</div><div class="s" dir="auto">'+s+'</div></div><span class="r">'+right+"</span></div>"}
+// One drawing function per row kind: later kinds add theirs beside these.
+var K={
+r:function(r,now){return li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),clock(now-r.a))},
+h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")}};
+function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
+function quiet(d){return'<div class="empty">Nothing is running.</div>'}
+function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
+function render(d,open,now){
+if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
+var rs=d.rows||[],h=head(d,now)+(rs.length?"":quiet(d));
+for(var i=0;i<rs.length;i++)if(K[rs[i].c])h+=K[rs[i].c](rs[i],now,open);
+return h+more(d)}
+function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
+function draw(){document.getElementById("b").innerHTML=render(D,O,Date.now()/1000|0)}
+D=parse();draw();setInterval(draw,1000);
+T.onEvent("chatDataChanged",function(){D=parse();draw()});
+T.ready&&T.ready();
+</script>
