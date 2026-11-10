@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AgentTree } from "./AgentTree";
-import { useTreeWant } from "../../lib/multistore";
+import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search, Ticket } from "lucide-react";
@@ -77,8 +77,9 @@ interface Props {
 type Mode = "attention" | "projects" | "plugins" | "tickets" | "recent";
 /** Which pieces of a row's provenance it prints. Independent, because the four
  *  presets this replaced could not express the obvious wants — a sidebar that
- *  names the project but not the branch was simply not on the menu. */
-type Detail = { proj: boolean; branch: boolean; wt: boolean };
+ *  names the project but not the branch was simply not on the menu. `agents`
+ *  is no fact on the row: it is the list under it (AgentTree). */
+type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean };
 // "recent" is most recent: the chat you prompt goes to the top of its project
 // and the project to the top of the list. It was newest-started for a while,
 // which held rows still but sank the chat you worked in under idle ones; the
@@ -97,20 +98,25 @@ const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "proj", label: "project name", tip: "Name the project on every row" },
   { k: "branch", label: "branch", tip: "Print the branch on every row" },
   { k: "wt", label: "worktree", tip: "Mark rows working in a worktree rather than the main checkout" },
+  { k: "agents", label: "agents", tip: "List a session's agents under its row" },
 ];
 /** PROJECTS rows sit under a header that already names the project, so that tick
- *  is not offered there — the other two tabs mix projects and need it. */
-const fieldsFor = (mode: Mode) => (mode === "projects" ? FIELDS.filter((f) => f.k !== "proj") : FIELDS);
+ *  is not offered there — the other two tabs mix projects and need it. Agents is
+ *  offered only where a list can show: with multi-agent chats on, and never in
+ *  PLUGINS (its ⎇ is hidden, but a menu left open survives the tab switch). */
+const fieldsFor = (mode: Mode, multi: boolean) => FIELDS.filter((f) =>
+  !(f.k === "proj" && mode === "projects") && !(f.k === "agents" && (!multi || mode === "plugins")));
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
  *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
- *  own stream again. */
+ *  own stream again. Agents start off in every tab, and PLUGINS, which has no
+ *  menu to tick them on in, never lists them. */
 const DETAIL_DEFAULT: Record<Mode, Detail> = {
-  attention: { proj: true, branch: true, wt: true },
-  projects: { proj: false, branch: true, wt: true },
-  plugins: { proj: true, branch: true, wt: true },
-  tickets: { proj: true, branch: true, wt: true },
-  recent: { proj: true, branch: true, wt: true },
+  attention: { proj: true, branch: true, wt: true, agents: false },
+  projects: { proj: false, branch: true, wt: true, agents: false },
+  plugins: { proj: true, branch: true, wt: true, agents: false },
+  tickets: { proj: true, branch: true, wt: true, agents: false },
+  recent: { proj: true, branch: true, wt: true, agents: false },
 };
 
 /** Rivendell jobs wear the PLUGINS lane's purple, apart from your own projects'. */
@@ -589,7 +595,8 @@ type LaneItem =
   | { k: "day"; label: string };
 
 export function SessionsPanel(props: Props) {
-  // AgentTree's poll: the chats the last render drew. A ref filled while rendering,
+  // AgentTree's poll: the chats the last render drew a list under (none while the
+  // agents tick is off). A ref filled while rendering,
   // then settled after the commit, because the rows are built past every hook.
   const drawn = useRef<string[]>([]);
   drawn.current = [];
@@ -631,12 +638,14 @@ export function SessionsPanel(props: Props) {
   // machine you work on — one repo on one branch wants less than fifteen.
   // ponytail: new key per shape change, no migration — useStickyObj merges one
   // level deep, so a stored preset string would survive as a Detail that has no
-  // fields and silently print nothing. Three ticks are cheaper to re-pick.
+  // fields and silently print nothing. Ticks are cheaper to re-pick. A new tick
+  // is no shape change: a saved Detail without it takes its default below.
   const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-fields", DETAIL_DEFAULT);
   const detail = { ...DETAIL_DEFAULT[mode], ...detailPrefs[mode] };
   const toggleField = (k: keyof Detail) =>
     setDetailPrefs((p) => ({ ...p, [mode]: { ...detail, [k]: !detail[k] } }));
-  const shownFields = fieldsFor(mode).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
+  const multiOn = useMultiOn();
+  const shownFields = fieldsFor(mode, multiOn).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
   const [detailMenu, setDetailMenu] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
@@ -913,7 +922,9 @@ export function SessionsPanel(props: Props) {
   };
 
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => {
-    drawn.current.push(s.id);
+    // AGENTS unticked: no list under a row and no poll for one, a helper that
+    // waits on you included (hidden means hidden).
+    if (detail.agents) drawn.current.push(s.id);
     return (
     <Fragment key={s.id}>
     <SessionRow
@@ -925,7 +936,7 @@ export function SessionsPanel(props: Props) {
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
     />
-    <AgentTree chatId={s.id} selectedId={selectedSessionId} />
+    {detail.agents && <AgentTree chatId={s.id} selectedId={selectedSessionId} />}
     </Fragment>
     );
   };
@@ -1239,7 +1250,7 @@ export function SessionsPanel(props: Props) {
               style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
             />
             <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
-            {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick,
+            {/* Job rows print no project, branch or worktree and never list agents, so PLUGINS has no row details to pick,
                 and it lists every job and share whatever the filter says. */}
             {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
             {mode !== "plugins" && (
@@ -1320,11 +1331,11 @@ export function SessionsPanel(props: Props) {
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
                               boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
-                  {fieldsFor(mode).map((f) => {
+                  {fieldsFor(mode, multiOn).map((f) => {
                     const on = detail[f.k];
                     return (
                       // Ticks, not a preset list — the menu stays open so you can
-                      // set all three against the rows changing behind it.
+                      // set them all against the rows changing behind it.
                       <button
                         key={f.k} onClick={() => toggleField(f.k)} title={f.tip}
                         role="menuitemcheckbox" aria-checked={on}
