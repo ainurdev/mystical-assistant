@@ -39,10 +39,14 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   stopped with the same Job.interrupt the panel's Stop calls. Each query gets exactly one
   answer: ok, gone (the turn already ended) or no. A widget query carries no signed init
   data, so trust is the bot's own update stream plus those checks, as for callbacks.
+- A session managing a running work run (workrun's "_work" mark) shows it on its row, kind
+  "w": the item in progress as its step, "p" = [done, total, more in progress], timed from
+  the run's start. Its Stop is "w:<row key>" and does what /work stop does (workrun._stop).
+  A paused run has no row; the manager's turn or its helpers are what make the row exist.
 
 Not here yet (later tickets): refusals and a deleted board (03), Needs-you rows and their
 buttons (04), /status and a board left behind (06), usage bars
-(07), limit cards (08), work-run rows (09).
+(07), limit cards (08).
 """
 
 import json
@@ -51,7 +55,7 @@ import sys
 import threading
 import time
 
-from bridge import config, experimental, runner, store, telegram
+from bridge import config, experimental, runner, store, telegram, worklist, workrun
 
 LOOK_S = 5
 REFRESH_S = 60
@@ -129,7 +133,29 @@ def rows(chat: int) -> list:
         if sid not in out:
             out[sid] = {"sid": sid, "c": "h", "t": _title(store.get_session(sid), sid),
                         "s": f"{h['n']} helper{'s' if h['n'] != 1 else ''} working", "a": h["a"]}
+    for r in out.values():
+        _work_row(r)
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
+
+
+def _run(sid: str) -> "tuple[str, dict] | tuple[None, None]":
+    """The project and the running work run this session manages (workrun._mark_chat), if any."""
+    mark = store.parse_json((store.get_session(sid) or {}).get("chat_config")).get("_work") or {}
+    root = mark.get("root")
+    run = root and next((r for r in worklist.load(root)["runs"] if r.get("id") == mark.get("run")), None)
+    return (root, run) if run and run.get("state") == "running" else (None, None)
+
+
+def _work_row(r: dict) -> None:
+    """A manager's row, while its run is running, becomes a work-run row: counts, an item in
+    progress and the run's start (the page composes the words, so the title keeps its bytes)."""
+    root, run = _run(r["sid"])
+    if not run:
+        return
+    items = [i for i in worklist.load(root)["items"] if i["id"] in run.get("items", [])]
+    doing = [i["title"] for i in items if i["state"] == "doing"]
+    r.update(c="w", s=doing[0] if doing else "", a=run.get("started"), n="",
+             p=[sum(i["state"] == "done" for i in items), len(items), max(len(doing) - 1, 0)])
 
 
 def data(found: list, now: float) -> dict:
@@ -141,6 +167,8 @@ def data(found: list, now: float) -> dict:
             row["a"] = int(r["a"])
         if r.get("n"):
             row["n"] = r["n"]
+        if r.get("p"):
+            row["p"] = r["p"]
         shown.append(row)
     while True:
         d = {"v": PAGE_V, "at": int(now), "rows": shown}
@@ -210,9 +238,10 @@ def _send(rec: dict, chat: int, found: list, d: dict, body: dict, cap: str, kb: 
 
 
 def _keys(found: list, d: dict) -> dict:
-    """The row keys a Stop may name, as the board was last sent them: running rows only."""
-    shown = {r["k"] for r in d["rows"] if r["c"] == "r"}
-    return {r["sid"][:8]: r["sid"] for r in found if r["sid"][:8] in shown}
+    """The requests a Stop may send, as the board was last sent: s:<key> on running rows,
+    w:<key> on work-run rows."""
+    act = {r["k"]: {"r": "s", "w": "w"}.get(r["c"]) for r in d["rows"]}
+    return {f"{act[r['sid'][:8]]}:{r['sid'][:8]}": r["sid"] for r in found if act.get(r["sid"][:8])}
 
 
 def on_query(q: dict) -> None:
@@ -241,10 +270,16 @@ def _stop(q: dict) -> str:
     chat = (q.get("chat") or {}).get("id")
     if not board or chat != config.DASH_CHAT_ID or chat != board["chat"] or q.get("message_id") != board["msg"]:
         return "no"
-    act, _, key = str(q.get("data") or "").partition(":")
-    sid = (_sent.get("keys") or {}).get(key)
-    if act != "s" or not sid:
+    req = str(q.get("data") or "")
+    sid = (_sent.get("keys") or {}).get(req)
+    if not sid:
         return "no"
+    if req.startswith("w:"):            # what /work stop does: the run pauses, its turns stop
+        root, run = _run(sid)
+        if not run:
+            return "gone"
+        workrun._stop(root, run)
+        return "ok"
     job = runner.live_job(sid)
     return "ok" if job and job.interrupt() else "gone"
 
