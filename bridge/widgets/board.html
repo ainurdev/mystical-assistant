@@ -13,8 +13,15 @@ body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans
 .empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
 .more{padding:2px 0 6px 41px}
 .v{color:var(--tg-theme-link-color)}
+.li .r{display:flex;align-items:center;gap:9px}
+.x,.b{position:relative}
+.x{width:30px;height:30px;border-radius:50%;background:rgba(236,57,66,.16);color:#ec3942;display:grid;place-items:center;font-size:10px}
+.x:after,.b:after{content:"";position:absolute;inset:-7px}
+.b{color:#fff;background:#ec3942;font-weight:600;padding:6px 13px;border-radius:15px}
+.b:after{inset:-8px -2px}
+.g{background:rgba(106,179,243,.12);color:var(--tg-theme-link-color)}
 </style><div id="b"></div><script>
-var T=window.TelegramWidget,D=null,O=null;
+var T=window.TelegramWidget,D=null,O=null,S={};
 var C=["#ff885e,#ff516a","#ffcd6a,#ffa85c","#a695e7,#7c6fd3","#a0de7e,#54cb68","#53edd6,#28c9b7","#72d5fd,#2a9ef1","#e0a2f3,#d669ed"];
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return"&#"+c.charCodeAt(0)+";"})}
 function two(n){return(n<10?"0":"")+n}
@@ -23,12 +30,16 @@ function ago(s){return s<5?"just now":s<60?(s|0)+"s ago":s<3600?(s/60|0)+"m ago"
 function ic(r){for(var i=0,n=0;i<r.k.length;i++)n+=r.k.charCodeAt(i);return'<span class="ic" style="background:linear-gradient('+(r.g||C[n%7])+')">'+esc(r.i||(Array.from(r.t||"?")[0]||"?").toUpperCase())+"</span>"}
 function wait(s){return s<60?(s|0)+"s":s<3600?(s/60|0)+"m":s<86400?(s/3600|0)+"h":(s/86400|0)+"d"}
 function hm(a){var d=new Date(a*1000);return d.getHours()+":"+two(d.getMinutes())}
-function li(r,s,right){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<div><div class="t" dir="auto">'+esc(r.t)+'</div><div class="s" dir="auto">'+s+'</div></div><span class="r">'+right+"</span></div>"}
+function li(r,s,right,t){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<div><div class="t" dir="auto">'+(t||esc(r.t))+'</div><div class="s" dir="auto">'+s+'</div></div><span class="r">'+right+"</span></div>"}
 // One drawing function per row kind: later kinds add theirs beside these.
 var K={
-r:function(r,now){return li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),clock(now-r.a))},
+r:function(r,now,open){return open==r.k?ask(r):li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),S[r.k]?"Stopping…":clock(now-r.a)+sq(r))},
 h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")},
 n:function(r,now){return li(r,'<span class="v">'+esc(r.v)+":</span> "+esc(r.s),r.a?wait(now-r.a):"")}};
+function bt(c,a,k,l,t){return'<span class="'+c+'" role="button" aria-label="'+l+" "+t+'" data-a="'+a+'" data-k="'+esc(k)+'">'+(c=="x"?"■":l)+"</span>"}
+function sq(r){return bt("x","x",r.k,"Stop",esc(r.t))}
+function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k",r.k,"Keep",t)+bt("b","s",r.k,"Stop",t),"Stop "+t+"?")}
+function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){for(var i in D.rows)if(D.rows[i].k==k)S[k]=D.rows[i].a;T.request("s:"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
@@ -41,5 +52,7 @@ function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
 function draw(){document.getElementById("b").innerHTML=render(D,O,Date.now()/1000|0)}
 D=parse();draw();setInterval(draw,1000);
 T.onEvent("chatDataChanged",function(){D=parse();draw()});
+T.onEvent("chatDataChanged",function(){var ks={},rs=D&&D.rows||[],i;for(i in rs)ks[rs[i].k]=rs[i].a;if(!(O in ks))O=null;for(var k in S)if(ks[k]!==S[k])delete S[k];draw()});
+document.getElementById("b").addEventListener("click",function(e){for(var n=e.target;n&&n.getAttribute;n=n.parentNode){var a=n.getAttribute("data-a");if(a)return tap(a,n.getAttribute("data-k"))}});
 T.ready&&T.ready();
 </script>
