@@ -21,7 +21,7 @@ The fixed order of **Steps** a **Session** follows for one request (feature, bug
 _Avoid_: pipeline, workflow, plan
 
 **Step**:
-One stage of a **Path** (grill, spec, tickets, build, merge, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
+One part of a **Path** (grill, spec, tickets, build, merge, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
 _Avoid_: station, phase, stage
 
 **Mystical MCP**:

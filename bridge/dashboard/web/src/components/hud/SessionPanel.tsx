@@ -15,9 +15,10 @@ import { SteerIcon } from "../Composer";
 import { TabKick } from "./TabKick";
 
 // Which sections are open, kept across sessions. FLOW starts open, the numbers start folded.
-const FOLDS = "ss.open";
-const OPEN0: Record<string, boolean> = { flow: true, time: false, onwhat: false, helpers: false };
-function readOpen(): Record<string, boolean> {
+const FOLDS = "hud-session-folds";
+const OPEN0 = { flow: true, time: false, onwhat: false, helpers: false };
+type Fold = keyof typeof OPEN0;
+function readOpen(): Record<Fold, boolean> {
   try { return { ...OPEN0, ...JSON.parse(localStorage.getItem(FOLDS) || "{}") }; } catch { return OPEN0; }
 }
 
@@ -211,6 +212,7 @@ export function SessionPanel({
 
   const ai = useAiFeatures();
   const [flow, setFlow] = useState<Flow | null>(null);
+  const [flowRead, setFlowRead] = useState(false);   // "no path" only once the bridge said so
   const [set, setSet] = useState<FlowSet | null>(null);
   const [meter, setMeter] = useState<Meter | null>(null);
   // Tickets build and merge in sessions of their own: no turn here says when they move.
@@ -222,13 +224,15 @@ export function SessionPanel({
     let live = true;
     const read = () => {
       api.getMeter(sessionId).then((m) => { if (live) setMeter((m as Partial<Meter>).series?.length ? (m as Meter) : null); }).catch(() => {});
-      if (ai.router) api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setSet(r.set ?? null); } }).catch(() => {});
+      if (ai.router) api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setSet(r.set ?? null); setFlowRead(true); } }).catch(() => {});
     };
     read();
     if (!busy) return () => { live = false; };
     const id = setInterval(() => { setNow(Date.now() / 1000); read(); }, 4000);
     return () => { live = false; clearInterval(id); };
   }, [sessionId, busy, ai.router]);
+  // Another session's path never shows under this one while its own loads.
+  useEffect(() => { setFlow(null); setSet(null); setFlowRead(false); }, [sessionId]);
   // The clock and the strip run on between reads.
   useEffect(() => {
     if (!running) return;
@@ -265,13 +269,13 @@ export function SessionPanel({
   }, []);
 
   const [open, setOpen] = useState(readOpen);
-  const flip = (k: string) => setOpen((o) => {
+  const flip = (k: Fold) => setOpen((o) => {
     const next = { ...o, [k]: !o[k] };
     try { localStorage.setItem(FOLDS, JSON.stringify(next)); } catch { /* ignore */ }
     return next;
   });
   /** A section's header: a button that folds what's under it; `shut` shows only while folded. */
-  const head = (k: string, name: string, tag: ReactNode, right: ReactNode, shut?: ReactNode, title?: string) => (
+  const head = (k: Fold, name: string, tag: ReactNode, right: ReactNode, shut?: ReactNode, title?: string) => (
     <button type="button" className={`ss-lbl ss-fold${open[k] ? " open" : ""}`} aria-expanded={open[k]} onClick={() => flip(k)} title={title}>
       <ChevronRight size={11} strokeWidth={2.6} className="ss-fc" aria-hidden />{name}
       {tag != null && tag !== false && <span className="ss-tag">{tag}</span>}
@@ -502,11 +506,12 @@ export function SessionPanel({
   // BUILD and MERGE run in sessions of their own: the ticket set's word stands in.
   const stats = meter && path ? stepStats(bands(turns, rows, { stations: path.stations, at: path.at }), segs, turns, meter.turns) : null;
   const away = path?.stations.find((s) => (s.key === "build" || s.key === "merge") && s.state !== "done")?.key;
-  const flowBlock = !path || !flow ? <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
+  const flowBlock = !path || !flow ? (flowRead || !ai.router) && <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
     <>
       {head("flow", "FLOW", flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),
         path.stations.every((s) => s.state === "done") ? "complete" : <>step <b>{path.step}</b> of {path.total}</>, null,
         `${path.by === "claude" ? "Claude" : "A rule"} picked this path: ${path.why}`)}
+      {open.flow && path.why && <div className="ss-why" title={path.why}>{path.by === "claude" ? "Claude" : "A rule"} picked it: {path.why}</div>}
       {open.flow && path.stations.map((s) => {
         const n = stats?.get(s.label.toUpperCase());
         const note = s.key === away ? path.note : undefined;
@@ -522,7 +527,7 @@ export function SessionPanel({
           </button>
         );
       })}
-      {open.flow && nextLine}
+      {nextLine}
     </>
   );
 
