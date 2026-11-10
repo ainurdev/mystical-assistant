@@ -24,7 +24,14 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - Rows come from the status map the dashboard's bell reads (runner.running_snapshot),
   without the process scan: sessions the bridge runs, from any surface. Helpers have no
   rows; a session whose own turn is over while its helpers work is one "N helpers
-  working" row. Newest first, at most MAX_ROWS, then "+N more".
+  working" row. Each item of the bell's Needs-you list (notices.needs, fed the same
+  status map) is a row too; a session held on an Ask shows once, as that row, and still
+  counts as running. Running rows first, then Needs-you rows, each newest first; at most
+  MAX_ROWS, then "+N more", running rows left out first. Quiet (nothing runs or waits),
+  the data carries the feed's last LAST DONE or FAILED rows instead.
+- Under the widget: a Mini App button per waiting session (at most MAX_BUTTONS), then
+  "Open panel". They sit outside the page because the page can only open a fixed t.me
+  address and the Mini App's moves on every restart.
 - The data is one JSON object of at most DATA_MAX bytes with one-letter names (the
   shape is in the spec's "Built side by side" note, shared by every ticket). Titles and
   steps are cut on a character boundary; if it is still too big, rows are left out.
@@ -32,8 +39,7 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - The page (bridge/widgets/board.html) is fixed once sent, so it draws everything from
   that data. PAGE_V is its version, in the record and in the data.
 
-Not here yet (later tickets): refusals and a deleted board (03), Needs-you rows and their
-buttons (04), Stop from a row (05), /status and a board left behind (06), usage bars
+Not here yet (later tickets): refusals and a deleted board (03), Stop from a row (05), /status and a board left behind (06), usage bars
 (07), limit cards (08), work-run rows (09).
 """
 
@@ -43,11 +49,13 @@ import sys
 import threading
 import time
 
-from bridge import config, experimental, runner, store, telegram
+from bridge import config, experimental, notices, runner, store, telegram
 
 LOOK_S = 5
 REFRESH_S = 60
 MAX_ROWS = 7
+MAX_BUTTONS = 3
+LAST = 2             # turns that ended, on the quiet board
 TITLE_B = 24
 STEP_B = 36
 DATA_MAX = 1024
@@ -91,10 +99,10 @@ def _title(sess: "dict | None", sid: str) -> str:
     return (sess or {}).get("title") or sid[:8]
 
 
-def rows(chat: int) -> list:
+def rows(chat: int, snap: "dict | None" = None) -> list:
     """Every session with a turn or a helper in flight, newest first, as board rows
     (unkeyed: `sid` is dropped before sending)."""
-    snap = runner.running_snapshot(chat, scan=False)
+    snap = snap or runner.running_snapshot(chat, scan=False)
     status = snap.get("status") or {}
     out, helpers = {}, {}
     for j in snap.get("jobs") or []:
@@ -124,35 +132,88 @@ def rows(chat: int) -> list:
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
 
 
-def data(found: list, now: float) -> dict:
-    """The board's chat data, within DATA_MAX bytes."""
-    shown = []
-    for r in found[:MAX_ROWS]:
-        row = {"k": r["sid"][:8], "c": r["c"], "t": cut(r["t"], TITLE_B), "s": cut(r["s"], STEP_B)}
-        if r["a"]:                      # no start known (agents after a restart): no time, not `now`, which would edit every look
-            row["a"] = int(r["a"])
-        if r.get("n"):
-            row["n"] = r["n"]
-        shown.append(row)
+# Needs-you kinds as the row's verb ("asks: which layout?"); the rest read as the bell's verb.
+VERB = {"question": "asks", "approve": "approve", "login": "sign in", "limit_choice": "limit",
+        "goal_blocked": "goal", "credits": "credits", "rv_offer": "offered"}
+ANSWER = ("question", "approve")       # answered in the panel: "◈ Answer", anything else "◈ Open"
+
+
+def needing(status: dict) -> list:
+    """The bell's Needs-you list (newest first) as board rows."""
+    return [{"sid": n["session_id"] or n["subject"], "c": "n", "t": n["title"] or "Mystical",
+             "s": n["body"] or "", "a": n["at"], "v": VERB.get(n["kind"], n["verb"].lower()),
+             "kind": n["kind"], "session": n["session_id"]} for n in notices.needs(status)]
+
+
+def last() -> list:
+    """The last LAST turns that ended (DONE or FAILED rows of the feed), for the quiet board."""
+    out = []
+    for r in store.list_notices(time.time() - notices.KEEP_S, LAST, ("done", "failed")):
+        n, ok = notices._row(r, {}), r["kind"] == "done"
+        e = n["meta"].get("elapsed")
+        how = (f"done · {max(1, round(e / 60))} min" if e else "done") if ok else \
+            "failed" + (f" · {n['body']}" if n["body"] else "")
+        out.append({"t": cut(n["title"] or "session", TITLE_B), "s": cut(how, STEP_B), "a": int(n["at"]),
+                    **({"ok": 1} if ok else {})})
+    return out
+
+
+def data(found: list, now: float, need: list = (), ended: list = ()) -> dict:
+    """The board's chat data, within DATA_MAX bytes. Running rows (minus a session held
+    on a Needs-you item, which shows once, as that row) come first, then Needs-you rows;
+    past MAX_ROWS or DATA_MAX running rows are left out before any Needs-you row."""
+    held = {n["sid"] for n in need}
+    run = [r for r in found if r["sid"] not in held]
+    total = len(run) + len(need)
+    need = list(need)[:MAX_ROWS]
+    run = run[:MAX_ROWS - len(need)]
     while True:
+        shown = []
+        for r in run + need:
+            row = {"k": r["sid"][:8], "c": r["c"], "t": cut(r["t"], TITLE_B), "s": cut(r["s"], STEP_B)}
+            if r["a"]:                  # no start known (agents after a restart): no time, not `now`, which would edit every look
+                row["a"] = int(r["a"])
+            if r.get("n"):
+                row["n"] = r["n"]
+            if r.get("v"):
+                row["v"] = r["v"]
+            shown.append(row)
         d = {"v": PAGE_V, "at": int(now), "rows": shown}
-        if len(found) > len(shown):
-            d["more"] = len(found) - len(shown)
+        if total > len(shown):
+            d["more"] = total - len(shown)
+        if ended and not total:
+            d["last"] = list(ended)
         if len(dump(d).encode()) <= DATA_MAX or not shown:
             return d
-        shown = shown[:-1]              # running rows go first; all of them are running rows here
+        if run:
+            run = run[:-1]
+        else:
+            need = need[:-1]
 
 
 def dump(d: dict) -> str:
     return json.dumps(d, ensure_ascii=False, separators=(",", ":"))
 
 
-def caption(found: list) -> str:
-    return f"{len(found)} running" if found else "nothing running"
+def caption(found: list, need: list = ()) -> str:
+    return (f"{len(found)} running" if found else "nothing running") + (f" · {len(need)} needs you" if need else "")
 
 
-def buttons(chat: int) -> "dict | None":
-    return telegram.panel_kb(chat, label="◈ Open panel")
+def buttons(chat: int, need: list = ()) -> "dict | None":
+    """One Mini App button per waiting session (newest first, at most MAX_BUTTONS), then
+    the panel. Built from the Mini App's current address on every look; none without one."""
+    panel = telegram.panel_kb(chat, label="◈ Open panel")
+    if not panel:
+        return None
+    rows, seen = [], set()
+    for n in need:
+        sid = n["session"]
+        if not sid or sid in seen or len(rows) == MAX_BUTTONS:
+            continue
+        seen.add(sid)
+        label = f"◈ {'Answer' if n['kind'] in ANSWER else 'Open'} · {cut(n['t'], TITLE_B)}"
+        rows += telegram.panel_kb(chat, session_id=sid, label=label)["inline_keyboard"]
+    return {"inline_keyboard": rows + panel["inline_keyboard"]}
 
 
 def look(now: "float | None" = None) -> None:
@@ -163,14 +224,17 @@ def look(now: "float | None" = None) -> None:
     now = now or time.time()
     with _lock:
         chat = config.DASH_CHAT_ID
-        found = rows(chat)
+        snap = runner.running_snapshot(chat, scan=False)
+        found = rows(chat, snap)
+        need = needing(snap.get("status") or {})
         running = {r["sid"] for r in found}
         started = running - _seen
         _seen.clear()
         _seen.update(running)
         rec = record()
         board = rec["board"]
-        d, cap, kb = data(found, now), caption(found), buttons(chat)
+        ended = last() if not found and not need else ()
+        d, cap, kb = data(found, now, need, ended), caption(found, need), buttons(chat, need)
         body = {k: v for k, v in d.items() if k != "at"}
         if board is None:
             if started:
