@@ -5,7 +5,7 @@ import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
 import { flowView, type Flow, type FlowSet } from "../../lib/flowview";
-import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, timeOf, toNow } from "../../lib/meter";
+import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
 import { openAgent } from "../../lib/subagents";
 import { hhmm, useClock12 } from "../../lib/surfaces";
@@ -13,6 +13,13 @@ import { fmtTokens } from "../../lib/week";
 import type { TranscriptNav } from "../Transcript";
 import { SteerIcon } from "../Composer";
 import { TabKick } from "./TabKick";
+
+// Which sections are open, kept across sessions. FLOW starts open, the numbers start folded.
+const FOLDS = "ss.open";
+const OPEN0: Record<string, boolean> = { flow: true, time: false, onwhat: false, helpers: false };
+function readOpen(): Record<string, boolean> {
+  try { return { ...OPEN0, ...JSON.parse(localStorage.getItem(FOLDS) || "{}") }; } catch { return OPEN0; }
+}
 
 // Where a jump parks a turn: under the header island (Transcript's scroll-mt-[86px]).
 const AIM = 86;
@@ -257,6 +264,20 @@ export function SessionPanel({
     watch.current.observe(el);
   }, []);
 
+  const [open, setOpen] = useState(readOpen);
+  const flip = (k: string) => setOpen((o) => {
+    const next = { ...o, [k]: !o[k] };
+    try { localStorage.setItem(FOLDS, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
+  /** A section's header: a button that folds what's under it; `shut` shows only while folded. */
+  const head = (k: string, name: string, tag: ReactNode, right: ReactNode, shut?: ReactNode, title?: string) => (
+    <button type="button" className={`ss-lbl ss-fold${open[k] ? " open" : ""}`} aria-expanded={open[k]} onClick={() => flip(k)} title={title}>
+      <ChevronRight size={11} strokeWidth={2.6} className="ss-fc" aria-hidden />{name}
+      {tag != null && tag !== false && <span className="ss-tag">{tag}</span>}
+      {(right || (!open[k] && shut)) && <span className="ss-r">{right}{!open[k] && shut}</span>}
+    </button>
+  );
   const [lens, setLens] = useState<"window" | "spent">("window");
   const [opened, setOpened] = useState<string | null>(null);
   const [allHelpers, setAllHelpers] = useState(false);
@@ -341,13 +362,13 @@ export function SessionPanel({
   const worked = time.claude + time.tools + time.helpers;
   const timeBlock = meter && all > 0 && (
     <>
-      <div className="ss-lbl">TIME <span className="ss-tag">{long(all)}</span><span className="ss-r">worked <b>{long(worked)}</b></span></div>
-      <div className="ss-tbar" role="img" aria-label={WHO.map(([w, n]) => `${n} ${fmtElapsed(time[w])}`).join(", ")}>
+      {head("time", "TIME", open.time && long(all), <>worked <b>{long(worked)}</b></>)}
+      {open.time && <><div className="ss-tbar" role="img" aria-label={WHO.map(([w, n]) => `${n} ${fmtElapsed(time[w])}`).join(", ")}>
         {WHO.map(([w]) => time[w] > 0 && <i key={w} className={`ss-w-${w}`} style={{ width: `${(time[w] / all) * 100}%` }} />)}
       </div>
       <div className="ss-tleg">
         {WHO.map(([w, n]) => <span key={w}><i className={`ss-dot ss-w-${w}`} />{n}<em>{fmtElapsed(time[w])}</em></span>)}
-      </div>
+      </div></>}
     </>
   );
 
@@ -391,8 +412,8 @@ export function SessionPanel({
   };
   const onWhat = meter && (
     <>
-      <div className="ss-lbl">ON WHAT</div>
-      <div className="ss-switch" role="tablist" aria-label="on what">
+      {head("onwhat", "ON WHAT", null, null, <>window <b>{tok(meter.window.total)}</b></>)}
+      {open.onwhat && <><div className="ss-switch" role="tablist" aria-label="on what">
         {(["window", "spent"] as const).map((w) => (
           <button key={w} type="button" role="tab" aria-selected={lens === w} className={lens === w ? "on" : ""} onClick={() => setLens(w)}>
             {w === "window" ? "WINDOW" : "SPENT"} <em>{tok(w === "window" ? meter.window.total : meter.spent.total)}</em>
@@ -400,23 +421,23 @@ export function SessionPanel({
         ))}
       </div>
       {/* both lenses in one cell: switching never resizes the box */}
-      <div className="ss-lenses">{lensRows("window")}{lensRows("spent")}</div>
+      <div className="ss-lenses">{lensRows("window")}{lensRows("spent")}</div></>}
     </>
   );
 
   const hs = meter?.helpers ?? [];
   const helpers = hs.length > 0 && (
     <>
-      <div className="ss-lbl">HELPERS <span className="ss-tag">{hs.some((h) => h.running) ? `${hs.filter((h) => h.running).length} running` : `${hs.length} ran`}</span>
-        <span className="ss-r">{tok(hs.reduce((s, h) => s + h.tokens, 0))}</span></div>
-      {(allHelpers ? hs : hs.slice(0, 3)).map((h) => (
+      {head("helpers", "HELPERS", hs.some((h) => h.running) ? `${hs.filter((h) => h.running).length} running` : `${hs.length} ran`,
+        tok(hs.reduce((s, h) => s + h.tokens, 0)))}
+      {open.helpers && (allHelpers ? hs : hs.slice(0, 3)).map((h) => (
         <button type="button" key={h.id} className="ss-h" onClick={() => openAgent(h.id)} title="open its run">
           <span className={`ss-hi${h.running ? " run" : ""}`}><Bot size={11} strokeWidth={2.2} aria-hidden /></span>
           <span className="ss-ht">{h.what}</span>
           <small>{fmtElapsed(Math.max(0, (h.running ? now : h.end) - h.start))}</small><em>{tok(h.tokens)}</em>
         </button>
       ))}
-      {hs.length > 3 && <button type="button" className="ss-h more" onClick={() => setAllHelpers(!allHelpers)}>
+      {open.helpers && hs.length > 3 && <button type="button" className="ss-h more" onClick={() => setAllHelpers(!allHelpers)}>
         <span className="ss-hi" /><span className="ss-ht">{allHelpers ? "fewer" : `${hs.length - 3} more`}</span></button>}
     </>
   );
@@ -477,6 +498,34 @@ export function SessionPanel({
     </div>
   );
 
+  // FLOW: the path's steps, each with the time worked on it and what its turns spent.
+  // BUILD and MERGE run in sessions of their own: the ticket set's word stands in.
+  const stats = meter && path ? stepStats(bands(turns, rows, { stations: path.stations, at: path.at }), segs, turns, meter.turns) : null;
+  const away = path?.stations.find((s) => (s.key === "build" || s.key === "merge") && s.state !== "done")?.key;
+  const flowBlock = !path || !flow ? <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
+    <>
+      {head("flow", "FLOW", flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),
+        path.stations.every((s) => s.state === "done") ? "complete" : <>step <b>{path.step}</b> of {path.total}</>, null,
+        `${path.by === "claude" ? "Claude" : "A rule"} picked this path: ${path.why}`)}
+      {open.flow && path.stations.map((s) => {
+        const n = stats?.get(s.label.toUpperCase());
+        const note = s.key === away ? path.note : undefined;
+        return (
+          <button type="button" key={s.key} className={`ss-h ss-st ${s.state}`} disabled={!n?.turn} onClick={() => n?.turn && onJump(n.turn)}
+            title={n?.turn ? "go to the step's first turn" : undefined}>
+            <span className={`ss-hi${s.state === "now" ? " run" : ""}`}>
+              {s.state === "done" ? <Check size={11} strokeWidth={2.6} aria-hidden /> : s.state === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden />
+                : <i className="ss-sd" aria-hidden />}</span>
+            <span className="ss-ht">{s.label.toUpperCase()}</span>
+            {note ? <small className="ss-sn">{note}</small> : <>
+              <small>{n && n.secs > 0 ? fmtElapsed(n.secs) : ""}</small><em>{n?.tokens ? tok(n.tokens) : ""}</em></>}
+          </button>
+        );
+      })}
+      {open.flow && nextLine}
+    </>
+  );
+
   return (
     <div className="panel gp tn ss" style={FRAME} onKeyDown={find !== null ? onKey : undefined}>
       <TabKick name="SESSION" chip={<span className="tn-cnt">{rows.length}</span>} tools={tools} />
@@ -495,11 +544,11 @@ export function SessionPanel({
       {find === null && hero}
       {bar}
       <div className="mscroll">
+        {find === null && flowBlock}
         {find === null && timeBlock}
         {find === null && onWhat}
         {find === null && helpers}
         {turnList}
-        {nextLine}
       </div>
     </div>
   );

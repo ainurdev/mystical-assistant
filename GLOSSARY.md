@@ -16,6 +16,14 @@ _Avoid_: run, job
 A question or permission a session waits on before its turn can go on. It waits docked on the message box, or as a card in the stream where it can't dock (device runs, TEAM sessions).
 _Avoid_: request, prompt
 
+**Path**:
+The fixed order of **Steps** a **Session** follows for one request (feature, bug, refactor, or one skill), picked by a rule or by the agent when the request arrives. The dashboard calls a session's path its FLOW.
+_Avoid_: pipeline, workflow, plan
+
+**Step**:
+One stage of a **Path** (grill, spec, tickets, build, merge, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
+_Avoid_: station, phase, stage
+
 **Mystical MCP**:
 The one tool server every Mystical session gets, whichever agent runs it, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
 _Avoid_: gateway, goals server, verify server, mystical-ux, bridge MCPs
