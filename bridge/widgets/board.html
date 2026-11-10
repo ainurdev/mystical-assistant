@@ -9,7 +9,7 @@ body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans
 .li>div{min-width:0}
 .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:600}
 .t{font-size:15px}
-.t,.s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t,.s,.ul{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
 .more{padding:2px 0 6px 41px}
 .v{color:var(--tg-theme-link-color)}
@@ -20,6 +20,12 @@ body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans
 .b{color:#fff;background:#ec3942;font-weight:600;padding:6px 13px;border-radius:15px}
 .b:after{inset:-8px -2px}
 .g{background:rgba(106,179,243,.12);color:var(--tg-theme-link-color)}
+.u{margin-top:4px;padding:6px 0 4px;border-top:1px solid var(--tg-theme-section-separator-color);font-size:13px;color:var(--tg-theme-hint-color)}
+.ub{display:grid;grid-template-columns:36px 1fr 36px 62px;gap:8px;align-items:center;height:22px}
+.ub i{height:6px;border-radius:3px;background:var(--tg-theme-section-separator-color);overflow:hidden}
+.ub b{display:block;height:100%}
+.ub em,.ub em+span{font-style:normal;text-align:right}
+.ub em{color:var(--tg-theme-text-color)}
 </style><div id="b"></div><script>
 var T=window.TelegramWidget,D=null,O=null,S={};
 var C=["#ff885e,#ff516a","#ffcd6a,#ffa85c","#a695e7,#7c6fd3","#a0de7e,#54cb68","#53edd6,#28c9b7","#72d5fd,#2a9ef1","#e0a2f3,#d669ed"];
@@ -43,13 +49,17 @@ function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){for(var i in D.row
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
 function left(d){return'<div class="empty">'+(d.left=="off"?"The Live board is off.":"This board moved down the chat.")+"</div>"}
+function rleft(s){s=Math.max(0,s);return s<60?"now":s<3600?(s/60|0)+"m":s<86400?(s/3600|0)+"h "+two(s%3600/60|0)+"m":(s/86400|0)+"d "+(s%86400/3600|0)+"h"}
+var UC=["var(--tg-theme-button-color)","#f5a623","#e5484d"];
+function bar(n,w,now){if(!w)return"";var c=UC[w[2]]||UC[0],p=w[0]|0;return'<div class="ub"><span>'+n+'</span><i><b style="width:'+Math.min(100,p)+"%;background:"+c+'"></b></i><em'+(w[2]?' style="color:'+c+'"':"")+">"+p+"%</em><span>"+(w[1]?"↻ "+rleft(w[1]-now):"")+"</span></div>"}
+function foot(d,now){var u=d.u;return u&&u.w?'<div class="u">'+(u.l?'<div class="ul" dir="auto">'+esc(u.l)+"</div>":"")+bar("5h",u.w[0],now)+bar("week",u.w[1],now)+"</div>":""}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
 function render(d,open,now){
 if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
 if(d.left)return left(d);
 var rs=d.rows||[],h=head(d,now)+(rs.length?"":quiet(d));
 for(var i=0;i<rs.length;i++)if(K[rs[i].c])h+=K[rs[i].c](rs[i],now,open);
-return h+more(d)}
+return h+more(d)+foot(d,now)}
 function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
 function draw(){document.getElementById("b").innerHTML=render(D,O,Date.now()/1000|0)}
 D=parse();draw();setInterval(draw,1000);

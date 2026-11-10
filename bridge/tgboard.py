@@ -46,7 +46,6 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   stopped with the same Job.interrupt the panel's Stop calls. Each query gets exactly one
   answer: ok, gone (the turn already ended) or no. A widget query carries no signed init
   data, so trust is the bot's own update stream plus those checks, as for callbacks.
-
 - A refused call is read from the description telegram.tg keeps (ticket 01 recorded the
   texts): "message is not modified" is success; "message (with widget) to edit not
   found" means the owner deleted it, so the record is cleared and no board is sent until
@@ -62,8 +61,15 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   keeps a look with the switch off from reading anything after that.
 - A recorded board of another PAGE_V is never fed: its page can't read this data. The
   next turn start replaces it as /status does; it gets no "left" edit, only the unpin.
+- The footer (`u`) is the 5-hour and weekly windows of the login the newest running
+  turn uses, or the default login when nothing runs: percent, reset (epoch, 0 when
+  unknown) and severity (0 normal, 1 warning, 2 exceeded), null for a window the meter
+  doesn't name or that has reset since the reading. It is read from the meter's cache only (usage.cached): a look every
+  LOOK_S must never spawn claude, and a turn's own rate-limit events keep the cache live.
+  No reading, no footer. The login is named (alias, else email) only when the registry
+  holds a second login: list_accounts() would ask the Keychain on every look.
 
-Not here yet (later tickets): usage bars (07), limit cards (08), work-run rows (09).
+Not here yet (later tickets): limit cards (08), work-run rows (09).
 """
 
 import json
@@ -73,7 +79,7 @@ import sys
 import threading
 import time
 
-from bridge import config, experimental, notices, runner, store, telegram
+from bridge import accounts, config, experimental, notices, runner, store, telegram, usage
 
 LOOK_S = 5
 REFRESH_S = 60
@@ -82,6 +88,8 @@ MAX_BUTTONS = 3
 LAST = 2             # turns that ended, on the quiet board
 TITLE_B = 24
 STEP_B = 36
+LOGIN_B = 32
+SEV = {"warning": 1, "exceeded": 2}
 DATA_MAX = 1024
 PAGE_V = 1
 KEY = "tg_board"     # settings entry: {"board": record | None, "cards": {}}
@@ -130,7 +138,7 @@ def _title(sess: "dict | None", sid: str) -> str:
 
 def rows(chat: int, snap: "dict | None" = None) -> list:
     """Every session with a turn or a helper in flight, newest first, as board rows
-    (unkeyed: `sid` is dropped before sending). `snap`: the look's status snapshot,
+    (unkeyed: `sid` and `slot`, the turn's login, are dropped before sending). `snap`: the look's status snapshot,
     shared with the Needs-you rows so both read the same moment."""
     snap = snap or runner.running_snapshot(chat, scan=False)
     status = snap.get("status") or {}
@@ -147,7 +155,7 @@ def rows(chat: int, snap: "dict | None" = None) -> list:
             h["a"] = min(filter(None, (h["a"], j.get("started"))), default=None)
             continue
         job = runner._jobs.get(j.get("job_id"))
-        out[sid] = {"sid": sid, "c": "r", "t": _title(sess, sid),
+        out[sid] = {"sid": sid, "c": "r", "t": _title(sess, sid), "slot": job and job.account_slot,
                     "s": (status.get(sid) or {}).get("label") or (j.get("activity") or {}).get("label") or "",
                     "a": j.get("started"), "n": tokens(((job and job.tokens) or {}).get("out"))}
     for sid, st in status.items():      # Claude's own agents, after the turn that started them ended
@@ -188,7 +196,37 @@ def last() -> list:
     return out
 
 
-def data(found: list, now: float, need: list = (), ended: list = ()) -> dict:
+def _login(slot: "int | None") -> "str | None":
+    """The login's name, or None while the bridge has only the one."""
+    with accounts._lock:
+        reg = {int(k): e for k, e in accounts._load().items()
+               if str(k).isdigit() and int(k) != accounts.DEFAULT_SLOT}
+    if not reg:
+        return None
+    if not slot or int(slot) == accounts.DEFAULT_SLOT:
+        return accounts._email_at(accounts.IDENTITY) or "default login"
+    e = reg.get(int(slot)) or {}       # the profile's own email outranks the registry's, as in list_accounts()
+    return e.get("alias") or accounts._email_at(os.path.join(accounts.profile_dir(int(slot)), ".claude.json")) \
+        or e.get("email") or f"login {slot}"
+
+
+def footer(found: list) -> "dict | None":
+    """The usage footer for the newest running turn's login, or None with no reading."""
+    slot = next((r.get("slot") for r in found if r["c"] == "r"), None)
+    m, now = usage.cached(accounts.credentials_path(slot)), time.time()
+    w = []
+    for b in (m.get("five_hour"), m.get("seven_day")) if m.get("available") else (None, None):
+        reset = int(usage.resets_epoch((b or {}).get("resets_at")) or 0)
+        # a window that has reset since this reading (a turn's last word can be hours old) is no reading
+        fresh = isinstance(b, dict) and b.get("percent") is not None and not 0 < reset <= now
+        w.append([b["percent"], reset, SEV.get(b.get("severity"), 0)] if fresh else None)
+    if w == [None, None]:
+        return None
+    name = _login(slot)
+    return {"l": cut(name, LOGIN_B), "w": w} if name else {"w": w}
+
+
+def data(found: list, now: float, u: "dict | None" = None, need: list = (), ended: list = ()) -> dict:
     """The board's chat data, within DATA_MAX bytes. Running rows (minus a session held
     on a Needs-you item, which shows once, as that row) come first, then Needs-you rows;
     past MAX_ROWS or DATA_MAX running rows are left out before any Needs-you row."""
@@ -213,6 +251,8 @@ def data(found: list, now: float, need: list = (), ended: list = ()) -> dict:
             d["more"] = total - len(shown)
         if ended and not total:
             d["last"] = list(ended)
+        if u:
+            d["u"] = u
         if len(dump(d).encode()) <= DATA_MAX or not shown:
             return d
         if run:
@@ -248,7 +288,7 @@ def buttons(chat: int, need: list = ()) -> "dict | None":
 
 def _picture(chat: int, found: list, need: list, now: float) -> tuple:
     ended = last() if not found and not need else ()
-    d = data(found, now, need, ended)
+    d = data(found, now, footer(found), need, ended)
     return d, {k: v for k, v in d.items() if k != "at"}, caption(found, need), buttons(chat, need)
 
 
