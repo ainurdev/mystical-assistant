@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { ArrowUp, Bot, Check, ChevronRight, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, ListEnd, Search, Shrink, X, Zap } from "lucide-react";
+import { ArrowUp, Bot, Check, ChevronRight, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, ListEnd, Search, Shrink, SkipForward, X, Zap } from "lucide-react";
 import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
 import { flowView, type Flow, type FlowSet } from "../../lib/flowview";
+import { FLOW_EVENT, flowChanged } from "../../lib/useFlow";
 import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
 import { openAgent } from "../../lib/subagents";
@@ -233,6 +234,15 @@ export function SessionPanel({
   }, [sessionId, busy, ai.router]);
   // Another session's path never shows under this one while its own loads.
   useEffect(() => { setFlow(null); setSet(null); setFlowRead(false); }, [sessionId]);
+  // A change from the prompt box's FLOW chip shows here at once.
+  useEffect(() => {
+    const heard = (e: Event) => {
+      const d = (e as CustomEvent<{ session: string; flow: Flow }>).detail;
+      if (d.session === sessionId) setFlow(d.flow);
+    };
+    window.addEventListener(FLOW_EVENT, heard);
+    return () => window.removeEventListener(FLOW_EVENT, heard);
+  }, [sessionId]);
   // The clock and the strip run on between reads.
   useEffect(() => {
     if (!running) return;
@@ -487,8 +497,9 @@ export function SessionPanel({
   const toggle = () => {
     if (!flow || !sessionId) return;
     const on = !flow.auto;
-    setFlow({ ...flow, auto: on });
-    api.setFlowAuto(sessionId, on).catch(() => setFlow((f) => (f ? { ...f, auto: !on } : f)));
+    const was = flow;
+    flowChanged(sessionId, { ...flow, auto: on, overrides: flow.overrides && { ...flow.overrides, nextstep: on } });
+    api.setFlowAuto(sessionId, on).catch(() => flowChanged(sessionId, was));
   };
   const nextLine = path && flow && find === null && (
     <div className="ss-next" title={`${path.by === "claude" ? "Claude" : "A rule"} picked the ${flow.path === "one" ? "one-skill" : flow.path.replace(/-/g, " ")} path: ${path.why}`}>
@@ -516,10 +527,10 @@ export function SessionPanel({
         const n = stats?.get(s.label.toUpperCase());
         const note = s.key === away ? path.note : undefined;
         return (
-          <button type="button" key={s.key} className={`ss-h ss-st ${s.state}`} disabled={!n?.turn} onClick={() => n?.turn && onJump(n.turn)}
-            title={n?.turn ? "go to the step's first turn" : undefined}>
+          <button type="button" key={s.key} className={`ss-h ss-st ${s.state}${s.skipped ? " skipped" : ""}`} disabled={!n?.turn} onClick={() => n?.turn && onJump(n.turn)}
+            title={n?.turn ? "go to the step's first turn" : s.skipped ? "skipped" : undefined}>
             <span className={`ss-hi${s.state === "now" ? " run" : ""}`}>
-              {s.state === "done" ? <Check size={11} strokeWidth={2.6} aria-hidden /> : s.state === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden />
+              {s.skipped ? <SkipForward size={11} strokeWidth={2.2} aria-hidden /> : s.state === "done" ? <Check size={11} strokeWidth={2.6} aria-hidden /> : s.state === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden />
                 : <i className="ss-sd" aria-hidden />}</span>
             <span className="ss-ht">{s.label.toUpperCase()}</span>
             {note ? <small className="ss-sn">{note}</small> : <>

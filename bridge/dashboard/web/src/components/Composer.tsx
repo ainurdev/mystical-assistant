@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, type LucideIcon } from "lucide-react";
+import { Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
@@ -18,6 +18,8 @@ import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { SMART_ZONE, caption, ghostFor, isDropped, isStale, shouldAutoApply, swapLead } from "../lib/route";
+import type { FlowChip, FlowOption } from "../lib/flowview";
+import type { FlowAct } from "../lib/useFlow";
 import { Tip } from "./ui/Tip";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
@@ -141,9 +143,11 @@ const OVERRIDE_TIP = "set in this session; pick the profile's value to follow it
 // The PROFILE menu's last row isn't a profile: it opens SETTINGS ▸ SESSION on a
 // blank profile form. Real ids are p_<hex>, so this one never clashes.
 const NEW_PROFILE = "+new";
-function OverrideDot() {
-  return <span title={OVERRIDE_TIP} style={{ color: "var(--acc)", flex: "none" }}>•</span>;
+function OverrideDot({ tip = OVERRIDE_TIP }: { tip?: string }) {
+  return <span title={tip} style={{ color: "var(--acc)", flex: "none" }}>•</span>;
 }
+// The FLOW chip's next step, in words (its title).
+const MARK_WORDS = { auto: "starts by itself", held: "held: you start it", you: "waits for you" } as const;
 
 function Drop<T extends string>({
   label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu, className, face,
@@ -423,7 +427,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, multi, git, lastCheck, designLinked,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, onFlow, multi, git, lastCheck, designLinked,
   kindPresets, onSaveKindPreset,
 }: {
   /** Multi-agent chats (ComposerMulti). */
@@ -516,6 +520,10 @@ export function Composer({
   flowQueued?: boolean;
   /** Sub-switch: the 150k mark on the CTX meter. */
   smartZone?: boolean;
+  /** The session's path, for the FLOW chip beside + (lib/flowview flowChip); null: no chip. */
+  flowChip?: FlowChip | null;
+  /** The FLOW chip's switches, Reset and skips (lib/useFlow). */
+  onFlow?: (act: FlowAct) => void;
   /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
    *  check, and whether its project is linked to Claude Design (null: not known yet). */
   git?: GitStatus | null;
@@ -533,16 +541,16 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
-  const [ppList, setPpList] = useState<"" | "model" | "mode">("");
+  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
   // PRESET stays open across picks, so it takes a dialog's Esc as well as a
   // click away; the other drops close on their pick.
   useEffect(() => {
-    if (openDrop !== "preset") return;
+    if (openDrop !== "preset" && openDrop !== "flow") return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -829,7 +837,7 @@ export function Composer({
     const stale = () => isStale(text, now.current.text, seq, routeSeq.current);
     const t = window.setTimeout(() => {
       api.route({
-        project: c.project, cwd: c.cwd, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
+        project: c.project, cwd: c.cwd, session: sessionId ?? undefined, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
         ctx_tokens: contextTokens === undefined ? undefined : Math.round(contextTokens),
       }).then(({ route }) => {
         if (stale()) return;
@@ -1267,6 +1275,67 @@ export function Composer({
       <button className="pb-plus" onClick={() => setOpenDrop((d) => (d === "plus" ? "" : "plus"))}
         title={["Attach a file", ...plusVerbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
       {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...plusVerbs])}
+    </div>
+  );
+  // FLOW (design-drafts/flow-chip, A · STEP CHIP): the path's next step beside +, ⚡ when it
+  // starts by itself, an amber ✋ when it waits on you. Its sheet is PRESET's, hung from the
+  // chip: three switches this session may set over SETTINGS (picking SETTINGS' own value
+  // follows it again, as PRESET follows a profile), SKIP and JUMP TO, and a Reset.
+  const fchip = shelled && !onAgent && onFlow ? flowChip ?? null : null;
+  const [flowAt, setFlowAt] = useState(0);
+  useEffect(() => { if (!fchip) setOpenDrop((d) => (d === "flow" ? "" : d)); }, [fchip]);
+  const flowBtn = fchip && (
+    <div className="pb-flow-w">
+      <button type="button" className="pb-flow" data-mark={fchip.mark} aria-haspopup="dialog" aria-expanded={openDrop === "flow"}
+        title={`FLOW · ${fchip.label}, step ${fchip.step} of ${fchip.total}. Next: ${fchip.next.label.toUpperCase()}, ${MARK_WORDS[fchip.mark]}.`}
+        onClick={(e) => { setFlowAt((e.currentTarget.parentElement as HTMLElement).offsetLeft); setOpenDrop((d) => (d === "flow" ? "" : "flow")); }}>
+        <RouteIcon size={12} strokeWidth={2} aria-hidden />
+        <b>{fchip.next.label.toUpperCase()}</b>
+        {fchip.mark === "auto" ? <Zap size={11} strokeWidth={2.4} aria-hidden /> : <Hand size={11} strokeWidth={2.2} aria-hidden />}
+      </button>
+    </div>
+  );
+  const flowSet = (k: FlowOption, v: boolean) => onFlow?.({ kind: "set", key: k, on: v === fchip?.opts[k].global ? null : v });
+  const flowRow = (k: FlowOption, label: string, on: ReactNode, off: string) => {
+    const o = fchip!.opts[k];
+    return (
+      <div className="pb-pr"><b>{label}{o.here && <OverrideDot tip="set in this session; pick SETTINGS' value to follow it again" />}</b>
+        <div className="pb-sg" role="group" aria-label={label}>
+          {([[true, on], [false, off]] as const).map(([v, face]) => (
+            <button key={String(v)} type="button" aria-pressed={o.on === v} onClick={() => flowSet(k, v)}
+              data-prof={o.here && o.global === v ? "" : undefined} title={o.global === v ? "SETTINGS' pick" : undefined}>{face}</button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+  const flowSkip = (to: string) => { onFlow?.({ kind: "skip", to }); setOpenDrop(""); };
+  const flowPop = fchip && openDrop === "flow" && (
+    <div className="pb-pp pb-flow-pp" role="dialog" aria-label="This session's path" style={{ ["--fp-at" as string]: `${flowAt}px`, overflow: "visible" }}>
+      <h4><RouteIcon size={10} strokeWidth={2.2} aria-hidden />{fchip.label}<span>step {fchip.step} of {fchip.total}</span></h4>
+      {flowRow("nextstep", "Next", <><Zap size={10} strokeWidth={2.4} aria-hidden />AUTO</>, "HOLD")}
+      {flowRow("autopick", "Picks", "AUTO", "SUGGEST")}
+      {flowRow("smartzone", "Compact", `PAST ${SMART_ZONE / 1000}K`, "NEVER")}
+      <div className="pb-pr"><b>Step</b>
+        <div className="pb-flow-acts">
+          <button type="button" disabled={fchip.skipTo === null} onClick={() => flowSkip(fchip.skipTo!)}
+            title={fchip.skipTo === null ? "the tickets are still at work" : `pass over ${fchip.next.label.toUpperCase()}`}>
+            <SkipForward size={11} strokeWidth={2.2} aria-hidden />SKIP {fchip.next.label.toUpperCase()}</button>
+          <div className="pb-flow-jump">
+            <button type="button" disabled={!fchip.jumps.length} aria-haspopup="menu" aria-expanded={ppList === "jump"}
+              onClick={() => setPpList((l) => (l === "jump" ? "" : "jump"))}
+              title="skip every step before the one you pick">JUMP TO <i aria-hidden>▾</i></button>
+            {ppList === "jump" && (
+              <div className="pb-flow-list" role="menu">
+                {fchip.jumps.map((j) => <button key={j.key} type="button" role="menuitem" onClick={() => flowSkip(j.key)}>{j.label.toUpperCase()}</button>)}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="pb-pf">{fchip.here ? `${fchip.here} set here, for this session only.` : "A change here is for this session only."}
+        <button type="button" disabled={!fchip.here} onClick={() => onFlow?.({ kind: "reset" })}>{fchip.here ? "Reset to SETTINGS" : "Reset"}</button>
+      </div>
     </div>
   );
   // Claude's window and Claude's /compact: an agent's meter would divide its
@@ -1786,7 +1855,7 @@ export function Composer({
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           <div className="pb-line">
-            {plusBtn}{pfx}{popovers}{presetPop}
+            {plusBtn}{flowBtn}{pfx}{popovers}{presetPop}{flowPop}
             <div className="pb-body">{attachRow}{editor}</div>
             <div className="pb-keys">{actions(false)}</div>
           </div>

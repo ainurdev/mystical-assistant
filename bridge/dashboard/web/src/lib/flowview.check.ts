@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/flowview.check.ts
-import { flowView, type Flow } from "./flowview.ts";
+import { flowChip, flowView, type Flow } from "./flowview.ts";
 import type { Turn } from "../chat.ts";
 
 const flow = (path: string, done: string[]): Flow => ({ path, by: "claude", why: "new feature", auto: true, at: 1, done, next: null });
@@ -54,3 +54,27 @@ console.assert(asked.stations[5].state === "you", `retro asked: ${asked.stations
 const answering = flowView({ ...flow("feature", ["grill", "spec", "tickets", "build", "merge"]), next: { station: "retro", turn_id: "t", started: true } }, [run]);
 console.assert(answering.stations[5].state === "now", "a running turn is still now");
 console.assert(flowView({ ...flow("feature", ["grill"]), next: { station: "spec", turn_id: "t", started: false } }, []).stations[1].state === "auto", "not started: still its own kind");
+
+// The bridge's own steps (REVIEW and AUDIT while PONYTAIL is on), skipped ones, and the FLOW chip.
+const here: Flow = { ...flow("feature-here", ["grill", "build-here"]), skipped: [], overrides: {},
+  stations: [["grill", "grill-with-docs", "you"], ["build-here", "implement", "auto"], ["review", "ponytail-review", "auto"],
+    ["retro", "retro", "auto"], ["audit", "ponytail-audit", "auto"]] };
+const hv = flowView(here, []);
+console.assert(hv.total === 5 && hv.stations.map((x) => x.key).join() === "grill,build-here,review,retro,audit", `the bridge's steps: ${hv.stations.map((x) => x.key)}`);
+const c = flowChip(here, hv, { autopick: true, smartzone: true })!;
+console.assert(c.label === "feature here" && c.next.label === "review" && c.mark === "auto" && c.step === 3 && c.total === 5, `chip: ${JSON.stringify(c)}`);
+console.assert(c.skipTo === "retro" && c.jumps.map((j) => j.key).join() === "retro,audit", `skip and jump: ${c.skipTo} ${c.jumps.map((j) => j.key)}`);
+console.assert(c.here === 0 && c.opts.autopick.on && !c.opts.autopick.here && c.opts.nextstep.on, "nothing set here: SETTINGS' values");
+const held = flowChip({ ...here, auto: false, overrides: { nextstep: false, autopick: false } }, hv, { autopick: true, smartzone: true })!;
+console.assert(held.mark === "held" && held.here === 2 && held.opts.nextstep.here && !held.opts.autopick.on && held.opts.autopick.global, `held: ${JSON.stringify(held)}`);
+const busy = flowChip(here, flowView(here, [run]), {})!;
+console.assert(busy.next.label === "retro" && busy.skipTo === "audit", `a step running: the chip names the one after it (${busy.next.label})`);
+const last = flowChip({ ...here, done: ["grill", "build-here", "review", "retro"] }, flowView({ ...here, done: ["grill", "build-here", "review", "retro"] }, []), {})!;
+console.assert(last.next.label === "audit" && last.skipTo === "" && last.jumps.length === 0, "the last step: SKIP ends the path");
+console.assert(flowChip({ ...here, done: ["grill", "build-here", "review", "retro", "audit"] }, flowView({ ...here, done: ["grill", "build-here", "review", "retro", "audit"] }, []), {}) === null, "complete: no chip");
+console.assert(flowChip(flow("feature-here", ["grill"]), flowView(flow("feature-here", ["grill"]), []), {}) === null, "an older bridge: no chip");
+const sk = flowView({ ...here, done: ["grill", "build-here", "review"], skipped: ["review"] }, []);
+console.assert(sk.stations[2].skipped && sk.stations[2].state === "done" && !sk.stations[1].skipped, "a skipped step is done, and says so");
+const tk = { ...flow("feature", ["grill", "spec", "tickets"]), overrides: {} };
+const away = flowChip(tk, flowView(tk, [], building), {})!;
+console.assert(away.next.label === "merge" && away.skipTo === null && away.jumps.length === 0, "tickets building: no skipping past them");

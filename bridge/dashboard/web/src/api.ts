@@ -1,6 +1,6 @@
 import type { DataEv } from "./lib/dataview";
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
-import type { Flow, FlowSet } from "./lib/flowview";
+import type { Flow, FlowOption, FlowSet } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
 
@@ -2057,6 +2057,14 @@ export const api = {
   getMeter: (id: string) => req<Meter | Record<string, never>>(`/local/sessions/${encodeURIComponent(id)}/meter`),
   setFlowAuto: (id: string, on: boolean) =>
     req<{ ok: boolean }>("/local/flow/auto", { method: "POST", body: { session: id, on } }),
+  // The prompt box's FLOW chip: a switch set for this session (null follows SETTINGS
+  // again), every one reset, or the steps before `to` skipped ("" = the rest).
+  setFlowOption: (id: string, key: FlowOption, on: boolean | null) =>
+    req<{ ok: boolean; flow: Flow }>("/local/flow/settings", { method: "POST", body: { session: id, key, on } }),
+  resetFlow: (id: string) =>
+    req<{ ok: boolean; flow: Flow }>("/local/flow/settings", { method: "POST", body: { session: id, reset: true } }),
+  flowSkipTo: (id: string, to: string) =>
+    req<{ ok: boolean; flow: Flow }>("/local/flow/step", { method: "POST", body: { session: id, to } }),
   // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than
   // this route 404s (it would have read a bare {action} as a clearing /goal).
   goalAction: (id: string, action: "done" | "keep" | "edit", objective?: string) =>
@@ -2624,7 +2632,7 @@ export const api = {
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
-  route: (body: { project: string; cwd?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean }) =>
+  route: (body: { project: string; cwd?: string; session?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean }) =>
     req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>

@@ -73,7 +73,7 @@ export function bands(
   let station: Station | null = null;
   for (const t of turns.slice(first)) {
     if (t.started == null) continue;
-    const cmd = /^\/(?:mattpocock-skills:)?([\w-]+)/.exec(t.prompt.trim())?.[1];
+    const cmd = /^\/(?:mattpocock-skills:|ponytail:)?([\w-]+)/.exec(t.prompt.trim())?.[1];
     const compact = cmd === "compact";
     const st: Station | null = compact ? null : (cmd && path.stations.find((s) => s.skill === cmd || s.key === cmd)) || station || path.stations[0];
     const label = st ? st.label.toUpperCase() : "";
