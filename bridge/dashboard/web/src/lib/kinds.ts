@@ -4,6 +4,9 @@
  *  A model call or a POST per keystroke would lag, cost, and send half-typed text off the machine.
  *  Plain regexes on the first words cover the user's real prompts; a wrong guess costs one tap
  *  (pick another kind, or Esc for plain), so a smarter router would buy little.
+ *  Measured 2026-11-10 on 28 hand-labelled real first prompts, design or not: a CLI one-shot took
+ *  3.5-5 s and scored 19/28 on Haiku, 4.6-7 s and 21/28 on Sonnet (both read "bad ui" as a fix or
+ *  a build); these rules scored 25/28, though they were tuned on the same prompts.
  *
  *  Why a typed "/" is never guessed over: the user already named the command. Wrapping it in
  *  /design-first or a diagnosing-bugs prefix would send something they did not write.
