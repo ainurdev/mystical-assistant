@@ -102,6 +102,10 @@ AI_BROWSER_HEADLESS = os.environ.get("AI_BROWSER_HEADLESS", "1").lower() not in 
 AI_BROWSER_EXECUTABLE = os.path.expanduser(os.environ.get("AI_BROWSER_EXECUTABLE", ""))
 AI_BROWSER_PROFILE = os.path.expanduser(os.environ.get("AI_BROWSER_PROFILE", ""))
 
+# Session runs get Claude Code's --chrome: the Claude in Chrome extension, reached
+# through Anthropic's relay as the account the run is on. Off until asked for.
+CHROME_ACCESS = os.environ.get("CHROME_ACCESS", "0").lower() not in ("0", "false", "no", "")
+
 # Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn
 # 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash — or a
 # hang kill (RUN_TIMEOUT of silence) — while the bridge stays up is resumed immediately

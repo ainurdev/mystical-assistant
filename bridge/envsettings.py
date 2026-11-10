@@ -189,6 +189,15 @@ SETTINGS = (
               "running browser holds, so pointing this at your Chrome or Arc data fails. "
               "Logins the AI makes persist here between sessions. One folder serves one "
               "browser at a time — two sessions browsing at once need it empty."},
+    {"key": "CHROME_ACCESS", "type": "bool", "live": True,
+     "group": "BROWSER", "label": "CLAUDE IN CHROME", "hint": "sessions use your Chrome through the Claude in Chrome extension",
+     "about": "Session runs start with Claude Code's --chrome. The browser tools reach the "
+              "extension through Anthropic's relay, signed in as the account the run is on, "
+              "so they only connect when the extension is signed in to that same claude.ai "
+              "account and organization; on any other account the tools report not connected "
+              "and the run carries on without them. Needs the extension "
+              "(claude.ai/chrome) in a running Chrome. Titles, commit messages and other "
+              "one-shots never get it."},
 
     # --- dev server ---------------------------------------------------------
     {"key": "START_CMD", "type": "str", "live": True,

@@ -292,6 +292,38 @@ def test_a_hidden_browser_is_told_to_the_run(monkeypatch):
     assert runner._HIDDEN_BROWSER_NOTE not in runner._compose_system_prompt()
 
 
+def _prompt(cmd):
+    return cmd[cmd.index("--append-system-prompt") + 1]
+
+
+def test_claude_in_chrome_is_off_until_switched_on(monkeypatch, no_mcp_list):
+    monkeypatch.setattr(config, "CHROME_ACCESS", False)
+    cmd = _cmd(disabled_tools=None)
+    assert "--chrome" not in cmd
+    assert runner._CHROME_NOTE not in _prompt(cmd)
+
+
+def test_claude_in_chrome_rides_on_session_runs(monkeypatch, no_mcp_list):
+    monkeypatch.setattr(config, "CHROME_ACCESS", True)
+    cmd = _cmd(disabled_tools=None)
+    assert "--chrome" in cmd and "--strict-mcp-config" in cmd
+    assert runner._CHROME_NOTE in _prompt(cmd)
+
+
+def test_one_shots_never_get_chrome(monkeypatch, no_mcp_list):
+    """Titles and commit messages embed untrusted text: a browser there is an
+    injection vector, and a run with no session has nothing to keep tabs for."""
+    monkeypatch.setattr(config, "CHROME_ACCESS", True)
+    for cmd in (runner._base_cmd("t", 555, stream=False, skip_pack=True),
+                runner._base_cmd("t", 555, stream=False, skip_pack=True, permission_mode="plan"),
+                runner._base_cmd("t", 555, stream=True, interactive=True,
+                                 claude_session_id=SID, skip_pack=True),
+                runner._base_cmd("t", 555, stream=True, interactive=True),
+                runner._base_cmd("t", 555, stream=False)):
+        assert "--chrome" not in cmd
+        assert runner._CHROME_NOTE not in _prompt(cmd)
+
+
 # --- a run whose prompt carries untrusted text -----------------------------------
 
 def test_a_tools_off_streaming_run_has_no_tools_no_mcp_and_is_never_resumed(monkeypatch):
