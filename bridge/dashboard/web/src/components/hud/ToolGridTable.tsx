@@ -1,22 +1,33 @@
 import { Fragment, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronRight, RotateCcw } from "lucide-react";
 import {
-  STATE_WORD, canReset, cellWhy, gridClick, levelTag, type AgentRef, type Cell, type Level, type Section,
+  STATE_WORD, canReset, cellWhy, gridClick, levelLetter, levelTag, type AgentRef, type Cell, type Level, type Section,
 } from "../../lib/agenttools";
 
-/* The one grid behind MCP, Skills, Tools and Mystical tools. A row is a thing, a column an
-   agent. It reads well at 30+ rows because it stays still: a fixed layout, every cell the
-   same two lines (the state, then who set it) and the reset's place held whether or not
-   there's a reset, so nothing shifts when a pick lands. The header and the name column stay
+/* The one grid behind MCP, Skills, Tools and Mystical tools: the switchboard
+   (.mystical/design-drafts/agent-tools-reimagine, A1). A row is a thing, a column an agent.
+   It reads well at 30+ rows because it stays still and says little: one line a row, a small
+   switch where a click flips something, "home" where the thing lives, a dash where it can't,
+   and a one-letter tag only where someone picked (P for this project...). The reset's place
+   is held whether or not there's a reset, so nothing shifts when a pick lands. Rows can come
+   grouped (shared first); a group's header row is skipped by the arrows. The header and the name column stay
    in view in the grid's own scroller.
 
    Keyboard: one stop in the tab order, the arrows walk the rest (a roving tabindex, set on
    the DOM after each render so a filtered row can't strand it). Enter and Space are the
    buttons' own. A click on a cell that can't flip opens its row, which says why. */
 
-export interface GridRow { id: string; title: string; sub?: string; hint?: string; cells: Record<string, Cell> }
+export interface GridRow { id: string; title: string; sub?: string; hint?: string; group?: string; cells: Record<string, Cell> }
 
-export function ToolGridTable({ section, rows, agents, level, busy, open, onOpen, onCell, onReset, held, detail, nameHead }: {
+/** Codex and Claude share an initial. */
+const MARK: Record<string, string> = { codex: "Cx" };
+
+/** An agent's mark: its initial on its colour, the same in every list on this page. */
+export function AgentMark({ agent, dim }: { agent: AgentRef; dim?: boolean }) {
+  return <span className="at-mark" data-agent={agent.id} data-dim={dim || undefined} aria-hidden>{MARK[agent.id] ?? agent.label.charAt(0).toUpperCase()}</span>;
+}
+
+export function ToolGridTable({ section, rows, agents, level, busy, open, onOpen, onCell, onReset, held, detail, nameHead, groupEnd }: {
   section: Section;
   rows: GridRow[];
   agents: AgentRef[];
@@ -31,6 +42,8 @@ export function ToolGridTable({ section, rows, agents, level, busy, open, onOpen
   held?: (row: GridRow, cell: Cell) => boolean;
   detail: (row: GridRow) => ReactNode;
   nameHead: string;
+  /** The right end of a group's header row: a "share all", say. */
+  groupEnd?: (group: string, rows: GridRow[]) => ReactNode;
 }) {
   const body = useRef<HTMLTableSectionElement>(null);
   const cursor = useRef<string | null>(null);
@@ -81,12 +94,20 @@ export function ToolGridTable({ section, rows, agents, level, busy, open, onOpen
         <thead>
           <tr>
             <th scope="col" className="at-th-name">{nameHead}</th>
-            {agents.map((a) => <th key={a.id} scope="col" title={a.label}>{a.label}</th>)}
+            {agents.map((a) => <th key={a.id} scope="col" title={a.label}><span className="at-thag"><AgentMark agent={a} />{a.label}</span></th>)}
           </tr>
         </thead>
         <tbody ref={body} onKeyDown={onKey} onFocus={onFocus}>
-          {rows.map((r) => (
+          {rows.map((r, i) => (
             <Fragment key={r.id}>
+              {r.group && r.group !== rows[i - 1]?.group && (() => {
+                const mine = rows.filter((x) => x.group === r.group);
+                return (
+                  <tr className="at-gtr">
+                    <td colSpan={agents.length + 1}><span className="at-gh"><b>{r.group}</b><span>{mine.length}</span><span style={{ flex: 1 }} />{groupEnd?.(r.group!, mine)}</span></td>
+                  </tr>
+                );
+              })()}
               <tr data-gr={r.id} data-open={open === r.id || undefined}>
                 <th scope="row" className="at-name">
                   <button type="button" data-gc="name" aria-expanded={open === r.id} title={r.hint ?? r.title}
@@ -129,6 +150,7 @@ function GridCell({ section, row, agent, cell, level, busy, heldHere, onClick, o
   const reset = !heldHere && canReset(section, cell, level);
   const act = click === "toggle" ? ` Click to turn ${cell.state === "off" ? "on" : "off"}.` : click === "login" ? " Click to log in." : "";
   const tag = heldHere ? "⚒ CHAT" : levelTag(cell);
+  const letter = heldHere ? "⚒" : levelLetter(cell);
   const toggle = click === "toggle";
   return (
     <td className="at-td" data-state={cell.state}>
@@ -138,8 +160,11 @@ function GridCell({ section, row, agent, cell, level, busy, heldHere, onClick, o
           role={toggle ? "switch" : undefined} aria-checked={toggle ? cell.state !== "off" : undefined}
           aria-label={`${row.title}, ${agent.label}: ${STATE_WORD[cell.state]}${tag ? `, set by ${tag.toLowerCase()}` : ""}. ${why}${act}`}
           onClick={onClick}>
-          <span className="at-st"><i aria-hidden />{STATE_WORD[cell.state]}</span>
-          <span className="at-lv">{tag}</span>
+          {cell.state === "installed" ? <span className="at-home">home</span>
+            : cell.state === "cant" ? <span className="at-dash" aria-hidden>—</span>
+            : cell.state === "login" ? <span className="at-login">Log in</span>
+            : <span className="at-sw" data-on={cell.state !== "off" || undefined} aria-hidden><i /></span>}
+          {letter && <span className="at-lv" title={tag}>{letter}</span>}
         </button>
         {reset
           ? (

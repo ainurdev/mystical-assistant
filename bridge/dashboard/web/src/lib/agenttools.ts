@@ -69,6 +69,27 @@ export function levelTag(cell: Cell): string {
   return (cell.level || "default").toUpperCase();
 }
 
+/** The one-letter tag a switchboard cell carries: only a pick someone made, so a row of
+ *  defaults reads clean and an override stands out. */
+export function levelLetter(cell: Cell): string {
+  if (cell.state === "installed" || cell.state === "cant" || !cell.level || cell.level === "default") return "";
+  return cell.level.charAt(0).toUpperCase();
+}
+
+/** What an agent reaches in a list: its own, what's shared to it, what's on. */
+export const reaches = (cell: Cell | undefined): boolean => !!cell && cell.state !== "off" && cell.state !== "cant";
+
+/** Shared rows first: a row reaches someone besides the agent it lives in. */
+export function isSharedRow(cells: Record<string, Cell>): boolean {
+  return Object.values(cells).some((c) => c.state === "shared" || c.state === "login");
+}
+
+/** How many picks the level in view holds itself, across the lists levels apply to. */
+export function levelChanges(grid: Pick<ToolGrid, "mcp" | "tools" | "mystical">, level: Level): number {
+  return [...grid.mcp, ...grid.tools, ...grid.mystical]
+    .reduce((n, r) => n + Object.values(r.cells).filter((c) => c.level === level).length, 0);
+}
+
 /** A switch that does something. Everything else opens the row, which says why. */
 export function isToggle(cell: Cell): boolean {
   return cell.state === "on" || cell.state === "off" || cell.state === "shared" || cell.state === "login";
@@ -258,6 +279,30 @@ export function hookAgents(list: HookListing, agents: AgentRef[]): AgentRef[] {
     .map((id) => ({ id, label: nameOf(id, agents) }));
 }
 
+/** A script's short name: a path's file name, or an inline command's first word. */
+export function scriptLabel(command: string): string {
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  if (!first) return "(empty)";
+  return /^[~./]/.test(first) ? first.split("/").pop() || first : first;
+}
+
+export interface HookScript { key: string; command: string; scope: string; type: string; editable: boolean; byEvent: Record<string, HookRow[]> }
+
+/** One agent's hooks as scripts: the same command at the same scope is one row, whatever
+ *  events it's on. 24 hooks from 5 scripts read as 5 rows. */
+export function hookScripts(list: HookListing, agent: string): HookScript[] {
+  const out = new Map<string, HookScript>();
+  for (const h of list.hooks) {
+    if (h.agent !== agent) continue;
+    const key = `${h.scope}|${h.type}|${h.command}`;
+    const s = out.get(key) ?? { key, command: h.command, scope: h.scope, type: h.type, editable: h.editable, byEvent: {} };
+    (s.byEvent[h.event] ??= []).push(h);
+    s.editable = s.editable && h.editable;
+    out.set(key, s);
+  }
+  return [...out.values()];
+}
+
 /** Bridge's refusals come back as they are; this only stops a form that can't be sent. */
 export function hookProblem(f: { event: string; command: string; timeout: string }): string | null {
   if (!f.event) return "Pick an event.";
@@ -270,8 +315,8 @@ export function hookProblem(f: { event: string; command: string; timeout: string
 
 export type AtTab = "mcp" | "skills" | "tools" | "mystical" | "rules" | "hooks";
 export const AT_TABS: { key: AtTab; label: string }[] = [
-  { key: "mcp", label: "MCP" }, { key: "skills", label: "Skills" }, { key: "tools", label: "Tools" },
-  { key: "mystical", label: "Mystical tools" }, { key: "rules", label: "Rules" }, { key: "hooks", label: "Hooks" },
+  { key: "mcp", label: "MCP" }, { key: "skills", label: "Skills" }, { key: "tools", label: "Built-in" },
+  { key: "mystical", label: "Mystical" }, { key: "rules", label: "Rules" }, { key: "hooks", label: "Hooks" },
 ];
 
 /** openSettings("agenttools", atFocus(...)): where the page opens. */
