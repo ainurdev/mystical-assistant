@@ -112,6 +112,7 @@ import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
+import { RivendellTab, type RvLens } from "./components/hud/RivendellTab";
 import { UsagePanel } from "./components/hud/UsagePanel";
 import { SessionPanel, stepRow } from "./components/hud/SessionPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
@@ -1637,12 +1638,14 @@ export function App() {
     return () => window.removeEventListener("hud:settings", open);
   }, []);
 
+  const [rvLens, setRvLens] = useState<RvLens>("tasks");   // which side of the RIVENDELL tab shows
   // "Show this right-rail tab", from anywhere: the changelog's Open › on a feature
   // that lives there (bridge/whatsnew.py PLACES). Settings shuts so the rail shows.
   useEffect(() => {
     const show = (e: Event) => {
       const was = (e as CustomEvent<unknown>).detail;
-      const tab = was === "turns" || was === "flow" ? "session" : was;   // the two tabs SESSION took in
+      const tab = was === "turns" || was === "flow" ? "session" : was === "team" ? "rivendell" : was;   // tabs another took in
+      if (was === "team" || was === "rivendell") setRvLens(was === "team" ? "team" : "tasks");
       if (!RIGHT_TABS.includes(tab as RightTab)) return;
       setSettingsOpen(false);
       patchSettings({ rightTab: tab as RightTab, rightOpen: true });
@@ -2622,7 +2625,7 @@ export function App() {
   picTitle.current = selected && !isReadOnly(selected.origin) && selected.title ? `${selected.title} · screenshot` : null;
   useEffect(() => {
     setLightboxSend(teammates.length ? (p) => setSendWhat({ what: { kind: "picture", ...p, title: picTitle.current ?? undefined } }) : null);
-    const show = () => patchSettings({ rightTab: "team", rightOpen: true });
+    const show = () => { setRvLens("team"); patchSettings({ rightTab: "rivendell", rightOpen: true }); };
     window.addEventListener("hud:team", show);
     return () => { window.removeEventListener("hud:team", show); setLightboxSend(null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- patchSettings is a setter
@@ -2843,25 +2846,22 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "rivendell", short: "TASKS", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
+      id: "rivendell", short: "TASKS", label: "Rivendell: tasks + team", group: "project",
+      hint: rivendellDown ? "link broken" : teamNew ? `${teamNew} new from the team` : undefined,
       icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
+      badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
       render: () => (
-        <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
-          onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />
-      ),
-    }] : []),
-    ...(rivendellOn ? [{
-      id: "team", short: "TEAM", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
-      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
-      render: () => (
-        <TeamPanel data={team} fail={teamFail}
-          sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
-          onRefresh={() => void loadTeam()}
-          onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
-          onOpen={openReceived} onContinue={(r) => void continueShare(r.id, r.kind)} step={contStep}
-          onNewSession={(r) => void continueShare(r.id, r.kind, "new")}
-          onContinueYours={(r) => void continueShare(r.id, r.kind, "yours")}
-          onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
+        <RivendellTab lens={rvLens} onLens={setRvLens} teamNew={teamNew}
+          tasks={<RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
+            onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />}
+          team={<TeamPanel data={team} fail={teamFail}
+            sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
+            onRefresh={() => void loadTeam()}
+            onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
+            onOpen={openReceived} onContinue={(r) => void continueShare(r.id, r.kind)} step={contStep}
+            onNewSession={(r) => void continueShare(r.id, r.kind, "new")}
+            onContinueYours={(r) => void continueShare(r.id, r.kind, "yours")}
+            onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />} />
       ),
     }] : []),
     {

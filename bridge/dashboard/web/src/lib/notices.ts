@@ -161,7 +161,7 @@ export const PLACES: Record<string, string> = {
   "settings:aimgmt": "Settings ▸ AI management", "settings:integrations": "Settings ▸ Integrations",
   "settings:system": "Settings ▸ System", "settings:move": "Settings ▸ Move",
   "rail:files": "the FILES tab", "rail:git": "the GIT tab", "rail:rivendell": "the RIVENDELL tab",
-  "rail:team": "the TEAM tab", "rail:usage": "the USAGE tab",
+  "rail:team": "the RIVENDELL tab ▸ TEAM", "rail:usage": "the USAGE tab",
 };
 
 /** A change note's picture (bridge/whatsnew.py MEDIA_NAME): a still, a clip, or a clip with its still. */

@@ -32,7 +32,7 @@ const ICON: Record<FeatIcon, LucideIcon> = { send: Send, panel: PanelLeft, gauge
   trees: Trees, users: Users, image: Image, palette: Palette, down: Download, spark: Sparkles };
 const iconOf = (c: Change) => ICON[iconFor(c.area)];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const RAIL = ["files", "git", "learn", "rivendell", "team", "usage"];   // App's right-rail tabs, top down
+const RAIL = ["files", "git", "learn", "rivendell", "usage"];   // App's right-rail tabs, top down
 const SETTINGS = Object.keys(PLACES).filter((k) => k.startsWith("settings:"));
 const placeName = (p: string) => (p.startsWith("rail:") ? `the right rail ▸ ${p.slice(5).toUpperCase()}` : PLACES[p]);
 const placeShort = (p: string) => (p.startsWith("rail:") ? p.slice(5).toUpperCase() : PLACES[p].replace("Settings ▸ ", ""));
@@ -84,7 +84,7 @@ function PlaceMap({ place }: { place: string }) {
   const [where, tab] = place.split(":");
   const L = "color-mix(in oklab, var(--txl) 15%, transparent)", L2 = "color-mix(in oklab, var(--txl) 7%, transparent)";
   const A2 = "color-mix(in oklab, var(--acc) 15%, transparent)", A3 = "color-mix(in oklab, var(--acc) 50%, transparent)";
-  const rail = where === "rail", k = rail ? RAIL.indexOf(tab) : SETTINGS.indexOf(place);
+  const rail = where === "rail", k = rail ? RAIL.indexOf(tab === "team" ? "rivendell" : tab) : SETTINGS.indexOf(place);
   const label = (rail ? tab : PLACES[place].replace("Settings ▸ ", "")).toUpperCase();
   return (
     <svg className="clg-map" viewBox="0 0 504 315" aria-hidden>
