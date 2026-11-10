@@ -963,3 +963,15 @@ def test_merged_counts_only_done_tickets(make_set):
     assert tickets.merged_count(st) == 0                # done, not merged
     _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
     assert tickets.merged_count(s.state) == 1
+
+
+def test_with_ponytail_on_a_ticket_reviews_its_diff_before_step_done(make_set, monkeypatch):
+    s = make_set({"01": None}, build=False)
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ticketruns", "ponytail"))
+    assert s.build() == ""
+    assert s.starts[0]["prompt"].endswith(
+        "When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
+        "fix what it finds and commit, then call StepDone.")
+    s.finish("01", commit=False)
+    tickets.retry(s.folder, "01")
+    assert s.starts[-1]["prompt"].endswith("fix what it finds and commit, then call StepDone.")

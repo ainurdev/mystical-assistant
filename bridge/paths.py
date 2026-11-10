@@ -33,6 +33,24 @@ never takes over an unrelated step. The step StepDone records starts once (`next
 `started`), at the first clean end of its turn or of a resume of it, or when AUTO is
 released. No auto step commits to the default branch: build-here, and a FIX on it,
 move the session into a worktree of its own first (flowbranch).
+
+REVIEW and AUDIT are the ponytail plugin's /ponytail-review and /ponytail-audit, so they
+are stations only while the PONYTAIL switch is on (its plugin is told `off` otherwise,
+and the prompt box hides the same two verbs). REVIEW reads the work this path did and
+follows the work that makes a diff (build here, a bug's fix); AUDIT reads the whole repo
+and ends the paths that change a lot of it. Ticket paths get no REVIEW station: BUILD
+runs in ticket sessions and MERGE is what joins their branches, so each ticket reviews
+its own diff before its StepDone (tickets._prompt). Ponytail's skills know nothing of
+StepDone, so the clean end of a turn sent as their command, while the path is on that
+step, is the step's end (_end_pony_step); one that calls StepDone anyway moves once.
+
+A session may override three SETTINGS switches for itself, from the prompt box's FLOW
+chip: AUTO NEXT STEPS, AUTO PICKS and SMART ZONE (OPTIONS). The overrides live in the
+flow record and outlive a new path in the same session; a new session follows SETTINGS.
+A record from before them kept `auto`, True by default and False once held: a held one
+loads as an override of AUTO NEXT STEPS. skip_to marks the steps before a target done
+and `skipped`, sparing the one a running turn works on, then the target starts as any
+next step would.
 """
 
 import json
@@ -86,13 +104,24 @@ def pack_for(claude_session_id: str) -> str:
 PATHS: dict[str, list[tuple[str, "str | None", str]]] = {
     "feature": [("grill", "grill-with-docs", "you"), ("spec", "to-spec", "auto"),
                 ("tickets", "to-tickets", "you"), ("build", None, "auto"),
-                ("merge", None, "auto"), ("retro", "retro", "auto")],
+                ("merge", None, "auto"), ("retro", "retro", "auto"), ("audit", "ponytail-audit", "auto")],
     "feature-here": [("grill", "grill-with-docs", "you"), ("build-here", "implement", "auto"),
-                     ("retro", "retro", "auto")],
-    "bug": [("diagnose", "diagnosing-bugs", "auto"), ("retro", "retro", "auto")],   # diagnosing-bugs fixes and tests
+                     ("review", "ponytail-review", "auto"), ("retro", "retro", "auto"),
+                     ("audit", "ponytail-audit", "auto")],
+    "bug": [("diagnose", "diagnosing-bugs", "auto"), ("review", "ponytail-review", "auto"),   # diagnosing-bugs fixes and tests
+            ("retro", "retro", "auto")],
     "refactor": [("improve", "improve-codebase-architecture", "you"), ("tickets", "to-tickets", "you"),
-                 ("build", None, "auto"), ("merge", None, "auto"), ("retro", "retro", "auto")],
+                 ("build", None, "auto"), ("merge", None, "auto"), ("retro", "retro", "auto"),
+                 ("audit", "ponytail-audit", "auto")],
 }
+# Stations that are the ponytail plugin's (PONYTAIL on only): the argument each one's turn gets.
+_PONY = {"review": "the work on this path: this branch's commits since it left the default branch, "
+                   "and anything uncommitted",
+         "audit": ""}
+_PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
+# The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
+OPTIONS = ("nextstep", "autopick", "smartzone")
+_STORED = ("path", "skill", "by", "why", "at", "done", "skipped", "next", "overrides")
 
 _lock = threading.Lock()
 _cache: dict = {}  # session id -> flow; emptied by tests to simulate a reload
@@ -110,6 +139,10 @@ def _load_locked() -> None:
             _cache.update(json.load(f) or {})
     except (OSError, ValueError):
         pass
+    for f in _cache.values():   # from before overrides: `auto` was True, or False once held
+        if "overrides" not in f:
+            f["overrides"] = {} if f.pop("auto", True) else {"nextstep": False}
+        f.setdefault("skipped", [])
 
 
 def _save_locked() -> None:
@@ -125,7 +158,14 @@ def _save_locked() -> None:
 def _stations(flow: dict) -> list:
     if flow["path"] == "one":
         return [(flow["skill"], flow["skill"], "auto")]
-    return PATHS[flow["path"]]
+    pony = aifeatures.enabled("ponytail")
+    return [st for st in PATHS[flow["path"]] if pony or st[0] not in _PONY]
+
+
+def _eff(flow: dict, key: str) -> bool:
+    """A switch as this session has it: its own override, else SETTINGS'."""
+    own = flow.get("overrides") or {}
+    return bool(own[key]) if key in own else aifeatures.enabled(key)
 
 
 def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
@@ -138,8 +178,10 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         raise ValueError("path 'one' needs a skill")
     with _lock:
         _load_locked()
-        _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "auto": True,
-                              "at": int(time.time()), "done": list(done or []), "next": None, "last": None}
+        own = dict((_cache.get(session_id) or {}).get("overrides") or {})   # the session's, not the path's
+        _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "overrides": own,
+                              "at": int(time.time()), "done": list(done or []), "skipped": [],
+                              "next": None, "last": None}
         _save_locked()
         return dict(_cache[session_id])
 
@@ -152,35 +194,96 @@ def restore(session_id: str, snap: "dict | None") -> None:
         _load_locked()
         f = _cache.get(session_id)
         if f:
-            f.update(snap)
+            f.update({k: v for k, v in snap.items() if k in _STORED})
             _save_locked()
 
 
 def get(session_id: str) -> "dict | None":
+    """The session's path; `auto` is AUTO NEXT STEPS as this session has it, and
+    `stations` the path's steps as (station, skill, "you" | "auto")."""
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         if not f:
             return None
-        return {k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")}
+        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "next", "skill")},
+                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}),
+                "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
+
+
+def pending(session_id: str) -> "tuple[str, str] | None":
+    """(skill, argument) of the step this path waits to start, for the router."""
+    f = get(session_id)
+    nxt = (f or {}).get("next") or {}
+    if not nxt or nxt.get("started"):
+        return None
+    skill = next((sk for st, sk, _ in f["stations"] if st == nxt["station"]), None)
+    return (skill, _PONY.get(nxt["station"], "")) if skill else None
+
+
+def set_option(session_id: str, key: str, on: "bool | None") -> None:
+    """Override a SETTINGS switch for this session (None follows SETTINGS again).
+    AUTO NEXT STEPS released with a step pending starts it now, or when a turn
+    running here ends: never in the middle of one."""
+    if key not in OPTIONS:
+        raise ValueError(f"{key!r} isn't a switch a session sets")
+    _set(session_id, lambda own: own.pop(key, None) if on is None else own.update({key: bool(on)}))
 
 
 def set_auto(session_id: str, on: bool) -> None:
-    """Hold or release AUTO. Released with a step pending, the step starts now, or
-    when a turn running here ends: never in the middle of one."""
-    run = store.running_turn_id(session_id) if on else None
+    """Hold or release AUTO for this session (the SESSION tab's switch)."""
+    set_option(session_id, "nextstep", bool(on))
+
+
+def reset(session_id: str) -> None:
+    """Every switch follows SETTINGS again."""
+    _set(session_id, lambda own: own.clear())
+
+
+def _set(session_id: str, edit) -> None:
+    run = store.running_turn_id(session_id)
     turn = _carried(session_id, run)[0] if run else None
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         if not f:
             return
-        f["auto"] = bool(on)
-        if turn and f["next"] and not f["next"].get("started"):
+        was = _eff(f, "nextstep")
+        edit(f.setdefault("overrides", {}))
+        on = _eff(f, "nextstep") and not was
+        if on and turn and f["next"] and not f["next"].get("started"):
             f["next"]["turn_id"] = turn
         _save_locked()
     if on and not run:
         _go(session_id)
+
+
+def skip_to(session_id: str, target: str) -> str:
+    """Skip every step before `target` ("" = the rest of the path), sparing the one a
+    running turn works on; `target` is then the next step and starts as one would.
+    "" when done, else why not."""
+    run = store.running_turn_id(session_id)
+    turn = _carried(session_id, run)[0] if run else None
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        if not f:
+            return "no path is running in this session"
+        rest = [st for st, _, _ in _stations(f) if st not in f["done"]]
+        if target and target not in rest:
+            return f"{target!r} isn't a step still to come"
+        until = rest.index(target) if target else len(rest)
+        gone = rest[1 if run else 0:until]   # a running turn works on the first one
+        f["done"] += gone
+        f["skipped"] = list(f.get("skipped") or []) + gone
+        if target:
+            f["next"] = {"station": target, "turn_id": turn or "", "started": False}
+        elif not run:
+            f["next"] = None
+        _save_locked()
+    if target and not run:
+        _go(session_id)
+    return ""
 
 
 _CMD = re.compile(r"\s*/mattpocock-skills:([\w-]+)")
@@ -263,7 +366,7 @@ def path_for_command(skill: str) -> tuple:
 # instead while TICKETS is on (tickets.start_build), and merge runs in a session of
 # its own once every ticket is done (tickets.start_merge, then advance); with
 # TICKETS off both are the user's.
-_AUTO_START = {"spec", "tickets", "retro", "build-here"}
+_AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit"}
 ZONE_TOKENS = 150_000
 
 
@@ -300,7 +403,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
         return False
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
-    texts = [f"/mattpocock-skills:{skill}"]
+    texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY else f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
@@ -308,7 +411,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
         if not moved:
             return False
         texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
-    if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
+    if _eff(flow, "smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
         queue_manager.enqueue(
@@ -324,13 +427,13 @@ def _go(session_id: str, chat_id=None, effort=None) -> bool:
     held, no wait on another session (its wake-up is the next turn). A step that can't
     start stays pending for the next release or resume. True = started."""
     from bridge import waits
-    if not on() or not aifeatures.enabled("nextstep") or waits.waiting(session_id):
+    if not on() or waits.waiting(session_id):
         return False
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         nxt = f["next"] if f else None
-        if not nxt or nxt.get("started") or not f["auto"]:
+        if not nxt or nxt.get("started") or not _eff(f, "nextstep"):
             return False
         nxt["started"] = True
         _save_locked()
@@ -373,6 +476,7 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted or (job.runtime or "").startswith("acp:"):
             return False
+        _end_pony_step(sid, job.id)
         flow = get(sid)
         nxt = flow and flow["next"]
         if not nxt or nxt.get("started") or nxt["turn_id"] != _carried(sid, job.id)[0]:
@@ -381,6 +485,16 @@ def continue_after_turn(job, effort=None) -> bool:
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[paths] continue failed: {e}", file=sys.stderr)
         return False
+
+
+def _end_pony_step(session_id: str, turn_id: str) -> None:
+    """A turn sent as /ponytail-review or /ponytail-audit ended cleanly: when the path is
+    on that step, it's done (ponytail's skills never call StepDone; one that does moves once)."""
+    m = _PONY_RE.match(_carried(session_id, turn_id)[1] or "")
+    f = get(session_id) if m else None
+    rest = [st for st, _, _ in f["stations"] if st not in f["done"]] if f else []
+    if rest and rest[0] == m.group(1):
+        step_done(session_id, turn_id)
 
 
 def mark_done(session_id: str, station: str, at: "int | None" = None) -> None:
