@@ -320,8 +320,8 @@ def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tupl
         return False, "bad id"
     d = os.path.join(root, skill_id)
     if os.path.isfile(os.path.join(d, MARKER)):
-        if skill_id not in _BY_ID:
-            return False, "not a catalog skill"
+        # The marker proves we installed it; catalog membership doesn't matter,
+        # or trimming the catalog would strand every copy already installed.
         marker = MARKER
     elif os.path.isfile(os.path.join(d, DESIGN_MARKER)):
         return _remove_design_sourced(d)

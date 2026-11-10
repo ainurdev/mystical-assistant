@@ -139,6 +139,19 @@ def test_never_clobbers_a_skill_of_your_own(tmp_path):
     assert got["from_catalog"] is False and got["category"] == "other"
 
 
+def test_a_skill_dropped_from_the_catalog_can_still_be_removed(tmp_path, monkeypatch):
+    """Trimming the catalog must not strand the copies already installed: the
+    dashboard still shows their ✕, so remove() has to honour it."""
+    proj = str(tmp_path)
+    monkeypatch.setitem(skills._BY_ID, "gone", {"id": "gone", "url": "https://example.invalid/SKILL.md"})
+    assert skills.install("gone", "project", proj) == (True, "")
+    monkeypatch.delitem(skills._BY_ID, "gone")          # a later release drops it
+
+    assert skills.installed(proj)["project"][0]["from_catalog"] is True
+    assert skills.remove("gone", "project", proj) == (True, "")
+    assert skills.installed(proj)["project"] == []
+
+
 def test_remove_refuses_when_files_were_added(tmp_path):
     proj = str(tmp_path)
     skills.install("readme", "project", proj)
