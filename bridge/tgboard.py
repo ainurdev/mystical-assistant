@@ -32,9 +32,17 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - The page (bridge/widgets/board.html) is fixed once sent, so it draws everything from
   that data. PAGE_V is its version, in the record and in the data.
 
+- The footer (`u`) is the 5-hour and weekly windows of the login the newest running
+  turn uses, or the default login when nothing runs: percent, reset (epoch, 0 when
+  unknown) and severity (0 normal, 1 warning, 2 exceeded), null for a window the meter
+  doesn't name. It is read from the meter's cache only (usage.cached): a look every
+  LOOK_S must never spawn claude, and a turn's own rate-limit events keep the cache live.
+  No reading, no footer. The login is named (alias, else email) only when the registry
+  holds a second login: list_accounts() would ask the Keychain on every look.
+
 Not here yet (later tickets): refusals and a deleted board (03), Needs-you rows and their
-buttons (04), Stop from a row (05), /status and a board left behind (06), usage bars
-(07), limit cards (08), work-run rows (09).
+buttons (04), Stop from a row (05), /status and a board left behind (06), limit cards
+(08), work-run rows (09).
 """
 
 import json
@@ -43,13 +51,15 @@ import sys
 import threading
 import time
 
-from bridge import config, experimental, runner, store, telegram
+from bridge import accounts, config, experimental, runner, store, telegram, usage
 
 LOOK_S = 5
 REFRESH_S = 60
 MAX_ROWS = 7
 TITLE_B = 24
 STEP_B = 36
+LOGIN_B = 32
+SEV = {"warning": 1, "exceeded": 2}
 DATA_MAX = 1024
 PAGE_V = 1
 KEY = "tg_board"     # settings entry: {"board": record | None, "cards": {}}
@@ -109,7 +119,7 @@ def rows(chat: int) -> list:
             h["a"] = min(filter(None, (h["a"], j.get("started"))), default=None)
             continue
         job = runner._jobs.get(j.get("job_id"))
-        out[sid] = {"sid": sid, "c": "r", "t": _title(sess, sid),
+        out[sid] = {"sid": sid, "c": "r", "t": _title(sess, sid), "slot": job and job.account_slot,
                     "s": (status.get(sid) or {}).get("label") or (j.get("activity") or {}).get("label") or "",
                     "a": j.get("started"), "n": tokens(((job and job.tokens) or {}).get("out"))}
     for sid, st in status.items():      # Claude's own agents, after the turn that started them ended
@@ -124,7 +134,33 @@ def rows(chat: int) -> list:
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
 
 
-def data(found: list, now: float) -> dict:
+def _login(slot: "int | None") -> "str | None":
+    """The login's name, or None while the bridge has only the one."""
+    with accounts._lock:
+        reg = {int(k): e for k, e in accounts._load().items()
+               if str(k).isdigit() and int(k) != accounts.DEFAULT_SLOT}
+    if not reg:
+        return None
+    if not slot or int(slot) == accounts.DEFAULT_SLOT:
+        return accounts._email_at(accounts.IDENTITY) or "default login"
+    e = reg.get(int(slot)) or {}
+    return e.get("alias") or e.get("email") or f"login {slot}"
+
+
+def footer(found: list) -> "dict | None":
+    """The usage footer for the newest running turn's login, or None with no reading."""
+    slot = next((r.get("slot") for r in found if r["c"] == "r"), None)
+    m = usage.cached(accounts.credentials_path(slot))
+    w = [[b["percent"], int(usage.resets_epoch(b.get("resets_at")) or 0), SEV.get(b.get("severity"), 0)]
+         if isinstance(b, dict) and b.get("percent") is not None else None
+         for b in (m.get("five_hour"), m.get("seven_day"))] if m.get("available") else [None, None]
+    if w == [None, None]:
+        return None
+    name = _login(slot)
+    return {"l": cut(name, LOGIN_B), "w": w} if name else {"w": w}
+
+
+def data(found: list, now: float, u: "dict | None" = None) -> dict:
     """The board's chat data, within DATA_MAX bytes."""
     shown = []
     for r in found[:MAX_ROWS]:
@@ -138,6 +174,8 @@ def data(found: list, now: float) -> dict:
         d = {"v": PAGE_V, "at": int(now), "rows": shown}
         if len(found) > len(shown):
             d["more"] = len(found) - len(shown)
+        if u:
+            d["u"] = u
         if len(dump(d).encode()) <= DATA_MAX or not shown:
             return d
         shown = shown[:-1]              # running rows go first; all of them are running rows here
@@ -170,7 +208,7 @@ def look(now: "float | None" = None) -> None:
         _seen.update(running)
         rec = record()
         board = rec["board"]
-        d, cap, kb = data(found, now), caption(found), buttons(chat)
+        d, cap, kb = data(found, now, footer(found)), caption(found), buttons(chat)
         body = {k: v for k, v in d.items() if k != "at"}
         if board is None:
             if started:
