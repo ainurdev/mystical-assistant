@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}
+body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans-serif;padding:10px 12px;font-variant-numeric:tabular-nums}
+.li{display:grid;grid-template-columns:30px 1fr auto;gap:0 11px;align-items:center}
+.li>div{min-width:0}
+.ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:600;background:linear-gradient(#ffcd6a,#ffa85c)}
+.ic.r{background:linear-gradient(#a0de7e,#54cb68)}.ic.g{background:linear-gradient(#c4c9cc,#8e979c)}
+.t{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s,.r{color:var(--tg-theme-hint-color);font-size:13px}
+.n{font-size:28px;font-weight:600;letter-spacing:.5px;padding:8px 0 2px 41px}
+.u{padding-left:41px}
+.empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
+</style><div id="b"></div><script>
+var T=window.TelegramWidget,D=null;
+var I={c:"⏳",w:"⏳",r:"▶",g:"–"};
+var S={c:"Usage limit · switch or wait below",w:"Waiting for the reset",r:"Resumed",g:"No longer parked"};
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return"&#"+c.charCodeAt(0)+";"})}
+function two(n){return(n<10?"0":"")+n}
+function hm(t){var d=new Date(t*1000);return two(d.getHours())+":"+two(d.getMinutes())}
+function left(s){if(s<=0)return"any moment";var h=s/3600|0,m=s%3600/60|0;return(h?h+":"+two(m):m)+":"+two(s%60)}
+function head(d,right){return'<div class="li"><span class="ic '+d.s+'">'+I[d.s]+'</span><div><div class="t" dir="auto">'+esc(d.t)+'</div><div class="s">'+S[d.s]+'</div></div><span class="r">'+right+"</span></div>"}
+// One function per state: the park counts down, the two ends say when.
+var K={
+c:function(d,now){return head(d,"")+'<div class="n">'+left(d.a-now)+'</div><div class="s u">resumes at '+hm(d.a)+"</div>"},
+r:function(d){return head(d,hm(d.e))},
+g:function(d){return head(d,hm(d.e))}};
+K.w=K.c;
+function render(d,now){
+if(!d||d.v!==1||!K[d.s])return'<div class="empty">This card is out of date.</div>';
+return K[d.s](d,now)}
+function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
+function draw(){document.getElementById("b").innerHTML=render(D,Date.now()/1000|0)}
+D=parse();draw();setInterval(draw,1000);
+T.onEvent("chatDataChanged",function(){D=parse();draw()});
+T.ready&&T.ready();
+</script>

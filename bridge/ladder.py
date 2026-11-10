@@ -177,9 +177,11 @@ def _offer(session: dict, chat_id: int, available: list, notify,
                                            "or wait for the reset.",
                  meta={"rungs": offered})
     if notices.telegram_ok("limit_choice"):
-        notify(chat_id, "⛔ Usage limit reached. This chat is parked until the "
-                        "window resets — or something else can pick the work up now:",
-               {"inline_keyboard": rows})
+        from bridge import tgboard
+        text = ("⛔ Usage limit reached. This chat is parked until the "
+                "window resets — or something else can pick the work up now:")
+        if not tgboard.limit_card(chat_id, sid, text, {"inline_keyboard": rows}):
+            notify(chat_id, text, {"inline_keyboard": rows})
 
 
 def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
