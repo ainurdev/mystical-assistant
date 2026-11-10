@@ -272,13 +272,15 @@ def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None"
     telegram.tg("pinChatMessage", chat_id=chat, message_id=msg["message_id"], disable_notification="true")
 
 
-def _card_state(sid: str, running: set, now: float) -> dict:
-    """The card's part of its data, from the session's live state."""
-    if sid in running:
-        return {"s": "r", "e": int(now)}
+def _card_state(sid: str, running: set, now: float, sent: float = 0) -> dict:
+    """The card's part of its data, from the session's live state. A turn started
+    since the card was sent and already over still counts as resumed."""
     p = limits.parked().get(sid)
-    if p and p["kind"] == "limit":
+    if sid not in running and p and p["kind"] == "limit":
         return {"s": "c" if p["offer"] else "w", "a": int(p["at"])}
+    last = runner._latest_jobs().get(sid)
+    if sid in running or (last and (last.started or 0) > sent):
+        return {"s": "r", "e": int(now)}
     return {"s": "g", "e": int(now)}
 
 
@@ -291,8 +293,8 @@ def limit_card(chat: int, sid: str, text: str, kb: "dict | None", *,
     """The one sender both usage-limit notices go through. True: the notice went as a
     limit card. False: the caller sends today's text, as it always did."""
     now = time.time()
-    if not on() or chat != config.DASH_CHAT_ID or now < _wait[0]:
-        return False
+    if not on() or chat != config.DASH_CHAT_ID or chat <= 0 or now < _wait[0]:
+        return False                    # widgets go to private chats only
     st = _card_state(sid, set(), now)
     with open(CARD_PAGE, encoding="utf-8") as f:
         html = f.read()
@@ -307,7 +309,7 @@ def limit_card(chat: int, sid: str, text: str, kb: "dict | None", *,
         rec = record()
         # shortcut: a second park of the same session replaces the record, so an older card keeps its last state; drop it first if that shows up
         rec["cards"][sid] = {"chat": chat, "msg": msg["message_id"], "s": st["s"], "a": st.get("a"),
-                             "k": st["s"] == "c"}
+                             "k": st["s"] == "c", "at": int(now)}
         _save(rec)
     return True
 
@@ -316,7 +318,13 @@ def _cards(rec: dict, running: set, now: float) -> None:
     """Each card follows its session: one data edit when its state changes, and its
     Switch and Wait buttons off once the choice is over."""
     for sid, card in list(rec["cards"].items()):
-        st = _card_state(sid, running, now)
+        st = _card_state(sid, running, now, card.get("at", 0))
+        if st["s"] == "g" and not card.get("g"):
+            card["g"] = 1               # only on a second look: the first may fall between the park's end and its turn's start
+            _save(rec)
+            continue
+        if st["s"] != "g":
+            card.pop("g", None)
         if (st["s"], st.get("a")) == (card["s"], card.get("a")):
             continue
         out = _outcome(telegram.tg("editMessageWidgetData", chat_id=card["chat"], message_id=card["msg"],
@@ -331,7 +339,7 @@ def _cards(rec: dict, running: set, now: float) -> None:
                     "editMessageCaption", chat_id=card["chat"], message_id=card["msg"],
                     caption=CARD_LINE[st["s"]], reply_markup=json.dumps({"inline_keyboard": []})), now) is True:
                 card["k"] = False
-            if st["s"] in "rg":
+            if st["s"] in ("r", "g"):
                 del rec["cards"][sid]
         _save(rec)
 
@@ -339,14 +347,15 @@ def _cards(rec: dict, running: set, now: float) -> None:
 def card_caption(chat: int, msg: int, line: str) -> None:
     """The Switch and Wait handler's line, on a card: written to its caption, and the
     choice marked answered so a look doesn't write over it."""
-    telegram.tg("editMessageCaption", chat_id=chat, message_id=msg, caption=line,
-                reply_markup=json.dumps({"inline_keyboard": []}))
+    if _outcome(telegram.tg("editMessageCaption", chat_id=chat, message_id=msg, caption=line,
+                            reply_markup=json.dumps({"inline_keyboard": []})), time.time()) is not True:
+        return                          # the buttons stay, so the next look still takes them off
     with _lock:
         rec = record()
         for card in rec["cards"].values():
             if (card["chat"], card["msg"]) == (chat, msg):
                 card["k"] = False
-                _save(rec)
+        _save(rec)
 
 
 def pin_line(msg: dict) -> bool:

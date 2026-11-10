@@ -490,7 +490,7 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     kind = parts[1]
     if kind == "w":
         answer_cb(cb["id"], "Waiting for reset")
-        _fallback_line(cb, chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
+        _fallback_line(cb, chat_id, msg_id, tgboard.CARD_LINE["w"])
         # The card's answer, so the bell stops asking (bridge/notices.py needs()),
         # and so does the dashboard chat's card (the parked status's offer).
         limits.offer(sid, None)

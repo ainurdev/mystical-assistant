@@ -18,6 +18,9 @@ CHAT = config.DASH_CHAT_ID
 NOW = 1794300000.0
 
 
+RESET = [0.0]
+
+
 class Calls(list):
     refuse: dict
 
@@ -54,9 +57,6 @@ def tg(monkeypatch):
     runner._jobs.clear()
     for sid in list(limits.parked()):
         limits.cancel(sid)
-
-
-RESET = [0.0]
 
 
 def methods(calls):
@@ -254,14 +254,42 @@ def test_running_again_says_resumed_then_the_card_is_dropped(tg):
     assert tgboard.record()["cards"] == {}
 
 
-def test_no_longer_parked_and_not_running_says_so_then_the_card_is_dropped(tg):
+def test_no_longer_parked_and_not_running_says_so_on_the_second_look_then_the_card_is_dropped(tg):
     sess = session()
     hit_limit(sess)
     limits.cancel(sess["id"])
     tg.clear()
     tgboard.look(NOW)
+    assert card_edits(tg) == [], "one look could fall between the park's end and its resumed turn's start"
+    tgboard.look(NOW + 5)
     assert [d["s"] for d in card_edits(tg)] == ["g"]
     assert tgboard.record()["cards"] == {}
+
+
+def test_a_resumed_turn_that_already_ended_still_says_resumed(tg):
+    sess = session()
+    hit_limit(sess)
+    limits.cancel(sess["id"])
+    job = runner.Job(uuid.uuid4().hex, CHAT, sess["id"])
+    job.started, job.status = time.time() + 1, "done"
+    runner._jobs[job.id] = job
+    tg.clear()
+    tgboard.look(NOW)
+    assert [d["s"] for d in card_edits(tg)] == ["r"]
+
+
+def test_a_refused_caption_keeps_the_buttons_on_record(tg, monkeypatch):
+    sess = session()
+    offer(sess, monkeypatch)
+    tg.refuse["editMessageCaption"] = "Too Many Requests: retry after 3"
+    tap(f"fb:w:{sess['id']}", 700)
+    assert tgboard.record()["cards"][sess["id"]]["k"] is True
+
+
+def test_a_group_that_is_the_owners_chat_still_gets_todays_text(tg, monkeypatch):
+    monkeypatch.setattr(config, "DASH_CHAT_ID", -100123)
+    hit_limit(session(chat=-100123), chat=-100123)
+    assert methods(tg) == ["sendMessage"]
 
 
 def test_a_resumed_choice_loses_its_buttons(tg, monkeypatch):
@@ -270,6 +298,7 @@ def test_a_resumed_choice_loses_its_buttons(tg, monkeypatch):
     limits.cancel(sess["id"])
     tg.clear()
     tgboard.look(NOW)
+    tgboard.look(NOW + 5)
     cap = [p for m, p in tg if m == "editMessageCaption"]
     assert len(cap) == 1 and "fb:" not in cap[0]["reply_markup"]
 
@@ -284,6 +313,7 @@ def test_a_restart_keeps_the_link(tg):
     assert card_edits(tg) == []
     limits.cancel(sess["id"])
     tgboard.look(NOW + 5)
+    tgboard.look(NOW + 10)
     assert [d["s"] for d in card_edits(tg)] == ["g"]
 
 
@@ -293,6 +323,7 @@ def test_a_deleted_card_is_forgotten(tg):
     limits.cancel(sess["id"])
     tg.refuse["editMessageWidgetData"] = "Bad Request: message with widget to edit not found"
     tgboard.look(NOW)
+    tgboard.look(NOW + 5)
     assert tgboard.record()["cards"] == {}
 
 
@@ -302,10 +333,11 @@ def test_a_refused_card_edit_is_tried_again(tg):
     limits.cancel(sess["id"])
     tg.refuse["editMessageWidgetData"] = "Internal Server Error"
     tgboard.look(NOW)
+    tgboard.look(NOW + 5)
     assert sess["id"] in tgboard.record()["cards"]
     del tg.refuse["editMessageWidgetData"]
     tg.clear()
-    tgboard.look(NOW + 5)
+    tgboard.look(NOW + 10)
     assert [d["s"] for d in card_edits(tg)] == ["g"]
 
 
