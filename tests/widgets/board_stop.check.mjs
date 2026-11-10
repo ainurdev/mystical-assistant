@@ -69,6 +69,16 @@ await acheck("Stop sends exactly one request with the row's key and reads Stoppi
   assert.match(p.text(), /Nothing is running\.$/);
 });
 
+await acheck("Stopping… belongs to the turn: the session's next turn shows its ■ again", async () => {
+  const p = load("board.html", board([R]));
+  p.ctx.tap("x", R.k);
+  p.ctx.tap("s", R.k);
+  p.requests[0].ok({ result: "ok" });
+  await flush();
+  p.data(board([{ ...R, a: AT - 2 }]));          // a queued prompt started straight after
+  assert.match(p.text(), /0:02 ■$/);
+});
+
 for (const [name, settle] of [
   ["an answer of gone", (r) => r.ok({ result: "gone" })],
   ["an answer of no", (r) => r.ok({ result: "no" })],

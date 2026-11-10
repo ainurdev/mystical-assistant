@@ -100,7 +100,7 @@ def test_anything_else_stops_nothing_and_is_answered_no(tg, case):
     else:
         helper_parent, _ = turn("parent")
         runner._jobs.clear()
-        hsid, _ = turn("helper", parent=helper_parent)
+        turn("helper", parent=helper_parent)
         tgboard.look(NOW + 1)                      # the parent now shows as one "helpers working" row
         tg.clear()
         ask(msg, f"s:{helper_parent[:8]}")
@@ -117,7 +117,7 @@ def test_a_turn_that_already_ended_is_answered_gone(tg):
 
 def test_a_failing_handler_still_answers_once(tg, monkeypatch):
     sid, job, msg = board_up(tg)
-    monkeypatch.setattr(runner, "_latest_jobs", lambda: 1 / 0)
+    monkeypatch.setattr(runner, "live_job", lambda sid: 1 / 0)
     ask(msg, f"s:{sid[:8]}")
     assert answers(tg) == [("q1", "no")]
 

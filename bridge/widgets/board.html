@@ -35,7 +35,7 @@ h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")}};
 function bt(c,a,k,l,t){return'<span class="'+c+'" role="button" aria-label="'+l+" "+t+'" data-a="'+a+'" data-k="'+esc(k)+'">'+(c=="x"?"■":l)+"</span>"}
 function sq(r){return bt("x","x",r.k,"Stop",esc(r.t))}
 function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k",r.k,"Keep",t)+bt("b","s",r.k,"Stop",t),"Stop "+t+"?")}
-function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){S[k]=1;T.request("s:"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
+function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){for(var i in D.rows)if(D.rows[i].k==k)S[k]=D.rows[i].a;T.request("s:"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){return'<div class="empty">Nothing is running.</div>'}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
@@ -48,7 +48,7 @@ function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
 function draw(){document.getElementById("b").innerHTML=render(D,O,Date.now()/1000|0)}
 D=parse();draw();setInterval(draw,1000);
 T.onEvent("chatDataChanged",function(){D=parse();draw()});
-T.onEvent("chatDataChanged",function(){var ks={},rs=D&&D.rows||[],i;for(i in rs)ks[rs[i].k]=1;if(!ks[O])O=null;for(var k in S)if(!ks[k])delete S[k]});
+T.onEvent("chatDataChanged",function(){var ks={},rs=D&&D.rows||[],i;for(i in rs)ks[rs[i].k]=rs[i].a;if(!(O in ks))O=null;for(var k in S)if(ks[k]!==S[k])delete S[k];draw()});
 document.getElementById("b").addEventListener("click",function(e){for(var n=e.target;n&&n.getAttribute;n=n.parentNode){var a=n.getAttribute("data-a");if(a)return tap(a,n.getAttribute("data-k"))}});
 T.ready&&T.ready();
 </script>

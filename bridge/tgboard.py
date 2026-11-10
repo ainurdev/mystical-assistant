@@ -33,7 +33,8 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   that data. PAGE_V is its version, in the record and in the data.
 - A tap on a running row's ■, then Stop, reaches the bot as a widget_query "s:<row key>"
   (on_query, off the poll thread). The page keeps the open question (O) and the rows
-  reading "Stopping…" (S, until the row leaves or an answer isn't ok). It stops only for an allow-listed sender, in the
+  reading "Stopping…" (S, until that turn leaves the board or the answer isn't ok).
+  It stops only for an allow-listed sender, in the
   owner's chat, on the recorded board, with a key the board last sent; the turn is
   stopped with the same Job.interrupt the panel's Stop calls. Each query gets exactly one
   answer: ok, gone (the turn already ended) or no. A widget query carries no signed init
@@ -234,7 +235,7 @@ def query(q: dict) -> None:
 
 def _stop(q: dict) -> str:
     sender = (q.get("from") or {}).get("id")
-    if config.ALLOWED_CHAT_IDS and sender not in config.ALLOWED_CHAT_IDS:
+    if sender not in config.ALLOWED_CHAT_IDS:
         return "no"
     board = record()["board"]
     chat = (q.get("chat") or {}).get("id")
@@ -244,7 +245,7 @@ def _stop(q: dict) -> str:
     sid = (_sent.get("keys") or {}).get(key)
     if act != "s" or not sid:
         return "no"
-    job = runner._latest_jobs().get(sid)
+    job = runner.live_job(sid)
     return "ok" if job and job.interrupt() else "gone"
 
 

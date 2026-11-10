@@ -303,11 +303,12 @@ def typing(chat_id: int):
     tg("sendChatAction", chat_id=chat_id, action="typing")
 
 
-# The update list the poll asks for. widget_query is newer than the rest: a poll
-# refused for it (any 400, since Telegram's text for that refusal was never seen) goes
-# back to the old list for the life of the process, so a new type can't make the bot deaf.
+# The update list the poll asks for. widget_query is newer than the rest: a refused poll
+# goes back to the old list for the life of the process, so a new type can't make the bot deaf.
+# shortcut: any 400 counts as that refusal, since Telegram's text for it was never seen;
+# match the text once a real refusal is logged.
 UPDATES = ["message", "callback_query", "stopped_message_generation", "widget_query"]
-_OLD_UPDATES = UPDATES[:3]
+_OLD_UPDATES = ["message", "callback_query", "stopped_message_generation"]
 _updates = UPDATES
 
 
