@@ -14,7 +14,7 @@ def _no_network(monkeypatch):
 
 def test_catalog_shape():
     ids = [e["id"] for e in CATALOG]
-    assert len(ids) == len(set(ids)) == 62
+    assert len(ids) == len(set(ids)) == 63
     assert {e["category"] for e in CATALOG} == set(CATEGORIES)
     # every entry renders locally or downloads — never neither, never both
     assert all(bool(e.get("steps")) != bool(e.get("url")) for e in CATALOG)

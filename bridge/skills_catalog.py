@@ -591,6 +591,14 @@ CATALOG = [
         "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/stop-slop/SKILL.md",
     },
     {
+        "id": "unslop",
+        "category": "writing",
+        "name": "Unslop",
+        "description": "Cut AI tells from any text against a numbered rule list — stock vocabulary, em dashes, filler, jargon nouns. Runs only when you type /unslop.",
+        "repo": "cursor/plugins",
+        "url": "https://raw.githubusercontent.com/cursor/plugins/main/pstack/skills/unslop/SKILL.md",
+    },
+    {
         "id": "ogilvy",
         "category": "writing",
         "name": "Ogilvy on advertising",
