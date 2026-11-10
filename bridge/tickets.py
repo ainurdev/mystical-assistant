@@ -43,6 +43,14 @@ nothing committed are both `fix`: the slot frees, dependents wait, and the StepD
 forgotten, so only a new one finishes it. retry() runs it again in the same session,
 or with MAX_RUNNING running marks it `retry`, first in line for the next free slot. A
 turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you.
+Nobody watches a ticket session, though, and a turn that ends to wait on a background
+command never wakes (the command dies with the turn): a turn that ends done without
+StepDone gets a carry-on, at most NUDGES per run, before the slot is left waiting.
+
+A set can span repos (Rivendell beside Mystical): the prompt sends work in another repo
+to a worktree on the ticket's branch at the place worktree_path_for gives that repo, so
+_repos finds it. A ticket is done when any of its repos has a commit of its own, and
+MERGE merges each repo's ticket branches into a branch of the feature's name there.
 
 Never twice: a ticket gets its session_id in set.json before its first turn starts,
 tick starts as new only tickets that never had one (`queued`, or `missing` once its
@@ -350,11 +358,23 @@ def approve(folder: str) -> str:
     return ""
 
 
+def _elsewhere(st: dict, n: str) -> str:
+    """Where a ticket's work in another repo goes: a worktree at the place
+    worktree_path_for gives that repo, on this ticket's branch name, so _repos finds it."""
+    t = st["tickets"][n]
+    base = ", ".join(st["tickets"][b]["branch"] for b in t["blocked_by"])
+    return (f"\nIf the ticket needs another repo, work there in a worktree at "
+            f"{os.path.join(config.BASE_PATH, '.worktrees', '<repo>', git.slug(t['branch']))} on branch {t['branch']} "
+            + (f"(start from {base} there if it exists, else from that repo's up-to-date main)"
+               if base else "(start from that repo's up-to-date main)")
+            + " and commit there too. Run tests in the foreground: a background command dies when your turn ends.")
+
+
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
     t = st["tickets"][n]
     return (f"/mattpocock-skills:implement {t['path']}\n\nThis is ticket #{n} of {st['slug']}. "
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            "When it is done and the tests pass, call StepDone."
+            "When it is done and the tests pass, call StepDone." + _elsewhere(st, n)
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
 
 
@@ -365,7 +385,7 @@ def _again(st: dict, n: str) -> str:
     return ("No path for this message.\n\n"
             f"Try this ticket again: {t['path']}\n"
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            "When it is done and the tests pass, call StepDone.")
+            "When it is done and the tests pass, call StepDone." + _elsewhere(st, n))
 
 
 def _one_step(sid: str, st: dict, n: str) -> None:
@@ -417,7 +437,7 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
                                  profile_id=pid)
         store.rename(s["id"], f"#{n} {t['title']}")
         _one_step(s["id"], st, n)
-        t.update(status="running", worktree=wt, session_id=s["id"])
+        t.update(status="running", worktree=wt, session_id=s["id"], nudges=0)
         save(folder, st)   # before the turn: from here on a restart never starts it again
         if runner.start_streaming_job(parent["chat_id"], _prompt(st, n, clash), [], project=wt,
                                       session_id=s["id"], origin="ticket") is None:
@@ -465,7 +485,22 @@ def _merge_prompt(st: dict, tks: dict) -> str:
     return ("No path for this message.\n\n"   # else the paths pack has Claude pick a path
             f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
             f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
-            "suite, fix what breaks, and commit. Then call StepDone.")
+            "suite, fix what breaks, and commit."
+            + "".join(f"\nThen in {repo}: merge {', '.join(bs)} into {st['feature_branch']} there the same way, "
+                      f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
+                      "doesn't exist), and run that repo's tests."
+                      for repo, bs in _other_branches(st).items())
+            + " Then call StepDone.")
+
+
+def _other_branches(st: dict) -> dict:
+    """repo -> its ticket branches, in dependency order, for the tickets that worked there."""
+    tks = st["tickets"]
+    out: dict = {}
+    for n in order([Ticket(n, "", "", tuple(t["blocked_by"])) for n, t in tks.items()]):
+        for repo in tks[n].get("repos") or []:
+            out.setdefault(repo, []).append(tks[n]["branch"])
+    return out
 
 
 def start_merge(folder: str) -> None:
@@ -530,6 +565,9 @@ def _merge_end(sid: str, status: str) -> None:
         elif status == "done" and (paths.get(sid) or {}).get("done"):
             have = _merged(st)   # StepDone alone isn't merged: every branch must be in
             left = [t["branch"] for t in st["tickets"].values() if t["branch"] not in have]
+            for repo, bs in _other_branches(st).items():
+                there = _merged_in(repo, st["feature_branch"])
+                left += [f"{b} in {repo}" for b in bs if b not in there]
             st["status"] = "fix" if left else "merged"
             if left:
                 notices.emit("tickets", st["parent_session"], body=f"MERGE called StepDone, but {', '.join(left)} "
@@ -543,7 +581,12 @@ def _merge_end(sid: str, status: str) -> None:
 
 def _merged(st: dict) -> set:
     """The branches the feature branch already holds."""
-    rc, out, _ = git._run(st["feature_checkout"], "branch", "--merged", st["feature_branch"])  # noqa: SLF001
+    return _merged_in(st["feature_checkout"], st["feature_branch"])
+
+
+def _merged_in(repo: str, branch: str) -> set:
+    """The branches `branch` already holds in `repo`; none when it doesn't exist there."""
+    rc, out, _ = git._run(repo, "branch", "--merged", branch)  # noqa: SLF001
     return {b.strip().lstrip("*+ ").strip() for b in out.splitlines()} if rc == 0 else set()
 
 
@@ -620,10 +663,70 @@ def _verdict(st: dict, t: dict, status: str) -> "str | None":
         return None if sid in limits.parked() else "fix"
     if status != "done" or not (paths.get(sid) or {}).get("done"):
         return None
-    nots = [st["feature_branch"]] + [st["tickets"][b]["branch"] for b in t["blocked_by"]]
-    rc, out, _ = git._run(st["feature_checkout"], "rev-list", "--count", "--no-merges",  # noqa: SLF001
-                          t["branch"], "--not", *nots)
-    return "done" if rc == 0 and out.strip() not in ("", "0") else "fix"
+    blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
+    t["repos"] = [r for r in _repos(st, t["branch"]) if _own(r, t["branch"], blockers + ["--remotes"])]
+    return "done" if _own(st["feature_checkout"], t["branch"], [st["feature_branch"]] + blockers) \
+        or t["repos"] else "fix"
+
+
+def _own(repo: str, branch: str, nots: list) -> bool:
+    """`branch` has a commit of its own in `repo`, merges aside. A ref missing there
+    (a blocker that never touched that repo) is dropped rather than failing the count."""
+    have = [x for x in nots if x.startswith("--") or
+            git._run(repo, "rev-parse", "--verify", "-q", f"refs/heads/{x}")[0] == 0]  # noqa: SLF001
+    have += [b for b in ("main", "master")
+             if git._run(repo, "rev-parse", "--verify", "-q", f"refs/heads/{b}")[0] == 0 and b != branch]  # noqa: SLF001
+    rc, out, _ = git._run(repo, "rev-list", "--count", "--no-merges", branch, "--not", *have)  # noqa: SLF001
+    return rc == 0 and out.strip() not in ("", "0")
+
+
+def _repos(st: dict, branch: str) -> list:
+    """Other repos this ticket worked in: worktrees on its branch at the place the
+    prompt names (<BASE>/.worktrees/<repo>/<branch slug>), each folded to its main checkout.
+    shortcut: finds only worktrees at that place; a ticket that branched in a repo's
+    main checkout goes unseen, upgrade to asking the session if that happens."""
+    root = os.path.join(config.BASE_PATH, ".worktrees")
+    home = os.path.realpath(git.main_checkout(st["feature_checkout"]))
+    out = []
+    try:
+        dirs = sorted(os.listdir(root))
+    except OSError:
+        return []
+    for d in dirs:
+        wt = os.path.join(root, d, git.slug(branch))
+        if not os.path.isdir(wt):
+            continue
+        main = git.main_checkout(wt)
+        if os.path.realpath(main) == home or main in out:
+            continue
+        if git._run(wt, "rev-parse", "--abbrev-ref", "HEAD")[1].strip() == branch:  # noqa: SLF001
+            out.append(main)
+    return out
+
+
+NUDGES = 2   # carry-ons per ticket run before its session is left waiting on you
+_NUDGE = ("[mystical] Your turn ended without StepDone. A background command dies when a turn ends, "
+          "so anything you were waiting for did not finish: run it again in the foreground, finish the "
+          "ticket and call StepDone. If you really need the user, say what in one line and stop.")
+
+
+def _nudge(t: dict, job) -> None:
+    """A ticket turn that ended done without StepDone: nobody is watching a ticket
+    session, so most often it ended to wait on a background command the turn's end
+    killed. Queue a carry-on, at most NUDGES per run, unless something is queued."""
+    if job.interrupted or job.status != "done" or t.get("nudges", 0) >= NUDGES:
+        return
+    from bridge import queue_manager  # local import: heavy module
+    sid = t["session_id"]
+    if any(i.get("status") in ("queued", "running") for i in queue_manager.snapshot(sid).get("items") or []):
+        return
+    t["nudges"] = t.get("nudges", 0) + 1
+    sess = store.get_session(sid) or {}
+    queue_manager.enqueue(
+        sid, text=_NUDGE, prompt=_NUDGE, images=[], model=None, effort=None,
+        permission_mode=None, width=None, sel=[], surface="carry-on",
+        chat_id=job.chat_id if job.chat_id is not None else sess.get("chat_id"),
+        project=sess.get("project") or "")
 
 
 def _find(sid: str):
@@ -660,7 +763,9 @@ def after_turn(job) -> bool:
             v = _verdict(st, t, job.status) if t["status"] in ("running", "fix") and not job.interrupted else None
             if v:
                 _settle(st, n, v)
-                save(folder, st)
+            elif t["status"] == "running":
+                _nudge(t, job)
+            save(folder, st)
             tick(folder)
         return True
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
@@ -674,7 +779,7 @@ def _rerun(folder: str, st: dict, n: str) -> str:
     and put back if the run is refused (your own turn still going)."""
     from bridge import runner  # local import: runner<->tickets cycle
     t = st["tickets"][n]
-    t["status"] = "running"
+    t.update(status="running", nudges=0)
     save(folder, st)
     snap = paths.get(t["session_id"])
     try:

@@ -404,7 +404,7 @@ def test_first_prompt_title_and_path(make_set):
     assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
                          f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
                          "tk/x-01 in this checkout and commit there. When it is done and the tests pass, "
-                         "call StepDone."}]
+                         "call StepDone." + tickets._elsewhere(s.state, "01")}]
     sess = store.get_session(t["session_id"])
     assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
     assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x-01"
@@ -429,7 +429,7 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
     assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
                                       "Work on branch tk/x-01 in this checkout and commit there. When it is done "
-                                      "and the tests pass, call StepDone.")
+                                      "and the tests pass, call StepDone." + tickets._elsewhere(s.state, "01"))
     s.finish("01")
     assert s.status("01") == "done"
 
@@ -963,3 +963,105 @@ def test_merged_counts_only_done_tickets(make_set):
     assert tickets.merged_count(st) == 0                # done, not merged
     _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
     assert tickets.merged_count(s.state) == 1
+
+
+# --- a ticket that works in a second repo -------------------------------------
+
+def _other_repo(s, n, commit=True, name="other"):
+    """A second repo, as Rivendell beside Mystical: its own main checkout and the
+    worktree a ticket session makes there by the prompt's convention."""
+    root = os.path.dirname(s.main)
+    other = os.path.join(root, name)
+    os.makedirs(other)
+    for a in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"), ("config", "user.name", "t")):
+        _git(other, *a)
+    with open(os.path.join(other, "a.txt"), "w") as f:
+        f.write("a\n")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-qm", "init")
+    wt = git.worktree_path_for(other, f"tk/x-{n}")
+    os.makedirs(os.path.dirname(wt), exist_ok=True)
+    _git(other, "worktree", "add", "-q", "-b", f"tk/x-{n}", wt, "main")
+    if commit:
+        with open(os.path.join(wt, f"{n}.txt"), "w") as f:
+            f.write(n)
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-qm", f"ticket {n} in {name}")
+    return other
+
+
+def test_a_ticket_that_commits_only_in_another_repo_is_done(make_set):
+    s = make_set({"01": None, "02": "#01"})
+    other = _other_repo(s, "01")
+    s.finish("01", commit=False)                  # nothing in this repo: the work is in the other one
+    assert s.status("01") == "done" and s.status("02") == "running"
+    assert s.state["tickets"]["01"]["repos"] == [other]
+
+
+def test_an_empty_branch_in_another_repo_is_still_fix(make_set):
+    s = make_set({"01": None})
+    _other_repo(s, "01", commit=False)
+    s.finish("01", commit=False)
+    assert s.status("01") == "fix"
+
+
+def test_the_prompt_says_where_other_repos_work_goes(make_set):
+    s = make_set({"01": None, "02": "#01"})
+    first = s.starts[0]["prompt"]
+    assert "another repo" in first and "<repo>/tk-x-01" in first and "branch tk/x-01" in first
+    assert "foreground" in first
+    s.finish("01")
+    assert "start from tk/x-01 there" in s.starts[-1]["prompt"]
+
+
+def test_merge_covers_the_other_repos_and_waits_for_them(make_set, monkeypatch):
+    s = make_set({"01": None, "02": None})
+    other = _other_repo(s, "02")
+    s.finish("01")
+    s.finish("02")
+    (m,) = _merges(s)
+    assert f"Then in {other}: merge tk/x-02 into feat/x" in m["prompt"]
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-02")
+    said = []
+    monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append(kw.get("body")))
+    sid = s.state["merge_session"]
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "fix"             # the other repo's branch isn't merged there yet
+    assert said == [f"MERGE called StepDone, but tk/x-02 in {other} isn't merged into feat/x yet."]
+    _git(other, "branch", "feat/x", "tk/x-02")
+    st = s.state
+    st["status"] = "merging"
+    tickets.save(s.folder, st)
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"
+
+
+# --- a ticket turn that ends waiting on a background command -----------------
+
+def test_a_turn_that_ends_without_step_done_is_told_to_carry_on_twice(make_set, monkeypatch):
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"], kw["surface"])))
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": []})
+    s = make_set({"01": None})
+    for _ in range(3):
+        s.hand_turn("01")
+        s.end("01", "done")                       # "I'll report once the suite finishes", then nothing
+    assert s.status("01") == "running"
+    assert [x[0] for x in q] == [s.sid("01")] * 2 and q[0][2] == "carry-on"
+    assert "foreground" in q[0][1]
+
+
+def test_no_carry_on_after_a_stop_or_with_your_message_queued(make_set, monkeypatch):
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(sid))
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": [{"status": "queued"}]})
+    s = make_set({"01": None})
+    s.end("01", "done")
+    job = s.job("01")
+    job.interrupted = True
+    tickets.after_turn(job)
+    assert q == []
