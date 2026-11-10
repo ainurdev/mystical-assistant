@@ -12,7 +12,9 @@ import { RowTag } from "../MultiRows";
    sub-agents we can only say exist. It opens while they run and shuts when
    they're done, unless you've said otherwise since they last started. Shut or
    short, what needs you is on show (lib/multi foldRows), and the header counts it
-   whatever's folded. A chat with no agents draws nothing at all. */
+   whatever's folded. A chat with no agents draws nothing at all. The sidebar
+   mounts it only while ROW DETAILS' agents tick is on (SessionsPanel rowFor):
+   off hides even what needs you, which is the user's pick. */
 
 const useSpin = (live: boolean) => {
   const [t, setT] = useState(0);

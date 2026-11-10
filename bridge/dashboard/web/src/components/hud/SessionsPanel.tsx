@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AgentTree } from "./AgentTree";
-import { useTreeWant } from "../../lib/multistore";
+import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search, Ticket } from "lucide-react";
@@ -101,8 +101,11 @@ const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "agents", label: "agents", tip: "List a session's agents under its row" },
 ];
 /** PROJECTS rows sit under a header that already names the project, so that tick
- *  is not offered there — the other two tabs mix projects and need it. */
-const fieldsFor = (mode: Mode) => (mode === "projects" ? FIELDS.filter((f) => f.k !== "proj") : FIELDS);
+ *  is not offered there — the other two tabs mix projects and need it. Agents is
+ *  offered only where a list can show: with multi-agent chats on, and never in
+ *  PLUGINS (its ⎇ is hidden, but a menu left open survives the tab switch). */
+const fieldsFor = (mode: Mode, multi: boolean) => FIELDS.filter((f) =>
+  !(f.k === "proj" && mode === "projects") && !(f.k === "agents" && (!multi || mode === "plugins")));
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
  *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
@@ -592,7 +595,8 @@ type LaneItem =
   | { k: "day"; label: string };
 
 export function SessionsPanel(props: Props) {
-  // AgentTree's poll: the chats the last render drew. A ref filled while rendering,
+  // AgentTree's poll: the chats the last render drew a list under (none while the
+  // agents tick is off). A ref filled while rendering,
   // then settled after the commit, because the rows are built past every hook.
   const drawn = useRef<string[]>([]);
   drawn.current = [];
@@ -634,13 +638,14 @@ export function SessionsPanel(props: Props) {
   // machine you work on — one repo on one branch wants less than fifteen.
   // ponytail: new key per shape change, no migration — useStickyObj merges one
   // level deep, so a stored preset string would survive as a Detail that has no
-  // fields and silently print nothing. Three ticks are cheaper to re-pick. A new
-  // tick is no shape change: a saved Detail without it takes its default below.
+  // fields and silently print nothing. Ticks are cheaper to re-pick. A new tick
+  // is no shape change: a saved Detail without it takes its default below.
   const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-fields", DETAIL_DEFAULT);
   const detail = { ...DETAIL_DEFAULT[mode], ...detailPrefs[mode] };
   const toggleField = (k: keyof Detail) =>
     setDetailPrefs((p) => ({ ...p, [mode]: { ...detail, [k]: !detail[k] } }));
-  const shownFields = fieldsFor(mode).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
+  const multiOn = useMultiOn();
+  const shownFields = fieldsFor(mode, multiOn).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
   const [detailMenu, setDetailMenu] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
@@ -1245,7 +1250,7 @@ export function SessionsPanel(props: Props) {
               style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
             />
             <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
-            {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick,
+            {/* Job rows print no project, branch or worktree and never list agents, so PLUGINS has no row details to pick,
                 and it lists every job and share whatever the filter says. */}
             {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
             {mode !== "plugins" && (
@@ -1326,7 +1331,7 @@ export function SessionsPanel(props: Props) {
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
                               boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
-                  {fieldsFor(mode).map((f) => {
+                  {fieldsFor(mode, multiOn).map((f) => {
                     const on = detail[f.k];
                     return (
                       // Ticks, not a preset list — the menu stays open so you can
