@@ -231,6 +231,8 @@ def main():
                     elif "message" in upd:
                         if not tgboard.pin_line(upd["message"]):   # the board's own pin line goes
                             on_message(upd["message"])
+                    elif "widget_query" in upd:
+                        tgboard.on_query(upd["widget_query"])   # a tap on the Live board
                     elif "stopped_message_generation" in upd:
                         on_stop(upd["stopped_message_generation"])   # Stop under a live answer
                 except Exception as e:  # noqa: BLE001

@@ -31,9 +31,16 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   Nothing secret goes in it: titles and step labels already reach this chat in pings.
 - The page (bridge/widgets/board.html) is fixed once sent, so it draws everything from
   that data. PAGE_V is its version, in the record and in the data.
+- A tap on a running row's ■, then Stop, reaches the bot as a widget_query "s:<row key>"
+  (on_query, off the poll thread). The page keeps the open question (O) and the rows
+  reading "Stopping…" (S, until the row leaves or an answer isn't ok). It stops only for an allow-listed sender, in the
+  owner's chat, on the recorded board, with a key the board last sent; the turn is
+  stopped with the same Job.interrupt the panel's Stop calls. Each query gets exactly one
+  answer: ok, gone (the turn already ended) or no. A widget query carries no signed init
+  data, so trust is the bot's own update stream plus those checks, as for callbacks.
 
 Not here yet (later tickets): refusals and a deleted board (03), Needs-you rows and their
-buttons (04), Stop from a row (05), /status and a board left behind (06), usage bars
+buttons (04), /status and a board left behind (06), usage bars
 (07), limit cards (08), work-run rows (09).
 """
 
@@ -57,7 +64,7 @@ PAGE = os.path.join(os.path.dirname(__file__), "widgets", "board.html")
 
 _lock = threading.Lock()
 _seen: "set[str]" = set()     # sessions running at the last look: a turn start is one not in here
-_sent: dict = {}              # what the recorded board last got: data (minus "at"), at, caption, kb
+_sent: dict = {}              # what the recorded board last got: data (minus "at"), at, caption, kb, keys
 
 
 def on() -> bool:
@@ -174,19 +181,19 @@ def look(now: "float | None" = None) -> None:
         body = {k: v for k, v in d.items() if k != "at"}
         if board is None:
             if started:
-                _send(rec, chat, d, body, cap, kb, now)
+                _send(rec, chat, found, d, body, cap, kb, now)
             return
         if body != _sent.get("data") or (found and now - _sent.get("at", 0) >= REFRESH_S):
             if telegram.tg("editMessageWidgetData", chat_id=board["chat"], message_id=board["msg"],
                            chat_data=dump(d)):
-                _sent.update(data=body, at=now)
+                _sent.update(data=body, at=now, keys=_keys(found, d))
         if (cap, kb) != (_sent.get("caption"), _sent.get("kb")):
             if telegram.tg("editMessageCaption", chat_id=board["chat"], message_id=board["msg"],
                            caption=cap, reply_markup=json.dumps(kb or {"inline_keyboard": []})):
                 _sent.update(caption=cap, kb=kb)
 
 
-def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> None:
+def _send(rec: dict, chat: int, found: list, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> None:
     with open(PAGE, encoding="utf-8") as f:
         html = f.read()
     msg = telegram.tg("sendWidget", chat_id=chat, html=html, chat_data=dump(d), caption=cap,
@@ -197,8 +204,48 @@ def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None"
     rec["board"] = {"chat": chat, "msg": msg["message_id"], "at": int(now), "v": PAGE_V}
     _save(rec)
     _sent.clear()
-    _sent.update(data=body, at=now, caption=cap, kb=kb)
+    _sent.update(data=body, at=now, caption=cap, kb=kb, keys=_keys(found, d))
     telegram.tg("pinChatMessage", chat_id=chat, message_id=msg["message_id"], disable_notification="true")
+
+
+def _keys(found: list, d: dict) -> dict:
+    """The row keys a Stop may name, as the board was last sent them: running rows only."""
+    shown = {r["k"] for r in d["rows"] if r["c"] == "r"}
+    return {r["sid"][:8]: r["sid"] for r in found if r["sid"][:8] in shown}
+
+
+def on_query(q: dict) -> None:
+    """The poll loop's hook for a widget_query: handled off the poll thread."""
+    threading.Thread(target=query, args=(q,), name="tg-board-tap", daemon=True).start()
+
+
+def query(q: dict) -> None:
+    """One request from the board, answered exactly once; a Stop that lands is followed
+    by a look at once, so the board catches up within a second or two."""
+    answer = "no"
+    try:
+        answer = _stop(q)
+    except Exception as e:  # noqa: BLE001
+        print(f"[tgboard] query failed: {e}", file=sys.stderr)
+    telegram.tg("answerWidgetQuery", widget_query_id=q.get("id"), data=answer)
+    if answer == "ok":
+        look()
+
+
+def _stop(q: dict) -> str:
+    sender = (q.get("from") or {}).get("id")
+    if config.ALLOWED_CHAT_IDS and sender not in config.ALLOWED_CHAT_IDS:
+        return "no"
+    board = record()["board"]
+    chat = (q.get("chat") or {}).get("id")
+    if not board or chat != config.DASH_CHAT_ID or chat != board["chat"] or q.get("message_id") != board["msg"]:
+        return "no"
+    act, _, key = str(q.get("data") or "").partition(":")
+    sid = (_sent.get("keys") or {}).get(key)
+    if act != "s" or not sid:
+        return "no"
+    job = runner._latest_jobs().get(sid)
+    return "ok" if job and job.interrupt() else "gone"
 
 
 def pin_line(msg: dict) -> bool:
