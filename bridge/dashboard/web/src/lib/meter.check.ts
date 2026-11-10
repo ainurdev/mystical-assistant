@@ -2,7 +2,7 @@
 //
 // The SESSION tab's drawing: the clock folds long waits, the strip's slivers
 // merge for the eye only, the window steps, the bands follow the path's steps.
-import { BREAK, bands, calm, clock, kindRows, stepLine, timeOf, toNow } from "./meter.ts";
+import { BREAK, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "./meter.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -46,3 +46,15 @@ ok(big.filter((r) => r.kind === "other").length === 1 && big.at(-1)!.kind === "o
 ok(timeOf(segs).you === 13 * 3600 && timeOf(segs).tools === 100, "time sums the strip");
 ok(toNow(segs, 99999 + 13 * 3600, true).at(-1)![1] === 99999 + 13 * 3600, "a live strip runs to now");
 ok(toNow(segs, 99999 + 13 * 3600, false) === segs, "a finished one doesn't");
+
+// FLOW's numbers per step: worked seconds inside its bands, the spend of the turns
+// that started in them, and the first of those turns; a step back after a /compact adds up.
+const sb = [{ from: 100, to: 300, label: "GRILL", tone: "done" as const }, { from: 300, to: 310, label: "", tone: "compact" as const },
+  { from: 310, to: 400, label: "BUILD HERE", tone: "now" as const }, { from: 400, to: null, label: "GRILL", tone: "now" as const }];
+const st = stepStats(sb, [[100, 150, "claude"], [150, 250, "you"], [250, 320, "tools"], [320, 500, "helpers"]],
+  [{ id: "a", started: 100 }, { id: "b", started: 200 }, { id: "c", started: 300 }, { id: "d", started: 310 }, { id: "e", started: 450 }],
+  { a: { spent: 10 }, b: { spent: 5 }, c: { spent: 99 }, d: { spent: 7 }, e: { spent: 1 } });
+ok(st.get("GRILL")!.secs === 50 + 50 + 100 && st.get("GRILL")!.tokens === 16 && st.get("GRILL")!.turn === "a",
+  "a step sums worked time and spend over all its bands, waits left out");
+ok(st.get("BUILD HERE")!.secs === 10 + 80 && st.get("BUILD HERE")!.tokens === 7 && st.get("BUILD HERE")!.turn === "d", "its first turn is the jump");
+ok(!st.has(""), "a /compact sliver is no step");

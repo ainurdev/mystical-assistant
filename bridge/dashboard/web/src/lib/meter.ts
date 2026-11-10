@@ -86,6 +86,28 @@ export function bands(
   return out;
 }
 
+/** FLOW's numbers, by band label (a step's label, upper case): the seconds
+ *  something worked inside its bands (waits on you and away left out), what the
+ *  turns that started in them spent, and the first of those turns to jump to. */
+export function stepStats(
+  bs: Band[], segs: Meter["segs"], turns: { id: string; started?: number }[], spent: Record<string, { spent: number }>,
+): Map<string, { secs: number; tokens: number; turn: string | null }> {
+  const out = new Map<string, { secs: number; tokens: number; turn: string | null }>();
+  for (const b of bs) {
+    if (b.tone === "compact" || !b.label) continue;
+    const to = b.to ?? Infinity;
+    const s = out.get(b.label) ?? { secs: 0, tokens: 0, turn: null };
+    for (const [a, e, who] of segs) if (who !== "you" && who !== "away") s.secs += Math.max(0, Math.min(e, to) - Math.max(a, b.from));
+    for (const t of turns) {
+      if (t.started == null || t.started < b.from || t.started >= to) continue;
+      s.tokens += spent[t.id]?.spent ?? 0;
+      s.turn ??= t.id;
+    }
+    out.set(b.label, s);
+  }
+  return out;
+}
+
 export const KIND: Record<string, string> = {
   claude: "Claude wrote", startup: "Start-up", commands: "Commands", files: "Files read", skills: "Skills",
   helpers: "Helpers", you: "You", summary: "Summary", web: "Web", search: "Search", mcp: "MCP tools", other: "Other",
