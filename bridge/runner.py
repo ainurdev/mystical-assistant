@@ -202,6 +202,15 @@ _HIDDEN_BROWSER_NOTE = (
     "headless (SETTINGS → SYSTEM → BROWSER). Never open a visible browser on this "
     "machine — no `open <url>`, no headed launches; the user is working in front of it.")
 
+_CHROME_NOTE = (
+    "Claude in Chrome is on: the claude-in-chrome tools work in the user's own Chrome, "
+    "signed in where they are. Use them when a task needs a real logged-in browser, in "
+    "tabs you open yourself; leave the user's tabs alone. They are not covered by the "
+    "no-visible-browser rule. If they report not connected, Chrome is closed or its "
+    "extension is signed in to another account than this run's: say so once instead of "
+    "retrying. When a page needs the human (a login, CAPTCHA or 2FA), ask them rather "
+    "than wait.")
+
 # Told to every run while the AI tab's GRILL AS CARDS switch is on: ASK_SYSTEM_PROMPT's
 # "one decision, not an interrogation" fights a grilling skill's rounds of questions,
 # and a round of taps suits a phone. Constant text, so the appended prompt stays
@@ -235,7 +244,8 @@ _EXPERIMENTAL_NOTE = (
     "tested and just needs a check, go ahead normally.")
 
 
-def _compose_system_prompt(graph: str = "", rivendell: str = "", paths_pack: str = "") -> str:
+def _compose_system_prompt(graph: str = "", rivendell: str = "", paths_pack: str = "",
+                           chrome: bool = False) -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
     session that gets it), then the graph pack.
 
@@ -248,6 +258,7 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "", paths_pack: str
     extra = _EXPERIMENTAL_NOTE if experimental.enabled() else ""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, _UX_NOTE, extra,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
+                         _CHROME_NOTE if chrome else "",
                          _GRILL_NOTE if aifeatures.enabled("grillcards") else "",
                          rivendell, paths_pack, graph.strip()) if p]
     return "\n\n".join(parts)
@@ -620,6 +631,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     --resume (which requires an existing transcript).
     """
     fmt = "stream-json" if stream else "json"
+    chrome = bool(config.CHROME_ACCESS and interactive and claude_session_id and not skip_pack)
     cmd = [claude_bin(), "-p"]
     if not interactive:
         cmd.append(prompt)  # text input as an arg
@@ -650,6 +662,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
             # still take MCP off entirely.
             extra, strict = _external_mcp(disabled_tools, cwd)
             cmd += ["--mcp-config", _mcp_config(claude_session_id, extra, gateway)]
+            if chrome:
+                cmd.append("--chrome")
             if strict:
                 cmd.append("--strict-mcp-config")
                 if disabled_tools is None:
@@ -690,7 +704,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)
                if interactive and claude_session_id and not skip_pack else "")
     pp = paths.pack_for(claude_session_id) if interactive and claude_session_id and not skip_pack else ""
-    cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note, pp)]
+    cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note, pp, chrome)]
     hooks = {}
     if interactive and not skip_pack:
         # bridge/askhook.py: options offered in prose go back once to be asked
