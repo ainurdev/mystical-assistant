@@ -27,9 +27,11 @@ r:function(r,now){return li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),clock(now-r.a))}
 h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")}};
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){return'<div class="empty">Nothing is running.</div>'}
+function left(d){return'<div class="empty">'+(d.left=="off"?"The Live board is off.":"This board moved down the chat.")+"</div>"}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
 function render(d,open,now){
 if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
+if(d.left)return left(d);
 var rs=d.rows||[],h=head(d,now)+(rs.length?"":quiet(d));
 for(var i=0;i<rs.length;i++)if(K[rs[i].c])h+=K[rs[i].c](rs[i],now,open);
 return h+more(d)}

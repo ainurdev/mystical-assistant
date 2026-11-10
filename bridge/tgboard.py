@@ -39,11 +39,17 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   every board call until N seconds have passed; anything else is simply tried again on
   a later look, since what was sent stays as it was.
 - With Telegram notifications off as a whole (config.NOTIFY_ENABLE) no board is sent by
-  a turn start, but one already recorded is kept current: it never rings.
+  a turn start, but one already recorded is kept current: it never rings. /status still brings one.
+- /status (status) sends a fresh board, pins it and deletes the old one. Telegram won't
+  delete a message over DELETE_S old, and may refuse anyway: then the old board is left
+  behind, with one last data edit {"left": "moved"} and an unpin, and never touched
+  again. Switching Experimental off leaves the board the same way with "off"; _off
+  keeps a look with the switch off from reading anything after that.
+- A recorded board of another PAGE_V is never fed: its page can't read this data. The
+  next turn start replaces it as /status does; it gets no "left" edit, only the unpin.
 
 Not here yet (later tickets): Needs-you rows and their
-buttons (04), Stop from a row (05), /status and a board left behind (06), usage bars
-(07), limit cards (08), work-run rows (09).
+buttons (04), Stop from a row (05), usage bars (07), limit cards (08), work-run rows (09).
 """
 
 import json
@@ -69,6 +75,8 @@ _lock = threading.Lock()
 _seen: "set[str]" = set()     # sessions running at the last look: a turn start is one not in here
 _sent: dict = {}              # what the recorded board last got: data (minus "at"), at, caption, kb
 _wait = [0.0]                 # no board call before this time: Telegram's "retry after"
+_off = [False]                # the switch was off at the last look, and any board was left: nothing to read
+DELETE_S = 48 * 3600          # Telegram deletes only messages younger than this
 # shortcut: refusals are matched on Telegram's English text (tg drops parameters.retry_after); if Telegram rewords them, read the structured fields in tg
 GONE = ("message with widget to edit not found", "message to edit not found")
 
@@ -168,12 +176,28 @@ def buttons(chat: int) -> "dict | None":
     return telegram.panel_kb(chat, label="◈ Open panel")
 
 
+def _picture(chat: int, found: list, now: float) -> tuple:
+    d = data(found, now)
+    return d, {k: v for k, v in d.items() if k != "at"}, caption(found), buttons(chat)
+
+
 def look(now: "float | None" = None) -> None:
     """One look: send, pin or edit whatever changed. Never raises past a refusal
     (tg returns None for those); the watcher catches the rest."""
-    if not on():
-        return
     now = now or time.time()
+    if not on():
+        if not _off[0]:                 # just switched off (or booted off): leave any board behind once
+            with _lock:
+                rec = record()
+                if rec["board"] is not None:
+                    _leave(rec["board"], "off", now)
+                    rec["board"] = None
+                    _save(rec)
+                _sent.clear()
+                _seen.clear()           # switched back on, running turns are starting again
+                _off[0] = True
+        return
+    _off[0] = False
     if now < _wait[0]:
         return
     with _lock:
@@ -185,12 +209,52 @@ def look(now: "float | None" = None) -> None:
         _seen.update(running)
         rec = record()
         board = rec["board"]
-        d, cap, kb = data(found, now), caption(found), buttons(chat)
-        body = {k: v for k, v in d.items() if k != "at"}
+        pic = _picture(chat, found, now)
+        if board is not None and board.get("v") != PAGE_V:
+            if started:                 # its page can't read this data: a new board replaces it
+                _replace(rec, chat, *pic, now)
+            return
         if board is not None:
-            _edit(rec, board, d, body, cap, kb, bool(found), now)
+            _edit(rec, board, *pic, bool(found), now)
         if rec["board"] is None and started and config.NOTIFY_ENABLE and now >= _wait[0]:
-            _send(rec, chat, d, body, cap, kb, now)    # also when this look found the board gone
+            _send(rec, chat, *pic, now)    # also when this look found the board gone
+
+
+def status(chat: int, private: bool, now: "float | None" = None) -> bool:
+    """/status: in the owner's chat with the board on, a fresh board at the bottom of
+    the chat, the old one removed or left behind, then a look. False when the caller
+    should answer with today's text (off, another chat, a group, a refused widget)."""
+    if not (on() and private and chat == config.DASH_CHAT_ID):
+        return False
+    now = now or time.time()
+    if now < _wait[0]:
+        return False
+    with _lock:
+        ok = _replace(record(), chat, *_picture(chat, rows(chat), now), now)
+    if ok:
+        look(now)
+    return ok
+
+
+def _replace(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> bool:
+    """A new board sent and pinned, then the old one deleted, or left behind when
+    Telegram won't delete it."""
+    old = rec["board"]
+    if not _send(rec, chat, d, body, cap, kb, now):
+        return False
+    if old and not (now - old["at"] < DELETE_S
+                    and telegram.tg("deleteMessage", chat_id=old["chat"], message_id=old["msg"])):
+        _leave(old, "moved", now)
+    return True
+
+
+def _leave(board: dict, why: str, now: float) -> None:
+    """A board left behind: one last update saying why (only if its page reads this
+    version's data), and unpinned. Never touched again."""
+    if board.get("v") == PAGE_V:
+        telegram.tg("editMessageWidgetData", chat_id=board["chat"], message_id=board["msg"],
+                    chat_data=dump({"v": PAGE_V, "at": int(now), "left": why}))
+    telegram.tg("unpinChatMessage", chat_id=board["chat"], message_id=board["msg"])
 
 
 def _edit(rec: dict, board: dict, d: dict, body: dict, cap: str, kb: "dict | None",
@@ -231,7 +295,7 @@ def _flood(err: str, now: float) -> bool:
     return bool(m)
 
 
-def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> None:
+def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> bool:
     with open(PAGE, encoding="utf-8") as f:
         html = f.read()
     msg = telegram.tg("sendWidget", chat_id=chat, html=html, chat_data=dump(d), caption=cap,
@@ -239,12 +303,13 @@ def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None"
                       reply_markup=json.dumps(kb) if kb else None)
     if not isinstance(msg, dict) or not msg.get("message_id"):
         _flood(getattr(telegram._last, "error", ""), now)
-        return                          # refused: the next turn start tries again
+        return False                    # refused: the next turn start tries again
     rec["board"] = {"chat": chat, "msg": msg["message_id"], "at": int(now), "v": PAGE_V}
     _save(rec)
     _sent.clear()
     _sent.update(data=body, at=now, caption=cap, kb=kb)
     telegram.tg("pinChatMessage", chat_id=chat, message_id=msg["message_id"], disable_notification="true")
+    return True
 
 
 def pin_line(msg: dict) -> bool:
