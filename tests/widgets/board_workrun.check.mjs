@@ -18,6 +18,11 @@ check("no +N when only one item is in progress", () => {
   assert.match(p.text(), /done · Board stop row 10:00 ■$/);
 });
 
+check("no item in progress: no trailing separator", () => {
+  const p = load("board.html", board([{ ...W, s: "", p: [3, 7, 0] }]));
+  assert.match(p.text(), /work run · 3 of 7 done 10:00 ■$/);
+});
+
 check("Keep / Stop: Keep restores the row, Stop sends w:<key> and reads Stopping…", () => {
   const p = load("board.html", board([W]));
   const before = p.html();

@@ -32,7 +32,7 @@ function li(r,s,right,t){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<
 var K={
 r:function(r,now,open){return open==r.k?ask(r):li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),S[r.k]?"Stopping…":clock(now-r.a)+sq(r))},
 h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")},
-w:function(r,now,open){var p=r.p;return K.r({k:r.k,t:r.t,a:r.a,s:"work run · "+p[0]+" of "+p[1]+" done · "+r.s+(p[2]?" +"+p[2]:"")},now,open)}};
+w:function(r,now,open){var p=r.p;return K.r({k:r.k,t:r.t,a:r.a,s:"work run · "+p[0]+" of "+p[1]+" done"+(r.s?" · "+r.s:"")+(p[2]?" +"+p[2]:"")},now,open)}};
 function bt(c,a,k,l,t){return'<span class="'+c+'" role="button" aria-label="'+l+" "+t+'" data-a="'+a+'" data-k="'+esc(k)+'">'+(c=="x"?"■":l)+"</span>"}
 function sq(r){return bt("x","x",r.k,"Stop",esc(r.t))}
 function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k",r.k,"Keep",t)+bt("b","s",r.k,"Stop",t),"Stop "+t+"?")}

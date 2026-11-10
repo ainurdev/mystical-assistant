@@ -138,23 +138,25 @@ def rows(chat: int) -> list:
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
 
 
-def _run(sid: str) -> "tuple[str, dict] | tuple[None, None]":
-    """The project and the running work run this session manages (workrun._mark_chat), if any."""
+def _managed_run(sid: str) -> "tuple":
+    """(project, its work list, the run) for the running work run this session manages
+    (workrun._mark_chat), or Nones."""
     mark = store.parse_json((store.get_session(sid) or {}).get("chat_config")).get("_work") or {}
     root = mark.get("root")
-    run = root and next((r for r in worklist.load(root)["runs"] if r.get("id") == mark.get("run")), None)
-    return (root, run) if run and run.get("state") == "running" else (None, None)
+    data = worklist.load(root) if root else {"runs": []}
+    run = next((r for r in data["runs"] if r.get("id") == mark.get("run")), None)
+    return (root, data, run) if run and run.get("state") == "running" else (None, None, None)
 
 
 def _work_row(r: dict) -> None:
     """A manager's row, while its run is running, becomes a work-run row: counts, an item in
     progress and the run's start (the page composes the words, so the title keeps its bytes)."""
-    root, run = _run(r["sid"])
+    _, data, run = _managed_run(r["sid"])
     if not run:
         return
-    items = [i for i in worklist.load(root)["items"] if i["id"] in run.get("items", [])]
-    doing = [i["title"] for i in items if i["state"] == "doing"]
-    r.update(c="w", s=doing[0] if doing else "", a=run.get("started"), n="",
+    items = [i for i in data["items"] if i["id"] in run.get("items", [])]
+    doing = [i["title"] for i in items if i["state"] == "doing"]   # not review: that waits on the manager
+    r.update(c="w", s=doing[0] if doing else "", a=run.get("started"), n="",   # no tokens on a work-run row
              p=[sum(i["state"] == "done" for i in items), len(items), max(len(doing) - 1, 0)])
 
 
@@ -275,7 +277,7 @@ def _stop(q: dict) -> str:
     if not sid:
         return "no"
     if req.startswith("w:"):            # what /work stop does: the run pauses, its turns stop
-        root, run = _run(sid)
+        root, _, run = _managed_run(sid)
         if not run:
             return "gone"
         workrun._stop(root, run)
