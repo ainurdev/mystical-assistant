@@ -21,7 +21,7 @@ export function load(page, chatData, { now = 1794300000 } = {}) {
     window: { TelegramWidget: widget },
     document: { getElementById: () => el },
     setInterval: (fn) => timers.push(fn),
-    Date: { now: () => clock.now * 1000 },
+    Date: Object.assign(function (...a) { return new Date(...(a.length ? a : [clock.now * 1000])); }, { now: () => clock.now * 1000 }),
   };
   vm.createContext(ctx);
   vm.runInContext(script, ctx);

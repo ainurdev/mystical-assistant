@@ -5,7 +5,7 @@ import sys
 import threading
 
 from bridge import (accounts, config, graphmap, integrations, ladder, limits, notices, profiles,
-                    report, state, store, tgask, tgfiles, tglive, tgtopics, usage)
+                    report, state, store, tgask, tgboard, tgfiles, tglive, tgtopics, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.telegram import answer_cb, edit, edit_markup, panel_kb, send
@@ -490,7 +490,7 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     kind = parts[1]
     if kind == "w":
         answer_cb(cb["id"], "Waiting for reset")
-        edit(chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
+        _fallback_line(cb, chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
         # The card's answer, so the bell stops asking (bridge/notices.py needs()),
         # and so does the dashboard chat's card (the parked status's offer).
         limits.offer(sid, None)
@@ -504,9 +504,17 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
         return
     answer_cb(cb["id"], "Starting…")
     taken = ladder.take(session, chat_id, rung)
-    edit(chat_id, msg_id,
-         f"↪ Continuing on {rung['label']}." if taken else
-         "⚠️ Couldn't hand the work over — still parked until the limit resets.")
+    _fallback_line(cb, chat_id, msg_id,
+                   f"↪ Continuing on {rung['label']}." if taken else
+                   "⚠️ Couldn't hand the work over — still parked until the limit resets.")
+
+
+def _fallback_line(cb: dict, chat_id: int, msg_id: int, line: str) -> None:
+    """The card's answer: its text rewritten, or its caption when it is a limit card."""
+    if (cb.get("message") or {}).get("widget") is not None:
+        tgboard.card_caption(chat_id, msg_id, line)
+    else:
+        edit(chat_id, msg_id, line)
 
 
 def _relogin_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:

@@ -1944,12 +1944,16 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                            model=model, effort=effort):
             return True
         if first:
-            _notify(job.chat_id,
-                    f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
-                    f"will auto-resume when the limit resets (~{limits.when_tg(when)}).",
-                    _session_kb(job.chat_id, sid), kind="parked", sid=sid,
+            from bridge import tgboard           # lazy: tgboard imports runner
+            text = (f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
+                    f"will auto-resume when the limit resets (~{limits.when_tg(when)}).")
+            kb = _session_kb(job.chat_id, sid)
+            _notify(job.chat_id, text, kb, kind="parked", sid=sid,
                     body=f"Hit the usage limit. It resumes on its own around {limits.when_str(when)}.",
-                    always=job.tg_live)
+                    always=job.tg_live,
+                    ask=lambda: tgboard.limit_card(job.chat_id, sid, text, kb,
+                                                   silent=notices.tier("parked") != "needs",
+                                                   thread=tgtopics.thread_for(job.chat_id, sid)))
             job.told = True
         return True
     if limits.is_server_error(job.result or job.error_msg):
