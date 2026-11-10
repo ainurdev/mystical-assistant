@@ -32,13 +32,23 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - The page (bridge/widgets/board.html) is fixed once sent, so it draws everything from
   that data. PAGE_V is its version, in the record and in the data.
 
-Not here yet (later tickets): refusals and a deleted board (03), Needs-you rows and their
+- A refused call is read from the description telegram.tg keeps (ticket 01 recorded the
+  texts): "message is not modified" is success; "message (with widget) to edit not
+  found" means the owner deleted it, so the record is cleared and no board is sent until
+  the next turn starts (_seen already holds the running ones); "retry after N" stops
+  every board call until N seconds have passed; anything else is simply tried again on
+  a later look, since what was sent stays as it was.
+- With Telegram notifications off as a whole (config.NOTIFY_ENABLE) no board is sent by
+  a turn start, but one already recorded is kept current: it never rings.
+
+Not here yet (later tickets): Needs-you rows and their
 buttons (04), Stop from a row (05), /status and a board left behind (06), usage bars
 (07), limit cards (08), work-run rows (09).
 """
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -58,6 +68,9 @@ PAGE = os.path.join(os.path.dirname(__file__), "widgets", "board.html")
 _lock = threading.Lock()
 _seen: "set[str]" = set()     # sessions running at the last look: a turn start is one not in here
 _sent: dict = {}              # what the recorded board last got: data (minus "at"), at, caption, kb
+_wait = [0.0]                 # no board call before this time: Telegram's "retry after"
+# shortcut: refusals are matched on Telegram's English text (tg drops parameters.retry_after); if Telegram rewords them, read the structured fields in tg
+GONE = ("message with widget to edit not found", "message to edit not found")
 
 
 def on() -> bool:
@@ -161,6 +174,8 @@ def look(now: "float | None" = None) -> None:
     if not on():
         return
     now = now or time.time()
+    if now < _wait[0]:
+        return
     with _lock:
         chat = config.DASH_CHAT_ID
         found = rows(chat)
@@ -172,18 +187,48 @@ def look(now: "float | None" = None) -> None:
         board = rec["board"]
         d, cap, kb = data(found, now), caption(found), buttons(chat)
         body = {k: v for k, v in d.items() if k != "at"}
-        if board is None:
-            if started:
-                _send(rec, chat, d, body, cap, kb, now)
+        if board is not None:
+            _edit(rec, board, d, body, cap, kb, bool(found), now)
+        if rec["board"] is None and started and config.NOTIFY_ENABLE and now >= _wait[0]:
+            _send(rec, chat, d, body, cap, kb, now)    # also when this look found the board gone
+
+
+def _edit(rec: dict, board: dict, d: dict, body: dict, cap: str, kb: "dict | None",
+          busy: bool, now: float) -> None:
+    if body != _sent.get("data") or (busy and now - _sent.get("at", 0) >= REFRESH_S):
+        ok = _answer(telegram.tg("editMessageWidgetData", chat_id=board["chat"],
+                                 message_id=board["msg"], chat_data=dump(d)), rec, now)
+        if ok is None:
             return
-        if body != _sent.get("data") or (found and now - _sent.get("at", 0) >= REFRESH_S):
-            if telegram.tg("editMessageWidgetData", chat_id=board["chat"], message_id=board["msg"],
-                           chat_data=dump(d)):
-                _sent.update(data=body, at=now)
-        if (cap, kb) != (_sent.get("caption"), _sent.get("kb")):
-            if telegram.tg("editMessageCaption", chat_id=board["chat"], message_id=board["msg"],
-                           caption=cap, reply_markup=json.dumps(kb or {"inline_keyboard": []})):
-                _sent.update(caption=cap, kb=kb)
+        if ok:
+            _sent.update(data=body, at=now)
+    if (cap, kb) != (_sent.get("caption"), _sent.get("kb")):
+        ok = _answer(telegram.tg("editMessageCaption", chat_id=board["chat"], message_id=board["msg"],
+                                 caption=cap, reply_markup=json.dumps(kb or {"inline_keyboard": []})),
+                     rec, now)
+        if ok:
+            _sent.update(caption=cap, kb=kb)
+
+
+def _answer(result, rec: dict, now: float) -> "bool | None":
+    """An edit's outcome: True done, False try again later, None stop this look (the
+    board is gone, or Telegram asked to wait)."""
+    err = getattr(telegram._last, "error", "") if not result else ""
+    if result or "message is not modified" in err:
+        return True
+    if any(g in err for g in GONE):
+        rec["board"] = None
+        _save(rec)
+        _sent.clear()
+        return None
+    return None if _flood(err, now) else False
+
+
+def _flood(err: str, now: float) -> bool:
+    m = re.search(r"retry after (\d+)", err)
+    if m:
+        _wait[0] = now + int(m.group(1))
+    return bool(m)
 
 
 def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None", now: float) -> None:
@@ -193,6 +238,7 @@ def _send(rec: dict, chat: int, d: dict, body: dict, cap: str, kb: "dict | None"
                       allow_queries="true", disable_notification="true",
                       reply_markup=json.dumps(kb) if kb else None)
     if not isinstance(msg, dict) or not msg.get("message_id"):
+        _flood(getattr(telegram._last, "error", ""), now)
         return                          # refused: the next turn start tries again
     rec["board"] = {"chat": chat, "msg": msg["message_id"], "at": int(now), "v": PAGE_V}
     _save(rec)
