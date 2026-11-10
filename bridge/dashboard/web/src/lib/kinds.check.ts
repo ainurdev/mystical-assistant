@@ -21,6 +21,8 @@ const guesses: [string, string | null][] = [
   ["why does the build fail on CI?", "fix"],
   ["reimagine prompt boxes so each kind of work gets its own", "design"],
   ["better ui for the plugins tab", "design"],
+  ["the sidebar for mail in contact have bad ui", "design"],
+  ["porpmt box have issues, when title is long, pr compoennt will be out of layout, lets redesign it", "design"],
   ["add avatar with its border to inbox header as well", "build"],
   ["what is not pushed on my local branches?", "ask"],
   ["give me local status on branches and what is not pushed", "ask"],
@@ -29,9 +31,16 @@ const guesses: [string, string | null][] = [
 ];
 const START = { start: true, design: true }, MID = { start: false, design: true };
 for (const [t, k] of guesses) console.assert(guessKind(t, START) === k, `guessKind(${JSON.stringify(t)}) = ${k}, got ${guessKind(t, START)}`);
+// Real first prompts that only mention a UI word (bug reports, questions, build and ship asks) and went out as DESIGN.
+for (const t of ["shadow of propmt box in middle earth theme is bad", "remove design tab and add it to per project setting",
+  "so explain the lifecycle of design, how we can enable it for a client", "do we have ui for disabling student app? based on video 7",
+  "lets commit all changes, create a new realese for nr design with some update notes (so short)",
+  "take screenshots and make sure everything works good, layout are following good ux"])
+  console.assert(guessKind(t, START) !== "design", `${JSON.stringify(t)} is not design work`);
 // Rule order, and Design/Fix only at a session's start.
 const more: [string, typeof START, string | null][] = [
-  ["i mean UI", MID, null], ["i mean UI", START, "design"],
+  ["i mean UI", MID, null], ["i mean UI", START, null],
+  ["better ui for the plugins tab", MID, null],
   ["the session list jumps when a turn ends", MID, null],
   ["merge this into master locally then clean up", MID, "ship"], ["merge this into master locally then clean up", START, "ship"],
   ["did we fix project layout?", START, "ask"], ["is the ui done?", START, "ask"],

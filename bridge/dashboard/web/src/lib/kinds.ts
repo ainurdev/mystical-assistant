@@ -54,7 +54,9 @@ const SHIP = /^(merge|push|commit|rebase|ship|release|deploy|integrate)\b|\b(cle
 // FIX and DESIGN rewrite the prompt, so a word glued into a name by - . / (dashboard-layout, error-boundary.tsx,
 // ui/Button) is not intent: \b would split the name and fire on it.
 const FIX = /(?<![\w./-])(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|error|crash\w*|exception|stuck|hang(s|ing)?|freez\w*|slow|lag\w*|wrong|missing|jump(s|ing)?|flicker\w*|regress\w*|can'?t|cannot|isn'?t|won'?t|no longer)(?![\w/-]|\.\w)|^fix /;
-const DESIGN = /(?<![\w./-])(design|redesign|reimagine|mock-?ups?|layout|ui|ux|look and feel|restyle|style|theme|visual\w*)(?![\w/-]|\.\w)/;
+// DESIGN wants a design phrase, not a UI word: "theme is bad", "the design tab", "explain design" were bug reports,
+// build asks and questions that went out as /design-first. A design prompt it misses costs one tap.
+const DESIGN = /(^(design|mock ?up)|(?<![\w./-])(re-?design|reimagine|restyle|mock-?ups?|look and feel)|\b(better|cooler|nicer|proper|bad|weird)( and \w+)? (ui|ux|layout))(?![\w/-]|\.\w)/;
 const ASK = /\?$|^(what|why|how|where|which|who|when|explain|tell me|show me|give me|list)\b/;
 const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|refactor|improve|extend|write|put|let'?s|lets|we need|i want)\b/;
 
