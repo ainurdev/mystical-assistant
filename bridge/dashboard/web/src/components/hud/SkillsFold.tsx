@@ -393,7 +393,7 @@ function SkillsGrid({ project }: { project: string | null }) {
         <>
           <input className="aim-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the catalog…" />
           <div className="aim-chips">
-            {CATS.filter((c) => c.k === "all" || counts[c.k]).map((c) => (
+            {CATS.map((c) => (
               <button key={c.k} type="button" className="aim-chipbtn" data-on={cat === c.k || undefined}
                 style={{ "--c": c.k === "all" ? "var(--acc)" : CAT_COLOR[c.k] } as React.CSSProperties}
                 onClick={() => setCat(c.k)}>
