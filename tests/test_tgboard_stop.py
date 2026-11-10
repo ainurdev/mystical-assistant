@@ -37,6 +37,8 @@ def tg(monkeypatch):
     store.set_setting(tgboard.KEY, None)
     tgboard._seen.clear()
     tgboard._sent.clear()
+    tgboard._wait[0] = 0
+    tgboard._off[0] = False
     runner._jobs.clear()
     calls.stopped = stopped
     yield calls

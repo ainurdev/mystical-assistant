@@ -42,9 +42,11 @@ function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k"
 function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){for(var i in D.rows)if(D.rows[i].k==k)S[k]=D.rows[i].a;T.request("s:"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
 function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
+function left(d){return'<div class="empty">'+(d.left=="off"?"The Live board is off.":"This board moved down the chat.")+"</div>"}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
 function render(d,open,now){
 if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
+if(d.left)return left(d);
 var rs=d.rows||[],h=head(d,now)+(rs.length?"":quiet(d));
 for(var i=0;i<rs.length;i++)if(K[rs[i].c])h+=K[rs[i].c](rs[i],now,open);
 return h+more(d)}

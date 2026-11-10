@@ -370,6 +370,9 @@ def on_message(msg: dict):
         send(chat_id, handle_work_command(chat_id, text, thread), thread=thread, markdown=False)
         return
     if text == "/status":
+        from bridge import tgboard
+        if tgboard.status(chat_id, msg["chat"].get("type") == "private"):
+            return
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
         key = state.project_key(chat_id)

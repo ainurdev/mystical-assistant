@@ -19,7 +19,7 @@ export function ExperimentalSection({ top, onOpenAgentTools }: { top?: boolean; 
   return (
     <>
       <Section title="EXPERIMENTAL" icon={FlaskConical} top={top}
-        desc="Lets a chat switch provider between turns and run helper agents beside it, with MCP servers and skills shared across models."
+        desc="Lets a chat switch provider between turns and run helper agents beside it, with MCP servers and skills shared across models. It also turns on the Live board: one pinned message in Telegram that follows running turns."
         info={<>
           Off, the bridge and the dashboard behave as they did. Helpers cost tokens quickly: this suits review, research and
           well-separated pieces, and suits tightly linked coding less. What's sent to another provider goes to its vendor.
