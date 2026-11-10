@@ -12,6 +12,10 @@ const guesses: [string, string | null][] = [
   ["merge this into master locally then clean up", "ship"],
   ["push to main, also make sure the people tab uses those avatars", "ship"],
   ["create pr to v1 dashboard", "ship"],
+  // Went out as /design-first: "layout" inside the branch name, "ui" beside a merge.
+  ["add these changes into dashboard-layout branch, thenc lean up", "ship"],
+  ["we want to gether ui changes except new videos and guide branches into one ui branch then clean up", "ship"],
+  ["move changes into main and clean up", "ship"],
   ["the session list jumps when a turn ends", "fix"],
   ["fix suggested word when side with another word", "fix"],
   ["why does the build fail on CI?", "fix"],

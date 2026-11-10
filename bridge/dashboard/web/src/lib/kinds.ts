@@ -49,9 +49,12 @@ export interface GuessCtx { start: boolean; design: boolean }
 // First match wins, so order is priority: "merge the broken fix" is shipping, "why does it fail?" is a fix,
 // and a trailing "?" is a question even about the ui ("is the ui done?"). The yes/no openers
 // (can, do, is...) count only through that "?": without one, "can you upload X" is a request.
-const SHIP = /^(merge|push|commit|rebase|ship|release|deploy|clean ?up|integrate)\b|\b(create (a )?pr|open (a )?pr|merge (this|it|into)|push (it|this|to))\b/;
-const FIX = /\b(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|error|crash\w*|exception|stuck|hang(s|ing)?|freez\w*|slow|lag\w*|wrong|missing|jump(s|ing)?|flicker\w*|regress\w*|can'?t|cannot|isn'?t|won'?t|no longer)\b|^fix /;
-const DESIGN = /\b(design|redesign|reimagine|mock-?ups?|layout|ui|ux|look and feel|restyle|style|theme|visual\w*)\b/;
+// "clean up" and "into … branch" ship anywhere in the prompt: in a month of real prompts every one merged, then cleaned up.
+const SHIP = /^(merge|push|commit|rebase|ship|release|deploy|integrate)\b|\b(clean ?up|create (a )?pr|open (a )?pr|merge (this|it|into)|push (it|this|to))\b|\binto\b[^,.?!]{0,30}\bbranch\b/;
+// FIX and DESIGN rewrite the prompt, so a word glued into a name by - . / (dashboard-layout, error-boundary.tsx,
+// ui/Button) is not intent: \b would split the name and fire on it.
+const FIX = /(?<![\w./-])(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|error|crash\w*|exception|stuck|hang(s|ing)?|freez\w*|slow|lag\w*|wrong|missing|jump(s|ing)?|flicker\w*|regress\w*|can'?t|cannot|isn'?t|won'?t|no longer)(?![\w/-]|\.\w)|^fix /;
+const DESIGN = /(?<![\w./-])(design|redesign|reimagine|mock-?ups?|layout|ui|ux|look and feel|restyle|style|theme|visual\w*)(?![\w/-]|\.\w)/;
 const ASK = /\?$|^(what|why|how|where|which|who|when|explain|tell me|show me|give me|list)\b/;
 const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|refactor|improve|extend|write|put|let'?s|lets|we need|i want)\b/;
 
