@@ -12,6 +12,7 @@ body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans
 .t,.s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
 .more{padding:2px 0 6px 41px}
+.v{color:var(--tg-theme-link-color)}
 </style><div id="b"></div><script>
 var T=window.TelegramWidget,D=null,O=null;
 var C=["#ff885e,#ff516a","#ffcd6a,#ffa85c","#a695e7,#7c6fd3","#a0de7e,#54cb68","#53edd6,#28c9b7","#72d5fd,#2a9ef1","#e0a2f3,#d669ed"];
@@ -19,14 +20,17 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function two(n){return(n<10?"0":"")+n}
 function clock(s){s=Math.max(0,s|0);var h=s/3600|0,m=s%3600/60|0;return(h?h+":"+two(m):m)+":"+two(s%60)}
 function ago(s){return s<5?"just now":s<60?(s|0)+"s ago":s<3600?(s/60|0)+"m ago":(s/3600|0)+"h ago"}
-function ic(r){for(var i=0,n=0;i<r.k.length;i++)n+=r.k.charCodeAt(i);return'<span class="ic" style="background:linear-gradient('+C[n%7]+')">'+esc((Array.from(r.t||"?")[0]||"?").toUpperCase())+"</span>"}
+function ic(r){for(var i=0,n=0;i<r.k.length;i++)n+=r.k.charCodeAt(i);return'<span class="ic" style="background:linear-gradient('+(r.g||C[n%7])+')">'+esc(r.i||(Array.from(r.t||"?")[0]||"?").toUpperCase())+"</span>"}
+function wait(s){return s<60?(s|0)+"s":s<3600?(s/60|0)+"m":s<86400?(s/3600|0)+"h":(s/86400|0)+"d"}
+function hm(a){var d=new Date(a*1000);return d.getHours()+":"+two(d.getMinutes())}
 function li(r,s,right){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<div><div class="t" dir="auto">'+esc(r.t)+'</div><div class="s" dir="auto">'+s+'</div></div><span class="r">'+right+"</span></div>"}
 // One drawing function per row kind: later kinds add theirs beside these.
 var K={
 r:function(r,now){return li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),clock(now-r.a))},
-h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")}};
+h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")},
+n:function(r,now){return li(r,'<span class="v">'+esc(r.v)+":</span> "+esc(r.s),r.a?wait(now-r.a):"")}};
 function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
-function quiet(d){return'<div class="empty">Nothing is running.</div>'}
+function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
 function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
 function render(d,open,now){
 if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
