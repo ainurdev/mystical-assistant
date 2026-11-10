@@ -39,8 +39,8 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
 - The page (bridge/widgets/board.html) is fixed once sent, so it draws everything from
   that data. PAGE_V is its version, in the record and in the data.
 
-Not here yet (later tickets): refusals and a deleted board (03), Stop from a row (05), /status and a board left behind (06), usage bars
-(07), limit cards (08), work-run rows (09).
+Not here yet (later tickets): refusals and a deleted board (03), Stop from a row (05),
+/status and a board left behind (06), usage bars (07), limit cards (08), work-run rows (09).
 """
 
 import json
@@ -101,7 +101,8 @@ def _title(sess: "dict | None", sid: str) -> str:
 
 def rows(chat: int, snap: "dict | None" = None) -> list:
     """Every session with a turn or a helper in flight, newest first, as board rows
-    (unkeyed: `sid` is dropped before sending)."""
+    (unkeyed: `sid` is dropped before sending). `snap`: the look's status snapshot,
+    shared with the Needs-you rows so both read the same moment."""
     snap = snap or runner.running_snapshot(chat, scan=False)
     status = snap.get("status") or {}
     out, helpers = {}, {}
@@ -205,15 +206,15 @@ def buttons(chat: int, need: list = ()) -> "dict | None":
     panel = telegram.panel_kb(chat, label="◈ Open panel")
     if not panel:
         return None
-    rows, seen = [], set()
+    keys, seen = [], set()
     for n in need:
         sid = n["session"]
-        if not sid or sid in seen or len(rows) == MAX_BUTTONS:
+        if not sid or sid in seen or len(keys) == MAX_BUTTONS:
             continue
         seen.add(sid)
         label = f"◈ {'Answer' if n['kind'] in ANSWER else 'Open'} · {cut(n['t'], TITLE_B)}"
-        rows += telegram.panel_kb(chat, session_id=sid, label=label)["inline_keyboard"]
-    return {"inline_keyboard": rows + panel["inline_keyboard"]}
+        keys += telegram.panel_kb(chat, session_id=sid, label=label)["inline_keyboard"]
+    return {"inline_keyboard": keys + panel["inline_keyboard"]}
 
 
 def look(now: "float | None" = None) -> None:
