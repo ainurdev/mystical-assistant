@@ -226,3 +226,15 @@ def test_project_and_server_status_still_answer_their_lines(tg, monkeypatch):
                              "message_id": 6, "text": text})
     assert tg.texts[0][1].startswith("Active project: ")
     assert tg.texts[1][1].startswith("Server: ")
+
+
+def test_switching_off_during_a_flood_wait_leaves_the_board_once_the_wait_is_over(tg):
+    turn()
+    tgboard.look(NOW)
+    tg.clear()
+    tgboard._wait[0] = NOW + 30
+    tg.switch[0] = False
+    tgboard.look(NOW + 5)
+    assert tg == []
+    tgboard.look(NOW + 30)
+    assert methods(tg) == ["editMessageWidgetData", "unpinChatMessage"]

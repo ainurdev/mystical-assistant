@@ -185,6 +185,8 @@ def look(now: "float | None" = None) -> None:
     """One look: send, pin or edit whatever changed. Never raises past a refusal
     (tg returns None for those); the watcher catches the rest."""
     now = now or time.time()
+    if now < _wait[0]:                  # also holds back leaving a board on switch-off: it gets one try
+        return
     if not on():
         if not _off[0]:                 # just switched off (or booted off): leave any board behind once
             with _lock:
@@ -198,8 +200,6 @@ def look(now: "float | None" = None) -> None:
                 _off[0] = True
         return
     _off[0] = False
-    if now < _wait[0]:
-        return
     with _lock:
         chat = config.DASH_CHAT_ID
         found = rows(chat)
@@ -230,6 +230,8 @@ def status(chat: int, private: bool, now: "float | None" = None) -> bool:
     if now < _wait[0]:
         return False
     with _lock:
+        if not on():                    # the watcher may have left the board behind meanwhile
+            return False
         ok = _replace(record(), chat, *_picture(chat, rows(chat), now), now)
     if ok:
         look(now)
