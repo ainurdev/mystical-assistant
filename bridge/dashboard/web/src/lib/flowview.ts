@@ -1,4 +1,6 @@
+import type { CouncilBrief } from "../api";
 import type { Turn } from "../chat";
+import { live } from "./council.ts";
 
 /* What the FLOW tab draws, as plain data: one station per step of the session's
    path, which is done, which is running, which waits on you, which starts by
@@ -21,14 +23,14 @@ export interface Flow {
     council's run in the merge session, sent once the set is merged. */
 export interface FlowSet {
   status: string; error?: string; flow_at?: number; tickets: Record<string, { status: string }>;
-  review?: { status: string; reason: string; round: number; max_rounds: number };
+  review?: Pick<CouncilBrief, "status" | "reason" | "round" | "max_rounds">;
 }
 export type StationState = "done" | "now" | "you" | "auto" | "next";
 export interface FlowView {
   stations: { key: string; label: string; skill: string | null; who: "you" | "auto"; state: StationState }[];
   step: number; total: number; why: string; by: "rule" | "claude";
   nowTurn?: { started: number; tools: number; activity: string };
-  note?: string; // what the ticket set says: tickets done and running, merging, or why it stopped
+  note?: string; // what the ticket set says: tickets done and running, merging, why it stopped, or where the review stands
 }
 
 // Mirrors bridge/paths.py PATHS as it was before the bridge sent `stations`: an older bridge's paths.
@@ -49,7 +51,7 @@ export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null =
   const first = table.findIndex(([k]) => !flow.done.includes(k));
   const council = set?.status === "merged" ? set.review : undefined;
   const elsewhere: Record<string, boolean> = { build: set?.status === "building", merge: set?.status === "merging",
-    review: council?.status === "reviewing" || council?.status === "fixing" };
+    review: !!council && live(council) };
   const approving = set?.status === "approve";   // APPROVE BEFORE BUILD: the set waits for the user's tap
   const stations = table.map(([key, skill, kind], i) => {
     // a started step with no turn running ended without StepDone (a question): it waits on you

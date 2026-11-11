@@ -2064,6 +2064,8 @@ export const api = {
   getMeter: (id: string) => req<Meter | Record<string, never>>(`/local/sessions/${encodeURIComponent(id)}/meter`),
   setFlowAuto: (id: string, on: boolean) =>
     req<{ ok: boolean }>("/local/flow/auto", { method: "POST", body: { session: id, on } }),
+  // Skip on a REVIEW in FLOW: the step is done as the work stands, and RETRO follows.
+  skipReview: (id: string) => req<{ ok: boolean }>("/local/flow/review", { method: "POST", body: { session: id } }),
   // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than
   // this route 404s (it would have read a bare {action} as a clearing /goal).
   goalAction: (id: string, action: "done" | "keep" | "edit", objective?: string) =>
