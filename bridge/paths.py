@@ -354,7 +354,8 @@ def _branch_off(session_id: str, sess: dict, flow: dict, prefix: str, chat_id) -
     try:
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)
         flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
-                                    flowbranch.flow_files(session_id, flow["at"]), slug)
+                                    flowbranch.flow_files(session_id, flow["at"]), slug,
+                                    ours=flowbranch.added_lines(session_id, flow["at"]))
     except Exception as e:  # noqa: BLE001 — the step waits for the user instead
         print(f"[paths] {branch} stopped: {e}", file=sys.stderr)
         runner._notify(chat_id, f"Couldn't move this flow's files to {branch}: {e}. "  # noqa: SLF001

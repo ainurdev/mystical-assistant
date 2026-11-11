@@ -232,6 +232,25 @@ def test_read_chat_shows_each_turns_mode_model_and_cards(tmp_path):
     assert "- asked to allow Bash: curl sentry.io/api" in out and "- asked: Push it?" in out
 
 
+def test_message_chat_queues_a_tagged_turn_in_another_chat_only(tmp_path, monkeypatch):
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"], kw["surface"])))
+    s, _ = _session(tmp_path)
+    store.rename(s["id"], "Retro")
+    s = store.get_session(s["id"])
+    other = store.create_session(CHAT, "/proj", cwd=str(tmp_path))
+    store.rename(other["id"], "#03 Tick and Post")
+    out = text(gt.call(s, None, "message_chat", {"id": other["id"][:12], "text": "Run the suite in the foreground."}))
+    assert out == 'Queued in "#03 Tick and Post": it runs as that chat\'s next turn.'
+    assert q == [(other["id"], '[from the chat "Retro"] Run the suite in the foreground.', "carry-on")]
+    assert gt.call(s, None, "message_chat", {"id": s["id"][:12], "text": "x"}).get("isError")      # not itself
+    assert gt.call(s, None, "message_chat", {"id": other["id"][:12], "text": " "}).get("isError")
+    stranger = store.create_session(CHAT + 1, "/proj", cwd=str(tmp_path))
+    assert gt.call(s, None, "message_chat", {"id": stranger["id"][:12], "text": "x"}).get("isError")
+    assert len(q) == 1
+
+
 # ---- waits -------------------------------------------------------------------------
 
 def test_wait_for_time_wakes_and_a_prompt_cancels(tmp_path, monkeypatch):

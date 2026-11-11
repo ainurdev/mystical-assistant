@@ -153,6 +153,9 @@ READ_CHAT = _t("read_chat", "Read an earlier chat that search_chats found: its p
                "mode and model, and the permission and question cards it raised.",
                {"id": _S, "last": {"type": "integer", "description": "How many of its newest turns. Default 10."}},
                ["id"])
+MESSAGE_CHAT = _t("message_chat", "Send a message into another chat of yours that search_chats or read_chat found, "
+                  "as its next turn, marked as from this chat. For a chat that stopped while it still owed work.",
+                  {"id": _S, "text": _S}, ["id", "text"])
 WAIT = _t("wait_for", "Stop waiting by hand: end your turn after this, and you're woken when it's true. Waits on "
           "a time, a pull request's checks, or a local port answering. A prompt from the user cancels it.",
           {"kind": {"type": "string", "enum": ["time", "pr", "port"]},
@@ -210,7 +213,7 @@ DOC_PAGE = _t("doc_page", "Write one docs page from the contents, as Markdown. R
 READ_DOCS = _t("read_docs", "The project's docs: with no arguments the contents and what's stale, with id or path a page, with query the pages "
                "mentioning it. Models wrote them: where they disagree with the code, trust the code.",
                {"id": _S, "path": _S, "query": _S}, [])
-EXTRA_ALL = (DOCS_OUTLINE, DOC_PAGE, READ_DOCS, DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
+EXTRA_ALL = (DOCS_OUTLINE, DOC_PAGE, READ_DOCS, DESIGN_CONTEXT, INSPECT, CRITIQUE, GRAB_STYLE, COMPARE, REPORT, SEARCH, READ_CHAT, MESSAGE_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
 # the session by its Claude id, so an agent session has nothing to send.
 EXTRA_AGENT = (WAIT_SESSION, SCREENSHOT, RECORD)
@@ -687,6 +690,25 @@ def _read_chat(s: dict, job, a: dict) -> dict:
     return _text(f"{rows[0].get('title')}\n\n" + "\n\n".join(b for b in blocks if b)[:40000])
 
 
+def _message_chat(s: dict, job, a: dict) -> dict:
+    """Queue `text` as the other chat's next turn, the way the queue route does for
+    you, tagged with this chat's name so its transcript says who sent it."""
+    want, body = str(a.get("id") or ""), str(a.get("text") or "").strip()
+    if len(want) < 6 or not body:
+        return _text("Give the id search_chats showed and the text to send.", error=True)
+    rows = [r for r in store.list_sessions_all(s["chat_id"], include_archived=False, max_age_secs=None)
+            if r["id"].startswith(want) and r["id"] != s["id"]]
+    if not rows:
+        return _text("No other open chat has that id.", error=True)
+    from bridge import queue_manager  # local import: heavy module
+    o = rows[0]
+    msg = f"[from the chat \"{s.get('title') or s['id'][:8]}\"] {body}"
+    queue_manager.enqueue(o["id"], text=msg, prompt=msg, images=[], model=None, effort=None,
+                          permission_mode=None, width=None, sel=[], surface="carry-on",
+                          chat_id=s["chat_id"], project=o.get("project") or "")
+    return _text(f"Queued in \"{o.get('title')}\": it runs as that chat's next turn.")
+
+
 def _asked(s: dict, t: dict) -> str:
     """What a turn ran with and the cards it raised. Why a session asked is recorded only
     in these events (the CLI transcript keeps no cards); handoff prompts leave it out."""
@@ -836,7 +858,7 @@ def _record(s: dict, job, a: dict) -> dict:
 _FUNCS = {
     "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
-    "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
+    "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "message_chat": _message_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,
     "request_secret": _request_secret, "screenshot": _screenshot, "record": _record,
 }
