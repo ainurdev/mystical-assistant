@@ -101,25 +101,3 @@ _Avoid_: cheat sheet, key list, keyboard help
 **Shortcut nudge**:
 A short note naming a control's shortcut, shown when you click that control instead of pressing its key; it stops once you have used the key or seen it three times.
 _Avoid_: hint, tip, toast
-
-## PR review
-
-**PR review**:
-A check of an open pull request by an agent, run as a **Session** on the PR author's machine in its own worktree at the PR's head commit. It stays private until someone posts it.
-_Avoid_: AI review, code review job, council (the **Council** checks a session's work before it is pushed; a PR review comes after)
-
-**Review mode**:
-A project's choice of whether its PRs get a **PR review** without anyone asking: *auto* or *opt-in*. The labels `ai-review` and `no-ai-review` override it for one PR, and draft PRs are never reviewed on their own.
-_Avoid_: review toggle, auto-review setting
-
-**Finding**:
-One problem a **PR review** names, at a place in the code, with a severity. Project members see it in Rivendell; it only reaches GitHub when someone ticks it and posts.
-_Avoid_: comment, issue, must-fix item
-
-**Post**:
-Putting the ticked **Findings** on the pull request as one comment. Nothing reaches GitHub without it.
-_Avoid_: publish, share
-
-**Fix**:
-Sending the ticked **Findings** back into the review's own **Session**, which changes the code, commits, waits for your OK to push, then reviews the new commit and marks each finding fixed or still open.
-_Avoid_: apply, auto-fix
