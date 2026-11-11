@@ -9,8 +9,8 @@ import os
 import subprocess
 import tempfile
 
-_GLOB = os.path.expanduser(
-    "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
+_GLOB = os.path.expanduser(   # the folder inside is named after the platform: -linux64, -mac-arm64
+    "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"
 )
 
 

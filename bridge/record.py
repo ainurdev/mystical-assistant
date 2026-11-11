@@ -9,9 +9,11 @@ node is already the bridge's build dependency (setup.sh installs it, and the web
 bundles need it); a box without it gets a plain error here rather than a broken
 feature.
 
-Output is VP8/webm, never mp4: the only ffmpeg guaranteed present is the one
+Output is webm, never mp4: the only ffmpeg guaranteed present is the one
 Playwright ships, built --disable-everything -- mjpeg in, libvpx out, webm
-muxed. Both surfaces and Telegram play it. rec.mjs carries the timing detail.
+muxed. The codec is that build's: VP8 up to its ffmpeg 1011, VP9 in 1013, which
+has no VP8 encoder. Both surfaces and Telegram played VP8; VP9 was only checked
+to record (tests/test_clip_panel.py). rec.mjs carries the timing detail.
 """
 
 import json

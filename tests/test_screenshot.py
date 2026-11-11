@@ -1,5 +1,18 @@
+import glob
+import os
 from unittest import mock
+
+import pytest
+
 from bridge import screenshot
+
+
+def test_the_installed_chrome_is_found_on_this_platform():
+    """Playwright names the folder inside a build after the platform (-linux64,
+    -mac-arm64); naming one of them found nothing on the other."""
+    if not glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium_headless_shell-*")):
+        pytest.skip("no headless chrome is installed")
+    assert os.path.isfile(screenshot.CHROME)
 
 
 def test_chrome_cmd_includes_window_size_and_url():
