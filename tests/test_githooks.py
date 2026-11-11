@@ -57,3 +57,36 @@ def test_a_failing_check_blocks_only_a_claude_commit_of_web_files(tmp_path):
     git("add", "-A")
     assert git("commit", "-qm", "d", CLAUDECODE="1", FAKE_NPM_RC="1").returncode == 0   # no web file
     assert len(log.read_text().splitlines()) == 1
+
+
+# --- commit-msg: a Claude Code commit message is one line of at most 72 characters ---
+
+def test_a_claude_commit_message_is_one_short_line(tmp_path):
+    repo, web, git, log = _repo(tmp_path)
+
+    def commit(message, **env):
+        (repo / "notes.md").write_text(message)
+        git("add", "-A")
+        return git("commit", "-qm", message, **env)
+
+    r = commit("x" * 73, CLAUDECODE="1")
+    assert r.returncode != 0 and "73 characters" in r.stderr
+    r = commit("Fix the thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>", CLAUDECODE="1")
+    assert r.returncode != 0 and "one line" in r.stderr
+    assert commit("é" * 72, CLAUDECODE="1").returncode == 0      # 72 characters in 144 bytes
+    assert commit("y" * 90 + "\n\nand a body").returncode == 0    # not a Claude shell: the user's or the bridge's commit
+
+
+def test_a_message_git_wrote_itself_passes(tmp_path):
+    repo, web, git, log = _repo(tmp_path)
+    side = "side/a-branch-name-long-enough-to-push-the-merge-subject-well-past-72-characters"
+    git("checkout", "-qb", side)
+    (repo / "a.md").write_text("a\n")
+    git("add", "-A")
+    git("commit", "-qm", "a")
+    git("checkout", "-q", "-")
+    r = git("merge", "--no-ff", "--no-edit", side, CLAUDECODE="1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    r = git("revert", "--no-edit", "HEAD^2", CLAUDECODE="1")    # 'Revert "a"' with git's own body
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert git("log", "--format=%s", "-2").stdout.splitlines() == ['Revert "a"', f"Merge branch '{side}'"]
