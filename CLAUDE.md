@@ -36,8 +36,10 @@ python3 -m pytest tests/ -q   # backend; takes minutes, so run it in the backgro
 npm run check                 # in bridge/dashboard/web or bridge/miniapp/web: tsc + every *.check.ts
 ```
 
-Anything red is your change, on macOS too. Run a red test alone before trusting it: a
-few time real threads and fail once on a busy machine. If the suite hangs on macOS at
+Anything red is your change, on macOS too, with one check first: run a red test alone.
+Two time real threads and fail when the machine is busy (both pass alone):
+`test_rivendell_channel.py::test_a_question_nobody_answers_fails_the_run` and
+`test_logostyle.py::test_a_failed_call_says_why_and_keeps_what_landed`. If the suite hangs on macOS at
 `test_device_setup.py::test_a_wall_the_hidden_user_gets_through_comes_down_and_set_up_fails_closed[8787]`
 (it did twice on 2026-10-20; cause not found, and the test opens no port), `--deselect` it.
 

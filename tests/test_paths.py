@@ -662,7 +662,7 @@ _BUILT = ["grill", "spec", "tickets", "build"]
 
 
 def _steps(sid):
-    return [st[0] for st in paths.get(sid)["stations"]]
+    return [st[0] for st in paths.stations(sid)]
 
 
 def _switches(monkeypatch, *on):
@@ -714,11 +714,6 @@ def test_review_done_goes_on_to_retro(state_dir, fake_queue, monkeypatch):
     assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
     assert paths.get("f1")["done"][-2:] == ["merge", "review"]
 
-
-def test_a_restored_flow_keeps_no_copy_of_its_steps(state_dir):
-    paths.set_path("f1", "bug", "x", "claude")
-    paths.restore("f1", paths.get("f1"))
-    assert "stations" not in paths._cache["f1"]      # worked out fresh on every read, never stored
 
 
 def test_step_done_in_the_flow_session_takes_a_waiting_review_as_done(state_dir, monkeypatch):

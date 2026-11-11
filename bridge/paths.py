@@ -40,7 +40,7 @@ the merge session (tickets.start_review), and its pass is the step's end
 (tickets.council_passed, then advance). A council that stops leaves the step open, and
 it waits on you. Whether a flow has the step is settled when its MERGE ends, so
 shipping the step, or switching it later, never puts one into a flow already past
-MERGE. get() sends the steps as they stand (`stations`), and FLOW draws those.
+MERGE. stations() gives the steps as they stand, and FLOW draws those.
 """
 
 import json
@@ -173,20 +173,26 @@ def restore(session_id: str, snap: "dict | None") -> None:
         _load_locked()
         f = _cache.get(session_id)
         if f:
-            f.update({k: v for k, v in snap.items() if k != "stations"})   # get() works them out, nothing stores them
+            f.update(snap)
             _save_locked()
 
 
 def get(session_id: str) -> "dict | None":
-    """The session's path. `stations` is its steps as they stand now, each
-    [station, skill, "you" | "auto"]: what FLOW draws."""
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         if not f:
             return None
-        return {**{k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")},
-                "stations": [list(st) for st in _stations(f)]}
+        return {k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")}
+
+
+def stations(session_id: str) -> list:
+    """The path's steps as they stand now, each [step, skill, "you" | "auto"]: what FLOW
+    draws. Worked out on every read, never stored."""
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        return [list(st) for st in _stations(f)] if f else []
 
 
 def set_auto(session_id: str, on: bool) -> None:

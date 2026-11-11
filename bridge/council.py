@@ -792,8 +792,8 @@ def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
 def _ended(sid: str, c: dict, wake: bool = True) -> None:
     """A run passed or stopped: one notice through the house notifier (Telegram
     follows NOTIFY's choices), then the sessions waiting on this one are woken,
-    since the turn end that would have woken them led into the council.
-    Best-effort."""
+    since the turn end that would have woken them led into the council. A pass
+    in a merge session also ends its flow's REVIEW step. Best-effort."""
     rs = c.get("rounds") or []
     score = rs[-1]["score"] if rs else None
     passed = c.get("status") == "passed"

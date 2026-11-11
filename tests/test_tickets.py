@@ -1209,3 +1209,61 @@ def test_flow_shows_the_review_from_the_merge_sessions_council(reviewed, monkeyp
     r.fixed()
     assert flow()["set"]["review"] == {"status": "stopped", "reason": "round 2 didn't raise the score",
                                        "round": 2, "max_rounds": 5}
+
+
+def test_tickets_merged_by_hand_pass_the_review_over(make_set, monkeypatch):
+    """A set that stopped, built and merged by hand in the flow's own session: there is
+    no merge session for a council to sit in, so RETRO follows, as before the step."""
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"])))
+    s = make_set({"01": None, "02": "#05", "05": "#02"}, build=False)     # a cycle: the set stops
+    for t in ("a", "b", "c"):
+        paths.step_done(s.flow, t)
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
+    assert s.build().startswith("cycle:")
+    paths.step_done(s.flow, "built-by-hand")
+    assert paths.step_done(s.flow, "merged-by-hand") == "review"
+    paths.continue_after_turn(SimpleNamespace(store_session_id=s.flow, id="merged-by-hand", status="done",
+                                              interrupted=False, runtime=None, chat_id=1))
+    assert q == [(s.flow, "/mattpocock-skills:retro")]
+    assert paths.get(s.flow)["done"][-2:] == ["merge", "review"]
+
+
+def test_a_review_waits_for_a_merge_still_under_way(reviewed):
+    """StepDone said early in the flow's own session ends MERGE there before the merge
+    session has: REVIEW stays pending, and starts once the set is merged."""
+    r = reviewed
+    assert paths.step_done(r.s.flow, "early") == "review"
+    paths.continue_after_turn(SimpleNamespace(store_session_id=r.s.flow, id="early", status="done",
+                                              interrupted=False, runtime=None, chat_id=1))
+    assert not r.queued and paths.get(r.s.flow)["next"]["started"] is False
+    r.said = [_said(9.5)]
+    r.merged()
+    assert r.council.get(r.merge)["status"] == "passed"
+    assert r.queued == [(r.s.flow, "/mattpocock-skills:retro")]
+
+
+def test_skip_on_a_review_that_waits_goes_on_to_retro(reviewed):
+    r = reviewed
+    r.said = [_said(7.0, _FIX), _said(6.9, _FIX)]
+    r.merged()
+    r.fixed()                                          # the council stopped: REVIEW waits on you
+    assert _dpost("/local/flow/review", {"session": r.s.flow}, chat=2)["code"] == 404      # another chat's flow
+    assert _dpost("/local/flow/review", {"session": r.s.flow})["obj"] == {"ok": True}
+    assert r.queued[-1] == (r.s.flow, "/mattpocock-skills:retro")
+    assert _dpost("/local/flow/review", {"session": r.s.flow})["obj"] == {"ok": False}     # no longer at REVIEW
+    assert [p for sid, p in r.queued if sid == r.s.flow] == ["/mattpocock-skills:retro"]
+
+
+def test_a_review_a_restart_cut_says_so_at_boot(reviewed):
+    """The round's thread died with the old process. Nobody may be looking at FLOW or
+    the COUNCIL tab, so boot settles it: the notice comes, and REVIEW waits on you."""
+    r = reviewed
+    r.said = [_said(7.0, _FIX)]
+    r.merged()
+    store.set_council(r.merge, {**store.get_council(r.merge), "status": "reviewing", "boot": "an earlier boot"})
+    tickets.boot()
+    c = store.get_council(r.merge)
+    assert (c["status"], c["reason"]) == ("stopped", "interrupted by a restart") and r.kinds == ["council_stopped"]
+    assert paths.get(r.s.flow)["next"]["station"] == "review"

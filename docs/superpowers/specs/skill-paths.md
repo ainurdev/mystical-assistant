@@ -206,14 +206,18 @@ by round, under the council's own settings. FLOW shows REVIEW between MERGE and 
 reads or a fix turn runs.
 - A pass ends the step, and RETRO starts.
 - A stop doesn't. The council's own notice comes (Council needs you) and FLOW shows REVIEW waiting on you. The way
-  on is the merge session's COUNCIL tab (2 more rounds, side with the session, fix it anyway), or telling the
-  flow's session to go on: its `StepDone` ends the step.
+  on is the merge session's COUNCIL tab (2 more rounds, side with the session, fix it anyway), or **Skip** on
+  REVIEW in FLOW, which takes the work as it stands and starts RETRO. Skip shows on a REVIEW that isn't running.
+- A restart cuts a round that is reading. At boot that run is settled as stopped ("interrupted by a restart"), so
+  the notice comes then and not when someone next opens the tab.
 - Whether a flow has the step is settled when its MERGE ends. A flow that passed MERGE before the step shipped, or
   with the switch off, never gets one. With TICKETS off nothing changes.
-- *My calls:* a push that would send nothing passes the step over. The set stays `merged` through the review, since
-  the merge session's council run and the flow's own record already say where it stands. The FLOW tab draws the
-  steps the bridge sends (`flow.stations`) instead of its own copy of the table. A merge session that is mid-turn
-  when MERGE ends (a prompt of yours was queued there) gets its review when that turn ends.
+- *My calls:* the step is passed over when no council can read anything: a push would send nothing, or the tickets
+  were merged by hand, so there is no merge session. The set stays `merged` through the review, since the merge
+  session's council run and the flow's own record already say where it stands. The FLOW tab draws the steps the
+  bridge sends (`flow.stations`) instead of its own copy of the table. A merge session that is mid-turn when MERGE
+  ends (a prompt of yours was queued there) gets its review when that turn ends.
+- *Not built:* the council reads the feature checkout only. A set's work in other repos goes unreviewed.
 
 **With TICKETS off** (SKILL PATHS on), FEATURE and REFACTOR stop once `/to-tickets` has written the files. FLOW
 shows BUILD as YOU, and the composer offers the first ticket in a fresh session, as today. *My call.*

@@ -12,8 +12,10 @@ feature.
 Output is webm, never mp4: the only ffmpeg guaranteed present is the one
 Playwright ships, built --disable-everything -- mjpeg in, libvpx out, webm
 muxed. The codec is that build's: VP8 up to its ffmpeg 1011, VP9 in 1013, which
-has no VP8 encoder. Both surfaces and Telegram played VP8; VP9 was only checked
-to record (tests/test_clip_panel.py). rec.mjs carries the timing detail.
+has no VP8 encoder. rec.mjs carries the timing detail.
+shortcut: both surfaces and Telegram played VP8; VP9 was checked to record and to
+play in headless Chrome only, so check WebKit (the Mac app) and Telegram if a clip
+from ffmpeg 1013 won't play there.
 """
 
 import json

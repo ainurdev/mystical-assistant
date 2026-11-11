@@ -482,7 +482,7 @@ def tick(folder: str) -> None:
                 _start_ticket(folder, st, n)
         save(folder, st)
         if all(t["status"] == "done" for t in tks.values()):
-            # only now: FLOW shows BUILD running while tickets build, and after MERGE comes RETRO
+            # only now: FLOW shows BUILD running while tickets build, and after MERGE comes REVIEW or RETRO
             paths.mark_done(st["parent_session"], "build", st.get("flow_at"))
             start_merge(folder)
 
@@ -607,19 +607,37 @@ def _at_review(flow_session_id: str) -> bool:
 def start_review(flow_session_id: str) -> bool:
     """REVIEW: the council reads the merged feature branch in the merge session, which
     fixes what it finds, round by round (bridge/council.py). True once it runs, or once
-    the step is passed over because a push would send nothing. False leaves it pending:
-    no merged set, or the merge session is mid-turn (_merge_end starts it when that ends)."""
+    the step is passed over because no council can read anything: the tickets were
+    merged by hand (this path has no merged set), the merge session is gone, or a push
+    would send nothing. False leaves it pending: the set is still building or merging,
+    or the merge session is mid-turn (_merge_end starts it when either ends).
+    shortcut: only the feature checkout is read, so a set's work in other repos (a
+    ticket's `repos`) goes unreviewed; upgrade to a council per repo when a set that
+    spans repos needs it."""
     from bridge import council  # local import: council imports runner
     st = summary_for(flow_session_id) or {}
-    sess = store.get_session(st.get("merge_session") or "")
-    if st.get("status") != "merged" or not sess:
+    if st.get("flow_at") not in (None, (paths.get(flow_session_id) or {}).get("at")):
+        st = {}             # the set of an earlier path in this session isn't this one's
+    if st.get("status") in ("building", "merging"):
         return False
-    try:
-        council.start(sess, st["feature_checkout"])
-    except ValueError as e:
-        if str(e) != "nothing":
-            return False    # mid-turn, or a run of yours is under way there: its pass counts too
-        paths.advance(flow_session_id, "review", st.get("flow_at"))
+    sess = store.get_session(st.get("merge_session") or "") if st.get("status") == "merged" else None
+    if sess:
+        try:
+            council.start(sess, st["feature_checkout"])
+            return True
+        except ValueError as e:
+            if str(e) != "nothing":
+                return False    # mid-turn, or a run of yours is under way there: its pass counts too
+    paths.advance(flow_session_id, "review")
+    return True
+
+
+def skip_review(flow_session_id: str) -> bool:
+    """Skip, pressed on a REVIEW in FLOW: the step is done as the work stands, and RETRO
+    follows. It is how you take work the council didn't pass. False off REVIEW."""
+    if not _at_review(flow_session_id):
+        return False
+    paths.advance(flow_session_id, "review")
     return True
 
 
@@ -932,6 +950,18 @@ def _boot_merge(folder: str) -> None:
         _merge_end(sid, (store.last_turn(sid) or {}).get("status") or "error")
 
 
+def _boot_review(st: dict) -> None:
+    """A merged set whose flow waits at REVIEW, after a restart: the round that was
+    reading died with the old process. Reading the run settles it as stopped, so its
+    notice comes now and not when someone next opens FLOW or the COUNCIL tab. A run
+    waiting on its fix turn goes on when that turn ends, as the council has it."""
+    sid = st.get("merge_session")
+    if st.get("status") == "merged" and sid and _at_review(st["parent_session"]) \
+            and (store.get_council(sid) or {}).get("status") == "reviewing":
+        from bridge import council  # local import: council imports runner
+        council.get(sid)
+
+
 def boot() -> None:
     """After a restart: judge every running ticket whose session sits idle and isn't
     parked (its turn ended, or never began, while nothing listened) as at a turn end:
@@ -943,6 +973,8 @@ def boot() -> None:
         try:
             if isinstance(folder, str) and load(folder).get("status") == "merging":
                 _boot_merge(folder)
+            if isinstance(folder, str):
+                _boot_review(load(folder))
             if not isinstance(folder, str) or load(folder).get("status") != "building":
                 continue
             with _build:
