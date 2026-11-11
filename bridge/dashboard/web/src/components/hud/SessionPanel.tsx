@@ -503,9 +503,9 @@ export function SessionPanel({
   );
 
   // FLOW: the path's steps, each with the time worked on it and what its turns spent.
-  // BUILD and MERGE run in sessions of their own: the ticket set's word stands in.
+  // BUILD, MERGE and the REVIEW after it run in sessions of their own: the ticket set's word stands in.
   const stats = meter && path ? stepStats(bands(turns, rows, { stations: path.stations, at: path.at }), segs, turns, meter.turns) : null;
-  const away = path?.stations.find((s) => (s.key === "build" || s.key === "merge") && s.state !== "done")?.key;
+  const away = path?.stations.find((s) => (s.key === "build" || s.key === "merge" || s.key === "review") && s.state !== "done")?.key;
   const flowBlock = !path || !flow ? (flowRead || !ai.router) && <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
     <>
       {head("flow", "FLOW", flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),

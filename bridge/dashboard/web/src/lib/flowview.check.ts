@@ -54,3 +54,24 @@ console.assert(asked.stations[5].state === "you", `retro asked: ${asked.stations
 const answering = flowView({ ...flow("feature", ["grill", "spec", "tickets", "build", "merge"]), next: { station: "retro", turn_id: "t", started: true } }, [run]);
 console.assert(answering.stations[5].state === "now", "a running turn is still now");
 console.assert(flowView({ ...flow("feature", ["grill"]), next: { station: "spec", turn_id: "t", started: false } }, []).stations[1].state === "auto", "not started: still its own kind");
+
+// The bridge sends the path's steps (`flow.stations`), so REVIEW is drawn only where it follows
+// MERGE there. It runs in the merge session: the set's `review` (that session's council) says how.
+const steps: Flow["stations"] = [["grill", "grill-with-docs", "you"], ["spec", "to-spec", "auto"], ["tickets", "to-tickets", "you"],
+  ["build", null, "auto"], ["merge", null, "auto"], ["review", null, "auto"], ["retro", "retro", "auto"]];
+const atReview: Flow = { ...flow("feature", ["grill", "spec", "tickets", "build", "merge"]), stations: steps,
+  next: { station: "review", turn_id: "", started: true } };
+const council = (status: string, round: number, reason = "") => ({ status: "merged", tickets: {}, review: { status, reason, round, max_rounds: 5 } });
+console.assert(flowView(atReview, []).total === 7 && flowView(atReview, []).stations[5].key === "review", "the bridge's steps are the ones drawn");
+const reading = flowView(atReview, [], council("reviewing", 2));
+console.assert(reading.stations[5].state === "now" && reading.note === "council round 2 of 5", `reviewing: ${reading.stations[5].state}, ${reading.note}`);
+const fixing = flowView(atReview, [], council("fixing", 1));
+console.assert(fixing.stations[5].state === "now" && fixing.note === "fixing round 1's findings", `fixing: ${fixing.stations[5].state}, ${fixing.note}`);
+const halted = flowView(atReview, [run], council("stopped", 2, "round 2 didn't raise the score"));
+console.assert(halted.stations[5].state === "you" && halted.stations[5].who === "you", `a stopped council waits on you, whatever runs here: ${halted.stations[5].state}`);
+console.assert(halted.note === "stopped: round 2 didn't raise the score", `stopped note: ${halted.note}`);
+const passed = flowView({ ...atReview, done: [...atReview.done, "review"], next: { station: "retro", turn_id: "", started: true } }, [], council("passed", 2));
+console.assert(passed.stations[5].state === "done" && passed.note === undefined, `passed: ${passed.stations[5].state}, ${passed.note}`);
+// A step called review that has a skill runs in this session like any other: its turn is what shows it running.
+const here: Flow = { ...flow("bug", ["diagnose"]), stations: [["diagnose", "diagnosing-bugs", "auto"], ["review", "some-review", "auto"], ["retro", "retro", "auto"]] };
+console.assert(flowView(here, [run]).stations[1].state === "now", "a review with a skill runs here");
