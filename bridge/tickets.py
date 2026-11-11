@@ -53,6 +53,9 @@ on that session says it waits on you. Both prompts say to test in the foreground
 with that line no ticket stalled (7 of 7, 2026-11-11), without it the same set's
 merge did, and stayed `merging` until someone asked.
 
+A ticket's `Repos:` line names the repos it builds in (default: the set's own); BUILD
+makes its worktree in each, the first holding its session, and makes none at home when
+home isn't named, so MERGE merges at home only the branches home holds.
 A set can span repos (Rivendell beside Mystical): the prompt sends work in another repo
 to a worktree on the ticket's branch at the place worktree_path_for gives that repo, so
 _repos finds it. A ticket is done when any of its repos has a commit of its own, and
@@ -99,6 +102,7 @@ class Ticket(NamedTuple):
     title: str
     path: str
     blocked_by: tuple
+    repos: tuple = ()   # the repos it builds in, main checkouts; () = the set's own
 
 
 _FILE = re.compile(r"\d+-")   # <NN>-<slug>.md
@@ -110,10 +114,31 @@ _TAIL = re.compile(r"(?:\.+|\s*\([^)]*\))+\s*$")
 _NUM = re.compile(r"^#?(\d{1,2})$")
 _ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?!\[[ xX]\])(.+?)\s*$")   # a checkbox is no ref
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
+_REPOS = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?repos?(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
+                    re.M | re.I)
+
+
+def _repo_paths(n: str, text: str) -> tuple:
+    """A ticket's `Repos:` line as main checkouts: absolute, ~, or a project under BASE_PATH."""
+    m = _REPOS.search(text)
+    out = []
+    for r in _SPLIT.split(m.group(1).strip().strip("*").strip()) if m else []:
+        r = r.strip().strip("`").rstrip("/")
+        if not r:
+            continue
+        p = os.path.expanduser(r)
+        p = p if os.path.isabs(p) else os.path.join(config.BASE_PATH, p)
+        if not git.is_repo(p):
+            raise TicketError(f"#{n} builds in {r!r}, which is no git repo")
+        p = git.main_checkout(p)
+        if p not in out:
+            out.append(p)
+    return tuple(out)
 
 
 def parse_dir(folder: str) -> list:
     raw = []   # (n, title, path, refs)
+    repos = {}
     for name in sorted(os.listdir(folder)):
         if not (name.endswith(".md") and _FILE.match(name)):   # the SPEC.md beside them is no ticket
             continue
@@ -141,6 +166,7 @@ def parse_dir(folder: str) -> list:
         if any(r[0] == h.group(1).zfill(2) for r in raw):
             raise TicketError(f"two tickets are numbered #{h.group(1).zfill(2)}")
         raw.append((h.group(1).zfill(2), h.group(2), path, refs))
+        repos[h.group(1).zfill(2)] = _repo_paths(h.group(1).zfill(2), text)
     by_title = {t.strip().lower(): n for n, t, _, _ in raw}
     known = {n for n, *_ in raw}
     out = []
@@ -154,7 +180,7 @@ def parse_dir(folder: str) -> list:
                                   "which doesn't exist")
             if d not in deps:
                 deps.append(d)
-        out.append(Ticket(n, title, path, tuple(deps)))
+        out.append(Ticket(n, title, path, tuple(deps), repos[n]))
     return out
 
 
@@ -327,6 +353,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             return str(e)
         st["tickets"] = {t.n: {"status": "queued", "title": t.title, "path": t.path,
                                "blocked_by": list(t.blocked_by), "branch": f"tk/{slug}-{t.n}",
+                               "builds_in": list(t.repos),
                                "worktree": "", "session_id": "", "base": ""} for t in tks}
         if wait:
             st["status"] = "approve"
@@ -432,24 +459,13 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
         parent = store.get_session(st["parent_session"])
         if not parent:
             raise RuntimeError("its flow session is gone")
-        main = git.main_checkout(st["feature_checkout"])
-        blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
-        t["base"] = blockers[0] if blockers else st["feature_branch"]
+        home = git.main_checkout(st["feature_checkout"])
         clash: list = []
-        wt = next((w["path"] for w in git.worktrees(main)
-                   if w["branch"] == t["branch"] and os.path.isdir(w["path"])), "")
-        if not wt:   # a branch from an earlier run of this set is reused, never remade
-            wt = git.worktree_path_for(main, t["branch"], free=True)
-            os.makedirs(os.path.dirname(wt), exist_ok=True)
-            new = t["branch"] not in git.branches(main)
-            ok, out = git.worktree_add(main, wt, t["branch"], start=t["base"] if new else "", create=new)
-            if not ok:
-                raise RuntimeError(f"worktree failed: {out}")
-            git.copy_env(main, wt)
-            for i, b in enumerate(blockers[1:] if new else []):
-                if git._run(wt, "merge", "--no-ff", "--no-edit", b, timeout=60)[0] != 0:  # noqa: SLF001
-                    clash = blockers[1 + i:]   # left mid-merge; the rest come after it
-                    break
+        wt = ""
+        for repo in t.get("builds_in") or [home]:   # the first repo's worktree is the session's
+            w, c = _worktree(st, t, repo, home)
+            wt = wt or w
+            clash += [b if repo == home else f"{b} in {repo}" for b in c]
         project = parent.get("project") or ""
         pid = profiles.claude_default(project)   # Claude, never an agent: the steps are Claude skills
         s = store.create_session(parent["chat_id"], project, origin="ticket", cwd=wt,
@@ -467,6 +483,39 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
         t["why"] = f"it didn't start: {e}"
         _settle(st, n, "fix")
     save(folder, st)
+
+
+def _worktree(st: dict, t: dict, repo: str, home: str) -> tuple:
+    """(path, clash) of ticket t's worktree in `repo`, made on its first start. Base: its one
+    blocker's branch there, or with several the first's with the others merged in (--no-ff,
+    a clash is its first job); with none there, the feature branch at home, elsewhere that
+    repo's up-to-date default branch. Kept at worktree_path_for's place so _repos finds it."""
+    have = git.branches(repo)
+    blockers = [b for b in (st["tickets"][x]["branch"] for x in t["blocked_by"]) if b in have]
+    if blockers:
+        base = blockers[0]
+    elif repo == home:
+        base = st["feature_branch"]
+    else:
+        d = git.default_branch(repo)
+        base = f"origin/{d}" if git._run(repo, "rev-parse", "--verify", "-q", f"origin/{d}")[0] == 0 else d  # noqa: SLF001
+    if repo == home or "base" not in t:
+        t["base"] = base
+    wt = next((w["path"] for w in git.worktrees(repo)
+               if w["branch"] == t["branch"] and os.path.isdir(w["path"])), "")
+    if wt:   # a branch from an earlier run of this set is reused, never remade
+        return wt, []
+    wt = git.worktree_path_for(repo, t["branch"], free=True)
+    os.makedirs(os.path.dirname(wt), exist_ok=True)
+    new = t["branch"] not in have
+    ok, out = git.worktree_add(repo, wt, t["branch"], start=base if new else "", create=new)
+    if not ok:
+        raise RuntimeError(f"worktree failed in {repo}: {out}")
+    git.copy_env(repo, wt)
+    for i, b in enumerate(blockers[1:] if new else []):
+        if git._run(wt, "merge", "--no-ff", "--no-edit", b, timeout=60)[0] != 0:  # noqa: SLF001
+            return wt, blockers[1 + i:]   # left mid-merge; the rest come after it
+    return wt, []
 
 
 def tick(folder: str) -> None:
@@ -501,8 +550,7 @@ def tick(folder: str) -> None:
 
 
 def _merge_prompt(st: dict, tks: dict) -> str:
-    branches = ", ".join(tks[n]["branch"] for n in order([Ticket(n, "", "", tuple(t["blocked_by"]))
-                                                           for n, t in tks.items()]))
+    branches = ", ".join(_home_branches(st, tks))
     return ("No path for this message.\n\n"   # else the paths pack has Claude pick a path
             f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
             f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
@@ -512,6 +560,14 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
             + " Then call StepDone." + _FOREGROUND)
+
+
+def _home_branches(st: dict, tks: dict) -> list:
+    """The ticket branches the set's own repo holds, in dependency order: a ticket that
+    builds only elsewhere has none here."""
+    have = set(git.branches(st["feature_checkout"]))
+    return [tks[n]["branch"] for n in order([Ticket(n, "", "", tuple(t["blocked_by"])) for n, t in tks.items()])
+            if tks[n]["branch"] in have]
 
 
 def _other_branches(st: dict) -> dict:
@@ -586,7 +642,7 @@ def _merge_end(sid: str, status: str, chat_id=None, carry: bool = True) -> None:
             st["status"] = "fix"
         elif status == "done" and (paths.get(sid) or {}).get("done"):
             have = _merged(st)   # StepDone alone isn't merged: every branch must be in
-            left = [t["branch"] for t in st["tickets"].values() if t["branch"] not in have]
+            left = [b for b in _home_branches(st, st["tickets"]) if b not in have]
             for repo, bs in _other_branches(st).items():
                 there = _merged_in(repo, st["feature_branch"])
                 left += [f"{b} in {repo}" for b in bs if b not in there]
@@ -695,7 +751,9 @@ def _verdict(st: dict, t: dict, status: str) -> "str | None":
     if status != "done" or not (paths.get(sid) or {}).get("done"):
         return None
     blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
-    t["repos"] = [r for r in _repos(st, t["branch"]) if _own(r, t["branch"], blockers + ["--remotes"])]
+    home = git.main_checkout(st["feature_checkout"])
+    cand = _repos(st, t["branch"]) + [r for r in t.get("builds_in") or [] if r != home]
+    t["repos"] = [r for r in dict.fromkeys(cand) if _own(r, t["branch"], blockers + ["--remotes"])]
     if _own(st["feature_checkout"], t["branch"], [st["feature_branch"]] + blockers) or t["repos"]:
         return "done"
     t["why"] = "StepDone, but no commit"   # short: the TICKETS row shows it beside the branch

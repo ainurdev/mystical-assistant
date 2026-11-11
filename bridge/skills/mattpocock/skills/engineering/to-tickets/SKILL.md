@@ -74,6 +74,8 @@ Do NOT close or modify any parent issue.
 
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None (can start immediately)".
 
+**Repos:** only when it builds outside this repo: each repo it changes, as a path or a project under the projects folder (e.g. `ainurdev/rivendell, mystical-assistant`); the first holds its session.
+
 **Status:** ready-for-agent
 
 - [ ] Acceptance criterion 1

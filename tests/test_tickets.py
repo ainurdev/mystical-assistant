@@ -1223,3 +1223,62 @@ def test_summaries_mark_what_waits_on_you(make_set, monkeypatch):
     assert tickets.summaries()[0]["merge_stalled"] is False                 # the merge turn runs
     tickets.after_turn(_merge_job(s))
     assert tickets.summaries()[0]["merge_stalled"] is True
+
+
+# --- a ticket that names its repo -------------------------------------------
+
+def _bare_repo(path):
+    os.makedirs(path)
+    for a in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"), ("config", "user.name", "t")):
+        _git(path, *a)
+    with open(os.path.join(path, "a.txt"), "w") as f:
+        f.write("a\n")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "init")
+    return path
+
+
+def _repos_line(s, n, line):
+    with open(s.path(n), "a") as f:
+        f.write(f"\n**Repos:** {line}\n")
+
+
+def test_a_repos_line_resolves_under_base_path_and_rejects_a_non_repo(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BASE_PATH", str(tmp_path))
+    other = _bare_repo(str(tmp_path / "org" / "other"))
+    d = str(tmp_path / "set")
+    os.makedirs(d)
+    _write(d, "01", "A")
+    with open(os.path.join(d, "01-x.md"), "a") as f:
+        f.write("\n**Repos:** org/other, `~nobody-here/x`\n")
+    with pytest.raises(tickets.TicketError, match="#01 builds in '~nobody-here/x', which is no git repo"):
+        tickets.parse_dir(d)
+    with open(os.path.join(d, "01-x.md"), "w") as f:
+        f.write("# 01: A\n\n**Repos:** org/other\n\n**Blocked by:** None\n")
+    assert tickets.parse_dir(d)[0].repos == (other,)
+
+
+def test_a_ticket_that_names_another_repo_builds_only_there(make_set, monkeypatch):
+    s = make_set({"01": None, "02": "#01", "03": None}, build=False)
+    other = _bare_repo(os.path.join(os.path.dirname(s.main), "other"))
+    _repos_line(s, "01", other)
+    _repos_line(s, "02", other)
+    assert s.build() == ""
+    t = s.state["tickets"]["01"]
+    assert t["worktree"] == git.worktree_path_for(other, "tk/x-01")
+    assert "tk/x-01" not in git.branches(s.main)          # no empty branch at home
+    assert store.get_session(t["session_id"])["cwd"] == t["worktree"]
+    s.finish("01")                                        # commits in its worktree, the other repo
+    assert s.status("01") == "done" and s.status("02") == "running"
+    _git(other, "merge-base", "--is-ancestor", "tk/x-01", "tk/x-02")   # 02 builds on 01 there
+    s.finish("02")
+    s.finish("03")
+    (m,) = _merges(s)
+    assert "each with git merge --no-ff: tk/x-03\n" in m["prompt"]
+    assert f"Then in {other}: merge tk/x-01, tk/x-02 into feat/x" in m["prompt"]
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-03")
+    _git(other, "branch", "feat/x", "tk/x-02")
+    sid = s.state["merge_session"]
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"

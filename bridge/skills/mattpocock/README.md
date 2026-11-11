@@ -18,9 +18,10 @@ And two local-files locations name the folder BUILD reads (bridge/tickets.py), t
 the paths pack names too (bridge/paths.py PACK_TEXT):
 
 - `skills/engineering/to-tickets/SKILL.md`: tickets go to
-  `.mystical/tickets/<feature-slug>/<NN>-<slug>.md` (upstream: `.scratch/<feature-slug>/issues/`).
+  `.mystical/tickets/<feature-slug>/<NN>-<slug>.md` (upstream: `.scratch/<feature-slug>/issues/`). Its local template also has a
+  `**Repos:**` line, which BUILD reads to make the ticket's worktree in each named repo.
 - `skills/engineering/to-spec/SKILL.md`: step 3 names the spec's place on a local tracker,
   `.mystical/tickets/<feature-slug>/SPEC.md` (upstream names none).
 
 Refresh: copy the 27 manifest-listed skill folders and `LICENSE` again from the new
-upstream version, then redo the six edits above.
+upstream version, then redo the edits above.
