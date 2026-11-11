@@ -49,7 +49,9 @@ def test_script_is_crlf_so_cmd_can_parse_the_if_block():
     assert "\n" not in text.replace("\r\n", "")
 
 
-def test_script_opens_a_window_only_when_asked():
+def test_script_opens_a_window_only_when_asked(monkeypatch):
+    # a browser of the test's own: the real lookup finds one only on a WSL box that has Chrome
+    monkeypatch.setattr(startup, "_browser", lambda: "/mnt/c/x/chrome.exe")
     assert "--app=" in startup._script(True)
     assert "--app=" not in startup._script(False)
     # Either way it still has to boot WSL and wait for the port.
@@ -120,6 +122,7 @@ def test_state_reports_why_when_there_is_no_windows_side(monkeypatch):
     monkeypatch.setattr(startup, "_wsl", lambda: True)   # holds off WSL too
     monkeypatch.setattr(startup, "_has_systemd", lambda: True)
     monkeypatch.setattr(startup, "_startup_dir", lambda: None)
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl([]))   # else the host's own, and a Mac has none
     st = startup.state()
     assert st["supported"] is False
     assert st["reason"]
