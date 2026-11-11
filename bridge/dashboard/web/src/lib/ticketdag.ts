@@ -3,6 +3,17 @@
  *  of its own, fed by every ticket nothing else waits on. A blocker the set doesn't
  *  have is ignored (a deleted ticket file) rather than looped on; a cycle can't reach
  *  here, since the bridge refuses to build one. */
+/** What a ticket's row shows, from its status in set.json and its session's live state.
+ *  idle: its turn ended without finishing and nothing will start another (the bridge's
+ *  `stalled`). An ask wins over idle: answering it is what carries the ticket on. */
+export type Kind = "run" | "ask" | "idle" | "q" | "done" | "fix";
+const ASKING = ["awaiting", "asking", "credits"];
+export const kindOf = (t: { status: string; stalled?: boolean }, state?: string): Kind =>
+  t.status === "done" ? "done" : t.status === "fix" ? "fix"
+    : t.status === "running" ? (state && ASKING.includes(state) ? "ask" : t.stalled ? "idle" : "run") : "q";
+/** How many of the set's running slots are taken: an idle ticket keeps its slot until it is carried on. */
+export const slotsUsed = (kinds: Kind[]): number => kinds.filter((k) => k === "run" || k === "ask" || k === "idle").length;
+
 export type DagIn = { n: string; blockedBy: string[] };
 export type DagNode = { n: string; col: number; row: number };
 

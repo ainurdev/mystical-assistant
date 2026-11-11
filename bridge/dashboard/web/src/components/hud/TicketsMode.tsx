@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GitMerge, Hourglass, MoreHorizontal, Ticket } from "lucide-react";
 import { api, type SessionBrief, type SessionStatus, type TicketRow, type TicketSet } from "../../api";
-import { dagLayout } from "../../lib/ticketdag";
+import { dagLayout, kindOf, slotsUsed, type Kind } from "../../lib/ticketdag";
 import { askConfirm } from "../ui/Ask";
 
 /** The TICKETS tab of the left sidebar: each ticket set as a card with its dependency
@@ -10,15 +10,9 @@ import { askConfirm } from "../ui/Ask";
  *  sets are polled while the tab is open: ticket turns end on the bridge with no
  *  dashboard event to announce them. A finished set folds to a line. */
 
-// idle: its turn ended without finishing and nothing will start another (the bridge's `stalled`).
-type Kind = "run" | "ask" | "idle" | "q" | "done" | "fix";
-const WORD: Record<Kind, string> = { run: "RUN", ask: "ASK", idle: "IDLE", q: "WAIT", done: "DONE", fix: "FIX" };
+// A row's kind is decided in lib/ticketdag.ts (kindOf), where a check holds the rule.
+const WORD: Record<Kind, string> = { run: "Run", ask: "Ask", idle: "Idle", q: "Wait", done: "Done", fix: "Fix" };
 const COLOR: Record<Kind, string> = { run: "var(--ok)", ask: "var(--warn)", idle: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)" };
-const ASKING = ["awaiting", "asking", "credits"];
-
-const kindOf = (t: TicketRow, st?: SessionStatus): Kind =>
-  t.status === "done" ? "done" : t.status === "fix" ? "fix"
-    : t.status === "running" ? (st && ASKING.includes(st.state) ? "ask" : t.stalled ? "idle" : "run") : "q";
 
 function Dag({ set, kinds }: { set: TicketSet; kinds: Record<string, Kind> }) {
   const ns = Object.keys(set.tickets).sort();
@@ -73,11 +67,11 @@ function Stub({ n, t, kind, st, onOpen, onRetry }: {
     : kind === "fix" ? <span style={{ color: "var(--err)" }} title={t.why}>{t.why || "needs a fix"}</span>
     : <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><Hourglass size={10} aria-hidden />
         {t.blocked_by.length ? `waits for ${t.blocked_by.map((b) => `#${b}`).join(" · ")}` : t.status === "missing" ? "ticket file missing" : "next in line"}</span>;
-  const word = t.status === "retry" ? "RETRY" : WORD[kind];
+  const word = t.status === "retry" ? "Retry" : WORD[kind];
   return (
     <div className={`tk-stub ${kind}`}>
       {t.session_id && <button className="tk-hit" onClick={onOpen} aria-label={`Open ticket ${n}, ${t.title}`} />}
-      <div className="no">#{n}<small>{word}</small></div>
+      <div className="no">#{n}<small className="caps">{word}</small></div>
       <div className="bd">
         <div className="t1"><span>{t.title}</span>
           {kind === "ask" && <button className="tk-btn" onClick={onOpen} aria-label={`Answer ticket ${n}`}>Answer</button>}
@@ -113,7 +107,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
     return () => { document.removeEventListener("keydown", away); document.removeEventListener("pointerdown", away); };
   }, [menu]);
   const ns = Object.keys(set.tickets).sort();
-  const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id))])) as Record<string, Kind>;
+  const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id)?.state)])) as Record<string, Kind>;
   const name = set.slug.replace(/-/g, " ").toUpperCase();
   // A session the sidebar doesn't list (archived, another workspace) still opens, by its id.
   const open = (sid: string) => { const s = sessions.get(sid); if (s) onOpenSession(s); else onOpenId(sid); };
@@ -126,7 +120,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   const approve = () => {
     api.approveTickets(set.folder).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "approve failed")).then(reload);
   };
-  const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask" || kinds[n] === "idle").length;   // idle keeps its slot
+  const running = slotsUsed(ns.map((n) => kinds[n]));
   const noteRow = note && <div role="status" style={{ margin: "0 6px 6px", padding: "0 4px", fontSize: "var(--t9)", color: "var(--txd)" }}>{note}</div>;
 
   if (set.status === "merged") {
@@ -173,7 +167,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
       })}
       {noteRow}
       <div className={`tk-stub mg ${merging ? "run" : mfix ? "fix" : ""}`}>
-        <div className="no"><GitMerge size={15} aria-hidden /><small>{merging ? `${set.merged} / ${ns.length}` : mfix ? "FIX" : "LAST"}</small></div>
+        <div className="no"><GitMerge size={15} aria-hidden /><small className="caps">{merging ? `${set.merged} / ${ns.length}` : mfix ? "Fix" : "Last"}</small></div>
         <div className="bd">
           <div className="t1"><span>Merge into {set.feature_branch || "the feature branch"}</span>
             {mfix ? <button className="tk-btn err" onClick={() => retry("merge")} aria-label="Retry the merge">Retry</button>

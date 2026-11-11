@@ -8192,6 +8192,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tk-stub.mg { border: 1px dashed color-mix(in srgb, var(--txl) 40%, transparent); background: transparent; }
 .tk-stub.mg.run { border-style: solid; border-color: color-mix(in srgb, var(--acc) 50%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
 .tk-stub.mg .no { color: var(--acc2, var(--acc)); }
+.tk-stub.mg .bd { padding-block: 7px; }   /* the border's 2px come out of the padding: with a button the row grew to 51.3 */
 .tk-btn { margin-left: auto; flex: none; display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border: 0; border-radius: 9px; font-family: inherit; font-size: var(--t9); font-weight: 800; cursor: pointer; color: var(--acc-on); background: var(--warn); }
 .tk-btn.err { background: var(--err); }
 .tk-btn.acc { background: var(--acc); color: var(--acc-on); }
