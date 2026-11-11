@@ -268,9 +268,9 @@ FEATURES = (
      "cost": "one council run per merged set",
      "tokens": "the merged diff per reviewer and round, and the fix turns",
      "about": "On, once the merge session has merged every ticket, the council reads the "
-              "merged branch there, with the bar, the rounds and the reviewers set in the "
-              "COUNCIL tab, and the merge session fixes what it finds. FLOW shows this as "
-              "REVIEW. When the council passes, RETRO starts. When it stops without passing, "
+              "merged branch there, with its own settings (bar, rounds, reviewers), and the "
+              "merge session fixes what it finds. FLOW shows this as REVIEW. When the "
+              "council passes, RETRO starts. When it stops without passing, "
               "RETRO does not start and you get Council needs you: go on from the merge "
               "session's COUNCIL tab, or press Skip on REVIEW in FLOW to take the work as it "
               "stands. If a push would send nothing, or you merged the tickets by hand, the "
