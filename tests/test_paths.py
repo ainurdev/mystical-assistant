@@ -477,7 +477,7 @@ def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nexts
     monkeypatch.setattr(flowbranch, "ensure_feature_branch",
                         lambda s, slug, prefix: calls.append(("ensure", slug, prefix)) or ("feat/my-feature", "/wt"))
     monkeypatch.setattr(flowbranch, "carry_and_commit",
-                        lambda src, dst, files, slug, msg="": calls.append(("carry", src, dst, files, slug)) or True)
+                        lambda src, dst, files, slug, msg="", ours=None: calls.append(("carry", src, dst, files, slug)) or True)
     paths.set_path("b1", "feature-here", "new", "claude")
     paths.step_done("b1", "t1")
     assert paths.continue_after_turn(_job("b1")) is True
@@ -492,7 +492,7 @@ def test_build_here_failure_enqueues_nothing_and_tells_the_user(fake_queue, next
     monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": "/p", "chat_id": 1, "title": "T", "project": "p"})
     monkeypatch.setattr(flowbranch, "flow_files", lambda sid, since: ["/p/G.md"])
     monkeypatch.setattr(flowbranch, "ensure_feature_branch", lambda s, slug, prefix: ("feat/t", "/wt"))
-    def boom(*a):
+    def boom(*a, **k):
         raise flowbranch.FlowBranchError("pop conflict")
     monkeypatch.setattr(flowbranch, "carry_and_commit", boom)
     monkeypatch.setattr(runner, "_notify", lambda chat, text, *a, **k: sent.append((chat, text)))

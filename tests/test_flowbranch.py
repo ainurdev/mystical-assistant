@@ -248,3 +248,74 @@ def test_a_failed_pop_keeps_dsts_own_edit_of_a_non_ascii_file(repo):
     with pytest.raises(flowbranch.FlowBranchError):
         flowbranch.carry_and_commit(repo.main, co, [repo.path("é.md")], "x")
     assert open(repo.path("é.md", co)).read() == "theirs" and open(repo.path("é.md")).read() == "flow edit"
+
+
+# --- another flow's edit in the same file stays behind -------------------------
+
+def _glossary(repo, ours_after=None, theirs=None):
+    lines = [f"term {i}" for i in range(10)]
+    with open(repo.path("GLOSSARY.md"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+    _git(repo.main, "add", "-A")
+    _git(repo.main, "commit", "-qm", "glossary")
+    if ours_after is not None:
+        lines[ours_after + 1:ours_after + 1] = ["**Live board**:", "The pinned message."]
+    if theirs:
+        lines += ["", "## PR review", "**Finding**:", "One problem a review names."]
+    with open(repo.path("GLOSSARY.md"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def test_only_this_flows_hunks_move_and_the_other_flows_stay(repo):
+    _glossary(repo, ours_after=2, theirs=True)
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    ours = {os.path.realpath(repo.path("GLOSSARY.md")): {"**Live board**:", "The pinned message."}}
+    assert flowbranch.carry_and_commit(repo.main, co, [repo.path("GLOSSARY.md")], "x", ours=ours)
+    moved = _git(co, "show", "HEAD:GLOSSARY.md")
+    assert "**Live board**:" in moved and "## PR review" not in moved
+    left = open(repo.path("GLOSSARY.md")).read()
+    assert "## PR review" in left and "**Live board**:" not in left
+    assert _git(repo.main, "diff", "--stat").count("GLOSSARY.md") == 1      # theirs still uncommitted there
+
+
+def test_a_file_with_none_of_this_flows_changes_stays(repo, capsys):
+    _glossary(repo, theirs=True)
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    ours = {os.path.realpath(repo.path("GLOSSARY.md")): {"something else"}}
+    assert flowbranch.carry_and_commit(repo.main, co, [repo.path("GLOSSARY.md")], "x", ours=ours) is False
+    assert "## PR review" in open(repo.path("GLOSSARY.md")).read()
+    assert "GLOSSARY.md stays out of the carry: none of its changes are this flow's" in capsys.readouterr().err
+
+
+def test_bash_heredocs_count_as_writes(repo, monkeypatch):
+    g = repo.path("GLOSSARY.md")
+    cmd2 = f"cat > {repo.path('docs.md')} <<EOF\nhello\nEOF\necho done"
+    assert flowbranch.bash_writes(f"cd {repo.main} && cat >> GLOSSARY.md <<'EOF'\n## PR review\nEOF", "/x") == \
+        [(g, "## PR review")]
+    assert flowbranch.bash_writes(cmd2, "/x") == [(repo.path("docs.md"), "hello")]
+    evs = [{"type": "tool", "name": "Bash", "summary": cmd2[:120], "detail": cmd2, "ts": 10},
+           {"type": "tool", "name": "Bash", "summary": "cat >> /elsewhere/f <<EOF\nx\nEOF", "ts": 11}]
+    monkeypatch.setattr(store, "timed_events", lambda sid: evs)
+    monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "work_cwd": None})
+    assert flowbranch.written("sid", 5) == [repo.path("docs.md")]
+
+
+def test_added_lines_reads_the_flows_inputs_from_the_transcript(repo, monkeypatch, tmp_path):
+    import json
+    from bridge import transcript_jsonl
+    g, a = repo.path("GLOSSARY.md"), repo.path("a.md")
+    recs = [{"type": "assistant", "timestamp": "2026-01-01T00:00:00Z",
+             "message": {"content": [{"type": "tool_use", "name": "Write", "input": {"file_path": a, "content": "old"}}]}},
+            {"type": "assistant", "timestamp": "2026-11-10T10:00:00Z", "message": {"content": [
+                {"type": "tool_use", "name": "Edit", "input": {"file_path": g, "new_string": "x\n\ny"}},
+                {"type": "tool_use", "name": "MultiEdit", "input": {"file_path": g, "edits": [{"new_string": "z"}]}},
+                {"type": "tool_use", "name": "Write", "input": {"file_path": a, "content": "new"}},
+                {"type": "tool_use", "name": "Bash", "input": {"command": f"cat >> {g} <<'EOF'\n## PR review\nEOF"}}]}}]
+    t = tmp_path / "t.jsonl"
+    t.write_text("\n".join(json.dumps(r) for r in recs) + "\nnot json\n")
+    monkeypatch.setattr(transcript_jsonl, "find_transcript", lambda cid: str(t) if cid == "c1" else None)
+    monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "claude_session_id": sid})
+    since = 1794200000
+    got = flowbranch.added_lines("c1", since)
+    assert got == {os.path.realpath(g): {"x", "y", "z", "## PR review"}, os.path.realpath(a): {"new"}}
+    assert flowbranch.added_lines("nope", since) is None

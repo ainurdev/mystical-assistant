@@ -368,7 +368,8 @@ def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
     """The feature branch and what the flow wrote so far carried onto it."""
     st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, st["slug"])
     flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
-                                flowbranch.flow_files(flow_session_id, since), st["slug"])
+                                flowbranch.flow_files(flow_session_id, since), st["slug"],
+                                ours=flowbranch.added_lines(flow_session_id, since))
 
 
 def approve(folder: str) -> str:
