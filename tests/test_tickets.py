@@ -520,13 +520,15 @@ def test_boot_fixes_a_ticket_whose_turn_never_began(make_set):
     assert s.status("01") == "fix" and s.start_calls("01") == 1
 
 
-def test_boot_keeps_an_idle_ticket_without_step_done_waiting(make_set):
+def test_boot_keeps_an_idle_ticket_without_step_done_waiting(make_set, monkeypatch):
+    q = _carry_ons(monkeypatch)
     s = make_set({"01": None})
     s.commit("01")
     store.finish_turn(store.latest_turn_id(s.sid("01")), "done", 0, 1)    # ended, no StepDone, unheard
     paths._cache.clear()
     tickets.boot()
-    assert s.status("01") == "running" and s.start_calls("01") == 1      # waiting on you, as at runtime
+    assert s.status("01") == "running" and s.start_calls("01") == 1      # its slot kept, as at runtime
+    assert len(q) == 1                                                    # and told to carry on, as at runtime
 
 
 def test_build_is_done_on_the_flow_once_every_ticket_is(make_set):
@@ -571,7 +573,8 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     (m,) = _merges(s)
     assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
                            "tk/x-02, tk/x-03, tk/x-01\nResolve any clash so both tickets' work survives, run the "
-                           "project's full test suite, fix what breaks, and commit. Then call StepDone.")
+                           "project's full test suite, fix what breaks, and commit. Then call StepDone. "
+                           "Run tests in the foreground: a background command dies when your turn ends.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
     assert (s.state["status"], s.state["merge_session"]) == ("merging", m["sid"])
@@ -598,8 +601,9 @@ def test_merge_done_enqueues_retro_in_flow_session(make_set, monkeypatch):
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"])))
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
     sid = s.state["merge_session"]
-    assert tickets.after_turn(_merge_job(s)) is True       # ended without StepDone: still waiting
-    assert s.state["status"] == "merging" and not q
+    assert tickets.after_turn(_merge_job(s)) is True       # ended without StepDone: still merging, told to carry on
+    assert s.state["status"] == "merging" and [x[0] for x in q] == [sid]
+    q.clear()
     _merge_for_real(s)
     paths.step_done(sid, store.latest_turn_id(sid))
     assert tickets.after_turn(_merge_job(s)) is True
@@ -862,7 +866,8 @@ def test_racing_boots_open_one_merge_session(make_set, monkeypatch):
     assert len(_merges(s)) == before + 1
 
 
-def test_boot_judges_a_merge_turn_that_ended_unheard(make_set):
+def test_boot_judges_a_merge_turn_that_ended_unheard(make_set, monkeypatch):
+    _carry_ons(monkeypatch)                        # the carry-on itself: the tests below
     s = make_set({"01": None})
     s.finish("01")
     sid = s.state["merge_session"]
@@ -874,6 +879,66 @@ def test_boot_judges_a_merge_turn_that_ended_unheard(make_set):
     store.finish_turn(store.latest_turn_id(sid), "error", 0, 1)
     tickets.boot()
     assert s.state["status"] == "fix"
+
+
+# --- a merge turn, or a turn a restart left unheard, that ended to wait on a background command ---
+
+def _carry_ons(monkeypatch):
+    """What the scheduler queues as carry-ons: (session, prompt, surface)."""
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"], kw["surface"])))
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": []})
+    return q
+
+
+def test_a_merge_turn_that_ends_without_step_done_is_told_to_carry_on_twice(make_set, monkeypatch):
+    q = _carry_ons(monkeypatch)
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    said = []
+    monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject)))
+    for _ in range(4):
+        tickets.after_turn(_merge_job(s))          # "The full suite is still running; I'll report once it finishes."
+        store.start_turn(sid, uuid.uuid4().hex, "carry on", [])
+    assert s.state["status"] == "merging"
+    assert [x[0] for x in q] == [sid] * 2 and q[0][2] == "carry-on"
+    assert "foreground" in q[0][1] and "finish the merge" in q[0][1]
+    assert said == [("tickets", sid)]              # carry-ons spent: it says once that it waits on you
+    tickets.after_turn(_merge_job(s, "error"))
+    assert tickets.retry(s.folder, "merge") == ""
+    tickets.after_turn(_merge_job(s))
+    assert len(q) == 3                             # a retry is a new run: its carry-ons are back
+
+
+def test_boot_tells_a_ticket_that_ended_unheard_without_step_done_to_carry_on(make_set, monkeypatch):
+    q = _carry_ons(monkeypatch)
+    s = make_set({"01": None, "02": None})
+    for n in ("01", "02"):
+        store.finish_turn(store.latest_turn_id(s.sid(n)), "done", 0, 1)
+    store.append_event(s.sid("02"), store.latest_turn_id(s.sid("02")), {"type": "stopped"})   # your Stop moves nothing
+    paths._cache.clear()
+    tickets.boot()
+    assert [x[0] for x in q] == [s.sid("01")] and "finish the ticket" in q[0][1]
+    assert s.running() == ["01", "02"] and s.start_calls("01") == 1
+    tickets.boot()
+    tickets.boot()
+    assert len(q) == 2                             # NUDGES per run, however many restarts
+
+
+def test_boot_tells_a_merge_that_ended_unheard_without_step_done_to_carry_on(make_set, monkeypatch):
+    q = _carry_ons(monkeypatch)
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    store.finish_turn(store.latest_turn_id(sid), "done", 0, 1)    # the telegram-widgets merge, 2026-11-11
+    paths._cache.clear()
+    tickets.boot()
+    assert [x[0] for x in q] == [sid] and s.state["status"] == "merging" and len(_merges(s)) == 1
+    store.append_event(sid, store.latest_turn_id(sid), {"type": "stopped"})
+    tickets.boot()
+    assert len(q) == 1                             # after your Stop nothing moves by itself
 
 
 def test_ticket_endpoints_show_only_the_chats_own_sets(make_set, monkeypatch):
@@ -1062,6 +1127,7 @@ def test_no_carry_on_after_a_stop_or_with_your_message_queued(make_set, monkeypa
     monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": [{"status": "queued"}]})
     s = make_set({"01": None})
     s.end("01", "done")
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": []})   # the Stop alone holds it back
     job = s.job("01")
     job.interrupted = True
     tickets.after_turn(job)

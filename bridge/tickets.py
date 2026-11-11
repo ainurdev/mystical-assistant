@@ -48,6 +48,10 @@ and retry() carries that one on too, as it does a merge whose turn ended the sam
 Nobody watches a ticket session, though, and a turn that ends to wait on a background
 command never wakes (the command dies with the turn): a turn that ends done without
 StepDone gets a carry-on, at most NUDGES per run, before the slot is left waiting.
+The merge session gets the same, and once the carry-ons are spent a `tickets` notice
+on that session says it waits on you. Both prompts say to test in the foreground:
+with that line no ticket stalled (7 of 7, 2026-11-11), without it the same set's
+merge did, and stayed `merging` until someone asked.
 
 A set can span repos (Rivendell beside Mystical): the prompt sends work in another repo
 to a worktree on the ticket's branch at the place worktree_path_for gives that repo, so
@@ -59,8 +63,9 @@ tick starts as new only tickets that never had one (`queued`, or `missing` once 
 file is back), and it runs one with a session again only when retry() asked (`retry`).
 boot() judges what a restart left unheard: a running ticket whose session sits idle,
 and isn't parked, ended its turn (or never got one) while nothing listened, and is
-judged as at a turn end; one that ended without StepDone keeps its slot, waiting on
-you, as it would have. A set builds once: a finished one would start every ticket
+judged as at a turn end; one that ended without StepDone keeps its slot and gets the
+carry-on its turn end would have brought, unless that turn ended on your Stop. A set
+builds once: a finished one would start every ticket
 again, so only a new set or one that stopped before building starts. The flow's BUILD
 is marked done once the last ticket is, so FLOW shows it running while tickets build
 and the step after MERGE is RETRO. One lock serializes tick and every set.json write, since
@@ -360,6 +365,9 @@ def approve(folder: str) -> str:
     return ""
 
 
+_FOREGROUND = " Run tests in the foreground: a background command dies when your turn ends."
+
+
 def _elsewhere(st: dict, n: str) -> str:
     """Where a ticket's work in another repo goes: a worktree at the place
     worktree_path_for gives that repo, on this ticket's branch name, so _repos finds it."""
@@ -369,7 +377,7 @@ def _elsewhere(st: dict, n: str) -> str:
             f"{os.path.join(config.BASE_PATH, '.worktrees', '<repo>', git.slug(t['branch']))} on branch {t['branch']} "
             + (f"(start from {base} there if it exists, else from that repo's up-to-date main)"
                if base else "(start from that repo's up-to-date main)")
-            + " and commit there too. Run tests in the foreground: a background command dies when your turn ends.")
+            + " and commit there too." + _FOREGROUND)
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
@@ -503,7 +511,7 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
-            + " Then call StepDone.")
+            + " Then call StepDone." + _FOREGROUND)
 
 
 def _other_branches(st: dict) -> dict:
@@ -554,13 +562,14 @@ def start_merge(folder: str) -> None:
 def _merge_turn(job) -> None:
     """The merge session's turn ended (a Stop moves nothing): judged by _merge_end."""
     if not job.interrupted:
-        _merge_end(job.store_session_id, job.status)
+        _merge_end(job.store_session_id, job.status, job.chat_id)
 
 
-def _merge_end(sid: str, status: str) -> None:
+def _merge_end(sid: str, status: str, chat_id=None, carry: bool = True) -> None:
     """The merge session's turn ended `status`: StepDone since it started, with every
     ticket branch in, means merged, then the flow goes on to RETRO; an error that isn't
-    a parked limit is `fix`; else it waits on you."""
+    a parked limit is `fix`; done without StepDone gets a carry-on (_nudge) unless
+    `carry` is off (it ended on your Stop); else it waits on you."""
     with _build:
         for r in sets():
             folder = r.get("folder")
@@ -585,6 +594,8 @@ def _merge_end(sid: str, status: str) -> None:
             if left:
                 notices.emit("tickets", st["parent_session"], body=f"MERGE called StepDone, but {', '.join(left)} "
                              f"{'is' if len(left) == 1 else 'are'}n't merged into {st['feature_branch']} yet.")
+        elif status == "done" and carry:
+            _nudge(st, sid, "merge", chat_id)   # the set keeps its merge's count
         else:
             return
         save(folder, st)
@@ -726,29 +737,43 @@ def _repos(st: dict, branch: str) -> list:
     return out
 
 
-NUDGES = 2   # carry-ons per ticket run before its session is left waiting on you
+NUDGES = 2   # carry-ons per ticket or merge run before its session is left waiting on you
 _NUDGE = ("[mystical] Your turn ended without StepDone. A background command dies when a turn ends, "
           "so anything you were waiting for did not finish: run it again in the foreground, finish the "
-          "ticket and call StepDone. If you really need the user, say what in one line and stop.")
+          "{} and call StepDone. If you really need the user, say what in one line and stop.")
 
 
-def _nudge(t: dict, job) -> None:
-    """A ticket turn that ended done without StepDone: nobody is watching a ticket
-    session, so most often it ended to wait on a background command the turn's end
-    killed. Queue a carry-on, at most NUDGES per run, unless something is queued."""
-    if job.interrupted or job.status != "done" or t.get("nudges", 0) >= NUDGES:
-        return
+def _nudge(own: dict, sid: str, what: str, chat_id=None) -> None:
+    """A ticket's or the merge's turn ended done without StepDone, and not on your Stop:
+    nobody is watching such a session, so most often it ended to wait on a background
+    command the turn's end killed. Queue a carry-on, at most NUDGES per run, unless
+    something is queued; once they are spent, say once that the session waits on you.
+    `own` keeps the count: the ticket, or the set for its merge."""
     from bridge import queue_manager  # local import: heavy module
-    sid = t["session_id"]
     if any(i.get("status") in ("queued", "running") for i in queue_manager.snapshot(sid).get("items") or []):
         return
-    t["nudges"] = t.get("nudges", 0) + 1
+    n = own.get("nudges", 0)
+    if n > NUDGES:
+        return   # said already
+    own["nudges"] = n + 1
+    if n == NUDGES:
+        notices.emit("tickets", sid, body=f"Told to carry on {NUDGES} times and still not finished: "
+                                          f"this {what} waits on you.")
+        return
     sess = store.get_session(sid) or {}
+    text = _NUDGE.format(what)
     queue_manager.enqueue(
-        sid, text=_NUDGE, prompt=_NUDGE, images=[], model=None, effort=None,
+        sid, text=text, prompt=text, images=[], model=None, effort=None,
         permission_mode=None, width=None, sel=[], surface="carry-on",
-        chat_id=job.chat_id if job.chat_id is not None else sess.get("chat_id"),
+        chat_id=chat_id if chat_id is not None else sess.get("chat_id"),
         project=sess.get("project") or "")
+
+
+def _stopped(sid: str) -> bool:
+    """The session's last turn ended on your Stop: the runner marks it with a `stopped`
+    event. For boot, which has no job to ask."""
+    return any(e.get("type") == "stopped"
+               for e in store.events_of_turn(sid, store.latest_turn_id(sid) or ""))
 
 
 def _find(sid: str):
@@ -785,8 +810,8 @@ def after_turn(job) -> bool:
             v = _verdict(st, t, job.status) if t["status"] in ("running", "fix") and not job.interrupted else None
             if v:
                 _settle(st, n, v)
-            elif t["status"] == "running":
-                _nudge(t, job)
+            elif t["status"] == "running" and job.status == "done" and not job.interrupted:
+                _nudge(t, sid, "ticket", job.chat_id)
             save(folder, st)
             tick(folder)
         return True
@@ -830,7 +855,7 @@ def _retry_merge(folder: str, st: dict) -> str:
         save(folder, st)
         start_merge(folder)
         return "" if load(folder).get("status") == "merging" else "the merge didn't start"
-    st["status"] = "merging"
+    st.update(status="merging", nudges=0)
     save(folder, st)
     snap = paths.get(sid)
     try:
@@ -906,13 +931,13 @@ def _boot_merge(folder: str) -> None:
                 start_merge(folder)
             return
     if not store.running_turn_id(sid) and sid not in limits.parked():
-        _merge_end(sid, (store.last_turn(sid) or {}).get("status") or "error")
+        _merge_end(sid, (store.last_turn(sid) or {}).get("status") or "error", carry=not _stopped(sid))
 
 
 def boot() -> None:
     """After a restart: judge every running ticket whose session sits idle and isn't
     parked (its turn ended, or never began, while nothing listened) as at a turn end:
-    done, fix, or still running and waiting on you. Then tick each building set, and
+    done, fix, or still running and told to carry on. Then tick each building set, and
     reconcile each merging one (_boot_merge). Nothing here starts a ticket that has a
     session; only retry() does. Run again when TICKETS or SKILL PATHS comes back on."""
     for r in sets():
@@ -930,6 +955,8 @@ def boot() -> None:
                         continue
                     last = (store.last_turn(sid) or {}).get("status") or "error"   # no turn at all: never began
                     _settle(st, n, _verdict(st, t, last) or "running")
+                    if t["status"] == "running" and last == "done" and not _stopped(sid):
+                        _nudge(t, sid, "ticket")   # ended without StepDone while nothing listened
                 save(folder, st)
                 tick(folder)
         except Exception as e:  # noqa: BLE001 — one bad set never stops the boot
