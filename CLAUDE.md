@@ -32,8 +32,8 @@ the user at it rather than restarting. Details: the **bridge-ship** skill.
 ## Tests
 
 ```sh
-python3 -m pytest tests/ -q   # backend; takes minutes, so run it in the background
-npm run check                 # in bridge/dashboard/web or bridge/miniapp/web: tsc + every *.check.ts
+python3 -m pytest tests/ -q -n 6   # backend; ~2 min on 6 workers (pytest-xdist), 7-10 min without -n
+npm run check                      # in bridge/dashboard/web or bridge/miniapp/web: tsc + every *.check.ts
 ```
 
 Anything red is your change, except on macOS, where clean master fails four tests:
