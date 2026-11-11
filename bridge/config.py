@@ -205,6 +205,9 @@ TICKET_RUNS = os.environ.get("TICKET_RUNS", "0").lower() \
 # APPROVE BEFORE BUILD: tickets wait for a tap before any session starts. Off = trust the skill.
 TICKET_APPROVE = os.environ.get("TICKET_APPROVE", "0").lower() \
     not in ("0", "false", "no", "")
+# REVIEW AFTER MERGE: the council reads a merged ticket set before RETRO. Ships on, and obeys TICKETS.
+MERGE_REVIEW = os.environ.get("MERGE_REVIEW", "1").lower() \
+    not in ("0", "false", "no", "")
 GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
     not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------

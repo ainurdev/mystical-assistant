@@ -1065,3 +1065,147 @@ def test_no_carry_on_after_a_stop_or_with_your_message_queued(make_set, monkeypa
     job.interrupted = True
     tickets.after_turn(job)
     assert q == []
+
+
+# --- REVIEW: the council reads the merged work ---------------------------------
+
+def _said(score, *found):
+    """A reviewer's answer; each finding is (sev, file, line)."""
+    return {"ok": True, "score": score, "summary": f"says {score}",
+            "findings": [{"sev": sv, "file": f, "line": n, "title": f"{sv} at {f}:{n}"} for sv, f, n in found]}
+
+
+_FIX = ("should", "01.txt", 1)    # something to fix: a round under the bar with nothing in it stops
+
+
+@pytest.fixture
+def reviewed(make_set, monkeypatch):
+    """A one-ticket set whose merge session is merging, with REVIEW AFTER MERGE on.
+    merged() is its turn ending merged. The council's reviewer, pings and queue are
+    fakes: rounds run inline and the one seat answers from `said`. Git is real, so the
+    council reads what the merge joined."""
+    from bridge import council, queue_manager, waits
+    s = make_set({"01": None}, build=False)
+    for t in ("a", "b", "c"):
+        paths.step_done(s.flow, t)                 # grill, spec, tickets: build is next
+    assert s.build() == ""
+    s.finish("01")                                 # BUILD done: the merge session opens
+    r = SimpleNamespace(s=s, merge=s.state["merge_session"], queued=[], kinds=[], said=[])
+    monkeypatch.setattr(council, "_spawn", lambda fn, *a: fn(*a))
+    monkeypatch.setattr(council, "settings", lambda: dict(council.DEFAULTS))
+    monkeypatch.setattr(council, "seats_for", lambda session, st: {"claude": "on", "codex": "off"})
+    monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.said.pop(0))
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: r.queued.append((sid, kw["prompt"])) or "item-1")
+    monkeypatch.setattr(queue_manager, "snapshot",
+                        lambda sid: {"items": [{"id": "item-1", "status": "done", "job_id": None}]})
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
+    monkeypatch.setattr(waits, "target_ended", lambda job: None)
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
+
+    def merged():
+        _merge_for_real(s)
+        paths.step_done(r.merge, store.latest_turn_id(r.merge))
+        return tickets.after_turn(_merge_job(s))
+
+    def fixed():
+        """The merge session's fix turn ends: the council reads again."""
+        return council.after_turn(SimpleNamespace(id=uuid.uuid4().hex, store_session_id=r.merge, status="done",
+                                                  interrupted=False, result="", texts=[], events=[], chat_id=1,
+                                                  runtime=None))
+    r.merged, r.fixed, r.council = merged, fixed, council
+    return r
+
+
+def test_the_council_reads_the_merged_work_and_the_merge_session_fixes_it(reviewed):
+    r = reviewed
+    r.said = [_said(7.0, _FIX)]
+    assert r.merged() is True
+    c = r.council.get(r.merge)
+    assert (c["status"], c["cwd"]) == ("fixing", r.s.state["feature_checkout"])
+    (sid, prompt), = r.queued                          # the fix goes to the merge session, and RETRO waits
+    assert sid == r.merge and prompt.startswith("[council 1/5] 7.0 of 9.0")
+    f = paths.get(r.s.flow)
+    assert f["done"][-1] == "merge" and f["next"] == {"station": "review", "turn_id": "", "started": True}
+    assert r.s.state["status"] == "merged"             # the set is merged all the while: clean-up may run
+
+
+def test_a_review_that_passes_starts_retro(reviewed):
+    r = reviewed
+    r.said = [_said(7.0, _FIX), _said(9.4)]
+    r.merged()
+    assert r.fixed() is True                           # round 2 passes
+    assert r.council.get(r.merge)["status"] == "passed" and r.kinds == ["council_passed"]
+    assert r.queued[-1] == (r.s.flow, "/mattpocock-skills:retro")
+    assert paths.get(r.s.flow)["done"][-2:] == ["merge", "review"]
+
+
+def test_a_review_that_stops_waits_at_review_until_you_take_it_on(reviewed):
+    r = reviewed
+    r.said = [_said(7.0, _FIX), _said(6.9, _FIX)]
+    r.merged()
+    r.fixed()                                          # round 2 scores no better: the council stops
+    assert r.council.get(r.merge)["status"] == "stopped" and r.kinds == ["council_stopped"]
+    assert [p for sid, p in r.queued if sid == r.s.flow] == []
+    assert paths.get(r.s.flow)["next"] == {"station": "review", "turn_id": "", "started": True}
+    r.said = [_said(9.2)]
+    r.council.act(store.get_session(r.merge), "more")  # "2 more rounds" in the merge session's COUNCIL tab
+    r.fixed()
+    assert r.council.get(r.merge)["status"] == "passed"
+    assert r.queued[-1] == (r.s.flow, "/mattpocock-skills:retro")
+
+
+def test_nothing_to_review_skips_the_step(reviewed):
+    r = reviewed
+    _merge_for_real(r.s)
+    _git(r.s.main, "merge", "-q", "--ff-only", "feat/x")       # master holds it already: a push would send nothing
+    paths.step_done(r.merge, store.latest_turn_id(r.merge))
+    tickets.after_turn(_merge_job(r.s))
+    assert r.council.get(r.merge) is None
+    assert r.queued == [(r.s.flow, "/mattpocock-skills:retro")]
+    assert paths.get(r.s.flow)["done"][-2:] == ["merge", "review"]
+
+
+def test_a_merge_session_still_busy_gets_its_review_when_that_turn_ends(reviewed, monkeypatch):
+    from bridge import state
+    r = reviewed
+    monkeypatch.setattr(state, "is_running", lambda sid: True)     # a prompt you queued there started first
+    r.merged()
+    assert r.council.get(r.merge) is None and not r.queued
+    assert paths.get(r.s.flow)["next"] == {"station": "review", "turn_id": "", "started": False}
+    monkeypatch.setattr(state, "is_running", lambda sid: False)
+    r.said = [_said(9.5)]
+    tickets.after_turn(_merge_job(r.s))                            # that turn ends
+    assert r.council.get(r.merge)["status"] == "passed"
+    assert r.queued == [(r.s.flow, "/mattpocock-skills:retro")]
+
+
+def test_a_council_run_after_the_flow_moved_on_starts_no_second_retro(reviewed, monkeypatch):
+    r = reviewed
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))   # the switch is off
+    r.merged()
+    assert r.queued == [(r.s.flow, "/mattpocock-skills:retro")] and r.council.get(r.merge) is None
+    r.said = [_said(9.5)]
+    r.council.start(store.get_session(r.merge), r.s.state["feature_checkout"])     # RUN, by hand
+    assert r.council.get(r.merge)["status"] == "passed" and len(r.queued) == 1
+
+
+def test_flow_shows_the_review_from_the_merge_sessions_council(reviewed, monkeypatch):
+    from bridge.dashboard import server as dash
+    monkeypatch.setattr(dash, "_chat", lambda: 1)
+    r = reviewed
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+
+    def flow():
+        h._get_api("/local/flow", {"session": [r.s.flow]})
+        return box["obj"]
+    assert "review" not in flow()["set"]               # merging: no council has anything to say yet
+    r.said = [_said(7.0, _FIX), _said(6.9, _FIX)]
+    r.merged()
+    got = flow()
+    assert got["set"]["review"] == {"status": "fixing", "reason": "", "round": 1, "max_rounds": 5}
+    assert [st[0] for st in got["flow"]["stations"]][-3:] == ["merge", "review", "retro"]
+    r.fixed()
+    assert flow()["set"]["review"] == {"status": "stopped", "reason": "round 2 didn't raise the score",
+                                       "round": 2, "max_rounds": 5}

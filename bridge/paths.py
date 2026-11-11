@@ -33,6 +33,14 @@ never takes over an unrelated step. The step StepDone records starts once (`next
 `started`), at the first clean end of its turn or of a resume of it, or when AUTO is
 released. No auto step commits to the default branch: build-here, and a FIX on it,
 move the session into a worktree of its own first (flowbranch).
+
+REVIEW follows MERGE on the paths that merge tickets, while REVIEW AFTER MERGE and
+TICKETS are on. It has no skill and no turn here: the council reads the merged work in
+the merge session (tickets.start_review), and its pass is the step's end
+(tickets.council_passed, then advance). A council that stops leaves the step open, and
+it waits on you. Whether a flow has the step is settled when its MERGE ends, so
+shipping the step, or switching it later, never puts one into a flow already past
+MERGE. get() sends the steps as they stand (`stations`), and FLOW draws those.
 """
 
 import json
@@ -86,12 +94,13 @@ def pack_for(claude_session_id: str) -> str:
 PATHS: dict[str, list[tuple[str, "str | None", str]]] = {
     "feature": [("grill", "grill-with-docs", "you"), ("spec", "to-spec", "auto"),
                 ("tickets", "to-tickets", "you"), ("build", None, "auto"),
-                ("merge", None, "auto"), ("retro", "retro", "auto")],
+                ("merge", None, "auto"), ("review", None, "auto"), ("retro", "retro", "auto")],
     "feature-here": [("grill", "grill-with-docs", "you"), ("build-here", "implement", "auto"),
                      ("retro", "retro", "auto")],
     "bug": [("diagnose", "diagnosing-bugs", "auto"), ("retro", "retro", "auto")],   # diagnosing-bugs fixes and tests
     "refactor": [("improve", "improve-codebase-architecture", "you"), ("tickets", "to-tickets", "you"),
-                 ("build", None, "auto"), ("merge", None, "auto"), ("retro", "retro", "auto")],
+                 ("build", None, "auto"), ("merge", None, "auto"), ("review", None, "auto"),
+                 ("retro", "retro", "auto")],
 }
 
 _lock = threading.Lock()
@@ -122,10 +131,22 @@ def _save_locked() -> None:
         print(f"[paths] persist failed: {e}", file=sys.stderr)
 
 
+def review_on() -> bool:
+    """REVIEW AFTER MERGE. Only a ticket set's MERGE leads to it, so TICKETS must be on too."""
+    return aifeatures.enabled("ticketruns") and aifeatures.enabled("mergereview")
+
+
 def _stations(flow: dict) -> list:
     if flow["path"] == "one":
         return [(flow["skill"], flow["skill"], "auto")]
-    return PATHS[flow["path"]]
+    sts = PATHS[flow["path"]]
+    # Whether REVIEW follows is settled when MERGE ends: until then the switches say,
+    # after it what the flow recorded (a flow past MERGE from before the step grows none).
+    if "merge" in flow["done"]:
+        has = "review" in flow["done"] or (flow.get("next") or {}).get("station") == "review"
+    else:
+        has = review_on()
+    return sts if has else [st for st in sts if st[0] != "review"]
 
 
 def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
@@ -152,17 +173,20 @@ def restore(session_id: str, snap: "dict | None") -> None:
         _load_locked()
         f = _cache.get(session_id)
         if f:
-            f.update(snap)
+            f.update({k: v for k, v in snap.items() if k != "stations"})   # get() works them out, nothing stores them
             _save_locked()
 
 
 def get(session_id: str) -> "dict | None":
+    """The session's path. `stations` is its steps as they stand now, each
+    [station, skill, "you" | "auto"]: what FLOW draws."""
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         if not f:
             return None
-        return {k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")}
+        return {**{k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")},
+                "stations": [list(st) for st in _stations(f)]}
 
 
 def set_auto(session_id: str, on: bool) -> None:
@@ -262,7 +286,8 @@ def path_for_command(skill: str) -> tuple:
 # Stations _start queues a turn for in this session. build starts ticket sessions
 # instead while TICKETS is on (tickets.start_build), and merge runs in a session of
 # its own once every ticket is done (tickets.start_merge, then advance); with
-# TICKETS off both are the user's.
+# TICKETS off both are the user's. review is the council's, in that merge session
+# (tickets.start_review).
 _AUTO_START = {"spec", "tickets", "retro", "build-here"}
 ZONE_TOKENS = 150_000
 
@@ -293,6 +318,9 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     if flow and station == "build" and aifeatures.enabled("ticketruns"):
         from bridge import tickets  # local import: tickets imports paths
         return not tickets.start_build(session_id)
+    if flow and station == "review":
+        from bridge import tickets  # local import: tickets imports paths
+        return tickets.start_review(session_id)
     if not flow or station not in _AUTO_START:
         return False
     skill = next((sk for st, sk, _ in _stations(_cache[session_id]) if st == station), None)
@@ -405,9 +433,10 @@ def advance(session_id: str, station: str, at: "int | None" = None) -> bool:
             f = _cache.get(session_id)
             if not f or at is not None and f["at"] != at:
                 return False
+            stations = [st[0] for st in _stations(f)]   # before the mark: MERGE's own end settles REVIEW
             if station not in f["done"]:
                 f["done"].append(station)
-            rest = [st[0] for st in _stations(f) if st[0] not in f["done"]]
+            rest = [st for st in stations if st not in f["done"]]
             f["next"] = {"station": rest[0], "turn_id": "", "started": False} if rest else None
             _save_locked()
         return bool(rest) and _go(session_id)

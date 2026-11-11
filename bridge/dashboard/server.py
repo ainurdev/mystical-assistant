@@ -575,7 +575,7 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             try:
-                tset = tickets.summary_for(sid)
+                tset = tickets.flow_set(sid)
             except Exception:
                 tset = None
             return self._json({"flow": paths.get(sid), "set": tset})

@@ -260,6 +260,18 @@ FEATURES = (
               "meant to ask you first, but can skip it). On, the set shows its breakdown in "
               "the TICKETS tab and waits for Approve & build before any branch, worktree or "
               "session is made."},
+    {"key": "mergereview", "env": "MERGE_REVIEW", "label": "REVIEW AFTER MERGE",
+     "parent": "ticketruns",
+     "hint": "the council reads the merged work before RETRO",
+     "cost": "one council run per merged set",
+     "tokens": "the merged diff per reviewer and round, and the fix turns",
+     "about": "On, once the merge session has merged every ticket, the council reads the "
+              "merged branch there, with the bar, the rounds and the reviewers set in the "
+              "COUNCIL tab, and the merge session fixes what it finds. FLOW shows this as "
+              "REVIEW. When the council passes, RETRO starts. When it stops without passing, "
+              "RETRO does not start and you get Council needs you: go on from the merge "
+              "session's COUNCIL tab, or tell the flow's session to go on. If a push would "
+              "send nothing, the step is passed over. Off, RETRO follows MERGE."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",
      "hint": "marks 150k tokens and offers /compact first past it",
