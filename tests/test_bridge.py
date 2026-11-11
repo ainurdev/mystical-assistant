@@ -1780,6 +1780,8 @@ def test_watchdog_ends_a_done_turn_held_only_by_background_shells(monkeypatch):
     job.session_id = "csid"
     job.add({"type": "result"})
     job.status = "done"
+    job.bg = {"s1": {"type": "shell", "desc": "Run the suite", "since": 0},
+              "a1": {"type": "agent", "desc": "Review the diff", "since": 0}}
     threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
     time.sleep(1.5)
     assert not proc.terminated                 # an agent still works: wait for it
@@ -1787,6 +1789,14 @@ def test_watchdog_ends_a_done_turn_held_only_by_background_shells(monkeypatch):
     time.sleep(1.5)
     assert proc.terminated and proc.killed     # SIGTERM, then SIGKILL after INTERRUPT_KILL
     assert not job.timed_out                   # ended, not hung: no error row, no resume
+    assert job.bg_ended == ["Run the suite"]   # what carry_on tells the session it lost
+
+
+def test_every_session_is_told_a_background_command_dies_with_its_turn():
+    """The CLI's Bash tool promises a wake-up when a background command exits. Under the
+    watchdog above the command is ended instead, so the session prompt says so, with the
+    watchdog's own number."""
+    assert f"{int(runner.BG_SHELL_GRACE)} seconds" in runner._LOG_NOTE and "foreground" in runner._LOG_NOTE
 
 
 def test_watchdog_does_not_count_sleep_as_silence(monkeypatch):

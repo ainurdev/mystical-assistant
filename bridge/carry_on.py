@@ -1,4 +1,5 @@
-"""Carry-on: the turn Mystical sends by itself after a session switched an MCP on.
+"""Carry-on: the turn Mystical sends by itself after a session switched an MCP on,
+or lost a background command to the end of its turn.
 
 A server switched on mid-turn only loads on the next turn (its schemas go into
 the system prompt before the first token), so a session that needed one used to
@@ -16,6 +17,18 @@ loads the tools anyway, as does your own message already queued. The mark is
 cleared at every turn end either way, so it never fires a turn later.
 Switching a server on from the Tools modal never marks: your own toggle never
 starts a turn.
+
+The lost command: a session that starts a test run in the background, says "I'll
+report once it finishes" and ends its turn never reports. Claude Code's Bash tool
+promises to re-invoke it, but runner._watchdog ends a finished turn's background
+commands (they once held a turn RUNNING for hours), so nothing wakes the session.
+From 2026-10-18 to 11-10 that happened in 80 turns of 70 sessions, and in 40 the
+last words promised a report. The watchdog notes what it took down in
+job.bg_ended, and the turn's end sends one carry-on naming it. Once: the
+carry-on's own turn that loses a command again is left alone. Only in a session
+you talk to (_YOURS): bridge/tickets.py carries a ticket or merge session on
+itself and counts, and a Rivendell job, an automation or a helper has handed its
+result on by the time its turn ends.
 """
 
 import json
@@ -25,6 +38,11 @@ from bridge import store
 
 _TEXT = ("[mystical] MCP loaded: {names}. Carry on with what you were doing; "
          "those tools are available now.")
+# "No path for this message.": an order from the bridge, not a bug for the paths pack to route.
+_LOST = ("No path for this message.\n\n[mystical] Your turn ended while a background command was "
+         "still running, and the bridge ended it with the turn: {names}. Nothing wakes you when a "
+         "background command exits. If you still owe its result, run it again, wait for it in the "
+         "foreground, then report. If you owe nothing, say so in one line.")
 
 
 def _key(sid: str) -> str:
@@ -37,6 +55,17 @@ def mark(sid: str, names: list[str]) -> None:
     store.set_setting(_key(sid), json.dumps(sorted(have | set(names))))
 
 
+_YOURS = ("dashboard", "miniapp", "bot", "bridge")   # "bridge": a terminal session you took over
+
+
+def _lost(job, sess: dict) -> list[str]:
+    """The background commands this turn lost, when the session is to be told."""
+    if not job.bg_ended or sess.get("origin") not in _YOURS:
+        return []
+    last = store.turn_prompt(store.latest_turn_id(job.store_session_id) or "") or ""
+    return [] if last.startswith(_LOST.split("{")[0]) else job.bg_ended
+
+
 def after_turn(job, resumed: bool) -> bool:
     """Called once per finished turn, after goals and flows had their say
     (`resumed`). Queues the carry-on and returns True if it did. Best-effort:
@@ -44,17 +73,23 @@ def after_turn(job, resumed: bool) -> bool:
     try:
         sid = job.store_session_id
         raw = store.get_setting(_key(sid)) if sid else None
-        if raw is None:
+        if raw is None and not (sid and job.bg_ended):
             return False
-        store.set_setting(_key(sid), None)
+        sess = store.get_session(sid) or {}
+        lost = _lost(job, sess)
+        if raw is None and not lost:
+            return False
+        if raw is not None:
+            store.set_setting(_key(sid), None)
         if resumed or job.status != "done" or job.interrupted:
             return False
         from bridge import queue_manager
         items = queue_manager.snapshot(sid).get("items") or []
         if any(i.get("status") in ("queued", "running") for i in items):
             return False
-        sess = store.get_session(sid) or {}
-        text = _TEXT.format(names=", ".join(json.loads(raw)))
+        text = "\n\n".join(filter(None, (
+            lost and _LOST.format(names="; ".join(lost)),
+            raw is not None and _TEXT.format(names=", ".join(json.loads(raw))))))
         queue_manager.enqueue(
             sid, text=text, prompt=text, images=[], model=None, effort=None,
             permission_mode=None, width=None, sel=[], surface="carry-on",

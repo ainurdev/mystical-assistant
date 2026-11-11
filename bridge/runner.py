@@ -96,7 +96,10 @@ _LOG_NOTE = (
     "To run this project (dev server, `npm run dev`, anything long-lived the "
     "human will look at), use the Run tool — not Bash. The bridge owns what Run "
     "starts, so it outlives the turn and the human can follow its port and logs "
-    "in the dashboard; a background Bash process is invisible to them. Its "
+    "in the dashboard; a background Bash process is invisible to them. Here a "
+    "background Bash command is also ended about 15 seconds after your final "
+    "answer, and you are not re-invoked when it exits: when you need its result, "
+    "wait for it in the foreground before you answer. The dev server's "
     f"output is also logged to {devserver.DEV_LOG_REL} in the project root — "
     "read that file (e.g. tail it) to inspect dev-server logs.\n\n"
     + _MYSTICAL_NOTE)
@@ -370,6 +373,11 @@ def _run_env(ponytail: "str | None",
     # for never arrives. Without the ceiling it also waits forever for a
     # background shell (a dev server): _watchdog ends those turns.
     over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+    # How long one foreground Bash call may run. At the CLI's own 10 min it moves
+    # the command to the background, where _watchdog ends it with the turn, and a
+    # 7 to 10 minute test suite sat on that edge. Under RUN_TIMEOUT: the hang
+    # watchdog counts a long call as silence.
+    over["BASH_MAX_TIMEOUT_MS"] = str(max(600, config.RUN_TIMEOUT - 300) * 1000)
     # Opt in to system/session_state_changed (running | idle | requires_action):
     # the CLI's own word on whether a turn is done, where the bridge used to
     # guess from the turn row, the job and the transcript (Job.cli_state).
@@ -955,6 +963,9 @@ class Job:
         self.cli_state: str | None = None
         self.bg: dict[str, dict] = {}
         self.bg_peak = 0
+        # The background commands the watchdog took down with this finished turn
+        # (their descriptions): carry_on tells the session at the turn's end.
+        self.bg_ended: list[str] = []
         self.answered_at: float | None = None   # this turn's first result
         # The CLI retrying a request (system/api_retry); the next assistant event
         # means it got through. rate_limit is the last rate_limit_event's info.
@@ -2931,7 +2942,9 @@ def _watchdog(job: Job, proc) -> None:
     hang detector, not a work cap (the cost brake is the auto-resume cap, see
     _maybe_auto_resume). And end a finished turn whose child only background
     shells keep alive (BG_SHELL_GRACE): the CLI takes them down and exits, and
-    the turn closes on the result it already has.
+    the turn closes on the result it already has. What went down is noted in
+    job.bg_ended: nothing wakes a session that was waiting on one, so the turn's
+    end tells it (bridge/carry_on.py).
 
     proc is the claude child, or an agent turn's acp.Conn (its poll() never
     reaps; its kill() sweeps the group). It stands down once the turn has
@@ -2952,6 +2965,8 @@ def _watchdog(job: Job, proc) -> None:
         if (job.status != "running" and not (job.runtime or "").startswith("acp:")
                 and quiet >= BG_SHELL_GRACE
                 and not (job.session_id and _running_agents(job.session_id))):
+            job.bg_ended = [b["desc"] or "one with no description"
+                            for b in job.bg.values() if b["type"] != "agent"]
             proc.terminate()
             job.exited.wait(INTERRUPT_KILL)
             if proc.poll() is None:

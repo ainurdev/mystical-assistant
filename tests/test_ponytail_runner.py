@@ -37,6 +37,14 @@ def test_run_env_lets_background_agents_finish():
     assert env["PATH"] == os.environ["PATH"]
 
 
+def test_run_env_lets_one_command_outlast_the_clis_ten_minutes():
+    """At its 10-minute cap the CLI moves a foreground command to the background, where
+    the watchdog ends it with the turn; a 7 to 10 minute test suite sat on that edge.
+    The cap stays under the hang watchdog, which a long call counts against."""
+    cap = int(runner._run_env(None)["BASH_MAX_TIMEOUT_MS"])
+    assert 600_000 < cap < runner.config.RUN_TIMEOUT * 1000
+
+
 def test_run_env_sets_mode():
     env = runner._run_env("lite")
     assert env["PONYTAIL_DEFAULT_MODE"] == "lite"
