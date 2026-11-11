@@ -80,6 +80,10 @@ APPROVE BEFORE BUILD (`ticketapprove`) is the user's choice to trust the skill o
 parses and validates the tickets, saves the set as `approve` and stops: no feature
 branch, carry or worktree. approve() (the Approve & build tap) does the rest. boot()
 and tick() leave an `approve` set alone.
+
+Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's state and why,
+and how its session's last turn ended (StepDone or not, the last tool, the last words). It
+reads the registry, set.json and the DB read-only: run it first, before any query by hand.
 """
 
 import json

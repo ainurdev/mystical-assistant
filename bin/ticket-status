@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""What every ticket set is doing, in one read-only call: each ticket's state and why from its
+set.json, and from the bridge DB how its session's last turn ended (StepDone or not, the last
+tool, the last words). The scheduler is bridge/tickets.py. This imports none of the bridge and
+opens the DB read-only, so it is safe beside the running one.
+
+usage: bin/ticket-status [slug ...]     with no slug: every set, a merged one as a single line"""
+import json
+import os
+import sqlite3
+import sys
+import time
+
+DB = os.path.expanduser(os.environ.get("BRIDGE_DB", "~/.bridge_state/bridge.db"))
+
+
+def when(ts) -> str:
+    return time.strftime("%m-%d %H:%M", time.localtime(ts)) if ts else "-"
+
+
+def last_turn(db, sid) -> str:
+    """How a session's last turn ended, or why there is nothing to say."""
+    if not sid:
+        return "no session yet"
+    t = db.execute("select id, status, started, elapsed from turns where session_id=? order by seq desc limit 1", (sid,)).fetchone()
+    if not t:
+        return f"{sid[:8]} has no turn"
+    evs = [json.loads(p) for (p,) in db.execute("select payload from events where turn_id=? and type in ('tool', 'text') order by seq", (t["id"],))]
+    tools = [e.get("name", "") for e in evs if e.get("type") == "tool"]
+    words = next((e.get("text", "") for e in reversed(evs) if e.get("type") == "text"), "")
+    step = "StepDone" if any(n.endswith("StepDone") for n in tools) else "no StepDone"
+    return (f"{sid[:8]} turn {t['status']} {when(t['started'])} +{t['elapsed'] or 0}s, {step}, "
+            f"last tool {tools[-1] if tools else '-'} | {' '.join(words.split())[:160]}")
+
+
+def main(slugs: list) -> None:
+    try:
+        with open(os.path.join(os.path.dirname(DB), "ticketsets.json"), encoding="utf-8") as f:
+            rows = json.load(f)
+    except (OSError, ValueError):
+        rows = []
+    db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    for r in rows:
+        if slugs and r.get("slug") not in slugs:
+            continue
+        try:
+            with open(os.path.join(r["folder"], "set.json"), encoding="utf-8") as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            print(f"{r.get('slug')}: no set.json in {r.get('folder')}")
+            continue
+        ts = st.get("tickets") or {}
+        states = [t["status"] for t in ts.values()]
+        count = ", ".join(f"{states.count(s)} {s}" for s in sorted(set(states)))
+        print(f"{r.get('slug')}: {st.get('status')} ({count}) -> {st.get('feature_branch') or 'no feature branch yet'}")
+        if st.get("status") == "merged" and not slugs:
+            continue
+        for n, t in sorted(ts.items()):
+            why = f" ({t['why']})" if t.get("why") else ""
+            waits = f" waits for {', '.join('#' + b for b in t['blocked_by'])}" if t["status"] in ("queued", "missing") and t.get("blocked_by") else ""
+            print(f"  #{n} {t['status']}{why}{waits}: {last_turn(db, t.get('session_id'))}")
+        if st.get("merge_session"):
+            print(f"  merge: {last_turn(db, st['merge_session'])}")
+    if not rows:
+        print("no ticket sets registered")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

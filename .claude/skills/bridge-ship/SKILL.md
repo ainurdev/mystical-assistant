@@ -19,6 +19,17 @@ before its latest Python (`GET /local/live`, `bridge/selfupdate.py live()`). Its
 rebuilds what's behind and restarts the bridge (REBUILD & RESTART), or waits for the
 running turns to end (AFTER N TURNS).
 
+Which commit is running, for when a fix seems not to work (the process start time can't
+tell you: a restart re-execs in place):
+
+```sh
+TOK=$(grep '^DASH_TOKEN=' .env | cut -d= -f2- | tr -d '"')
+curl -s -H "X-Dash-Token: $TOK" -H "Origin: http://127.0.0.1:8790" http://127.0.0.1:8790/local/live
+```
+
+`running` is the commit the bridge runs and `disk` the one checked out; each entry of
+`parts` lists the commits still waiting and since when.
+
 So once your change is merged on master and the suite is green, **don't ask when to ship
 and don't build or restart anything yourself.** End your reply by saying it's on master and
 the user can press ⟳ on the right rail to go live, and name what that does (rebuilds the
