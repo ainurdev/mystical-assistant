@@ -822,10 +822,12 @@ def after_turn(job) -> bool:
 
 def _rerun(folder: str, st: dict, n: str, word: str = "Try this ticket again") -> str:
     """A new turn in ticket n's own session and worktree: "" once it runs, else why
-    not, and it is fix again. Its StepDone is forgotten before the turn starts (a fast one must count)
+    not, and it is fix again (a carry-on that can't start leaves its ticket waiting, as it
+    was). Its StepDone is forgotten before the turn starts (a fast one must count)
     and put back if the run is refused (your own turn still going)."""
     from bridge import runner  # local import: runner<->tickets cycle
     t = st["tickets"][n]
+    waiting = t["status"] == "running"
     t.update(status="running", nudges=0)
     t.pop("why", None)
     save(folder, st)
@@ -841,7 +843,8 @@ def _rerun(folder: str, st: dict, n: str, word: str = "Try this ticket again") -
     if err:
         print(f"[tickets] #{n} of {st['slug']} didn't start again: {err}", file=sys.stderr)
         paths.restore(t["session_id"], snap)   # a refused run keeps the StepDone you recorded
-        t.update(status="fix", why=f"it didn't start again: {err}")
+        if not waiting:
+            t.update(status="fix", why=f"it didn't start again: {err}")
     save(folder, st)
     return err
 

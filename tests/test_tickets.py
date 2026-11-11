@@ -1188,6 +1188,10 @@ def test_no_carry_on_while_something_is_queued_or_parked(make_set, monkeypatch):
     monkeypatch.setattr(limits, "parked", lambda: {s.sid("01"): {"kind": "limit"}})
     assert tickets.retry(s.folder, "01") == "#01 is paused and resumes by itself"
     assert s.start_calls("01") == 1
+    monkeypatch.setattr(limits, "parked", lambda: {})
+    s.refuse = True                                # a turn of yours began in it meanwhile
+    assert tickets.retry(s.folder, "01") == "the bridge refused the run"
+    assert s.status("01") == "running" and "why" not in s.state["tickets"]["01"]   # still waiting, no fix
 
 
 def test_a_merge_left_waiting_carries_on_when_asked(make_set, monkeypatch):
