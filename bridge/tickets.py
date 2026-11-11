@@ -634,8 +634,10 @@ def start_review(flow_session_id: str) -> bool:
 
 def skip_review(flow_session_id: str) -> bool:
     """Skip, pressed on a REVIEW in FLOW: the step is done as the work stands, and RETRO
-    follows. It is how you take work the council didn't pass. False off REVIEW."""
-    if not _at_review(flow_session_id):
+    follows. It is how you take work the council didn't pass. False off REVIEW, and
+    while the council still runs: the merge session is at work, so stop it there first."""
+    sid = (summary_for(flow_session_id) or {}).get("merge_session")
+    if not _at_review(flow_session_id) or sid and (store.get_council(sid) or {}).get("status") in ("reviewing", "fixing"):
         return False
     paths.advance(flow_session_id, "review")
     return True

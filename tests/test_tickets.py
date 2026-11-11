@@ -1248,6 +1248,8 @@ def test_skip_on_a_review_that_waits_goes_on_to_retro(reviewed):
     r = reviewed
     r.said = [_said(7.0, _FIX), _said(6.9, _FIX)]
     r.merged()
+    assert _dpost("/local/flow/review", {"session": r.s.flow})["obj"] == {"ok": False}     # the merge session is fixing
+    assert not [p for sid, p in r.queued if sid == r.s.flow]
     r.fixed()                                          # the council stopped: REVIEW waits on you
     assert _dpost("/local/flow/review", {"session": r.s.flow}, chat=2)["code"] == 404      # another chat's flow
     assert _dpost("/local/flow/review", {"session": r.s.flow})["obj"] == {"ok": True}
