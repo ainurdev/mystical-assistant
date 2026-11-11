@@ -21,8 +21,12 @@ The fixed order of **Steps** a **Session** follows for one request (feature, bug
 _Avoid_: pipeline, workflow, plan
 
 **Step**:
-One part of a **Path** (grill, spec, tickets, build, merge, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
+One part of a **Path** (grill, spec, tickets, build, merge, review, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
 _Avoid_: station, phase, stage
+
+**Council**:
+The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. The review **Step** of a **Path** is a council on the merged work.
+_Avoid_: panel, jury, review loop
 
 **Mystical MCP**:
 The one tool server every Mystical session gets, whichever agent runs it, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
