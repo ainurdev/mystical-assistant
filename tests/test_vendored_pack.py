@@ -46,3 +46,12 @@ def test_spec_and_tickets_go_to_the_mystical_tickets_folder():
     assert "(local files: `.mystical/tickets/<feature-slug>/SPEC.md`)" in open(_skill_md("to-spec")).read()
     from bridge import paths
     assert ".mystical/tickets" not in paths.PACK_TEXT   # the skills name the place; the pack must not write the spec itself
+
+
+def test_a_review_and_ask_matt_look_where_the_spec_and_tickets_were_written():
+    """Two more edits from upstream (README): code-review finds its spec, and ask-matt
+    points at the tickets, in the folder to-spec and to-tickets write to."""
+    cr, am = open(_skill_md("code-review")).read(), open(_skill_md("ask-matt")).read()
+    assert "A spec file under `docs/`, `specs/`, or `.mystical/tickets/` matching the branch name or feature." in cr
+    assert "one file per ticket under `.mystical/tickets/<feature-slug>/`, worked blockers-first by hand" in am
+    assert ".scratch" not in cr + am
