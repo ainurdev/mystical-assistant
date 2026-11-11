@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/flowview.check.ts
-import { flowView, type Flow } from "./flowview.ts";
+import { flowView, movesElsewhere, type Flow } from "./flowview.ts";
 import type { Turn } from "../chat.ts";
 
 const flow = (path: string, done: string[]): Flow => ({ path, by: "claude", why: "new feature", auto: true, at: 1, done, next: null });
@@ -75,3 +75,12 @@ console.assert(passed.stations[5].state === "done" && passed.note === undefined,
 // A step called review that has a skill runs in this session like any other: its turn is what shows it running.
 const here: Flow = { ...flow("bug", ["diagnose"]), stations: [["diagnose", "diagnosing-bugs", "auto"], ["review", "some-review", "auto"], ["retro", "retro", "auto"]] };
 console.assert(flowView(here, [run]).stations[1].state === "now", "a review with a skill runs here");
+
+// When FLOW reads the path again with no turn here: tickets build or merge, a council runs, or a
+// REVIEW is about to start by itself. A council that stopped, or a held step, moves nothing.
+console.assert(movesElsewhere(atBuild, building) && movesElsewhere(atBuild, { status: "merging", tickets: {} }), "tickets building or merging move it");
+console.assert(!movesElsewhere(atBuild, null) && !movesElsewhere(null, null), "no set, no path: nothing moves");
+console.assert(movesElsewhere(atReview, council("reviewing", 2)) && movesElsewhere({ ...atReview, auto: false }, council("fixing", 1)), "a council that runs moves it, held or not");
+console.assert(!movesElsewhere(atReview, council("stopped", 2)), "a council that stopped waits on you");
+console.assert(movesElsewhere(atReview, council("idle", 0)), "a REVIEW about to start moves it");
+console.assert(!movesElsewhere({ ...atReview, auto: false }, council("idle", 0)) && !movesElsewhere(atReview, council("idle", 0), false), "a held REVIEW starts nothing by itself");

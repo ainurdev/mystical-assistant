@@ -4,7 +4,7 @@ import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
-import { flowView, type Flow, type FlowSet } from "../../lib/flowview";
+import { flowView, movesElsewhere, type Flow, type FlowSet } from "../../lib/flowview";
 import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
 import { openAgent } from "../../lib/subagents";
@@ -217,9 +217,8 @@ export function SessionPanel({
   const [meter, setMeter] = useState<Meter | null>(null);
   const [reread, setReread] = useState(0);   // bumped to read the path again, after a Skip
   // Tickets build and merge, and the council reviews, in sessions of their own: no turn
-  // here says when they move. A council that stopped stays put until you act on it.
-  const busy = running || set?.status === "building" || set?.status === "merging"
-    || flow?.next?.station === "review" && set?.review?.status !== "stopped";
+  // here says when they move.
+  const busy = running || movesElsewhere(flow, set, !!ai.nextstep);
   // Read on a turn's edges, and every few seconds while one runs: a path moves
   // mid-turn (StepDone), and the window grows request by request.
   useEffect(() => {

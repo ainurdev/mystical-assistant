@@ -43,6 +43,16 @@ export const PATHS: Record<string, [string, string | null, "you" | "auto"][]> = 
     ["build", null, "auto"], ["merge", null, "auto"], ["retro", "retro", "auto"]],
 };
 
+/** Whether the path can move with no turn in this session, so FLOW has to read it again by
+    itself: tickets build or merge, a council runs, or a REVIEW is about to start. A council that
+    stopped stays put until you act on it, and a held step starts nothing (`nextstep` is AUTO NEXT STEPS). */
+export function movesElsewhere(flow: Flow | null, set: FlowSet | null, nextstep = true): boolean {
+  if (set?.status === "building" || set?.status === "merging") return true;
+  if (flow?.next?.station !== "review") return false;
+  const council = set?.status === "merged" ? set.review : undefined;
+  return !!council && live(council) || council?.status !== "stopped" && flow.auto && nextstep;
+}
+
 export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null = null, ticketruns = true): FlowView {
   if (!flow) return { stations: [], step: 0, total: 0, why: "", by: "rule" };
   if (set?.flow_at !== undefined && set.flow_at !== flow.at) set = null;   // built for an earlier path here
