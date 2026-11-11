@@ -36,6 +36,13 @@ console.assert(m.stations[4].state === "now" && m.note === "one session merges t
 const stopped = flowView(atBuild, [], { status: "stopped", error: "cycle: #01 → #02 → #01", tickets: {} });
 console.assert(stopped.stations[3].state === "auto" && stopped.note === "stopped: cycle: #01 → #02 → #01", `stopped: ${stopped.note}`);
 console.assert(flowView(atBuild, [], null).note === undefined, "no set: no note");
+// A set stopped on a fix is the user's: nothing runs, and what is left waits behind it.
+const held = flowView(atBuild, [], { status: "building", tickets: { "01": { status: "done" }, "02": { status: "fix" }, "03": { status: "queued" } } });
+console.assert(held.stations[3].state === "you" && held.note === "1 of 3 tickets done, 0 running, 1 needs a fix", `held: ${held.stations[3].state} ${held.note}`);
+const partly = flowView(atBuild, [], { status: "building", tickets: { "01": { status: "running" }, "02": { status: "fix" }, "03": { status: "fix" } } });
+console.assert(partly.stations[3].state === "now" && partly.note === "0 of 3 tickets done, 1 running, 2 need a fix", `a fix beside a running ticket: ${partly.note}`);
+const mfix = flowView(flow("feature", ["grill", "spec", "tickets", "build"]), [], { status: "fix", tickets: {} });
+console.assert(mfix.stations[4].state === "you" && mfix.note === "the merge needs a fix", `merge fix: ${mfix.stations[4].state} ${mfix.note}`);
 const off = flowView(atBuild, [], null, false);
 console.assert(off.stations[3].state === "you" && off.stations[3].who === "you", "TICKETS off: BUILD waits for you");
 console.assert(off.stations[4].who === "you", "TICKETS off: MERGE is yours too");

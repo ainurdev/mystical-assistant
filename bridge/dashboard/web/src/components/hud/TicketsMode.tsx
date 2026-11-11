@@ -10,14 +10,15 @@ import { askConfirm } from "../ui/Ask";
  *  sets are polled while the tab is open: ticket turns end on the bridge with no
  *  dashboard event to announce them. A finished set folds to a line. */
 
-type Kind = "run" | "ask" | "q" | "done" | "fix";
-const WORD: Record<Kind, string> = { run: "RUN", ask: "ASK", q: "WAIT", done: "DONE", fix: "FIX" };
-const COLOR: Record<Kind, string> = { run: "var(--ok)", ask: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)" };
+// idle: its turn ended without finishing and nothing will start another (the bridge's `stalled`).
+type Kind = "run" | "ask" | "idle" | "q" | "done" | "fix";
+const WORD: Record<Kind, string> = { run: "RUN", ask: "ASK", idle: "IDLE", q: "WAIT", done: "DONE", fix: "FIX" };
+const COLOR: Record<Kind, string> = { run: "var(--ok)", ask: "var(--warn)", idle: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)" };
 const ASKING = ["awaiting", "asking", "credits"];
 
 const kindOf = (t: TicketRow, st?: SessionStatus): Kind =>
   t.status === "done" ? "done" : t.status === "fix" ? "fix"
-    : t.status === "running" ? (st && ASKING.includes(st.state) ? "ask" : "run") : "q";
+    : t.status === "running" ? (st && ASKING.includes(st.state) ? "ask" : t.stalled ? "idle" : "run") : "q";
 
 function Dag({ set, kinds }: { set: TicketSet; kinds: Record<string, Kind> }) {
   const ns = Object.keys(set.tickets).sort();
@@ -67,8 +68,9 @@ function Stub({ n, t, kind, st, onOpen, onRetry }: {
 }) {
   const live = kind === "ask" ? <span style={{ color: "var(--warn)" }}>asks: {st?.label || "waiting for your answer"}</span>
     : kind === "run" ? <span className="tk-live" style={{ color: "var(--ok)" }}>● {st?.label || (t.status === "retry" ? "retrying" : "working")}</span>
+    : kind === "idle" ? <span style={{ color: "var(--warn)" }}>stopped without finishing</span>
     : kind === "done" ? <span style={{ color: "var(--ok)" }}>✓ done</span>
-    : kind === "fix" ? <span style={{ color: "var(--err)" }}>needs a fix</span>
+    : kind === "fix" ? <span style={{ color: "var(--err)" }} title={t.why}>{t.why || "needs a fix"}</span>
     : <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><Hourglass size={10} aria-hidden />
         {t.blocked_by.length ? `waits for ${t.blocked_by.map((b) => `#${b}`).join(" · ")}` : t.status === "missing" ? "ticket file missing" : "next in line"}</span>;
   const word = t.status === "retry" ? "RETRY" : WORD[kind];
@@ -79,6 +81,7 @@ function Stub({ n, t, kind, st, onOpen, onRetry }: {
       <div className="bd">
         <div className="t1"><span>{t.title}</span>
           {kind === "ask" && <button className="tk-btn" onClick={onOpen} aria-label={`Answer ticket ${n}`}>Answer</button>}
+          {kind === "idle" && <button className="tk-btn" onClick={onRetry} aria-label={`Continue ticket ${n}`}>Continue</button>}
           {kind === "fix" && <button className="tk-btn err" onClick={onRetry} aria-label={`Retry ticket ${n}`}>Retry</button>}
           {kind === "q" && <span className="r" style={{ color: "var(--txl)" }}>queued</span>}
         </div>
@@ -123,7 +126,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   const approve = () => {
     api.approveTickets(set.folder).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "approve failed")).then(reload);
   };
-  const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask").length;
+  const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask" || kinds[n] === "idle").length;   // idle keeps its slot
   const noteRow = note && <div role="status" style={{ margin: "0 6px 6px", padding: "0 4px", fontSize: "var(--t9)", color: "var(--txd)" }}>{note}</div>;
 
   if (set.status === "merged") {
@@ -148,6 +151,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   const slots = 3;   // mirrors tickets.MAX_RUNNING
   const merging = set.status === "merging";
   const mfix = set.status === "fix";
+  const mstall = merging && !!set.merge_stalled;
   return (
     <>
       <div className="tk-set">
@@ -173,10 +177,11 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
         <div className="bd">
           <div className="t1"><span>Merge into {set.feature_branch || "the feature branch"}</span>
             {mfix ? <button className="tk-btn err" onClick={() => retry("merge")} aria-label="Retry the merge">Retry</button>
+              : mstall ? <button className="tk-btn" onClick={() => retry("merge")} aria-label="Continue the merge">Continue</button>
               : set.status === "stopped" ? <button className="tk-btn err" onClick={build} aria-label={`Build ${name} again`}>Build</button>
               : <span className="r" style={{ color: "var(--txl)" }}>{merging ? "" : `after all ${ns.length}`}</span>}
           </div>
-          <div className="t2"><span>{set.status === "stopped" ? set.error || "stopped" : merging ? "one pass into the feature branch" : "one pass when the last ticket is done"}</span></div>
+          <div className="t2"><span>{set.status === "stopped" ? set.error || "stopped" : mstall ? "stopped without finishing" : merging ? "one pass into the feature branch" : "one pass when the last ticket is done"}</span></div>
         </div>
       </div>
     </>

@@ -40,9 +40,11 @@ StepDone rather than this exact turn: a turn that dies after StepDone is resumed
 the runner, and the resumed turn ends without calling it again. A failed turn the
 runner gave up on (a usage limit parks and resumes by itself) and a StepDone with
 nothing committed are both `fix`: the slot frees, dependents wait, and the StepDone is
-forgotten, so only a new one finishes it. retry() runs it again in the same session,
-or with MAX_RUNNING running marks it `retry`, first in line for the next free slot. A
-turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you.
+forgotten, so only a new one finishes it. A fix tells the flow session, with why and
+which tickets wait for it: it starts nothing by itself. retry() runs it again in the same
+session, or with MAX_RUNNING running marks it `retry`, first in line for the next free slot. A
+turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you,
+and retry() carries that one on too, as it does a merge whose turn ended the same way.
 Nobody watches a ticket session, though, and a turn that ends to wait on a background
 command never wakes (the command dies with the turn): a turn that ends done without
 StepDone gets a carry-on, at most NUDGES per run, before the slot is left waiting.
@@ -378,12 +380,12 @@ def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
 
 
-def _again(st: dict, n: str) -> str:
-    """A retry's prompt. With no /command in front, the paths pack would have Claude
-    pick a path for it, hence the pack's own "No path" line first."""
+def _again(st: dict, n: str, word: str = "Try this ticket again") -> str:
+    """A retry's prompt, or with `word` a carry-on's. With no /command in front, the paths
+    pack would have Claude pick a path for it, hence the pack's own "No path" line first."""
     t = st["tickets"][n]
     return ("No path for this message.\n\n"
-            f"Try this ticket again: {t['path']}\n"
+            f"{word}: {t['path']}\n"
             f"Work on branch {t['branch']} in this checkout and commit there. "
             "When it is done and the tests pass, call StepDone." + _elsewhere(st, n))
 
@@ -395,11 +397,21 @@ def _one_step(sid: str, st: dict, n: str) -> None:
 
 def _settle(st: dict, n: str, status: str) -> None:
     """Ticket n is `status` now. A fix forgets its StepDone, so a later turn that
-    commits half the work can't finish it, and start its dependents, without a new one."""
+    commits half the work can't finish it, and start its dependents, without a new one.
+    It also tells the flow session, with why (t["why"]) and who waits for it: a fix
+    starts nothing by itself, and a set once sat stopped for 15 hours unnoticed."""
     t = st["tickets"][n]
     t["status"] = status
-    if status == "fix" and t.get("session_id"):
+    if status != "fix":
+        t.pop("why", None)
+        return
+    if t.get("session_id"):
         _one_step(t["session_id"], st, n)
+    held = sorted(k for k, x in st["tickets"].items() if n in x["blocked_by"])
+    notices.emit("tickets", st["parent_session"],
+                 body=f"#{n} {t['title']} needs a fix: {t.get('why') or 'it did not finish'}."
+                 + (f" {', '.join('#' + k for k in held)} wait{'s' if len(held) == 1 else ''} for it." if held else "")
+                 + " Retry it in TICKETS.")
 
 
 def _start_ticket(folder: str, st: dict, n: str) -> None:
@@ -444,7 +456,8 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
             raise RuntimeError("the bridge refused the run")
     except Exception as e:  # noqa: BLE001 — one ticket failing to start never stops the others
         print(f"[tickets] #{n} of {st['slug']} didn't start: {e}", file=sys.stderr)
-        t["status"] = "fix"
+        t["why"] = f"it didn't start: {e}"
+        _settle(st, n, "fix")
     save(folder, st)
 
 
@@ -600,7 +613,8 @@ def merged_count(st: dict) -> int:
 def summaries() -> list:
     """Every registered set, newest first: set.json plus its folder, how many branches
     are merged (one git call per set) and each ticket's session state: running, or
-    how its last turn ended."""
+    how its last turn ended. `stalled` (a ticket) and `merge_stalled` (the set) mark a
+    turn that ended with nothing coming to start another: retry() carries it on."""
     out = []
     for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0,
                     reverse=True):
@@ -612,6 +626,9 @@ def summaries() -> list:
             sid = t.get("session_id")
             t["session"] = ("running" if store.running_turn_id(sid) else
                             (store.last_turn(sid) or {}).get("status") or "") if sid else ""
+            t["stalled"] = t.get("status") == "running" and bool(t["session"]) and not _busy(sid, "")
+        ms = st.get("merge_session")
+        st["merge_stalled"] = bool(st.get("status") == "merging" and ms and store.last_turn(ms) and not _busy(ms, ""))
         try:
             merged = merged_count(st)
         except Exception:  # noqa: BLE001 — a set whose checkout is gone still lists
@@ -660,13 +677,18 @@ def _verdict(st: dict, t: dict, status: str) -> "str | None":
     or waits on you."""
     sid = t["session_id"]
     if status == "error":
-        return None if sid in limits.parked() else "fix"
+        if sid in limits.parked():
+            return None
+        t["why"] = "its turn failed"
+        return "fix"
     if status != "done" or not (paths.get(sid) or {}).get("done"):
         return None
     blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
     t["repos"] = [r for r in _repos(st, t["branch"]) if _own(r, t["branch"], blockers + ["--remotes"])]
-    return "done" if _own(st["feature_checkout"], t["branch"], [st["feature_branch"]] + blockers) \
-        or t["repos"] else "fix"
+    if _own(st["feature_checkout"], t["branch"], [st["feature_branch"]] + blockers) or t["repos"]:
+        return "done"
+    t["why"] = "StepDone, but no commit"   # short: the TICKETS row shows it beside the branch
+    return "fix"
 
 
 def _own(repo: str, branch: str, nots: list) -> bool:
@@ -773,19 +795,20 @@ def after_turn(job) -> bool:
         return False
 
 
-def _rerun(folder: str, st: dict, n: str) -> str:
+def _rerun(folder: str, st: dict, n: str, word: str = "Try this ticket again") -> str:
     """A new turn in ticket n's own session and worktree: "" once it runs, else why
     not, and it is fix again. Its StepDone is forgotten before the turn starts (a fast one must count)
     and put back if the run is refused (your own turn still going)."""
     from bridge import runner  # local import: runner<->tickets cycle
     t = st["tickets"][n]
     t.update(status="running", nudges=0)
+    t.pop("why", None)
     save(folder, st)
     snap = paths.get(t["session_id"])
     try:
         s = store.get_session(t["session_id"]) or {}
         _one_step(t["session_id"], st, n)   # before the turn: a StepDone it records at once must count
-        job = runner.start_streaming_job(s.get("chat_id"), _again(st, n), [], project=t["worktree"],
+        job = runner.start_streaming_job(s.get("chat_id"), _again(st, n, word), [], project=t["worktree"],
                                          session_id=t["session_id"], origin="ticket")
         err = "" if job else "the bridge refused the run"
     except Exception as e:  # noqa: BLE001 — a retry that can't start is fix again
@@ -793,7 +816,7 @@ def _rerun(folder: str, st: dict, n: str) -> str:
     if err:
         print(f"[tickets] #{n} of {st['slug']} didn't start again: {err}", file=sys.stderr)
         paths.restore(t["session_id"], snap)   # a refused run keeps the StepDone you recorded
-        t["status"] = "fix"
+        t.update(status="fix", why=f"it didn't start again: {err}")
     save(folder, st)
     return err
 
@@ -825,20 +848,39 @@ def _retry_merge(folder: str, st: dict) -> str:
     return err
 
 
+def _busy(sid: str, name: str) -> str:
+    """Why `name`'s session can't take another turn now; "" when it sits idle."""
+    from bridge import queue_manager  # local import: heavy module
+    if store.running_turn_id(sid):
+        return f"{name} is still working"
+    if sid in limits.parked():
+        return f"{name} is paused and resumes by itself"
+    if any(i.get("status") in ("queued", "running") for i in queue_manager.snapshot(sid).get("items") or []):
+        return f"{name} has a message queued; it runs next"
+    return ""
+
+
 def retry(folder: str, n: str) -> str:
     """A fix ticket runs again: a new turn in its own session and worktree, or a fresh
     start when it never got a session. "" once that is under way; with MAX_RUNNING
-    running it waits as `retry` and tick gives it the next free slot."""
+    running it waits as `retry` and tick gives it the next free slot. A ticket or
+    merge left waiting (its turn ended without StepDone, or you stopped it) carries on
+    the same way, its slot kept; one that works, is paused or has a message queued says so."""
     with _build:
         st = load(folder)
         tks = st.get("tickets") or {}
         if n == "merge":
+            if st.get("status") == "merging" and st.get("merge_session"):
+                return _busy(st["merge_session"], "the merge") or _retry_merge(folder, st)
             return _retry_merge(folder, st) if st.get("status") == "fix" else "the merge isn't waiting for a retry"
         t = tks.get(n)
+        if t and t.get("status") == "running" and t.get("session_id"):
+            return _busy(t["session_id"], f"#{n}") or _rerun(folder, st, n, "Carry on with this ticket")
         if not t or t.get("status") != "fix":
             return f"#{n} isn't waiting for a retry"
         if not t.get("session_id"):
             t["status"] = "queued"   # tick starts it as new, within the cap
+            t.pop("why", None)
             save(folder, st)
             tick(folder)
             return ""

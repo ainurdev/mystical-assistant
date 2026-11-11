@@ -8184,8 +8184,8 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tk-stub .t2 > span { overflow: hidden; text-overflow: ellipsis; }
 .tk-stub.run { background: color-mix(in srgb, var(--ok) 8%, transparent); }
 .tk-stub.run .no, .tk-stub.done .no { color: var(--ok); }
-.tk-stub.ask { background: color-mix(in srgb, var(--warn) 9%, transparent); }
-.tk-stub.ask .no { color: var(--warn); }
+.tk-stub.ask, .tk-stub.idle { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.tk-stub.ask .no, .tk-stub.idle .no { color: var(--warn); }
 .tk-stub.fix { background: color-mix(in srgb, var(--err) 9%, transparent); }
 .tk-stub.fix .no { color: var(--err); }
 .tk-stub.q { opacity: .55; }

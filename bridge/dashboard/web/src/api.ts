@@ -1394,15 +1394,18 @@ export interface AccountsInfo {
   default_policy: string;
   pending_login: { slot: number; url: string | null } | null;
 }
-/** One ticket in a set (bridge/tickets.py): `session` is its live turn state, "running" or how the last ended. */
+/** One ticket in a set (bridge/tickets.py): `session` is its live turn state, "running" or how the last ended.
+ *  `stalled`: its turn ended and nothing will start another, so it waits for Continue. `why`: what a fix is for. */
 export interface TicketRow {
   status: "queued" | "running" | "retry" | "done" | "fix" | "missing";
   title: string; blocked_by: string[]; branch: string; session_id: string; session?: string;
+  stalled?: boolean; why?: string;
 }
+/** `merge_stalled`: the merge session's turn ended without finishing, as a ticket's `stalled`. */
 export interface TicketSet {
   folder: string; slug: string; parent_session: string; feature_branch: string; merged: number;
   status: "approve" | "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
-  tickets: Record<string, TicketRow>;
+  tickets: Record<string, TicketRow>; merge_session?: string; merge_stalled?: boolean;
 }
 /** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
  *  own ships off. A sub-switch (`parent`: SKILL PATHS' four) is drawn and obeyed only

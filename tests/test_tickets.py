@@ -670,7 +670,8 @@ def test_ticket_endpoints_only_take_registered_folders(make_set, tmp_path):
         for body in ({"folder": str(tmp_path), "n": "01"}, {"n": "01"}, {"folder": 5}):
             r = _dpost(p, body)
             assert r["code"] == 404 and "error" in r["obj"]
-    assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "01"})["obj"] == {"text": "#01 isn't waiting for a retry"}
+    assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "01"})["obj"] == {"text": "#01 is still working"}
+    assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "09"})["obj"] == {"text": "#09 isn't waiting for a retry"}
     assert _dpost("/local/tickets/cleanup", {"folder": s.folder})["obj"] == {"removed": [], "skipped": ["tk/x-01"]}
 
 
@@ -1065,3 +1066,90 @@ def test_no_carry_on_after_a_stop_or_with_your_message_queued(make_set, monkeypa
     job.interrupted = True
     tickets.after_turn(job)
     assert q == []
+
+
+# --- a set that stalls says so, and carries on when asked ---------------------
+
+def _quiet_queue(monkeypatch, items=()):
+    from bridge import queue_manager
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: None)
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": list(items)})
+
+
+def test_a_fix_tells_the_flow_session_why(make_set, monkeypatch):
+    s = make_set({"01": None, "02": None, "04": "#01"})
+    said = []
+    monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
+    s.finish("01", commit=False)
+    s.fail("02")
+    assert said == [("tickets", s.flow, "#01 T01 needs a fix: StepDone, but no commit. #04 waits for it. Retry it in TICKETS."),
+                    ("tickets", s.flow, "#02 T02 needs a fix: its turn failed. Retry it in TICKETS.")]
+    assert s.state["tickets"]["02"]["why"] == "its turn failed"
+    tickets.retry(s.folder, "02")
+    assert "why" not in s.state["tickets"]["02"]              # running again: the old reason is gone
+
+
+def test_a_ticket_left_waiting_carries_on_when_asked(make_set, monkeypatch):
+    _quiet_queue(monkeypatch)
+    s = make_set({"01": None, "02": "#01"})
+    assert tickets.retry(s.folder, "01") == "#01 is still working" and s.start_calls("01") == 1
+    s.end("01", "done")                            # ended without StepDone: the slot waits on you
+    assert s.status("01") == "running"
+    assert tickets.retry(s.folder, "01") == ""
+    assert s.start_calls("01") == 2 and s.status("01") == "running"
+    assert s.starts[-1]["prompt"].startswith(f"No path for this message.\n\nCarry on with this ticket: {s.path('01')}\n")
+    s.finish("01")
+    assert s.status("01") == "done" and s.status("02") == "running"
+
+
+def test_a_stopped_ticket_carries_on_when_asked(make_set, monkeypatch):
+    _quiet_queue(monkeypatch)
+    s = make_set({"01": None})
+    store.finish_turn(store.latest_turn_id(s.sid("01")), "stopped", 0, 1)
+    job = s.job("01", "stopped")
+    job.interrupted = True                         # you pressed Stop
+    tickets.after_turn(job)
+    assert tickets.retry(s.folder, "01") == "" and s.start_calls("01") == 2
+
+
+def test_no_carry_on_while_something_is_queued_or_parked(make_set, monkeypatch):
+    from bridge import limits
+    _quiet_queue(monkeypatch, [{"status": "queued"}])
+    s = make_set({"01": None})
+    s.end("01", "done")
+    assert tickets.retry(s.folder, "01") == "#01 has a message queued; it runs next" and s.start_calls("01") == 1
+    _quiet_queue(monkeypatch)
+    monkeypatch.setattr(limits, "parked", lambda: {s.sid("01"): {"kind": "limit"}})
+    assert tickets.retry(s.folder, "01") == "#01 is paused and resumes by itself"
+    assert s.start_calls("01") == 1
+
+
+def test_a_merge_left_waiting_carries_on_when_asked(make_set, monkeypatch):
+    _quiet_queue(monkeypatch)
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    assert tickets.retry(s.folder, "merge") == "the merge is still working" and len(_merges(s)) == 1
+    tickets.after_turn(_merge_job(s))              # ended without StepDone: it waits on you
+    assert s.state["status"] == "merging"
+    assert tickets.retry(s.folder, "merge") == ""
+    assert len(_merges(s)) == 2 and s.state["merge_session"] == sid and s.state["status"] == "merging"
+    _merge_for_real(s)
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"
+
+
+def test_summaries_mark_what_waits_on_you(make_set, monkeypatch):
+    _quiet_queue(monkeypatch)
+    s = make_set({"01": None, "02": None})
+    one = tickets.summaries()[0]
+    assert (one["tickets"]["01"]["stalled"], one["merge_stalled"]) == (False, False)
+    s.end("01", "done")
+    assert tickets.summaries()[0]["tickets"]["01"]["stalled"] is True
+    assert tickets.summaries()[0]["tickets"]["02"]["stalled"] is False
+    s.finish("01")
+    s.finish("02")
+    assert tickets.summaries()[0]["merge_stalled"] is False                 # the merge turn runs
+    tickets.after_turn(_merge_job(s))
+    assert tickets.summaries()[0]["merge_stalled"] is True
