@@ -1,8 +1,11 @@
 import type { Meter, MeterWho } from "../api";
+import { flowOf } from "./flowview.ts";
 
 /* What the SESSION tab draws, as plain data (meter.check.ts pins it). The numbers
    are bridge/meter.py's; this only places them: the window on a clock whose long
-   waits fold, the strip of who was working, the bands under it, the kinds. */
+   waits fold, the strip of who was working, the bands under it, the kinds; the
+   flows the session ran, each over its own turns, as FLOWS' track and the curve's
+   bands; ON WHAT's sentence and blocks; the helpers under the flow that started them. */
 
 export const ZONE = 150_000;   // bridge/paths.py ZONE_TOKENS: where the smart zone ends
 export const FOLD = 1800;      // a wait on you, or time away, longer than this folds
@@ -133,8 +136,9 @@ export function flowOfRows(flows: { at: number; end?: number | null }[], rows: S
 
 export interface FlowSpan { rows: number[]; from: number; to: number; secs: number; tokens: number }
 
-/** Each flow's turn rows, from the first one's start to the last one's end (now while it
- *  runs), the seconds worked in that span and what its turns spent. */
+/** Each flow's turn rows, from the first one's start to the next turn's start (the last
+ *  one's end, or now while it runs, when none follows), the seconds worked in that span
+ *  and what its turns spent. */
 export function flowSpans(
   flows: { at: number; end?: number | null }[], rows: (Span & { ids: string[] })[], segs: Meter["segs"],
   spent: Record<string, { spent: number }>, now: number,
@@ -143,7 +147,8 @@ export function flowSpans(
   return flows.map((_, i) => {
     const mine = of.flatMap((k, j) => (k === i ? [j] : []));
     if (!mine.length) return { rows: [], from: 0, to: 0, secs: 0, tokens: 0 };
-    const from = rows[mine[0]].started!, to = rows[mine[mine.length - 1]].ended ?? now;
+    const end = mine[mine.length - 1];
+    const from = rows[mine[0]].started!, to = rows[end + 1]?.started ?? rows[end].ended ?? now;
     const tokens = mine.reduce((n, j) => n + rows[j].ids.reduce((m, id) => m + (spent[id]?.spent ?? 0), 0), 0);
     return { rows: mine, from, to, secs: worked(segs, from, to), tokens };
   });
@@ -153,23 +158,57 @@ export interface TrackSeg { key: string; runs: number[]; secs: number; tokens: n
 
 /** FLOWS' track: a segment per flow, oldest first. ASK, SHIP and each one-skill run fold
  *  into one segment, where their latest run is, its time and spend summed. */
-export function trackSegs(flows: { path: string; skill?: string | null }[], spans: FlowSpan[]): TrackSeg[] {
+export function trackSegs(flows: { path: string; skill?: string | null; at: number }[], spans: FlowSpan[]): TrackSeg[] {
   const groups = new Map<string, number[]>();
   flows.forEach((f, i) => {
-    const id = f.path.split("-")[0];
-    const key = id === "ask" || id === "ship" ? id : f.path === "one" ? `one:${f.skill ?? ""}` : `#${i}`;
+    const id = flowOf(f.path);   // `at` names a flow for good: the key holds when older flows drop off the bridge's list
+    const key = id === "ask" || id === "ship" ? id : f.path === "one" ? `one:${f.skill ?? ""}` : `#${f.at}`;
     groups.set(key, [...(groups.get(key) ?? []), i]);
   });
   return [...groups].map(([key, runs]) => ({ key, runs, secs: runs.reduce((n, i) => n + spans[i].secs, 0), tokens: runs.reduce((n, i) => n + spans[i].tokens, 0) }))
     .sort((a, b) => a.runs[a.runs.length - 1] - b.runs[b.runs.length - 1]);
 }
 
-/** Segment widths on a track `w` px wide, `gap` px between: each at least `min`, the rest
- *  shared by worked time (evenly while nothing is timed). */
-export function trackWidths(secs: number[], w: number, min = 18, gap = 3): number[] {
-  const room = w - gap * Math.max(0, secs.length - 1);
-  const tot = secs.reduce((a, b) => a + b, 0), free = room - secs.length * min;
-  return secs.map((s) => (free > 0 && tot > 0 ? min + free * (s / tot) : room / secs.length));
+/** Segment widths on a track `w` px wide, 3px between (index.css .sq-track): each at least
+ *  18px, the rest shared by worked time (evenly while nothing is timed). shortcut: past about
+ *  12 flows that don't fold, a 265px track can't give each its 18px and they share it evenly,
+ *  thin; fold older flows into one segment if sessions run that many. */
+export function trackWidths(secs: number[], w: number): number[] {
+  const MIN = 18, GAP = 3;
+  const room = w - GAP * Math.max(0, secs.length - 1);
+  const tot = secs.reduce((a, b) => a + b, 0), free = room - secs.length * MIN;
+  return secs.map((s) => (free > 0 && tot > 0 ? MIN + free * (s / tot) : room / secs.length));
+}
+
+/** Where a flow's steps begin, for the hairlines under the curve: a band whose step differs
+ *  from the one before. A /compact's sliver, and the same step carrying on after it, start none. */
+export function stepStarts(bs: Band[]): number[] {
+  const out: number[] = [];
+  let label: string | null = null;
+  for (const b of bs) {
+    if (b.tone === "compact") continue;
+    if (b.label !== label) out.push(b.from);
+    label = b.label;
+  }
+  return out;
+}
+
+/** HELPERS opened: each helper under the track segment (an index into `track`) of the flow
+ *  whose turn started it, -1 for a turn outside every flow; the newest segment first, -1
+ *  last; running helpers first, then by spend. */
+export function helperGroups<H extends { turn: string | null; running: boolean; tokens: number }>(
+  hs: H[], rows: { ids: string[] }[], spans: FlowSpan[], track: TrackSeg[],
+): [number, H[]][] {
+  const rowOf = new Map(rows.flatMap((r, j) => r.ids.map((id) => [id, j] as const)));
+  const segOf = new Map(track.flatMap((g, k) => g.runs.flatMap((i) => spans[i].rows.map((j) => [j, k] as const))));
+  const groups = new Map<number, H[]>();
+  for (const h of hs) {
+    const j = h.turn ? rowOf.get(h.turn) : undefined;
+    const k = j === undefined ? -1 : segOf.get(j) ?? -1;
+    groups.set(k, [...(groups.get(k) ?? []), h]);
+  }
+  return [...groups].sort((a, b) => (a[0] < 0 ? 1 : b[0] < 0 ? -1 : b[0] - a[0]))
+    .map(([k, list]) => [k, list.sort((a, b) => Number(b.running) - Number(a.running) || b.tokens - a.tokens)]);
 }
 
 /** ON WHAT at a glance: the three biggest kinds named, each with its share of the whole. */

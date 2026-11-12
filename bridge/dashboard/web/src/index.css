@@ -6886,8 +6886,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-fb { fill: var(--fc); opacity: .32; }
 .ss-fb.now { opacity: .95; }
 .ss-fh { stroke: var(--tn-bg); stroke-width: 1.5; }
-.ss-fbt { font: 800 8.5px var(--f); letter-spacing: .08em; fill: var(--txh); }
-.ss-fbt.now { fill: var(--tn-bg); }
+.ss-bt-flow { letter-spacing: .08em; fill: var(--txh); }
+.ss-bt-flow.now { fill: var(--tn-bg); }
 .ss-f0 { fill: color-mix(in srgb, var(--txl) 8%, transparent); }
 .ss-f1 { fill: color-mix(in srgb, var(--txl) 45%, transparent); }
 /* who was working, in the strip, TIME's bar and its legend */
@@ -6907,7 +6907,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* TURNS' label */
 .ss-lbl { display: flex; align-items: center; gap: 6px; padding: 14px 14px 7px; font: 800 var(--t95)/1 var(--f); letter-spacing: .13em; color: var(--txl); }
 .ss-dot { flex: none; width: 7px; height: 7px; border-radius: 2px; }
-/* the sections: each one line until a click opens it in place (hud-session-folds) */
+/* the quiet sections (.sq-*: FLOWS, TIME, ON WHAT, HELPERS): one line each until a click opens it in place (hud-session-folds) */
 .sq { padding: 10px 12px 9px; }
 .sq + .sq { border-top: 1px solid color-mix(in oklab, var(--line) 70%, transparent); }
 .sq-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 20px; padding: 0; border: 0; background: none; cursor: pointer;
@@ -6931,7 +6931,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .sq-seg { position: relative; flex: none; height: 100%; padding: 0; border: 0; border-radius: 3px; overflow: hidden; cursor: pointer; background: var(--fc); opacity: .55; }
 .sq-seg:is(.now, .sel) { opacity: 1; }
 .sq-seg:hover { filter: brightness(1.15); }
-.sq-seg.now::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(110deg, transparent 0 6px, rgba(255, 255, 255, .28) 6px 9px); }
+.sq-seg.now::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(110deg, transparent 0 6px, color-mix(in srgb, var(--txb) 28%, transparent) 6px 9px); }
 .sq-seg.stopped { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--txl) 45%, transparent) 0 3px, transparent 3px 6px);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--txl) 40%, transparent); }
 .sq-seg.sel { outline: 2px solid var(--txb); outline-offset: 1px; }
@@ -6942,7 +6942,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .sq-tlab > .now { color: var(--acc); }
 .sq-tlab > .now em { color: var(--txh); }
 .sq-tlab > .stopped { color: var(--txl); }
-/* an opened segment: why it started, its steps as stations on a line, NEXT and AUTO */
+/* an opened segment: why it started, its steps as stops on a line, NEXT and AUTO; every segment's
+   detail sits in one cell, the others hidden, so switching never resizes the box */
+.sq-details { display: grid; }
+.sq-details > div { grid-area: 1 / 1; min-width: 0; }
+.sq-details > .off { visibility: hidden; }
 .sq-flow { margin-top: 11px; }
 .sq-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 600 var(--t105)/1.3 var(--f); color: var(--txd); }
 .sq-metro { position: relative; display: grid; margin: 12px 0 2px; }
@@ -6968,8 +6972,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .sq-tv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t115)/1 var(--f); color: var(--txd); }
 .sq-tv b { font: 800 var(--t125)/1 var(--f); color: var(--txb); }
 .sq-dialbig { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
-.sq-dn { font: 800 13px var(--f); fill: var(--txb); }
-.sq-dw { font: 700 8.5px var(--f); fill: var(--txd); }
+.sq-dn { font: 800 var(--t13) var(--f); fill: var(--txb); }
+.sq-dw { font: 700 var(--t85) var(--f); fill: var(--txd); }
 .sq-dleg { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
 .sq-dleg > div { display: flex; align-items: center; gap: 7px; white-space: nowrap; font: 600 var(--t11)/1 var(--f); color: var(--txm); }
 .sq-dleg em { margin-left: auto; font-style: normal; font-weight: 800; color: var(--txh); }
@@ -7005,7 +7009,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .sq .ss-switch { margin: 10px 0 8px; }
 .sq-tmap { position: relative; height: 132px; }
 .sq-blk { position: absolute; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 7px 8px; border: 0;
-  border-radius: 6px; overflow: hidden; cursor: pointer; text-align: left; background: var(--k); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+  border-radius: 6px; overflow: hidden; cursor: pointer; text-align: left; background: var(--k); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tn-bg) 30%, transparent); }
 .sq-blk:hover { filter: brightness(1.08); }
 .sq-blk.sel { outline: 2px solid var(--txb); outline-offset: -2px; }
 .sq-blk b { font: 800 var(--t105)/1.15 var(--f); color: var(--tn-bg); }
