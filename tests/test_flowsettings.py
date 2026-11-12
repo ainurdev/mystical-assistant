@@ -202,3 +202,11 @@ def test_a_flow_switched_off_is_refused_and_a_running_one_finishes(api, monkeypa
     api.post({"flow": "fix", "key": "on", "value": False})
     assert paths.step_done(s["id"], "t1") == "review"
     paths._cache.clear()
+
+
+def test_a_reset_carries_ticket_sets_on_as_switching_tickets_on_does(api, monkeypatch):
+    from bridge import tickets
+    booted = threading.Event()
+    monkeypatch.setattr(tickets, "boot", booted.set)
+    api.post({"reset": "build"})                                       # re-seeds TICKETS, maybe back on
+    assert booted.wait(2)
