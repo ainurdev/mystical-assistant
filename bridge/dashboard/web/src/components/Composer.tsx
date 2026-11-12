@@ -1925,10 +1925,12 @@ export function Composer({
           {/* TICKETS and APPROVE BEFORE BUILD (the flows that build as tickets): flow-gear 05 */}
           {/* PRESET's own rows, holding the flow's run default for every session */}
           {(() => {
+            // Flows are Claude's: an agent session's own models never reach a flow's default.
+            const claudeModels = agentPick ? modelRows(models, usage) : modelOpts;
             const src: PreSrc = { val: flowRuns([sheetPick])[sheetPick.id],
               edit: (k, v) => flowChange({ flow: sheetPick.id, key: RUN_KEY[k], value: v }) };
             return <>
-              {modelOpts.length > 0 && preSel("model", "Model", modelOpts, modelName(src.val.model), src)}
+              {preSel("model", "Model", claudeModels, modelName(src.val.model), src)}
               {preSel("perm", "Mode", PERMS, src.val.perm ? optLabel(PERMS, src.val.perm) ?? modeRow(src.val.perm).label : "Session", src)}
               {preSeg("effort", "Effort", EFFORTS.filter((e) => e.id), src)}
               {showPonytail && preSeg("ponytail", "Trim", PONYTAILS, src)}
