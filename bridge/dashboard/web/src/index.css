@@ -8209,6 +8209,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
 @container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
 .tm-call b { font-weight: 700; }
+.tm-call svg { flex: none; }
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
 .tm-body-s { border-top: 1px solid var(--line); }
 .tm-graph { display: block; width: 100%; height: auto; max-height: 220px; }
