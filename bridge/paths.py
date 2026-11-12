@@ -482,6 +482,8 @@ def path_for_command(skill: str) -> tuple:
 # Esc's line, and SHIP's and ASK's: PACK_TEXT tells Claude to start no path behind it.
 NO_PATH = "No path for this message.\n\n"
 BY = {"you": "you picked", "guess": "the box guessed"}
+# A build that couldn't move to its own branch must not land on the default one.
+NO_BRANCH = "Change no files: this build couldn't move to a branch of its own, and waits for the user.\n\n"
 
 
 def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
@@ -525,11 +527,11 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
     if first == "build-here":
         sess = store.get_session(session_id) or {}
         moved = _branch_off(session_id, sess, rec, "feat", sess.get("chat_id"))
-        if not moved:   # the user was told; the build waits for them
+        if not moved:   # the user was told; the build waits for them, and this turn changes nothing
             with _lock:
                 _cache[session_id]["next"] = {"station": first, "turn_id": "", "started": False}
                 _save_locked()
-            return NO_PATH + prompt
+            return NO_PATH + NO_BRANCH + prompt
         return f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there. {prompt}"
     return f"/mattpocock-skills:{skill} {prompt}" if skill else NO_PATH + prompt
 

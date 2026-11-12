@@ -101,6 +101,13 @@ def test_build_with_its_grill_off_builds_here_on_its_own_branch(repo_session, mo
     assert paths.get(sid)["path"] == "build-here" and paths.step_done(sid, t) == "review"
 
 
+def test_a_build_that_cant_branch_off_changes_nothing_and_waits(sess, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(paths, "_branch_off", lambda *a: None)
+    _off("build", "grill")
+    assert paths.start_flow(sess, "build", "you", "add it") == paths.NO_PATH + paths.NO_BRANCH + "add it"
+    assert paths.get(sess)["next"] == {"station": "build-here", "turn_id": "", "started": False}
+
+
 def test_a_build_with_its_grill_off_runs_in_its_branch(repo_session, monkeypatch):  # noqa: F811
     """The runner's half: the turn runs in the checkout the flow moved to."""
     from bridge import config, runner, state, titler
