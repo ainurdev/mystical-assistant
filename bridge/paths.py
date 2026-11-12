@@ -70,8 +70,8 @@ shipping the step, or switching it later, never puts one into a flow already pas
 MERGE. stations() gives the steps as they stand, and FLOW draws those.
 
 A flow another one replaces is kept in its session's record (`past`, oldest first): who
-started it and why, when it began and ended, its steps done and skipped, and the step it
-stopped on (None: it ran to its end, which `end` records when its last step is done). SESSION
+started it and why, when it began and ended, its steps, the ones done and skipped, and the one
+it stopped on (None: it ran to its end, which `end` records when its last step is done). SESSION
 ▸ FLOWS draws every flow a session ran from these; restore() takes back the one it pushed.
 """
 
@@ -363,10 +363,11 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
 
 
 def _ended(f: dict) -> dict:
-    """A replaced flow as `past` keeps it: stopped on the step it was at, unless it had ended."""
+    """A replaced flow as `past` keeps it: its steps as they stood, stopped on the one it was at,
+    unless it had ended."""
     return {**{k: f.get(k) for k in ("path", "skill", "by", "why", "at")}, "end": f.get("end") or int(time.time()),
             "done": list(f["done"]), "skipped": list(f.get("skipped") or []),
-            "stopped": None if f.get("end") else _underway(f)}
+            "stopped": None if f.get("end") else _underway(f), "stations": [list(st) for st in _stations(f)]}
 
 
 def past(session_id: str) -> list:

@@ -139,6 +139,7 @@ def test_a_replaced_flow_is_kept_stopped_where_it_was(state_dir):
     [p] = paths.past("s1")
     assert (p["path"], p["by"], p["why"], p["at"], p["done"], p["stopped"]) == ("fix", "rule", "crash", at, ["diagnose"], "review")
     assert p["end"] >= at and paths.get("s1")["path"] == "refactor"
+    assert [st[0] for st in p["stations"]] == ["diagnose", "review", "retro"]   # its steps, as they stood
 
 
 def test_a_finished_flow_keeps_when_it_ended(state_dir, monkeypatch):
