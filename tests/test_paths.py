@@ -1128,3 +1128,19 @@ def test_a_queued_flow_goes_as_typed_once_skill_paths_is_off(sess, router_off):
 def test_a_flow_wins_over_the_no_path_flag(monkeypatch, router_on):
     _obj, _code, run = _send(monkeypatch, {"prompt": "add it", "flow": "build", "by": "you", "no_path": True})
     assert run["prompt"] == "add it"
+
+
+def test_a_turn_sent_with_a_flow_starts_it(state_dir, router_on, monkeypatch):
+    """The runner's half: start_streaming_job records the flow and runs the grill's command."""
+    from bridge import state, titler
+    seen = {}
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_streaming", lambda job, prompt, *a: seen.update(prompt=prompt))
+    s = store.create_session(555, "/flow-run", cwd=config.BASE_PATH)
+    job = runner.start_streaming_job(555, "add a digest", [], project=config.BASE_PATH, session_id=s["id"],
+                                     flow="build", flow_by="you")
+    state.release_run(job.store_session_id)
+    assert seen["prompt"].startswith("/mattpocock-skills:grill-with-docs add a digest")
+    assert store.turn_prompt(job.id) == "/mattpocock-skills:grill-with-docs add a digest"
+    assert (paths.get(s["id"])["path"], paths.get(s["id"])["by"]) == ("build", "you")
