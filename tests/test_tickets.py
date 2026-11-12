@@ -1538,3 +1538,49 @@ def test_a_review_a_restart_cut_says_so_at_boot(reviewed):
     c = store.get_council(r.merge)
     assert (c["status"], c["reason"]) == ("stopped", "interrupted by a restart") and r.kinds == ["council_stopped"]
     assert paths.get(r.s.flow)["next"]["station"] == "review"
+
+
+def _scratch(wt):
+    """A ticket's screenshots in its worktree's .mystical/ (which ignores itself)."""
+    os.makedirs(os.path.join(wt, ".mystical"))
+    for name, text in ((".gitignore", "*\n"), ("shot.png", "png")):
+        with open(os.path.join(wt, ".mystical", name), "w") as f:
+            f.write(text)
+
+
+def _branches(s):
+    return set(_git(s.main, "branch", "--format=%(refname:short)").split())
+
+
+def test_a_merged_set_cleans_up_its_ticket_worktrees_and_keeps_their_scratch(make_set):
+    s = make_set({"01": None, "02": None})
+    _finish_all(s, "01", "02")
+    wts = [t["worktree"] for t in s.state["tickets"].values()]
+    _scratch(wts[0])
+    _merge_for_real(s)
+    sid = s.state["merge_session"]
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"
+    assert not any(os.path.isdir(w) for w in wts) and not {"tk/x-01", "tk/x-02"} & _branches(s)
+    assert os.path.isfile(os.path.join(s.main, ".mystical", "archive", os.path.basename(wts[0]), ".mystical", "shot.png"))
+
+
+def test_boot_cleans_up_a_set_merged_before_its_clean_up_ran(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    st = s.state
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    tickets.save(s.folder, {**st, "status": "merged"})                # a restart cut it between the two
+    tickets.boot()
+    assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and "tk/x-01" not in _branches(s)
+
+
+def test_cleanup_leaves_a_ticket_whose_session_is_at_work(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    st = s.state
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    tickets.save(s.folder, {**st, "status": "merged"})
+    s.hand_turn("01")                                                  # you typed into the ticket's session
+    assert tickets.cleanup(s.folder) == ([], ["tk/x-01"]) and os.path.isdir(st["tickets"]["01"]["worktree"])

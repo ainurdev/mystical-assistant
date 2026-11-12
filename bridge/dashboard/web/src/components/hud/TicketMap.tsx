@@ -185,7 +185,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     build: () => act(api.buildTickets(set.folder), "build failed"),
     approve: () => act(api.approveTickets(set.folder), "approve failed"),
     clean: async () => {
-      if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; ignored files in those worktrees (.env, .mystical/) go with them.`, { ok: "Clean up" }))) return;
+      if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; their .mystical/ scratch moves to .mystical/archive/, other ignored files (.env) go with them.`, { ok: "Clean up" }))) return;
       try {
         const r = await api.cleanupTickets(set.folder);
         setNote(`removed ${r.removed.length}${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}`);

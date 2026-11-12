@@ -719,6 +719,14 @@ def _merge_end(sid: str, status: str, chat_id=None, carry: bool = True) -> None:
             return
         save(folder, st)
     if st["status"] == "merged":
+        try:   # its tickets are in the feature branch: their worktrees and branches go now
+            kept = cleanup(folder)[1]
+            if kept:
+                notices.emit("tickets", st["parent_session"], body=f"After the merge, {', '.join(kept)} "
+                             f"kept {'its' if len(kept) == 1 else 'their'} worktree: uncommitted work there, or a "
+                             "session still at work. Clean up in the ticket map tries again.")
+        except Exception as e:  # noqa: BLE001 — a failed clean-up never holds the flow up
+            print(f"[tickets] clean-up of {folder} failed: {e}", file=sys.stderr)
         paths.advance(st["parent_session"], "merge", st.get("flow_at"))
 
 
@@ -833,8 +841,11 @@ def summaries() -> list:
 
 
 def cleanup(folder: str) -> tuple:
-    """Remove a merged set's ticket worktrees and branches: (removed, skipped) names.
-    Never forces: a branch git calls unmerged, or a worktree with uncommitted work, stays."""
+    """Remove a merged set's ticket worktrees and branches: (removed, skipped) names. Runs
+    by itself when the merge ends and at boot; the map's Clean up runs it again. Never
+    forces: a branch git calls unmerged, a worktree with uncommitted work, or one whose
+    session is mid-turn stays. A worktree's .mystical/ scratch (screenshots, notes) moves
+    to .mystical/archive/ first, as the user's own clean-ups do."""
     with _build:
         st = load(folder)
         tks = st.get("tickets") or {}
@@ -853,9 +864,11 @@ def cleanup(folder: str) -> tuple:
                 skipped.append(b)
                 continue
             if wt and os.path.isdir(wt):
-                if git._run(wt, "status", "--porcelain")[1].strip():  # noqa: SLF001
+                if store.running_turn_id(t.get("session_id") or "") or \
+                        git._run(wt, "status", "--porcelain")[1].strip():  # noqa: SLF001
                     skipped.append(b)
                     continue
+                git.archive_scratch(fc, wt)
                 ok, _ = git.worktree_remove(fc, wt, force=False)
                 if not ok:
                     skipped.append(b)
@@ -1134,8 +1147,10 @@ def boot() -> None:
     """After a restart: judge every running ticket whose session sits idle and isn't
     parked (its turn ended, or never began, while nothing listened) as at a turn end:
     done, fix, or still running and told to carry on. Then tick each building set, and
-    reconcile each merging one (_boot_merge). Nothing here starts a ticket that has a
-    session; only retry() does. Run again when TICKETS or SKILL PATHS comes back on."""
+    reconcile each merging one (_boot_merge). A merged set's leftover ticket worktrees go
+    (cleanup: a restart cut it off, or the set merged before it ran by itself). Nothing here
+    starts a ticket that has a session; only retry() does. Run again when TICKETS or SKILL
+    PATHS comes back on."""
     for r in sets():
         folder = r.get("folder")
         try:
@@ -1143,6 +1158,8 @@ def boot() -> None:
                 _boot_merge(folder)
             if isinstance(folder, str):
                 _boot_review(load(folder))
+                if load(folder).get("status") == "merged":
+                    cleanup(folder)
             if not isinstance(folder, str) or load(folder).get("status") != "building":
                 continue
             with _build:
