@@ -3558,6 +3558,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         _register(job)
         if flow and not refusal and not is_acp:   # the box's flow starts with this turn, queued or not
             prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt)
+            # BUILD with its grill off moved the session onto a branch of its own: this turn runs there.
+            moved = (store.get_session(session["id"]) or {}).get("cwd")
+            if moved and moved != cwd and os.path.isdir(moved):
+                cwd, job.work_cwd = moved, None
         # A session CONTINUE HERE made from a teammate's: their turns are on screen, not in
         # Claude, so its runs carry them until one of yours has finished (bridge/team.py seed).
         run_prompt = prompt

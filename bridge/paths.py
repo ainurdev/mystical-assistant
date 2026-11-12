@@ -207,7 +207,50 @@ def review_on() -> bool:
     return aifeatures.enabled("ticketruns") and aifeatures.enabled("mergereview")
 
 
+# The flow's STEPS chip each station stands for (flowsettings.STEPS): DESIGN's and BUILD's
+# build is spec › tickets › build › merge, or build here. Any other station is its own chip.
+_CHIP = {"spec": "build", "tickets": "build", "merge": "build", "build-here": "build"}
+
+
+def _on(flow: dict, station: str) -> bool:
+    """Whether the flow's STEPS chips let `station` run. Read on every call, so a chip
+    switched off applies to running flows from their next step."""
+    if flow["path"] == "one":
+        return True
+    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    chips = flowsettings.steps(flow["path"].removesuffix("-here"))
+    chip = _CHIP.get(station, station)
+    if chip == "review" and not chips.get("build", True):
+        return False   # DESIGN with its build off: nothing was built, so nothing to review
+    return chips.get(chip, True)
+
+
 def _stations(flow: dict) -> list:
+    """The steps that will run: the path's, less the ones its STEPS chips switched off."""
+    return [st for st in _all(flow) if _on(flow, st[0])]
+
+
+def _underway(flow: dict) -> "str | None":
+    """The step a turn works on now: the one the flow started, else the first still to
+    come. A step started before its chip went off still finishes."""
+    nxt = flow["next"] or {}
+    if nxt.get("started") and nxt["station"] not in flow["done"]:
+        return nxt["station"]
+    return next((st[0] for st in _stations(flow) if st[0] not in flow["done"]), None)
+
+
+def _next(flow: dict) -> "dict | None":
+    """The recorded next step, or when its chip went off before it started, the next
+    step still on in its place (None: nothing left, the flow is done)."""
+    nxt = flow["next"]
+    if not nxt or nxt.get("started") or _on(flow, nxt["station"]):
+        return nxt
+    rest = [st[0] for st in _stations(flow) if st[0] not in flow["done"]]
+    return {**nxt, "station": rest[0]} if rest else None
+
+
+def _all(flow: dict) -> list:
+    """The path's steps whatever its STEPS chips say."""
     if flow["path"] == "one":
         return [(flow["skill"], flow["skill"], "auto")]
     pony = aifeatures.enabled("ponytail")
@@ -271,7 +314,7 @@ def get(session_id: str) -> "dict | None":
         f = _cache.get(session_id)
         if not f:
             return None
-        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "next", "skill")},
+        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "next": _next(f),
                 "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
@@ -400,18 +443,18 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
             return None
         if f["last"] == turn_id:
             return (f["next"] or {}).get("station")
-        stations = [st[0] for st in _stations(f)]
-        named = next((st for st, sk, _ in _stations(f) if skill and sk == skill), None)
+        named = next((st for st, sk, _ in _all(f) if skill and sk == skill), None)
         if named in f["done"]:
             return (f["next"] or {}).get("station")   # a re-run of a finished step moves nothing
-        cur = named or next((st for st in stations if st not in f["done"]), None)
-        if cur is None:
+        cur = named or _underway(f)   # a step switched off mid-turn is still the one that finished
+        if cur is None or cur not in [st[0] for st in _all(f)]:
             return None
         if choice == "here" and f["path"] in ("build", "design") and cur == "grill":
             f["path"] += "-here"
-            stations = [st[0] for st in _stations(f)]
-        f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"]]
-        rest = [st for st in stations if st not in f["done"]]
+        stations, on = [st[0] for st in _all(f)], [st[0] for st in _stations(f)]   # before the mark: MERGE's own end settles REVIEW
+        # The steps up to it are done; ones switched off were passed over, never run.
+        f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"] and (st == cur or st in on)]
+        rest = [st for st in on if st not in f["done"]]
         f["next"] = {"station": rest[0], "turn_id": turn_id, "started": False} if rest else None
         f["last"] = turn_id
         _save_locked()
@@ -439,6 +482,8 @@ def path_for_command(skill: str) -> tuple:
 # Esc's line, and SHIP's and ASK's: PACK_TEXT tells Claude to start no path behind it.
 NO_PATH = "No path for this message.\n\n"
 BY = {"you": "you picked", "guess": "the box guessed"}
+# A build that couldn't move to its own branch must not land on the default one.
+NO_BRANCH = "Change no files: this build couldn't move to a branch of its own, and waits for the user.\n\n"
 
 
 def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
@@ -464,15 +509,30 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
     any running flow, and the prompt returned with its first step's command in front
     (SHIP and ASK: the no-path line, so Claude moves them into no other flow). The
     flow already running keeps it: nothing recorded, nothing in front. A prompt queued
-    before FLOWS, or its flow, went off goes as typed."""
+    before FLOWS, or its flow, went off goes as typed. With its grill off, DESIGN starts
+    at design and BUILD at the here build, which first moves the session onto a branch of
+    its own (as the here build after a grill does), never the default branch."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if not on() or not flowsettings.flow_on(flow):
         return prompt
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
         return prompt
-    set_path(session_id, flow, f"{BY[by]} {flow.upper()}", by)
-    skill = PATHS[flow][0].skill
+    grill = flowsettings.steps(flow).get("grill", True)
+    rec = set_path(session_id, flow if grill or flow not in ("design", "build") else flow + "-here",
+                   f"{BY[by]} {flow.upper()}", by)
+    first, skill, _ = _stations(rec)[0]
+    if first == "design":
+        return f"/design-first {prompt}\n\n{DESIGN_STEP}"
+    if first == "build-here":
+        sess = store.get_session(session_id) or {}
+        moved = _branch_off(session_id, sess, rec, "feat", sess.get("chat_id"))
+        if not moved:   # the user was told; the build waits for them, and this turn changes nothing
+            with _lock:
+                _cache[session_id]["next"] = {"station": first, "turn_id": "", "started": False}
+                _save_locked()
+            return NO_PATH + NO_BRANCH + prompt
+        return f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there. {prompt}"
     return f"/mattpocock-skills:{skill} {prompt}" if skill else NO_PATH + prompt
 
 
@@ -485,8 +545,9 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
 # merge session (tickets.start_review); one with a skill is ponytail's turn here.
 _AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit", "design"}
 # The design step's turn: /design-first draws, and the build step builds (it may be switched off).
-DESIGN_TEXT = ("/design-first the change the grill above settled. This is a flow's design step: building "
-               "is the next step's job, so when the user approves, call StepDone instead of implementing.")
+DESIGN_STEP = ("This is a flow's design step: building is the next step's job, so when the user approves, "
+               "call StepDone instead of implementing.")
+DESIGN_TEXT = f"/design-first the change the grill above settled. {DESIGN_STEP}"
 # The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
 _TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000
@@ -558,7 +619,10 @@ def _go(session_id: str, chat_id=None, effort=None) -> bool:
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
-        nxt = f["next"] if f else None
+        nxt = _next(f) if f else None
+        if f and nxt is not f["next"]:   # its step went off before it started: the next one on, or the end
+            f["next"] = nxt
+            _save_locked()
         if not nxt or nxt.get("started") or not _eff(f, "nextstep"):
             return False
         nxt["started"] = True
@@ -618,12 +682,15 @@ def _end_pony_step(session_id: str, turn_id: str) -> None:
     """A turn sent as /ponytail-review or /ponytail-audit ended cleanly: when the path is
     on that step, it's done (ponytail's skills never call StepDone; one that does moves once).
     So is a SHIP or ASK step at any clean end: that step is the turn itself."""
-    f = get(session_id)
-    rest = [(st, sk) for st, sk, _ in f["stations"] if st not in f["done"]] if f else []
-    if not rest:
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        cur = _underway(f) if f else None
+        skill = next((sk for st, sk, _ in _all(f) if st == cur), None) if cur else None
+    if not cur:
         return
     m = _PONY_RE.match(_carried(session_id, turn_id)[1] or "")
-    if rest[0][0] in _TURN_STEPS or m and rest[0] == (m.group(1), f"ponytail-{m.group(1)}"):   # not the council's REVIEW
+    if cur in _TURN_STEPS or m and (cur, skill) == (m.group(1), f"ponytail-{m.group(1)}"):   # not the council's REVIEW
         step_done(session_id, turn_id)
 
 

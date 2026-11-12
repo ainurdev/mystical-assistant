@@ -154,7 +154,7 @@ import subprocess  # noqa: E402
 import uuid  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
-from bridge import aifeatures, config, git, notices, paths, runner, store  # noqa: E402
+from bridge import aifeatures, config, flowsettings, git, notices, paths, runner, store  # noqa: E402
 
 
 def _git(cwd, *a):
@@ -1339,6 +1339,7 @@ def reviewed(make_set, monkeypatch):
     monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
     monkeypatch.setattr(waits, "target_ended", lambda job: None)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
+    flowsettings.change({"flow": "build", "key": "step", "step": "review", "value": True})   # seeded before the switch came on
 
     def merged():
         _merge_for_real(s)
@@ -1459,6 +1460,7 @@ def test_tickets_merged_by_hand_pass_the_review_over(make_set, monkeypatch):
     for t in ("a", "b", "c"):
         paths.step_done(s.flow, t)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
+    flowsettings.change({"flow": "build", "key": "step", "step": "review", "value": True})   # seeded before the switch came on
     assert s.build().startswith("cycle:")
     paths.step_done(s.flow, "built-by-hand")
     assert paths.step_done(s.flow, "merged-by-hand") == "review"

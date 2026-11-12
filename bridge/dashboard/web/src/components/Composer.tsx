@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
-import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
+import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
@@ -23,6 +23,7 @@ import type { FlowAct } from "../lib/useFlow";
 import { Tip } from "./ui/Tip";
 import { Switch } from "./hud/SettingsModal";
 import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
+import { promptSteps, runs } from "../lib/flowsteps";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
@@ -770,7 +771,6 @@ export function Composer({
     return () => { live = false; };
   }, [slashOn, leadsSlash, project, noList, skillPrefix, goals, cwd]);
   // The router has it read up front, once per project, so a command it puts in front draws as one at once.
-  // COMPACT's kinds read it too: whether Matt's pack is listed decides FIX's command and BUILD's fact.
   useEffect(() => {
     if ((!routing && !shelled) || onAgent) return;
     let live = true;
@@ -1837,12 +1837,14 @@ export function Composer({
       <i aria-hidden>▾</i>
     </button>
   );
+  // The facts lead with the steps the prompt will follow, then the state facts (a1-rest).
+  const steps = promptSteps({ kind, how: kindHow, running: runningFlow, cfg: flowCfg });
   const facts = ghost && capt
     ? <span className="pb-route"><b data-tone={capt.tone}>{capt.tag}</b>{capt.why && <span className="why">{capt.why}</span>}
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
     : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
-    : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
-        mapBuiltAt: graph?.exists ? graph.built_at : null, pack, askPerm: run?.perm ?? "" })
+    : kind && <span>{[...(steps ? [{ text: steps } as Fact] : []), ...kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null,
+        designLinked: designLinked ?? null, mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   // The gear: the FLOWS sheet, for every session (bridge/flowsettings.py). It hangs from the card's
   // left edge as PRESET hangs from its segment, two columns so picking a flow never changes its
@@ -1895,7 +1897,7 @@ export function Composer({
                 <Icon size={13} strokeWidth={2} aria-hidden />
                 <b>{flowName(f.id)}</b>
                 <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
-                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{st.on && !st.ponytail_off ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
+                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{runs(st) ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
                 <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
               </div>
             );
@@ -1905,12 +1907,18 @@ export function Composer({
         <div className="fs-detail">
           <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{flowName(sheetPick.id)}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
           <div className="pb-pr"><b>Steps</b>
-            {/* switched on and off by flow-gear 04; a fixed step always runs */}
-            <div className="fs-chips">
+            {/* A fixed step always runs; the others switch on and off, for every session from its next step. */}
+            <div className="fs-chips" role="group" aria-label={`${flowName(sheetPick.id)} steps`}>
               {sheetPick.steps.map((st, i) => (
                 <Fragment key={st.step}>{i > 0 && <i aria-hidden>›</i>}
-                  <span className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={st.on && !st.ponytail_off ? "" : undefined}
-                    title={st.ponytail_off ? "PONYTAIL is off: this step doesn't run" : undefined}>{st.step.toUpperCase()}</span></Fragment>
+                  <button type="button" className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={runs(st) ? "" : undefined}
+                    data-pony={st.ponytail_off ? "" : undefined} aria-pressed={st.on} aria-disabled={st.fixed || undefined}
+                    aria-label={`${st.step}: ${st.fixed ? "always runs" : st.on ? "on" : "off"}${st.ponytail_off === true ? ", not running while PONYTAIL is off" : st.ponytail_off ? ", not after a here build while PONYTAIL is off" : ""}`}
+                    title={st.fixed ? `${flowName(sheetPick.id)} always runs ${st.step.toUpperCase()}`
+                      : st.ponytail_off === true ? "PONYTAIL is off: this step doesn't run"
+                      : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after tickets merge still runs)" : undefined}
+                    onClick={() => { if (!st.fixed) flowChange({ flow: sheetPick.id, key: "step", step: st.step, value: !st.on }); }}>
+                    {st.step.toUpperCase()}</button></Fragment>
               ))}
             </div>
           </div>

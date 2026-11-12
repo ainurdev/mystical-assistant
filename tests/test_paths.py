@@ -664,7 +664,7 @@ import json  # noqa: E402
 
 @pytest.fixture
 def pony_on(monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ponytail"))
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ponytail", "mergereview"))   # REVIEW seeds on, as on an untouched install
 
 
 def _stations(sid):

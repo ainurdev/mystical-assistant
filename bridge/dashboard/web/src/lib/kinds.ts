@@ -119,7 +119,7 @@ export function lastCheckOf(turns: Turn[]): LastCheck | null {
   return null;
 }
 
-export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null; pack: boolean;
+export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null;
   /** The perm ASK will run with: it is read-only only in plan. */ askPerm: string }
 /** `lead`: plain words before the text, so a state colour lands on the state alone ("last check" stays plain). */
 export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
@@ -132,7 +132,7 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
     case "design":
       return c.designLinked === null ? [] : [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
     case "build":
-      return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...(g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [])];
+      return g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [];   // the steps lead the facts (lib/flowsteps)
     case "fix":
       return c.lastCheck
         ? [{ lead: "last check ", text: c.lastCheck.line, tone: c.lastCheck.ok ? undefined : "err" }, ...(c.lastCheck.at ? [{ text: hhmm(c.lastCheck.at) }] : [])]
