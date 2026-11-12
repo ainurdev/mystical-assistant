@@ -80,10 +80,10 @@ const g = groupTasks([tk("a", true), tk("b", false, true, "IN_PROGRESS"), tk("c"
   tk("e", true, false, "IN_PROGRESS"), tk("f", false, false, "COMPLETED"), tk("h", true, false, "FAILED"),
   tk("i", false, false, "CANCELLED"), tk("j", false, false, null, "T28 — Cashflow ⏸️ (deferred to Phase 3)"),
   tk("k", false, false, "IN_PROGRESS", "T29 — Sync ⏸️ (deferred to Phase 3)")]);
-eq([g.needs, g.running, g.done, g.mine, g.team, g.later].map((x: { id: string }[]) => x.map((t) => t.id)),
-  [["b"], ["d", "e", "k"], ["f"], ["a", "h"], ["c", "i"], ["j"]],
-  "by what each needs from you: a question, then runs in flight, then finished ones; a failed run stays with " +
-  "its owner (RETRY); a deferred task waits in LATER — unless a run is already on it");
+eq([g.needs, g.failed, g.running, g.done, g.mine, g.team, g.later].map((x: { id: string }[]) => x.map((t) => t.id)),
+  [["b"], ["h"], ["d", "e", "k"], ["f"], ["a"], ["c", "i"], ["j"]],
+  "by what each needs from you: a question, a failed run (RETRY), runs in flight, finished ones; " +
+  "a deferred task waits in LATER — unless a run is already on it");
 
 eq(splitTitle("T26 — Moneybird OAuth + connection storage"),
   { code: "T26", title: "Moneybird OAuth + connection storage", later: null }, "the code gets its own line");

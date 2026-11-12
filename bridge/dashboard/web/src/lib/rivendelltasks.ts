@@ -133,12 +133,13 @@ export function splitTitle(name: string): { code: string | null; title: string; 
  *  open rest as YOURS and TEAM, and LATER (deferred by the title's marker, and
  *  idle). A failed run stays with YOURS/TEAM, where its RETRY is. */
 export function groupTasks<T extends Pick<RivendellTask, "mine" | "run" | "implementation" | "name">>(tasks: T[]) {
-  const g = { needs: [] as T[], running: [] as T[], done: [] as T[], mine: [] as T[], team: [] as T[], later: [] as T[] };
+  const g = { needs: [] as T[], failed: [] as T[], running: [] as T[], done: [] as T[], mine: [] as T[], team: [] as T[], later: [] as T[] };
   for (const t of tasks) {
     const s = t.implementation?.status;
     if (t.run?.ask) g.needs.push(t);
     else if (s === "PENDING" || s === "IN_PROGRESS") g.running.push(t);
     else if (s === "COMPLETED") g.done.push(t);
+    else if (s === "FAILED") g.failed.push(t);
     else if (splitTitle(t.name).later) g.later.push(t);
     else (t.mine ? g.mine : g.team).push(t);
   }

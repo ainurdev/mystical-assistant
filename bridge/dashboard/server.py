@@ -902,9 +902,11 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             slug, answer = rivendell._slug_answer(abs_p)
-            if slug is None:
-                return self._json({"slug": None, "instances": None,
-                                   "projects": [], "tasks": [], "errors": []})
+            # No project links this checkout (or it has no GitHub remote): the
+            # tab shows the owner's tasks across every project instead.
+            if slug is None or (answer.get("instances") and not answer.get("projects")
+                                and not answer.get("errors")):
+                return self._json({"slug": slug, "everywhere": True, **rivendell.everywhere()})
             return self._json({"slug": slug, **answer})
         if path == "/local/rivendell/taskstate":
             # The task tab (docs/superpowers/specs/rivendell-task-check.md): the

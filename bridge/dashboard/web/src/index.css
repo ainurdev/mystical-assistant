@@ -6532,6 +6532,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .rtile-v { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rtile-n { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; white-space: nowrap; color: var(--txg); }
 .rtile[aria-current="true"] .rtile-n { color: var(--acc); }
+.rtile-n[data-long] { font-size: var(--t7); letter-spacing: 0; }   /* RIVENDELL in the 38px label */
 .capdate { min-width: 0; border-left: 1px solid var(--line2); padding-left: 9px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; text-align: left; }
 .capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rtile[data-tone="acc"] .rtile-v { color: color-mix(in srgb, var(--acc) 72%, var(--txb)); }
@@ -8154,17 +8155,8 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .dk-then:hover, .dk-then:focus-visible { background: var(--wash); color: var(--txh); }
 .dk-then span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dk-then small { flex: none; font: 600 var(--t9)/1 var(--mono); color: var(--txg); }
-/* TEAM tab: faces row, TODAY / EARLIER feed (a card, then one-line events), the send bar at the foot.
+/* TEAM tab: PEOPLE rows (TeamPanel person), TODAY / EARLIER feed (a card, then one-line events), the send bar at the foot.
    Colours are tokens. */
-.tf-pres { display: flex; align-items: center; gap: 6px; flex: none; padding: 4px 12px 2px; min-width: 0; }
-.tf-face { position: relative; flex: none; display: grid; place-items: center; width: 34px; height: 34px; box-sizing: border-box; border-radius: 50%; }
-.tf-face:not(.on) { opacity: .6; }
-.tf-face.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ok); }
-.tf-more { font-size: var(--t95); color: var(--txd); border: 1px solid var(--line2); }
-.tf-t { flex: 1; min-width: 0; margin-left: 6px; display: flex; flex-direction: column; gap: 3px; }
-.tf-t b, .tf-t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tf-t b { font-size: var(--t11); font-weight: 700; color: var(--txh); }
-.tf-t small { min-height: 12px; font-size: var(--t9); color: var(--txl); }
 .tf-line { display: flex; align-items: center; gap: 9px; height: 34px; box-sizing: border-box; padding: 0 12px; min-width: 0; border-bottom: 1px solid var(--line); }
 .tf-line[data-act] { cursor: pointer; }
 .tf-line[data-act]:hover { background: var(--wash); }
@@ -8175,16 +8167,6 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .tf-tx b { color: var(--txh); font-weight: 700; }
 .tf-r { flex: none; min-width: 52px; display: flex; justify-content: flex-end; font: 700 var(--t8)/1 var(--mono); letter-spacing: .8px; white-space: nowrap; }
 button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; background: transparent; font-family: inherit; font-size: var(--t95); letter-spacing: .1em; color: var(--txl); }
-.tf-send { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; box-sizing: border-box; margin: 6px 12px 12px; padding: 0 5px 0 12px; border-radius: 12px;
-  background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line2); font-size: var(--t11); font-weight: 600; color: var(--txl); }
-.tf-lbl { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tf-to { position: relative; flex: 0 1 auto; min-width: 0; max-width: 46%; display: flex; align-items: center; gap: 5px; padding: 4px 8px 4px 4px; border-radius: 99px;
-  background: var(--wash); color: var(--txh); font-weight: 700; cursor: pointer; }
-.tf-nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tf-to select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
-.tf-to:focus-within { outline: 2px solid var(--acc); outline-offset: 1px; }
-.tf-go { flex: none; appearance: none; cursor: pointer; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 9px; background: var(--acc); color: var(--acc-on, var(--canvas)); }
-.tf-go:hover, .tf-go:focus-visible { filter: brightness(1.12); }
 
 /* The ticket map (components/hud/TicketMap.tsx): a flow chat's ticket set as a one-line
    strip docked above the prompt box (its chevron opens the graph in place) and the full

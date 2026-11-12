@@ -2,7 +2,7 @@
 // sent each other. Drawn by components/hud/TeamPanel.tsx, the send sheet
 // (components/TeamSendSheet.tsx) and the received bar (components/TeamBar.tsx).
 // Checked by team.check.ts.
-import type { Received, Share, Teammate } from "../api";
+import type { Received, RivendellTask, Share, Teammate } from "../api";
 import { isDeviceRun } from "./devicerun.ts";
 import { ago, hhmm } from "./surfaces.ts";
 
@@ -50,6 +50,17 @@ export function presence(t: Pick<Teammate, "online" | "lastSeenAt">, now: number
   if (sameDay(at, now)) return `last on today, ${hhmm(at, h12)}`;
   if (sameDay(at, now - DAY)) return `last on yesterday, ${hhmm(at, h12)}`;
   return `last on ${new Date(at * 1000).toLocaleDateString([], { month: "short", day: "numeric" })}`;
+}
+
+/** WHO'S ON WHAT: a teammate's tasks in a task list, and the one to name —
+ *  the one a run is on, else the first. Assignees come from Teamwork, so their
+ *  ids are Teamwork's unless the task was assigned in Rivendell ("user-<id>"):
+ *  a Teamwork id falls back to the first name ("Mahdi" is "Mahdi Pourismaiel"). */
+export function onWhat<T extends Pick<RivendellTask, "assignees" | "implementation">>(t: Pick<Teammate, "id" | "name">, tasks: T[]): { task: T | null; n: number } {
+  const first = (n: string) => n.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const theirs = tasks.filter((k) => k.assignees.some((a) => a.id === t.id || a.id === `user-${t.id}` || first(a.name) === first(t.name)));
+  const running = theirs.find((k) => k.implementation?.status === "IN_PROGRESS" || k.implementation?.status === "PENDING");
+  return { task: running ?? theirs[0] ?? null, n: theirs.length };
 }
 
 /** Who's on first, then by name. */

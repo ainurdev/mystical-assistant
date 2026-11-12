@@ -2854,15 +2854,15 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "rivendell", short: "TASKS", label: "Rivendell: tasks + team", group: "project",
+      id: "rivendell", short: "RIVENDELL", label: "Rivendell: tasks + team", group: "project",
       hint: rivendellDown ? "link broken" : teamNew ? `${teamNew} new from the team` : undefined,
       icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
       render: () => (
         <RivendellTab lens={rvLens} onLens={setRvLens} teamNew={teamNew}
           tasks={<RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
-            onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />}
-          team={<TeamPanel data={team} fail={teamFail}
+            onWorkOn={(text, dir) => { const p = dir || sessionProject; if (p) { void newSession(p, text); toChat(); } }} />}
+          team={<TeamPanel data={team} fail={teamFail} project={sessionProject}
             sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
             onRefresh={() => void loadTeam()}
             onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}

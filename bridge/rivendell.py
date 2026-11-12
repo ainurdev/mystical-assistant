@@ -3136,10 +3136,16 @@ def _slug_answer(path: str) -> "tuple[str | None, dict | None]":
         first = first if first[0] else (slug, d)
     if len(hits) < 2:
         return hits[0] if hits else first
-    merged: dict = {"instances": hits[0][1]["instances"], "links": hits[0][1].get("links") or [],
+    return ", ".join(s for s, _ in hits), _merge([d for _, d in hits])
+
+
+def _merge(answers: list) -> dict:
+    """Several tasks() answers as one: projects and tasks once each (by
+    instance and id), every distinct error, the first answer's links."""
+    merged: dict = {"instances": answers[0]["instances"], "links": answers[0].get("links") or [],
                     "projects": [], "tasks": [], "errors": []}
     seen: set = set()
-    for _, d in hits:
+    for d in answers:
         for kind in ("projects", "tasks"):
             for row in d.get(kind) or []:
                 ref = (kind, row.get("instance_id"), row.get("id"))
@@ -3147,7 +3153,54 @@ def _slug_answer(path: str) -> "tuple[str | None, dict | None]":
                     seen.add(ref)
                     merged[kind].append(row)
         merged["errors"] += [e for e in d.get("errors") or [] if e not in merged["errors"]]
-    return ", ".join(s for s, _ in hits), merged
+    return merged
+
+
+_EVERY_TTL = 60.0
+_every: dict = {"at": 0.0, "projects": []}     # GET /plugin/projects, every instance's, merged
+
+
+def _local_dir(repos) -> "str | None":
+    """The workspace-relative path ("/ainurhq/rivendell") of this machine's
+    checkout of one of `repos`, for WORK ON IT from another repo. Reads the
+    checkout cache and rescans only when it is stale: a project nobody cloned
+    here would otherwise force a rescan (git per repo) on every poll."""
+    global _checkout_cache, _checkout_cache_at
+    with _checkout_lock:
+        if time.monotonic() - _checkout_cache_at > _CHECKOUT_CACHE_TTL:
+            _checkout_cache = _rescan_checkouts()
+            _checkout_cache_at = time.monotonic()
+        path = next((_checkout_cache[r.lower()] for r in repos or () if r and r.lower() in _checkout_cache), None)
+    return "/" + os.path.relpath(path, config.BASE_PATH) if path else None
+
+
+def everywhere() -> dict:
+    """The RIVENDELL tab in a checkout no project links: every project the
+    token's owner may open (GET /plugin/projects, cached a minute), each asked
+    for its tasks by its first repo, merged. The tab keeps the ones that are
+    yours; TEAM reads who is on what off the rest. Each task carries
+    `project_dir`, its project's checkout here (or None), so WORK ON IT opens
+    the session in the task's own repo. One tasks() call per project per poll:
+    the tab polls this view slower than a repo's."""
+    with _manager_lock:
+        running = [w for w in _workers.values() if w.status not in ("auth_error", "error")]
+    if time.time() - _every["at"] > _EVERY_TTL:
+        got: list = []
+        for w in running:
+            try:
+                got += [p for p in _ask(w, "/plugin/projects") or [] if p.get("repositories")]
+            except TasksError as e:
+                print(f"rivendell[{w.name}]: project list failed: {e}")
+        _every.update(at=time.time(), projects=got)
+    answers = []
+    for p in _every["projects"]:
+        d, where = tasks(p["repositories"][0]), _local_dir(p["repositories"])
+        for t in d["tasks"]:
+            t["project_dir"] = where
+        answers.append(d)
+    if not answers:
+        return {"instances": len(_workers), "links": [], "projects": [], "tasks": [], "errors": []}
+    return _merge(answers)
 
 
 def on_board(path: str, wait: float = 2.0) -> bool:

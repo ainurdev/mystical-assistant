@@ -756,6 +756,7 @@ export interface RivendellTask {
   session_id: string | null; // the session that ran (or runs) its request on this bridge
   stale?: boolean;           // its instance failed: the last good answer, shown dimmed
   run?: RivendellRun | null; // what this bridge knows about its run, when it ran here
+  project_dir?: string | null; // everywhere view: its project's checkout here ("/ainurhq/x"), for WORK ON IT
 }
 /** TEST LINK's outcome (POST /local/rivendell/test). ok null = re-dialing a
  *  parked token; the chip shows how that went. */
@@ -801,6 +802,7 @@ export interface RivendellTasks {
     detail: string;
   }[];
   links?: RivendellLink[];  // each connection's state, for the chip and banner
+  everywhere?: boolean;      // no project links this checkout: every project's tasks (the tab keeps yours)
 }
 /** A card's peek (bridge/rivendell.py task_detail): the task in full, read off
  *  Rivendell's /mcp, and the GitHub issue its description defers to. */

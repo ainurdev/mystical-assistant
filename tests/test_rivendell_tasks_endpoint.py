@@ -55,7 +55,7 @@ def asked(monkeypatch):
 
     def tasks(slug):
         slugs.append(slug)
-        return {"instances": 1, "projects": [], "tasks": [{"id": "t1"}], "errors": []}
+        return {"instances": 1, "projects": [{"id": "p1"}], "tasks": [{"id": "t1"}], "errors": []}
     monkeypatch.setattr(rivendell, "tasks", tasks)
     return slugs
 
@@ -81,11 +81,36 @@ def test_tasks_asks_every_remote_not_just_origin(tmp_path, monkeypatch):
     assert r["obj"]["slug"] == "nationalerijschool/app" and r["obj"]["tasks"] == [{"id": "t1"}]
 
 
-def test_tasks_without_a_github_origin_never_reaches_rivendell(tmp_path, asked):
+@pytest.fixture
+def every(monkeypatch):
+    """rivendell.everywhere stubbed: how often it was asked."""
+    n = []
+    monkeypatch.setattr(rivendell, "everywhere", lambda: n.append(1) or
+                        {"instances": 1, "projects": [], "tasks": [{"id": "mine"}], "errors": []})
+    return n
+
+
+def test_tasks_without_a_github_origin_shows_yours_everywhere(tmp_path, asked, every):
     rel = _repo(tmp_path)
     r = dget(f"/local/rivendell/tasks?project={rel}")
-    assert r["code"] == 200 and r["obj"]["slug"] is None
-    assert r["obj"]["tasks"] == [] and asked == []
+    assert r["code"] == 200 and r["obj"]["slug"] is None and r["obj"]["everywhere"] is True
+    assert r["obj"]["tasks"] == [{"id": "mine"}] and asked == [] and every == [1]
+
+
+def test_tasks_of_a_repo_no_project_links_show_yours_everywhere(tmp_path, monkeypatch, every):
+    rel = _repo(tmp_path, "git@github.com:Acme/App.git")
+    monkeypatch.setattr(rivendell, "tasks", lambda slug: {"instances": 1, "projects": [], "tasks": [], "errors": []})
+    r = dget(f"/local/rivendell/tasks?project={rel}")
+    assert r["obj"]["everywhere"] is True and r["obj"]["slug"] == "Acme/App" and every == [1]
+
+
+def test_a_failing_link_keeps_the_repos_own_answer(tmp_path, monkeypatch, every):
+    """A rejected token must still show its banner, not a quiet everywhere list."""
+    rel = _repo(tmp_path, "git@github.com:Acme/App.git")
+    err = {"instance_id": "a", "instance": "prod", "error": "token_rejected", "detail": "x"}
+    monkeypatch.setattr(rivendell, "tasks", lambda slug: {"instances": 1, "projects": [], "tasks": [], "errors": [err]})
+    r = dget(f"/local/rivendell/tasks?project={rel}")
+    assert "everywhere" not in r["obj"] and r["obj"]["errors"] == [err] and every == []
 
 
 def test_tasks_rejects_a_project_outside_the_workspace(asked):
