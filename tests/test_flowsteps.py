@@ -180,3 +180,37 @@ def test_get_flows_shows_a_switched_off_step(monkeypatch):
         ("grill", True, False), ("build", True, True), ("review", True, False),
         ("retro", True, False), ("audit", False, False)]
     assert os.path.exists(flowsettings._file())                       # saved on the bridge
+
+
+@pytest.mark.parametrize("back", ["chip", "ponytail"])
+def test_a_finished_flow_stays_finished_when_a_step_it_passed_comes_back(sess, fake_queue, monkeypatch, back):  # noqa: F811
+    if back == "ponytail":
+        monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep"))   # no ponytail REVIEW
+        _off("fix", "retro")
+    else:
+        _off("fix", "review", "retro")
+    t = _turn(sess, paths.start_flow(sess, "fix", "you", "the crash"))
+    assert paths.step_done(sess, t) is None                           # DIAGNOSE was the last step on: FIX ended
+    if back == "ponytail":
+        monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ponytail"))
+    else:
+        _off("fix", "review", "retro", on=True)
+    f = paths.get(sess)
+    assert all(st[0] in f["done"] for st in f["stations"])            # what FLOW's chip reads: not running
+    assert paths.start_flow(sess, "fix", "you", "it's back") == "/mattpocock-skills:diagnosing-bugs it's back"
+
+
+def test_a_flow_that_ends_at_its_merge_stays_finished(sess):  # noqa: F811
+    _off("build", "review", "retro", "audit")
+    paths.set_path(sess, "build", "x", "claude", done=["grill", "spec", "tickets", "build"])
+    paths.advance(sess, "merge")
+    _off("build", "retro", "audit", on=True)
+    f = paths.get(sess)
+    assert f["next"] is None and all(st[0] in f["done"] for st in f["stations"])
+
+
+def test_design_with_its_grill_off_keeps_its_design_step_when_the_grill_comes_on(sess):  # noqa: F811
+    _off("design", "grill")
+    prompt = paths.start_flow(sess, "design", "you", "a calmer header")
+    _off("design", "grill", on=True)                                  # switched on before the Approve
+    assert paths.step_done(sess, _turn(sess, prompt)) == "build-here"  # the design was this turn's step

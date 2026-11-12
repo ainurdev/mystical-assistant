@@ -476,6 +476,7 @@ def skip_to(session_id: str, target: str) -> str:
             f["next"] = {"station": target, "turn_id": turn or "", "started": False}
         elif not run:
             f["next"] = None
+            _pass(f, None, rest)   # the end: steps switched off stay passed over
         _save_locked()
     if target and not run:
         _go(session_id)
@@ -508,6 +509,22 @@ def _carried(session_id: str, turn_id: str) -> tuple:
     return turn_id, ""
 
 
+def _pass(f: dict, cur: "str | None", on: list) -> list:
+    """Mark the path's steps up to `cur` done and return the steps of `on` (the ones on
+    before the mark) still to run. A step that wasn't on never ran: its chip was off,
+    or it was ponytail's while PONYTAIL was off, so it was passed over and goes in skipped
+    too, as skip_to has it. Once nothing is left, so does the rest of the path. Switching
+    a step on again then can't reopen one the flow is past, or a flow that ended."""
+    full = [st.station for st in PATHS[f["path"]]] if f["path"] in PATHS else [st[0] for st in _all(f)]
+    new = [st for st in (full[:full.index(cur) + 1] if cur in full else [cur] if cur else []) if st not in f["done"]]
+    f["done"] += new
+    rest = [st for st in on if st not in f["done"]]
+    end = [] if rest else [st for st in full if st not in f["done"]]
+    f["done"] += end
+    f["skipped"] = list(f.get("skipped") or []) + [st for st in new if st != cur and st not in on] + end
+    return rest
+
+
 def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "str | None":
     """Mark the station this turn worked on done: the one its own /mattpocock-skills:x
     names when x is a station of the path (the ones before it too), else the first one
@@ -530,10 +547,7 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
             return None
         if choice == "here" and f["path"] in ("build", "design") and cur == "grill":
             f["path"] += "-here"
-        stations, on = [st[0] for st in _all(f)], [st[0] for st in _stations(f)]   # before the mark: MERGE's own end settles REVIEW
-        # The steps up to it are done; ones switched off were passed over, never run.
-        f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"] and (st == cur or st in on)]
-        rest = [st for st in on if st not in f["done"]]
+        rest = _pass(f, cur, [st[0] for st in _stations(f)])   # before the mark: MERGE's own end settles REVIEW
         f["next"] = {"station": rest[0], "turn_id": turn_id, "started": False} if rest else None
         f["last"] = turn_id
         _save_locked()
@@ -597,9 +611,10 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
         return prompt
-    grill = flowsettings.steps(flow).get("grill", True)
-    rec = set_path(session_id, flow if grill or flow not in ("design", "build") else flow + "-here",
-                   f"{BY[by]} {flow.upper()}", by)
+    here = flow in ("design", "build") and not flowsettings.steps(flow).get("grill", True)
+    # The grill goes behind it, as claude_path has it: switched on later, it can't take this turn's step.
+    rec = set_path(session_id, flow + "-here" if here else flow, f"{BY[by]} {flow.upper()}", by,
+                   done=["grill"] if here else None)
     first, skill, _ = _stations(rec)[0]
     if first == "design":
         return f"/design-first {prompt}\n\n{DESIGN_STEP}"
@@ -701,6 +716,8 @@ def _go(session_id: str, chat_id=None, effort=None) -> bool:
         nxt = _next(f) if f else None
         if f and nxt is not f["next"]:   # its step went off before it started: the next one on, or the end
             f["next"] = nxt
+            if nxt is None:
+                _pass(f, None, [])
             _save_locked()
         if not nxt or nxt.get("started") or not _eff(f, "nextstep"):
             return False
@@ -795,10 +812,7 @@ def advance(session_id: str, station: str, at: "int | None" = None) -> bool:
             f = _cache.get(session_id)
             if not f or at is not None and f["at"] != at:
                 return False
-            stations = [st[0] for st in _stations(f)]   # before the mark: MERGE's own end settles REVIEW
-            if station not in f["done"]:
-                f["done"].append(station)
-            rest = [st for st in stations if st not in f["done"]]
+            rest = _pass(f, station, [st[0] for st in _stations(f)])   # before the mark: MERGE's own end settles REVIEW
             f["next"] = {"station": rest[0], "turn_id": "", "started": False} if rest else None
             _save_locked()
         return bool(rest) and _go(session_id)
