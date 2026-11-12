@@ -530,8 +530,10 @@ def test_each_sub_switch_that_is_off_reaches_pick(monkeypatch, sub):
 def test_the_tickets_switch_reaches_pick(monkeypatch):
     seen = []
     monkeypatch.setattr(route, "pick", lambda text, **kw: seen.append(kw["ticketruns"]))
-    post(monkeypatch, {"text": FEATURE}, off={"ticketruns"})
-    post(monkeypatch, {"text": FEATURE})
+    from bridge import flowsettings   # no flow in the session: BUILD's TICKETS (flow-gear 05)
+    for on in (False, True):
+        flowsettings.change({"flow": "build", "key": "tickets", "value": on})
+        post(monkeypatch, {"text": FEATURE})
     assert seen == [False, True]
 
 
