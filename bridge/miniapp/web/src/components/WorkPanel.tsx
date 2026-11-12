@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowRight, Ban, Check, ChevronLeft, CircleCheck, Circle, Eye, Inbox, LoaderCircle, Pencil, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowRight, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, Circle, Ellipsis, Eye, Inbox, ListPlus, LoaderCircle, MessageSquare, Pencil, Plus, SkipForward, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useRefSession, workCall, WorkPicture, workGet, workSources } from "../lib/readapi";
 import { wordDiff } from "../lib/worddiff";
 import { Dialog } from "./DesignSystem";
+import { Markdown } from "./Markdown";
 
 // The project's work list (bridge/worklist.py) and its run (bridge/workrun.py). Same file in both apps.
 //
@@ -26,8 +27,11 @@ type Run = {
   summary?: string; paused_why?: string; dirty?: boolean; items: string[]; merged: number;
   baseline?: Check; check?: Check; leftovers?: { path: string; why: string }[];
 };
-type Listing = { items: Item[]; project: string; runs?: Run[] };
-type Screen = { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" } | { k: "land"; run: string };
+type PlanStatus = "pending" | "in_progress" | "completed" | "skipped";
+type PlanStep = { id: string; title: string; status: PlanStatus; detail?: string; note?: string; substeps?: { title: string; status: PlanStatus }[]; started_at?: number; done_at?: number };
+type Plan = { steps: PlanStep[]; pending: { at: number; step: string; summary: string }[]; source: string; started?: number | null; updated?: number | null };
+type Listing = { items: Item[]; project: string; runs?: Run[]; plan?: Plan | null };
+type Screen = { k: "plan-change"; step: string } | { k: "plan-ask"; step: string } | { k: "plan-whole" } | { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" } | { k: "land"; run: string };
 type Call = (path: string, body: Record<string, unknown>) => Promise<boolean>;
 
 const ICON = { size: 13, strokeWidth: 2, "aria-hidden": true } as const;
@@ -180,6 +184,157 @@ function Starter({ items, onStart, onClose }: { items: Item[]; onStart: (ids: st
         </div>
       </div>
     </Dialog>
+  );
+}
+
+// ------- this chat's plan (bridge/chatplan.py) ------------------------------------------------
+
+const hm = (sec?: number | null) => (sec ? new Date(sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+const settled = (s: PlanStatus) => s === "completed" || s === "skipped";
+const PSTATE: Record<PlanStatus, string> = { pending: "todo", in_progress: "doing", completed: "done", skipped: "dropped" };
+
+function Count({ subs }: { subs: { status: PlanStatus }[] }) {
+  const done = subs.filter((x) => settled(x.status)).length;
+  return <span className="pl-cnt" aria-label={`${done} of ${subs.length} sub-steps done`}><i><b style={{ width: `${(100 * done) / subs.length}%` }} /></i>{done} of {subs.length}</span>;
+}
+
+function PlanStepRow({ step, n, waiting, onPlan }: { step: PlanStep; n: number; waiting: string[]; onPlan: (kind: string, step: PlanStep) => void }) {
+  const [open, setOpen] = useState(step.status === "in_progress");
+  const [menu, setMenu] = useState(false);
+  const [sure, setSure] = useState(false);
+  const subs = step.substeps ?? [];
+  const when = step.status === "completed" ? `Done ${hm(step.done_at)}` : step.status === "skipped" ? "Skipped" : step.status === "in_progress" ? `Since ${hm(step.started_at)}` : "";
+  const more = !!(step.detail || subs.length);
+  const act = (kind: string) => { setMenu(false); setSure(false); onPlan(kind, step); };
+  return (
+    <li className="pl-step" data-s={PSTATE[step.status]}>
+      <span className="pl-dot" aria-hidden />
+      <div className="pl-head">
+        <button type="button" className="pl-title" aria-expanded={more ? open : undefined} onClick={() => more && setOpen((v) => !v)}>
+          <span className="sr-only">Step {n}, {STATE[PSTATE[step.status]].label}: </span>{step.title}
+        </button>
+        <button type="button" className="wl-ic pl-more" aria-label={`Options for step ${n}`} aria-expanded={menu} onClick={() => { setMenu((v) => !v); setSure(false); }}><Ellipsis size={15} aria-hidden /></button>
+      </div>
+      {subs.length || when ? <small>{subs.length ? <Count subs={subs} /> : null}{when}</small> : null}
+      {step.note ? <small className="pl-note">{step.note}</small> : null}
+      {more && !open ? <button type="button" className="pl-exp" onClick={() => setOpen(true)}><ChevronRight size={12} aria-hidden />{[step.detail ? "Details" : "", subs.length ? `${subs.length} sub-step${subs.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ")}</button> : null}
+      {open && step.detail ? <div className="pl-md"><Markdown>{step.detail}</Markdown></div> : null}
+      {open && subs.length ? <ul className="pl-subs">{subs.map((x, i) => <li key={i} data-s={PSTATE[x.status]}><span className="pl-box" aria-hidden />{x.title}<span className="sr-only">, {STATE[PSTATE[x.status]].label}</span></li>)}</ul> : null}
+      {waiting.map((w, i) => <div key={i} className="pl-mine"><b>Your change · waiting</b>{w}</div>)}
+      {menu ? (
+        <div className="pl-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => act("change")}><Pencil size={14} aria-hidden />Change this step</button>
+          <button type="button" role="menuitem" onClick={() => act("ask")}><MessageSquare size={14} aria-hidden />Ask about it</button>
+          {step.status === "pending" ? <button type="button" role="menuitem" onClick={() => act("sooner")}><ArrowUp size={14} aria-hidden />Do it sooner</button> : null}
+          <button type="button" role="menuitem" onClick={() => act("task")}><ListPlus size={14} aria-hidden />Make it a work list task</button>
+          {!settled(step.status) ? (sure
+            ? <button type="button" role="menuitem" className="pl-danger" onClick={() => act("skip")}><SkipForward size={14} aria-hidden />Really skip it</button>
+            : <button type="button" role="menuitem" onClick={() => setSure(true)}><SkipForward size={14} aria-hidden />Skip it</button>) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function PlanView({ plan, call, go }: { plan: Plan; call: Call; go: (s: Screen) => void }) {
+  const [showDone, setShowDone] = useState(false);
+  const [said, setSaid] = useState("");
+  const steps = plan.steps;
+  const done = steps.filter((s) => settled(s.status));
+  const at = steps.findIndex((s) => s.status === "in_progress");
+  const fold = done.length > 3 && !showDone;
+  const firstOpen = steps.findIndex((s) => !settled(s.status));
+  const shown = fold ? steps.filter((s) => !settled(s.status) || steps.indexOf(s) > firstOpen) : steps;
+  const mins = plan.started ? Math.max(1, Math.round((Date.now() / 1000 - plan.started) / 60)) : 0;
+  const lastDone = done.reduce((m, s) => Math.max(m, s.done_at ?? 0), 0);
+  const onPlan = async (kind: string, step: PlanStep) => {
+    setSaid("");
+    if (kind === "change") go({ k: "plan-change", step: step.id });
+    else if (kind === "ask") go({ k: "plan-ask", step: step.id });
+    else if (kind === "task") { if (await call("plan/task", { step: step.id })) setSaid(`"${step.title}" is on the work list now.`); }
+    else void call(`plan/${kind}`, { step: step.id });
+  };
+  const sent = plan.pending[plan.pending.length - 1];
+  return (
+    <section className="pl" aria-label="This chat's plan">
+      <div className="pl-top">
+        <b>This chat's plan</b>
+        <small>{done.length} of {steps.length}{at >= 0 ? ` · on step ${at + 1}` : ""}{mins ? ` · ${mins < 120 ? `${mins} min` : `${Math.round(mins / 60)} h`} so far` : ""}</small>
+      </div>
+      {sent ? <p className="pl-sent" role="status"><b>Sent {hm(sent.at)},</b> waiting for the agent to update its plan.</p> : null}
+      {said ? <p className="pl-sent" role="status">{said}</p> : null}
+      <ol className="pl-steps">
+        {fold ? (
+          <li className="pl-step" data-s="done">
+            <span className="pl-dot" aria-hidden />
+            <div className="pl-head"><span className="pl-title">{done.length} steps done</span></div>
+            <small>Last at {hm(lastDone)}</small>
+            <button type="button" className="pl-exp" onClick={() => setShowDone(true)}><ChevronDown size={12} aria-hidden />Show them</button>
+          </li>
+        ) : null}
+        {shown.map((s) => <PlanStepRow key={s.id} step={s} n={steps.indexOf(s) + 1} onPlan={(k, st) => void onPlan(k, st)}
+          waiting={plan.pending.filter((p) => p.step === s.id).map((p) => p.summary)} />)}
+      </ol>
+      <div className="wl-row pl-actions"><button type="button" className="dg-btn wl-i" onClick={() => go({ k: "plan-whole" })}><MessageSquare size={13} aria-hidden />Change the plan</button></div>
+    </section>
+  );
+}
+
+const PLAN_NOTE = "The agent owns its plan, so this goes to it as a message from you, and the plan changes when it writes it again.";
+
+function PlanChange({ step, n, call, back }: { step: PlanStep; n: number; call: Call; back: () => void }) {
+  const [title, setTitle] = useState(step.title);
+  const [detail, setDetail] = useState(step.detail ?? "");
+  const [subs, setSubs] = useState(() => (step.substeps ?? []).map((x) => ({ ...x })));
+  const [why, setWhy] = useState("");
+  const [preview, setPreview] = useState(false);
+  const move = (i: number, d: number) => setSubs((v) => { const n2 = [...v]; [n2[i], n2[i + d]] = [n2[i + d], n2[i]]; return n2; });
+  return (
+    <form className="wl-sheet" onSubmit={async (e) => { e.preventDefault(); if (await call("plan/change", { step: step.id, title, detail, substeps: subs.filter((x) => x.title.trim()), why })) back(); }}>
+      <div className="wl-editing"><Pencil size={14} aria-hidden /><b>Changing step {n}</b><span>Not sent yet</span></div>
+      <div className="wl-sheet-b">
+        <label className="wl-f"><span>Step</span><input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+        <div className="wl-f"><span>Description <em>Markdown</em></span>
+          <div className="pl-mdtabs" role="tablist">
+            <button type="button" role="tab" aria-selected={!preview} onClick={() => setPreview(false)}>Write</button>
+            <button type="button" role="tab" aria-selected={preview} onClick={() => setPreview(true)}>Preview</button>
+          </div>
+          {preview ? <div className="pl-md">{detail.trim() ? <Markdown>{detail}</Markdown> : <span className="wl-lede">Nothing yet.</span>}</div>
+            : <textarea ref={fitBox} rows={4} className="pl-code" value={detail} placeholder="What the step is, if the title isn't enough" onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} />}
+        </div>
+        <div className="wl-f"><span>Sub-steps</span>
+          {subs.map((x, i) => (
+            <div key={i} className="pl-se" data-s={PSTATE[x.status]}>
+              <input value={x.title} aria-label={`Sub-step ${i + 1}`} onChange={(e) => setSubs((v) => v.map((y, j) => (j === i ? { ...y, title: e.target.value } : y)))} />
+              <button type="button" className="wl-ic" aria-label="Move up" disabled={!i} onClick={() => move(i, -1)}><ArrowUp size={13} aria-hidden /></button>
+              <button type="button" className="wl-ic" aria-label="Move down" disabled={i === subs.length - 1} onClick={() => move(i, 1)}><ArrowDown size={13} aria-hidden /></button>
+              <button type="button" className="wl-ic" aria-label="Remove" onClick={() => setSubs((v) => v.filter((_, j) => j !== i))}><X size={13} aria-hidden /></button>
+            </div>
+          ))}
+          <button type="button" className="dg-btn wl-i" onClick={() => setSubs((v) => [...v, { title: "", status: "pending" }])}><Plus size={13} aria-hidden />Add a sub-step</button>
+        </div>
+        <label className="wl-f"><span>Tell the agent <em>optional</em></span><textarea ref={fitBox} rows={2} value={why} placeholder="Why, or anything else it should know" onChange={(e) => { setWhy(e.target.value); fitBox(e.target); }} /></label>
+        <p className="wl-lede">{PLAN_NOTE}</p>
+      </div>
+      <div className="wl-sheet-f wl-row"><button type="submit" className="dg-send wl-grow" disabled={!title.trim()}>Send to the agent</button><button type="button" className="dg-btn" onClick={back}>Cancel</button></div>
+    </form>
+  );
+}
+
+function PlanAsk({ step, n, call, back }: { step?: PlanStep; n?: number; call: Call; back: () => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form className="wl-sheet" onSubmit={async (e) => { e.preventDefault(); if (await call(step ? "plan/ask" : "plan/whole", { step: step?.id, text })) back(); }}>
+      <Head title={step ? `Ask about step ${n}` : "Change the plan"} onBack={back} />
+      <div className="wl-sheet-b">
+        {step ? <div className="wl-was"><b>{step.title}</b></div> : null}
+        <label className="wl-f"><span>{step ? "Your question" : "What should change"}</span>
+          <textarea ref={fitBox} rows={3} autoFocus value={text} placeholder={step ? "Which tests will this run?" : "Commit after each step, not at the end"} onChange={(e) => { setText(e.target.value); fitBox(e.target); }} />
+        </label>
+        <p className="wl-lede">{step ? "It reaches the agent as a message from you, and it answers in the chat." : PLAN_NOTE}</p>
+      </div>
+      <div className="wl-sheet-f wl-row"><button type="submit" className="dg-send wl-grow" disabled={!text.trim()}>Send to the agent</button><button type="button" className="dg-btn" onClick={back}>Cancel</button></div>
+    </form>
   );
 }
 
@@ -421,7 +576,8 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
   const call: Call = async (path, body) => {
     try {
       const r = await workCall<Listing>(path, session, project, body);
-      setData(r);
+      // A plan route answers with the plan alone; everything else, with the whole listing.
+      setData((d) => (path.startsWith("plan/") ? (d ? { ...d, plan: r.plan ?? null } : d) : r));
       setError("");
       return true;
     } catch (e) {
@@ -442,6 +598,17 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
       <div className="ds wl" data-sheet="">
         {failed}
         {screen.k === "refine" ? <Refine item={item} call={call} back={back} /> : <Edit key={item.id} item={item} items={items} call={call} back={back} />}
+      </div>
+    );
+  }
+  if (screen.k === "plan-change" || screen.k === "plan-ask" || screen.k === "plan-whole") {
+    const steps = data?.plan?.steps ?? [];
+    const step = screen.k === "plan-whole" ? undefined : steps.find((s) => s.id === screen.step);
+    const n = step ? steps.indexOf(step) + 1 : undefined;
+    if (screen.k === "plan-whole" || step) return (
+      <div className="ds wl" data-sheet="">
+        {failed}
+        {screen.k === "plan-change" && step ? <PlanChange key={step.id} step={step} n={n!} call={call} back={back} /> : <PlanAsk step={step} n={n} call={call} back={back} />}
       </div>
     );
   }
@@ -484,6 +651,8 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
       </div>
       {failed}
       {runs.map((r) => <RunCard key={r.id} run={r} session={session} onOpen={onOpen} onLand={() => setScreen({ k: "land", run: r.id })} onRun={(path) => void call(`run/${path}`, { run: r.id })} />)}
+      {data?.plan?.steps.length ? <PlanView plan={data.plan} call={call} go={setScreen} /> : null}
+      {data?.plan?.steps.length ? <div className="wl-top wl-sub"><b>Project work list</b></div> : null}
       {counts.length ? (
         <div className="wl-sum">
           <div className="wl-bar" aria-hidden>{counts.map(([s, n]) => <i key={s} data-s={s} style={{ flex: n }} />)}</div>

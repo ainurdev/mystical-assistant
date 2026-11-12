@@ -213,7 +213,9 @@ _EXPERIMENTAL_NOTE = (
     "work on it together, start its dev server and call show_design with pages [{name, url}]: they can point at the real app.\n\n"
     "A project may have generated docs: read_docs (find_tools) lists them, and where they disagree with the code, trust the code.\n\n"
     "The project's work list is in the user's right sidebar: read or change it with work_list from the mystical MCP server when "
-    "they ask, filling it from whatever they name. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap.\n\n"
+    "they ask, filling it from whatever they name. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap. "
+    "For work in several steps, keep your plan with chat_plan: set it before you start and mark steps as you go. The user sees it "
+    "beside the work list and may change it, which reaches you as a message.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
     "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
     "tested and just needs a check, go ahead normally.")
@@ -2306,6 +2308,8 @@ def _handle_event(job: Job, d: dict):
                     job.bash_cmds[b.get("id")] = (cmd, _trees_before(job, cmd))
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
+                    from bridge import chatplan   # local import: runner<->* cycle
+                    chatplan.from_todos(job.store_session_id, job.todos)
                 elif name == "TaskUpdate" and inp.get("taskId"):
                     tid = str(inp["taskId"])
                     job.task_status[tid] = str(inp.get("status")

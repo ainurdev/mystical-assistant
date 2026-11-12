@@ -384,6 +384,8 @@ class Turn:
             job.todos = _mask([{"content": e.get("content"), "status": e.get("status"),
                                 "activeForm": e.get("content")}
                                for e in u.get("entries") or []], self.hide)
+            from bridge import chatplan     # an ACP agent's plan, mirrored into the Work list
+            chatplan.from_todos(job.store_session_id, job.todos)
         elif kind == "usage_update":
             if isinstance(u.get("used"), int):
                 job.ctx_tokens = u["used"]

@@ -196,6 +196,22 @@ WORK_RUN = _t("work_run", "Manage a run on the work list, once the user has star
                "profile": {"type": "string", "description": "start_item: a profile name from list_agents, if the user asked for one."},
                "text": {"type": "string", "description": "send_back: what to change. block_item: what you need from the user."},
                "summary": {"type": "string", "description": "finish: what happened."}}, ["action"])
+CHAT_PLAN = _t("chat_plan", "Your plan for this chat's work, which the user sees in the Work list as a timeline. For work in several "
+               "steps, set it before you start, then mark each step as you go with update: it keeps you on track, and they see "
+               "\"step 5 of 10\" without reading back. A step can have a Markdown description, sub-steps and a note on what you "
+               "found. The user may change it: that reaches you as a message from them, and you take it in by writing the plan again.",
+               {"action": {"type": "string", "enum": ["read", "set", "update"]},
+                "steps": {"type": "array", "description": "set: the whole plan, in order. A step named by id or the same title keeps its times.",
+                          "items": {"type": "object", "properties": {
+                              "id": {"type": "string"}, "title": {"type": "string"},
+                              "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "skipped"]},
+                              "detail": {"type": "string", "description": "Markdown: what the step is, if the title isn't enough."},
+                              "note": {"type": "string", "description": "What you found doing it, briefly."},
+                              "substeps": {"type": "array", "items": {"type": "object", "properties": {
+                                  "title": {"type": "string"}, "status": {"type": "string"}}}}}}},
+                "id": {"type": "string", "description": "update: the step."},
+                "status": {"type": "string"}, "title": {"type": "string"}, "detail": {"type": "string"}, "note": {"type": "string"},
+                "substeps": {"type": "array", "items": {"type": "object"}}}, ["action"])
 FIND = _t("find_tools", "Find more tools: Mystical's rarer ones (reports, chat search, waiting, pinging the user, "
           "secrets) and MCP servers shared with you. Empty query lists servers.",
           {"query": {"type": "string"}, "server": {"type": "string"}})
@@ -226,7 +242,7 @@ def tools_for(s: dict) -> list:
     if not s.get("parent_session") and channel.refusal(s) is None:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
     if not s.get("parent_session"):
-        out += [WORK_LIST, WORK_RUN]
+        out += [WORK_LIST, WORK_RUN, CHAT_PLAN]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
         out += [ASK, RUN]
         if not s.get("parent_session"):
@@ -421,6 +437,12 @@ def _call(s: dict, name: str, a: dict) -> dict:
         try:
             return _text(worklist.tool(s, a))
         except worklist.Refused as e:
+            return _text(str(e), error=True)
+    if name == "chat_plan":
+        from bridge import chatplan
+        try:
+            return _text(chatplan.tool(s, a))
+        except chatplan.Refused as e:
             return _text(str(e), error=True)
     if name == "work_run":
         from bridge import workrun
