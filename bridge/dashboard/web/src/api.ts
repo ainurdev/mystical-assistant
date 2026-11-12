@@ -2204,11 +2204,15 @@ export const api = {
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   // `message`: a Deny's reason, typed in the box under the docked card. `noted`
-  // says the bridge passed it to the model (an older bridge drops it).
+  // says the bridge passed it to the model (an older bridge drops it). Every answer
+  // box lands here, so the bell (Notifications) drops that ask's toast now.
   respond: (
     jobId: string,
     body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string },
-  ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
+  ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }).then((r) => {
+    window.dispatchEvent(new CustomEvent("hud:answered", { detail: body.request_id }));
+    return r;
+  }),
   // Search within one chat (bridge/chat_search.in_chat): prompts and the agent's words.
   chatSearch: (session: string, q: string) =>
     req<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(

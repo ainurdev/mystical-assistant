@@ -447,8 +447,8 @@ export function NotificationCenter() {
     }, 250);
     return () => window.clearInterval(id);
   }, [toasts.length]);
-  // An answered ask takes its toast with it: answered in this page's dock (App's
-  // respond), at once; anywhere else, when the needs list stops listing it.
+  // An answered ask takes its toast with it: answered anywhere in this page
+  // (api.respond), at once; anywhere else, when the needs list stops listing it.
   useEffect(() => setToasts((p) => liveToasts(p, liveNeeds)), [liveNeeds]);
   useEffect(() => {
     const on = (e: Event) => setToasts((p) => p.filter((t) => t.n.meta.request_id !== (e as CustomEvent<string>).detail));
