@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
-import { TicketLive } from "./TicketMap";
+import { TicketBrief, TicketList } from "./TicketMap";
 import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
@@ -229,7 +229,7 @@ export function Terminal({
   run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
   limit, logins, status, savers, gridMain, statusAll, superTitle,
 }: {
-  /** Every session's status: LIVE colours a super session's ticket tiles from it. */
+  /** Every session's status: TICKETS colours a super session's ticket rows from it. */
   statusAll?: Map<string, SessionStatus>;
   /** The open ticket session's super session, for its way back. */
   superTitle?: string;
@@ -343,8 +343,8 @@ export function Terminal({
     window.addEventListener("hud:open-session", toChat);
     return () => window.removeEventListener("hud:open-session", toChat);
   }, []);
-  // A super session (the flow that made a ticket set) opens on LIVE while its tickets
-  // build or merge; CHAT | LIVE switches, and the strip's Live button asks for LIVE.
+  // A super session (the flow that made a ticket set) opens on TICKETS while its tickets
+  // build or merge; CHAT | TICKETS switches, and the strip's Sessions button asks for TICKETS.
   const tset = selected?.tickets;
   const [livePick, setLivePick] = useState<{ id: string; on: boolean } | null>(null);
   const tkLive = isChat && !grid && !!tset && !!sessionId
@@ -529,7 +529,8 @@ export function Terminal({
             <Transcript agentSession={!!selected?.agent && selected.agent !== "claude"} turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
-                ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
+                ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} />
+                : selected?.ticket_of && sessionId ? <TicketBrief superId={selected.ticket_of} sessionId={sessionId} superTitle={superTitle} /> : undefined}
               unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
               limit={theirs ? null : limit} logins={logins}
               status={status} onSend={theirs ? undefined : onSendText} savers={savers} />
@@ -695,9 +696,9 @@ export function Terminal({
           </span>
         )}
         {isChat && !!tset && !grid && sessionId && (
-          <span className="ma-viewsw" role="group" aria-label="Chat or its tickets at work">
+          <span className="ma-viewsw" role="group" aria-label="Chat or its tickets">
             <button type="button" aria-pressed={!tkLive} onClick={() => setLivePick({ id: sessionId, on: false })}>CHAT</button>
-            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}>LIVE</button>
+            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}><span className="caps">Tickets</span> {tset.done}/{tset.total}</button>
           </span>
         )}
         <ViewTabs view={view} onView={onView} />
@@ -805,7 +806,7 @@ export function Terminal({
         <>
           {body}
           {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
-          {tkLive && sessionId && <TicketLive key={sessionId} sessionId={sessionId} title={selected?.title || ""} status={statusAll ?? new Map()} onOpenSession={openAgentSession} />}
+          {tkLive && sessionId && <TicketList key={sessionId} sessionId={sessionId} status={statusAll ?? new Map()} onOpenSession={openAgentSession} />}
           <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>

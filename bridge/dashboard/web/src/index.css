@@ -8272,7 +8272,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-btn.warn { background: var(--warn); border-color: var(--warn); color: var(--acc-on); font-weight: 800; }
 .tm-btn.ghost { padding: 0 7px; border-color: transparent; color: var(--txl); }
 @media (prefers-reduced-motion: reduce) { .tm-live, .tm-flow, .tm-wv i.on { animation: none; } }
-/* LIVE (TicketMap.tsx TicketLive): a super session's ticket sessions at work, one tile each, in place of its chat. */
+/* TICKETS (TicketMap.tsx TicketList): a super session's ticket sessions as rows, in place of its chat; a row opens one. */
 [data-tklive] .tm-card { display: none; }
 /* NEEDS YOU: a super session's asking tickets, full width above the box, stacked like a queue. */
 .tk-asks { margin: 0 18px 8px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); border-radius: var(--f-rad, 12px);
@@ -8289,50 +8289,34 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tk-ask .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: none; max-width: 55%; }
 .tl-live { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 10px; }
 .tl-bar { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 4px 8px 4px 12px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px); min-width: 0; flex: none; }
-.tl-chips { display: inline-flex; align-items: center; gap: 4px; flex: none; }
-.tl-chl { font-size: var(--t95); color: var(--txl); margin: 0 2px 0 6px; }
-.tl-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 4px);
-  background: none; color: var(--txm); font: inherit; font-size: var(--t95); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
-.tl-chip:disabled { cursor: default; color: var(--txl); }
-.tl-chip:not(:disabled):hover { color: var(--txb); border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
-.tl-chip i { width: 6px; height: 6px; border-radius: 50%; }
-.tl-grid { flex: 1; min-height: 0; display: grid; gap: 10px; }
-.tl-grid.staged { grid-template-columns: minmax(0, 1fr) minmax(240px, 30%); grid-auto-flow: column; }
-.tl-grid.staged > .tl-tile.big { grid-column: 1; }
-.tl-grid.staged > .tl-tile.small { grid-column: 2; }
-.tl-tile { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line2); border-radius: var(--f-rad, 10px);
-  background: color-mix(in srgb, var(--panel) 55%, transparent); overflow: hidden; }
-.tl-tile.k-self { background: color-mix(in srgb, var(--acc) 3%, transparent); }
-.tl-tile.k-ask, .tl-tile.k-idle { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
-.tl-tile.k-fix { border-color: color-mix(in srgb, var(--err) 50%, transparent); }
-.tl-th { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--line); font-size: var(--t105); color: var(--txl); flex: none; min-width: 0; }
-.tl-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.tl-no { font-weight: 800; color: var(--txb); font-variant-numeric: tabular-nums; flex: none; }
-.tl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--tx); cursor: pointer; text-align: left; }
-.tl-name:hover { color: var(--txb); text-decoration: underline; }
-.tl-st { font-size: var(--t9); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; flex: none; }
-.tl-tm { font-variant-numeric: tabular-nums; flex: none; }
+.tl-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tl-row { display: flex; align-items: center; gap: 10px; padding-right: 12px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px);
+  background: color-mix(in srgb, var(--panel2) 70%, transparent); min-width: 0; flex: none; }
+.tl-row:has(.tl-open:not(:disabled):hover) { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
+.tl-row.k-ask, .tl-row.k-idle { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.tl-row.k-fix { border-color: color-mix(in srgb, var(--err) 50%, transparent); }
+.tl-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 2px 9px 14px; border: 0; background: none;
+  font: inherit; color: var(--tx); text-align: left; cursor: pointer; }
+.tl-open:disabled { cursor: default; opacity: .7; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1px solid var(--txl); box-sizing: border-box; }
+.tl-dot[style*="background"] { border: 0; }
+.tl-no { font-weight: 800; color: var(--acc); font-variant-numeric: tabular-nums; flex: none; }
+.tl-lt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tl-lt b { font-size: var(--t13); font-weight: 600; color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-lt span { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-tm { font-size: var(--t105); color: var(--txl); font-variant-numeric: tabular-nums; flex: none; }
+.tl-go { color: var(--txl); font-size: var(--t13); flex: none; }
 .tm-btn.sm { height: 22px; padding: 0 7px; font-size: var(--t95); }
-.tl-tb { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column-reverse; padding: 8px 11px; font-family: var(--mono, inherit); font-size: var(--t105); line-height: 1.7; color: var(--txl); }
-.tl-tb > div { display: flex; flex-direction: column; gap: 1px; }
-.tl-tb > div > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tl-tile.big .tl-tb > div > div { white-space: normal; }
-.tl-tb b { color: var(--acc2, var(--acc)); font-weight: 700; }
-.tl-tb .say { color: var(--tx); }
-.tl-tb .dim { color: var(--txl); }
-.tl-tb .er { color: var(--err); }
-.tl-tb > div > .tl-q { white-space: normal; overflow: visible; margin-top: 6px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
-  border-radius: var(--f-rad-s, 8px); background: color-mix(in srgb, var(--warn) 6%, transparent); font-family: var(--ui-font, inherit); color: var(--tx); }
-.tl-q p { margin: 0 0 6px; }
-.tl-qa { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.tl-q p { font-weight: 600; color: var(--txb); }
-.tl-reply { display: flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; border-top: 1px solid var(--line); flex: none; }
-.tl-reply .pr { color: var(--purple, var(--acc)); }
-.tl-reply input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--txb); font: inherit; font-size: var(--t105); }
-.tl-reply input::placeholder { color: var(--txl); }
-.tl-tile:focus-within { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
 .tl-empty { padding: 4px 4px 0; font-size: var(--t105); color: var(--txl); }
-@container (max-width: 760px) { .tl-chips { display: none; } }
+/* A ticket session's brief, at the top of its transcript (TicketMap.tsx TicketBrief). */
+.tk-brief { margin: 0 0 16px; padding: 10px 14px; border: 1px dashed color-mix(in srgb, var(--acc) 45%, var(--line2)); border-radius: var(--f-rad, 12px);
+  background: color-mix(in srgb, var(--acc) 5%, transparent); font-family: inherit; }
+.tk-brief .k { display: flex; align-items: center; gap: 7px; color: var(--acc); font-size: var(--t105); }
+.tk-brief .k .caps { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; }
+.tk-brief .k em { font-style: normal; color: var(--txl); }
+.tk-brief p { margin: 4px 0 0; font-weight: 600; color: var(--txb); }
+.tk-brief .f { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: var(--t105); color: var(--txl); }
+.tk-brief .f b { color: var(--tx); font-weight: 600; }
 
 /* ---- The Almanac (components/hud/Almanac.tsx): the Clock's drop-down ------
    Picked per part on 2026-11-06 (.mystical/design-drafts/almanac/SPEC.md): the

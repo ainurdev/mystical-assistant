@@ -3617,7 +3617,7 @@ export function App() {
                       />
                     ) : (
                     <>
-                    {sessionId && <TicketMapCard key={sessionId} sessionId={sessionId} status={statusMap} onOpenSession={(id) => openSession(id)} />}
+                    {sessionId && <TicketMapCard key={sessionId} sessionId={selected?.ticket_of ?? sessionId} except={selected?.ticket_of ? sessionId : undefined} status={statusMap} onOpenSession={(id) => openSession(id)} />}
                     <Composer
                       pills={
                         // Inside the composer's box, not on the bare panel above
