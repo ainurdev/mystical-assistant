@@ -28,6 +28,22 @@ _Avoid_: station, phase, stage
 The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its tickets, its review **Step** is a council on the merged work.
 _Avoid_: panel, jury, review loop
 
+**Ticket**:
+One part of a feature that a **Flow** split off to be built beside the others, in a **Session** and worktree of its own.
+_Avoid_: task, sub-task, issue
+
+**Ticket set**:
+All the **Tickets** one **Flow** split a feature into. Every ticket whose blockers are done builds at once, and one session merges them all at the end. A new set waits for your approval before any ticket starts, unless its flow has **Auto-start** on.
+_Avoid_: ticket map, batch, plan
+
+**Super session**:
+The **Session** whose **Flow** made a **Ticket set**. Its row in the sidebar stands for the whole set; its tickets' sessions fold under it instead of having rows of their own.
+_Avoid_: parent session, flow session
+
+**Auto-start**:
+A flow's setting that lets its new **Ticket sets** start building without waiting for your approval.
+_Avoid_: approve before build, auto-approve
+
 **Mystical MCP**:
 The one tool server every Mystical session gets, whichever agent runs it, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
 _Avoid_: gateway, goals server, verify server, mystical-ux, bridge MCPs
@@ -45,7 +61,7 @@ A message Mystical sends a session on its own, marked as Mystical's, after the s
 _Avoid_: nudge, "go", auto-resume
 
 **Needs you**:
-Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in. It is worked out fresh each time, and a reply's to-dos are not part of it.
+Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Ticket set** waiting for your approval. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
 
 **Live board**:

@@ -213,7 +213,7 @@ def _work_row(r: dict) -> None:
 
 # Needs-you kinds as the row's verb ("asks: which layout?"); the rest read as the bell's verb.
 VERB = {"question": "asks", "approve": "approve", "login": "sign in", "limit_choice": "limit",
-        "goal_blocked": "goal", "credits": "credits", "rv_offer": "offered"}
+        "goal_blocked": "goal", "credits": "credits", "rv_offer": "offered", "tickets_wait": "approve"}
 ANSWER = ("question", "approve")       # answered in the panel: "◈ Answer", anything else "◈ Open"
 
 

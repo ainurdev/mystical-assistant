@@ -188,7 +188,7 @@ const LANES: { k: LaneKey; label: string; tint: string }[] = [
 // it can resume; a ring is passive. Ring colour still tells idle (dim) from
 // live-elsewhere (info) — the lane collapses to five, the dot keeps the detail.
 // Parked wears info, not warn: nothing on it is yours to answer.
-const SV: Record<string, { lane: LaneKey; c: string; fill: boolean; t: string }> = {
+const SV: Record<string, StateView> = {
   working: { lane: "work", c: "var(--ok)", fill: true, t: "working now" },
   checking: { lane: "work", c: "var(--ok)", fill: true, t: "checking your prompt against this session" },
   awaiting: { lane: "ask", c: "var(--warn)", fill: true, t: "waiting on your answer" },
@@ -200,14 +200,14 @@ const SV: Record<string, { lane: LaneKey; c: string; fill: boolean; t: string }>
   // done, so it rests (DONE when unopened); line 2's tag says what still runs.
   background: { lane: "idle", c: "var(--txl)", fill: false, t: "answered — background tasks still running" },
   // Stopped on credits_required: no reset fixes it, so it is yours, not parked.
-  credits: { lane: "ask", c: "var(--warn)", fill: true, t: "stopped — its login needs extra-usage credits" },
+  credits: { lane: "ask", c: "var(--warn)", fill: true, t: "stopped — its login needs extra-usage credits", chip: "Credits" },
   idle: { lane: "idle", c: "var(--txl)", fill: false, t: "idle" },
 };
 const SV_DONE = { lane: "done" as LaneKey, c: "var(--acc)", fill: false, t: "finished a turn — not opened yet" };
 
 const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked", "waiting", "credits"];
 
-type StateView = { lane: LaneKey; c: string; fill: boolean; t: string };
+type StateView = { lane: LaneKey; c: string; fill: boolean; t: string; chip?: string }; // chip: an ask's verb other than Answer
 
 /** A state's word where there is room for one (the composer's wait pill). */
 export const LANE_WORD: Record<LaneKey, string> = {
@@ -326,7 +326,7 @@ function SessionRow({
   const edge = v.lane === "work" ? (st?.retry
       ? <span style={{ color: "var(--warn)" }}>↻ retry {st.retry.attempt}{st.retry.max ? `/${st.retry.max}` : ""}</span>
       : <span style={{ color: "var(--ok)" }}>{st?.resumed ? "↪ " : ""}{since ? lasted(now - since) : "now"}</span>)
-    : v.lane === "ask" ? edgeChip("var(--warn)", st?.state === "credits" ? "Credits" : "Answer")
+    : v.lane === "ask" ? edgeChip("var(--warn)", v.chip ?? "Answer")
     : v.lane === "done" ? edgeChip("var(--acc)", "New")
     : v.lane === "wait" ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: wait?.needs ? "var(--warn)" : "var(--purple)" }}>
@@ -800,10 +800,17 @@ export function SessionsPanel(props: Props) {
   // One state resolution per session per render — lanes, dots and counts all
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
-  // A super session works while any of its tickets does, and wants you when one asks.
+  // A super session works while any of its tickets does, and wants you when one asks, or
+  // while its set waits for Approve & build: that set has no ticket sessions yet.
   const tkOf = new Map<string, { asks: number; done: number; total: number }>();
   for (const s of sorted) {
     const kids = props.ticketKids?.get(s.id);
+    if (s.tickets?.status === "approve") {
+      const n = s.tickets.total;
+      if (views.get(s.id)?.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${n} ticket${n === 1 ? " waits" : "s wait"} for your approval`, chip: "Approve" });
+      tkOf.set(s.id, { asks: 0, done: s.tickets.done, total: n });
+      continue;
+    }
     if (!kids?.length) continue;
     const kv = kids.map((k) => resolve(status.get(k.id), false, flags.get(k.id)));
     const own = views.get(s.id) ?? SV.idle;

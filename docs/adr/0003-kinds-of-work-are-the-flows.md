@@ -10,3 +10,4 @@ The prompt box's kinds (DESIGN, BUILD, REFACTOR, FIX, SHIP, ASK) used to shape o
 
 - Mid-flow, a guessed kind only sets that prompt's model, mode and effort; only a tap replaces the running flow, so a follow-up never restarts one.
 - Every flow setting lives on the bridge (the presets once saved per browser move there), and SETTINGS ▸ AI MANAGEMENT opens the same sheet as the gear, so the DEFAULT layout, which has no kinds row, still reaches it.
+- AUTO-START is the one setting with a second editor: while a ticket set waits for Approve & build, its strip has a switch that sets AUTO-START on every flow that builds as tickets at once, for later sets only (decided 2026-11-12, where the question comes up).

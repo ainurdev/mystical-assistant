@@ -8,8 +8,8 @@ change and a worktree's pinned BRIDGE_DB keeps its settings off the live ones.
 Three global switches already had a home and keep it, env fallbacks included: FLOWS is
 SKILL PATHS (aifeatures `router`), and AUTO PICKS and SMART ZONE stay aifeatures switches.
 Everything else lives here: GUESS, NO KIND, whether a browser's kind presets were carried
-over, and per flow its switch, its optional steps, NEXT, TICKETS and APPROVE BEFORE BUILD
-(the flows that build as tickets) and its run defaults.
+over, and per flow its switch, its optional steps, NEXT, TICKETS and AUTO-START (the flows
+that build as tickets; stored inverted, as `approve`, the switch it replaced) and its run defaults.
 
 Why seeded rather than defaulted: the switches these replace (AUTO NEXT STEPS, TICKETS,
 APPROVE BEFORE BUILD, REVIEW AFTER MERGE) were set by hand on some bridges, so an update
@@ -33,7 +33,7 @@ import threading
 from bridge import aifeatures, config
 
 FLOWS = ("design", "build", "refactor", "fix", "ship", "ask")
-# The flows that build as tickets: they have TICKETS and APPROVE BEFORE BUILD.
+# The flows that build as tickets: they have TICKETS and AUTO-START (`approve`, inverted).
 TICKET_FLOWS = ("design", "build", "refactor")
 # Each flow's steps as the sheet names them, (step, fixed). A fixed step is the one its
 # flow exists for and always runs. One chip may stand for several of paths.PATHS'
@@ -173,7 +173,7 @@ def tickets(flow: str) -> bool:
 
 
 def approve(flow: str) -> bool:
-    """APPROVE BEFORE BUILD: whether the tickets wait for your tap."""
+    """Whether the tickets wait for your tap: the FLOWS sheet's AUTO-START, off."""
     return bool(_flow(flow).get("approve"))
 
 
