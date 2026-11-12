@@ -5195,14 +5195,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 256px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
 .fs-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fs-nokind { margin-top: auto; padding-top: 10px; }
-.fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px 0 2px;
+.fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px;
   border-radius: var(--f-rad-s, 0); color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
 .fs-row > .fs-name { font: inherit; font-weight: 800; letter-spacing: .8px; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
 .fs-row > span:nth-of-type(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t9); color: var(--txl); }
 .fs-row s, .fs-chip:not([data-on]):not([data-fixed]) { text-decoration: line-through; opacity: .7; }
 .fs-row > em { font-style: normal; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
 .fs-row > svg { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
-.fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 13%, transparent); box-shadow: inset 2px 0 0 var(--acc); }
+.fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 13%, transparent); }
 .fs-row[data-off] > :not(:first-child) { opacity: .42; }
 .fs-detail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 18px; font-size: var(--t10); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
