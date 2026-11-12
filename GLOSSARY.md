@@ -25,7 +25,7 @@ One part of a **Flow** (grill, design, build, review, retro…): done, running, 
 _Avoid_: station, phase, stage
 
 **Council**:
-The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Path** merges its tickets, its review **Step** is a council on the merged work.
+The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its tickets, its review **Step** is a council on the merged work.
 _Avoid_: panel, jury, review loop
 
 **Mystical MCP**:
