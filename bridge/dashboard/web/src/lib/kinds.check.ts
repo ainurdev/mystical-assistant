@@ -5,7 +5,7 @@ import type { GitStatus } from "../api.ts";
 import type { Turn } from "../chat.ts";
 import { hhmm } from "./surfaces.ts";
 
-console.assert(KIND_ORDER.join() === "design,build,fix,ship,ask", "tab order");
+console.assert(KIND_ORDER.join() === "design,build,refactor,fix,ship,ask", "tab order");
 
 // --- guessKind: the user's real prompts ------------------------------------
 const guesses: [string, string | null][] = [
@@ -67,13 +67,13 @@ console.assert(nextKind(null, 1) === "design", "plain wraps to design");
 console.assert(nextKind("design", -1) === null, "design back to plain");
 console.assert(nextKind(null, -1) === "ask", "plain back to ask");
 // Flows switched off in the FLOWS sheet leave Tab's cycle, and are never guessed.
-console.assert(nextKind("design", 1, ["build"]) === "fix", "an off flow is skipped");
+console.assert(nextKind("design", 1, ["build", "refactor"]) === "fix", "an off flow is skipped");
 console.assert(nextKind(null, -1, ["ask", "ship"]) === "fix", "back past two off flows");
-console.assert(nextKind("build", 1, ["build"]) === "fix", "a lit flow switched off still moves on");
+console.assert(nextKind("build", 1, ["build"]) === "refactor", "a lit flow switched off still moves on");
 console.assert(guessKind("merge this into master locally then clean up", { ...START, off: ["ship"] }) !== "ship", "SHIP off: not guessed");
 console.assert(guessKind("add avatar with its border to inbox header as well", { ...START, off: ["build"] }) === null, "BUILD off: nothing");
 console.assert(guessKind("why does the build fail on CI?", { ...START, off: ["fix"] }) === "ask", "FIX off: the next rule fits");
-console.assert(nextKind("build", 1) === "fix", "forward");
+console.assert(nextKind("build", 1) === "refactor", "forward");
 
 // --- presetFor ---------------------------------------------------------------
 console.assert(same(presetFor("design"), { model: "claude-opus-5-5", perm: "", effort: "high", ponytail: "" }), "design default");
