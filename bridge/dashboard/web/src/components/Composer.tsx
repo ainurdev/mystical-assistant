@@ -1293,7 +1293,7 @@ export function Composer({
         title={`FLOW · ${fchip.label}, step ${fchip.step} of ${fchip.total}. Next: ${fchip.next.label.toUpperCase()}, ${MARK_WORDS[fchip.mark]}.`}
         onClick={(e) => { setFlowAt((e.currentTarget.parentElement as HTMLElement).offsetLeft); setOpenDrop((d) => (d === "flow" ? "" : "flow")); }}>
         <FlowGlyph size={12} strokeWidth={2} aria-hidden />
-        <span className="pb-flow-n">{fchip.label} ·</span>
+        {fchip.flow && <span className="pb-flow-n">{fchip.label} ·</span>}
         <b>{fchip.next.label.toUpperCase()}</b>
         {fchip.mark === "auto" ? <Zap size={11} strokeWidth={2.4} aria-hidden /> : <Hand size={11} strokeWidth={2.2} aria-hidden />}
       </button>
