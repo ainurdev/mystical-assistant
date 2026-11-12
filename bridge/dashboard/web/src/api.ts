@@ -1701,7 +1701,7 @@ export interface FlowSettings {
 }
 export type FlowChange =
   | { key: string; value: boolean | string }
-  | { flow: string; key: string; value: boolean | string; step?: string }
+  | { flow: string; key: string; value: boolean | string | Record<string, string>; step?: string }
   | { reset: string }
   | { presets: Record<string, Record<string, string>> };
 

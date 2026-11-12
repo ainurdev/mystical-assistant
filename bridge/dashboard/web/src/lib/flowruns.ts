@@ -13,10 +13,9 @@ export function flowRuns(flows: { id: string; run: BridgeRun }[] | undefined): R
   return Object.fromEntries((flows ?? []).map((f) => [f.id, { model: f.run.model, perm: f.run.mode, effort: f.run.effort, ponytail: f.run.trim }]));
 }
 
-/** PRESET's "Save as <Flow>'s preset": one change per run row (POST /local/flows takes one at a time). */
-export function saveRun(flow: string, r: KindRun): FlowChange[] {
-  return ([["model", r.model], ["mode", r.perm], ["effort", r.effort], ["trim", r.ponytail]] as const)
-    .map(([key, value]) => ({ flow, key, value }));
+/** PRESET's "Save as <Flow>'s preset": every run row in one change, so all land or none. */
+export function saveRun(flow: string, r: KindRun): FlowChange {
+  return { flow, key: "run", value: { model: r.model, mode: r.perm, effort: r.effort, trim: r.ponytail } };
 }
 
 /** Sends a browser's saved kind presets once and drops them when the bridge has answered.

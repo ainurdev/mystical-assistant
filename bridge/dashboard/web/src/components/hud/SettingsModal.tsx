@@ -20,6 +20,8 @@ import { toolAccent } from "../../lib/tools";
 import { ago, projectName, setClock12, useClock12, windowLabels } from "../../lib/surfaces";
 import { fmtOffset, matchZones, placeName, zoneCity, zoneList, zoneTime } from "../../lib/almanac";
 import { ExtrasFold, FLOW_SWITCHES, SkillsPage } from "./SkillsFold";
+import { Switch } from "../ui/Switch";
+export { Switch };   // its own module: Composer imports it without this file
 import { saverFoot } from "../../lib/savers";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
@@ -622,8 +624,6 @@ function Placeholder({ icon: Icon, spin, children }: {
 
 /** On/off, the way an app's settings page says it: a toggle (each family
  *  draws its own — index.css, THE FAMILIES · SETTINGS). */
-import { Switch } from "../ui/Switch";   // its own module: Composer imports it without this file
-export { Switch };
 
 function Volume({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (v: number) => void }) {
   return (

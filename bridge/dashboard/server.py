@@ -1387,7 +1387,7 @@ class Handler(BaseHTTPRequestHandler):
                 flowsettings.change(body)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
-            if body.get("value") is True and (body.get("key") == "tickets" or body.get("key") == "on" and "flow" not in body):
+            if body.get("value") is True and (body.get("key") == "tickets" or (body.get("key") == "on" and "flow" not in body)):
                 # FLOWS or a flow's TICKETS back on (what tickets._on reads): ticket sets carry on
                 # where they stopped (idempotent, as at a restart).
                 from bridge import tickets

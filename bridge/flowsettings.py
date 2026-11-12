@@ -23,6 +23,7 @@ Readers are the step engine (paths), the ticket scheduler and the dashboard; tic
 to 08 of flow-gear wire their own keys in. Stdlib only.
 """
 
+import copy
 import json
 import os
 import re
@@ -128,8 +129,9 @@ def _save_locked() -> None:
 
 
 def _flow(flow: str) -> dict:
+    """A copy: change() on another thread edits the cached one in place."""
     with _lock:
-        return _load_locked()["flows"][flow]
+        return copy.deepcopy(_load_locked()["flows"][flow])
 
 
 # --- the questions -------------------------------------------------------------
@@ -216,6 +218,7 @@ def change(body: dict) -> None:
     """One change from POST /local/flows. ValueError says what was wrong with it.
       {"key": <global>, "value": v}                    FLOWS, AUTO PICKS, SMART ZONE, GUESS, NO KIND
       {"flow": f, "key": <flow key>, "value": v}       on, next, tickets, approve, model, mode, effort, trim
+      {"flow": f, "key": "run", "value": {model, mode, effort, trim}}  all of them, or none
       {"flow": f, "key": "step", "step": s, "value": b}  an optional step on or off
       {"reset": f}                                     back to its seeds, its run unset
       {"presets": {<kind>: {model, perm, effort, ponytail}}}  a browser's, taken once"""
@@ -266,10 +269,16 @@ def change(body: dict) -> None:
             if not isinstance(value, bool):
                 raise ValueError(f"{key} takes true or false")
             f[key] = value
-        elif key in _RUN:
-            if not isinstance(value, str) or not _RUN[key](value):
-                raise ValueError(f"{value!r} isn't a {key}")
-            f["run"] = {**(f.get("run") or BUILT_IN[fl]), key: value}
+        elif key in _RUN or key == "run":   # "run": PRESET's Save as, checked whole before any lands
+            new = value if key == "run" else {key: value}
+            if not isinstance(new, dict) or not new:
+                raise ValueError("run takes an object of model, mode, effort and trim")
+            for k, v in new.items():
+                if k not in _RUN:
+                    raise ValueError(f"unknown run setting {k!r}")
+                if not isinstance(v, str) or not _RUN[k](v):
+                    raise ValueError(f"{v!r} isn't a {k}")
+            f["run"] = {**(f.get("run") or BUILT_IN[fl]), **new}
         else:
             raise ValueError(f"unknown flow setting {key!r}")
         _save_locked()

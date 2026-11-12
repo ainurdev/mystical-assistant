@@ -19,10 +19,8 @@ test("before the bridge answers, the built-in preset holds", () => {
 });
 
 test("Save as writes every run row to the flow's bridge default", () => {
-  assert.deepEqual(saveRun("fix", { model: "m", perm: "plan", effort: "high", ponytail: "off" }), [
-    { flow: "fix", key: "model", value: "m" }, { flow: "fix", key: "mode", value: "plan" },
-    { flow: "fix", key: "effort", value: "high" }, { flow: "fix", key: "trim", value: "off" },
-  ]);
+  assert.deepEqual(saveRun("fix", { model: "m", perm: "plan", effort: "high", ponytail: "off" }),
+    { flow: "fix", key: "run", value: { model: "m", mode: "plan", effort: "high", trim: "off" } });
 });
 
 test("saved kind presets are sent once, then dropped", async () => {

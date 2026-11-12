@@ -155,6 +155,17 @@ def test_switching_flows_or_tickets_on_carries_ticket_sets_on(api, monkeypatch, 
     assert booted.wait(2)
 
 
+def test_save_as_lands_every_run_row_or_none(api):
+    before = flowsettings.run("fix")
+    with pytest.raises(ValueError):
+        flowsettings.change({"flow": "fix", "key": "run", "value": {"model": "m", "mode": "no-such-mode"}})
+    assert flowsettings.run("fix") == before
+    flowsettings.change({"flow": "fix", "key": "run", "value": {"model": "m", "effort": "high"}})
+    assert flowsettings.run("fix") == {**before, "model": "m", "effort": "high"}
+    flowsettings.run("fix")["model"] = "x"   # a copy: the settings don't move
+    assert flowsettings.run("fix")["model"] == "m"
+
+
 def test_one_flow_switched_on_leaves_ticket_sets_alone(api, monkeypatch):
     from bridge import tickets
     booted = threading.Event()

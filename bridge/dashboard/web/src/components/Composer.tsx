@@ -532,7 +532,7 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
             <div className="pb-sg" role="group" aria-label="No kind: a prompt sent with no flow lit">
               {(["claude", "typed"] as const).map((v) => (
                 <button key={v} type="button" aria-pressed={flowCfg.nokind === v} onClick={() => flowChange({ key: "nokind", value: v })}
-                  title={v === "claude" ? "Claude picks one of the flows that are on" : "Claude picks nothing: the prompt goes as typed"}>{v === "claude" ? "CLAUDE PICKS" : "AS TYPED"}</button>
+                  title={v === "claude" ? "Claude picks one of the flows that are on, or runs SHIP and ASK as the turn itself" : "Claude picks nothing: the prompt goes as typed"}>{v === "claude" ? "CLAUDE PICKS" : "AS TYPED"}</button>
               ))}
             </div>
           </div>
@@ -1994,10 +1994,9 @@ export function Composer({
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   // PRESET's "Save as <Flow>'s preset": the flow's bridge default, so the sheet shows it at once.
   const saveFlowRun = async (fl: string, r: KindRun) => {
-    // One POST per setting, so a refusal can land after some saved: the pill says so (PRESET has closed).
-    let saved = 0;
-    try { for (const c of saveRun(fl, r)) { await changeFlows(c); saved++; } }
-    catch (e) { notify("error", `${KINDS[fl as KindId]?.name ?? fl.toUpperCase()}'s preset ${saved ? "only partly saved" : "not saved"}: ${(e as Error).message}`); }
+    // One change, all or nothing; PRESET has closed by then, so a refusal is a pill.
+    try { await changeFlows(saveRun(fl, r)); }
+    catch (e) { notify("error", `${KINDS[fl as KindId]?.name ?? fl.toUpperCase()}'s preset not saved: ${(e as Error).message}`); }
   };
   // The gear: the FLOWS sheet (FlowsSheet below), hung from the card's left edge.
   const gear = (
