@@ -1097,7 +1097,7 @@ def test_the_bridge_refuses_a_flow_it_cant_take(monkeypatch, router_on, body, ag
 
 def test_no_flow_while_skill_paths_is_off(monkeypatch, router_off):
     obj, code, run = _send(monkeypatch, {"prompt": "add it", "flow": "build", "by": "you"})
-    assert code == 400 and "SKILL PATHS" in obj["error"] and run is None
+    assert code == 400 and "FLOWS is off" in obj["error"] and run is None
 
 
 def test_a_queued_prompt_keeps_its_flow_until_it_runs(monkeypatch, router_on):

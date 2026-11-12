@@ -568,6 +568,9 @@ class Handler(BaseHTTPRequestHandler):
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
                               {"session_id": "", "seq": 0, "paused": False, "items": []})
+        if path == "/local/flows":
+            from bridge import flowsettings
+            return self._json(flowsettings.state())
         if path == "/local/flow":
             from bridge import paths, tickets
             sid = (qs.get("session", [""])[0] or "").strip()
@@ -1376,6 +1379,19 @@ class Handler(BaseHTTPRequestHandler):
                 from bridge import tickets
                 threading.Thread(target=tickets.boot, daemon=True).start()
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/flows":
+            # The FLOWS sheet (the prompt box's gear): one change, a reset or a browser's
+            # presets (bridge/flowsettings.py), answered with every setting.
+            from bridge import flowsettings
+            try:
+                flowsettings.change(body)
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            if body.get("key") in ("on", "tickets") and body.get("value") is True:
+                # Switched back on: ticket sets carry on where they stopped (idempotent, as at a restart).
+                from bridge import tickets
+                threading.Thread(target=tickets.boot, daemon=True).start()
+            return self._json(flowsettings.state())
         if path == "/local/route":
             # Asked after every typing pause (bridge/route.py), so anything that goes
             # wrong, in the body or in the rules, is "no route", never a 500.
@@ -1618,6 +1634,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": "No session is bound to this tool, so it can't set a path."})
             if path == "/local/flow/set":
                 p = str(body.get("path") or "")
+                from bridge import flowsettings
+                name = paths.OLD.get(p, p).removesuffix("-here")
+                if name in flowsettings.FLOWS and not flowsettings.flow_on(name):
+                    return self._json({"text": f"Path not recorded: {name.upper()} is switched off in FLOWS. "
+                                               "Pick another path, or start nothing."})
                 try:
                     p = paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
                                        str(body.get("skill") or "") or None)["path"]   # an old name: its flow's
