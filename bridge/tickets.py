@@ -13,7 +13,7 @@ not DB tables, so a set moves with its checkout and a restart loses nothing. A r
 (`ticketsets.json`, beside the DB like waits.json) lists the folders so we can find sets.
 
 Rules the scheduler and the merge follow, decided in the spec:
-- At most 3 tickets run at once.
+- Every ticket whose blockers are done runs at once: no cap (the user's call, 2026-11-12).
 - Branching: a ticket with one blocker starts from that blocker's branch; with several,
   from the first blocker's branch with the rest merged in.
 - Nothing merges while building. One merge session handles the whole pass at the end.
@@ -42,7 +42,7 @@ runner gave up on (a usage limit parks and resumes by itself) and a StepDone wit
 nothing committed are both `fix`: the slot frees, dependents wait, and the StepDone is
 forgotten, so only a new one finishes it. A fix tells the flow session, with why and
 which tickets wait for it: it starts nothing by itself. retry() runs it again in the same
-session, or with MAX_RUNNING running marks it `retry`, first in line for the next free slot. A
+session (`retry`, a status an older cap left in set.json, still starts first). A
 turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you,
 and retry() carries that one on too, as it does a merge whose turn ended the same way.
 Nobody watches a ticket session, though, and a turn that ends to wait on a background
@@ -279,9 +279,8 @@ def summary_for(session_id: str):
     return None
 
 
-# --- the scheduler: BUILD, MAX_RUNNING at once ---------------------------------
+# --- the scheduler: BUILD, every ready ticket at once -------------------------
 
-MAX_RUNNING = 3
 _build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
 
 
@@ -524,7 +523,7 @@ def _worktree(st: dict, t: dict, repo: str, home: str) -> tuple:
 
 
 def tick(folder: str) -> None:
-    """Start ready tickets, lowest number first, until MAX_RUNNING run, and MERGE once
+    """Start every ready ticket, lowest number first, and MERGE once
     every one is done. Only while SKILL PATHS and TICKETS are on: switched off,
     running tickets finish and nothing new starts."""
     with _build:
@@ -535,8 +534,6 @@ def tick(folder: str) -> None:
         if st.get("status") != "building" or not tks:
             return
         for n in sorted(tks, key=lambda k: (tks[k]["status"] != "retry", k)):   # a retry was promised the next slot
-            if sum(t["status"] == "running" for t in tks.values()) >= MAX_RUNNING:
-                break
             t = tks[n]
             if t["status"] not in ("queued", "missing", "retry") or \
                     any(tks[b]["status"] != "done" for b in t["blocked_by"]):
@@ -953,8 +950,7 @@ def _busy(sid: str, name: str) -> str:
 
 def retry(folder: str, n: str) -> str:
     """A fix ticket runs again: a new turn in its own session and worktree, or a fresh
-    start when it never got a session. "" once that is under way; with MAX_RUNNING
-    running it waits as `retry` and tick gives it the next free slot. A ticket or
+    start when it never got a session. "" once that is under way. A ticket or
     merge left waiting (its turn ended without StepDone, or you stopped it) carries on
     the same way, its slot kept; one that works, is paused or has a message queued says so."""
     with _build:
@@ -970,15 +966,11 @@ def retry(folder: str, n: str) -> str:
         if not t or t.get("status") != "fix":
             return f"#{n} isn't waiting for a retry"
         if not t.get("session_id"):
-            t["status"] = "queued"   # tick starts it as new, within the cap
+            t["status"] = "queued"   # tick starts it as new
             t.pop("why", None)
             save(folder, st)
             tick(folder)
             return ""
-        if sum(x["status"] == "running" for x in tks.values()) >= MAX_RUNNING:
-            t["status"] = "retry"
-            save(folder, st)
-            return f"{MAX_RUNNING} tickets are running; #{n} starts when one finishes."
         return _rerun(folder, st, n)
 
 

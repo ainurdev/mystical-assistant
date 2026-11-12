@@ -243,12 +243,12 @@ FEATURES = (
               "turn that failed or is still running starts or offers nothing."},
     {"key": "ticketruns", "env": "TICKET_RUNS", "label": "TICKETS",
      "parent": "router",
-     "hint": "approved tickets build as sessions, 3 at once, merged at the end",
+     "hint": "approved tickets build as sessions, all ready ones at once, merged at the end",
      "cost": "one session per ticket",
      "tokens": "a normal run per ticket",
      "about": "Once you approve the tickets /to-tickets wrote, each one builds in a session "
-              "of its own, in its own worktree on a branch off the feature branch, at most 3 "
-              "at once, and a ticket waits until the ones blocking it are done. When the last "
+              "of its own, in its own worktree on a branch off the feature branch, every ready "
+              "one at once, and a ticket waits until the ones blocking it are done. When the last "
               "one is done, one session merges them all onto the feature branch. Off, the "
               "path stops once the ticket files are written."},
     {"key": "ticketapprove", "env": "TICKET_APPROVE", "label": "APPROVE BEFORE BUILD",

@@ -283,11 +283,9 @@ def make_set(tmp_path, monkeypatch):
 FIVE = {n: None for n in ("01", "02", "03", "04", "05")}
 
 
-def test_at_most_three_run(make_set):
+def test_every_ready_ticket_runs_at_once(make_set):
     s = make_set(FIVE)
-    assert s.running() == ["01", "02", "03"]
-    s.finish("02")
-    assert s.running() == ["01", "03", "04"]      # a done ticket frees its slot, lowest number first
+    assert s.running() == ["01", "02", "03", "04", "05"]   # no cap
 
 
 def test_dependent_waits_then_bases_on_blocker(make_set):
@@ -460,19 +458,13 @@ def test_turn_end_reaches_the_scheduler(monkeypatch):
 
 # --- fix round 1 ----------------------------------------------------------------
 
-def test_a_retry_at_the_cap_waits_then_goes_first(make_set):
-    s = make_set({"01": None, "02": None, "03": None, "04": "#01", "06": None, "07": None})
-    s.fail("03")                                   # 06 takes its slot
-    s.fail("06")                                   # 07 takes that one
-    assert s.running() == ["01", "02", "07"]
+def test_a_retry_runs_at_once_in_its_own_session(make_set):
+    s = make_set({"01": None, "02": None, "03": None, "06": None, "07": None})
+    s.fail("06")
     sid = s.sid("06")
-    assert tickets.retry(s.folder, "06") == "3 tickets are running; #06 starts when one finishes."
-    assert s.status("06") == "retry" and s.running() == ["01", "02", "07"] and s.start_calls("06") == 1
-    s.finish("01")                                 # frees a slot and readies 04; the retry goes first
-    assert s.running() == ["02", "06", "07"] and s.status("04") == "queued"
-    assert s.sid("06") == sid and s.start_calls("06") == 2
+    assert tickets.retry(s.folder, "06") == ""
+    assert s.status("06") == "running" and s.sid("06") == sid and s.start_calls("06") == 2
     assert s.starts[-1]["prompt"].startswith(f"No path for this message.\n\nTry this ticket again: {s.path('06')}")
-
 
 def test_a_refused_retry_keeps_the_step_done_you_recorded(make_set):
     s = make_set({"01": None})
