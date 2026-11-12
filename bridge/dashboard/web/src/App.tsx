@@ -120,6 +120,7 @@ import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
 import { WorkPanel } from "./components/WorkPanel";
 import { workCall, workGet } from "./lib/readapi";
+import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -2448,6 +2449,12 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [multiOn, sessionId]);
 
+  // The chat's code-like words, for the composer to complete. Only on a new turn or a finished one:
+  // a streamed chunk doesn't change what's worth offering.
+  const turnsDone = turns.filter((t) => t.status !== "running").length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const chatWords = useMemo(() => codeWords(turns), [sessionId, turns.length, turnsDone]);
+
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
   const rightTabs: PanelTab[] = [
     {
@@ -3244,6 +3251,7 @@ export function App() {
                       />
                     ) : (
                     <Composer
+                      words={chatWords}
                       pills={
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.

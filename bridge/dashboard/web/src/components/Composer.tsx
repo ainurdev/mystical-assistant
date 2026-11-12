@@ -492,8 +492,10 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, multi,
+  dock, ask, multi, words,
 }: {
+  /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
+  words?: string[];
   /** Multi-agent chats (ComposerMulti). */
   multi?: ComposerMulti | null;
   disabled: boolean;
@@ -1372,6 +1374,8 @@ export function Composer({
       imageSession={sessionId}
       imageProject={project}
       commands={noList ? [] : cmds}
+      words={words}
+      files={tree}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       onKeyDown={(e) => {

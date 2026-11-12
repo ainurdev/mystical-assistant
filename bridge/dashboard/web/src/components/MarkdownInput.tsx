@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Decoration, EditorView, WidgetType, keymap, placeholder as cmPlaceholder, type DecorationSet } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType, keymap, placeholder as cmPlaceholder, tooltips, type DecorationSet } from "@codemirror/view";
 import { Compartment, EditorState, MapMode, Prec, StateEffect, StateField } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, insertNewlineAndIndent } from "@codemirror/commands";
+import { acceptCompletion, autocompletion, closeCompletion, completionStatus, moveCompletionSelection, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -10,6 +11,7 @@ import { drawnAtCaret, dropSpot, fillSpot, holdSpot, imageEmbeds, openEmbed, set
 import { minimalChange } from "../lib/embeds";
 import { registerEditor } from "../lib/editorctx";
 import { leadCommand } from "../lib/slash";
+import { rank, wordAt } from "../lib/completewords";
 import type { SlashCommand } from "../api";
 import { EmbedPopover } from "./EmbedPopover";
 import { useMultiOn } from "../lib/multistore";
@@ -31,6 +33,12 @@ import { useMultiOn } from "../lib/multistore";
 //
 // The API mirrors the textarea it replaced (value / onChange / caret / keydown),
 // so the composer's @-mentions, /commands and Ctrl+R need no second path.
+//
+// Completing words (lib/completewords): code-like words this chat used, and the project's files, in
+// CodeMirror's list. Tab takes one, the arrows move, Escape closes, and Enter still sends: it's a
+// chat box first. With no list open, Tab indents the line (or every selected line) and Shift+Tab
+// takes it back, which nests a Markdown list. That traps Tab, so CodeMirror's own way out stands:
+// Escape, then Tab moves focus on, and Ctrl+M (Shift+Alt+M on a Mac) turns tab trapping off.
 
 export type MarkdownInputHandle = {
   focus(): void;
@@ -69,6 +77,14 @@ const mdHighlight = HighlightStyle.define([
 ]);
 
 const mdTheme = EditorView.theme({
+  // The completion list (autocompletion above): the composer's own lists' look, in CodeMirror's tooltip.
+  ".cm-tooltip.cm-mi-complete": { background: "var(--panel)", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", borderRadius: "var(--prad, 6px)", boxShadow: "0 -8px 26px var(--shadow-pop, rgba(0,0,0,.35))", overflow: "hidden" },
+  ".cm-mi-complete > ul": { fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", maxHeight: "210px", minWidth: "180px", maxWidth: "min(460px, 80vw)" },
+  ".cm-tooltip.cm-tooltip-autocomplete.cm-mi-complete > ul > li": { display: "flex", alignItems: "baseline", gap: "8px", padding: "4px 10px", color: "var(--tx)", borderLeft: "2px solid transparent" },
+  ".cm-tooltip.cm-tooltip-autocomplete.cm-mi-complete > ul > li[aria-selected]": { background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", borderLeftColor: "var(--acc)" },
+  ".cm-mi-complete .cm-completionLabel": { whiteSpace: "nowrap" },
+  ".cm-mi-complete .cm-completionMatchedText": { textDecoration: "none", color: "var(--acc)" },
+  ".cm-mi-complete .cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", fontStyle: "normal", color: "var(--txd)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   "&": { backgroundColor: "transparent", color: "var(--txb)", fontSize: "var(--t13)", maxHeight: "min(500px, 50vh)" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { fontFamily: "'JetBrains Mono',monospace", lineHeight: "1.5", overflow: "auto" },
@@ -148,6 +164,9 @@ type Props = {
   /** Whose images: what a local address in the text resolves against. */
   imageSession?: string | null;
   imageProject?: string | null;
+  /** What to offer completing a word (lib/completewords): the chat's words, newest first, and its files. */
+  words?: string[];
+  files?: string[];
 };
 
 export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function MarkdownInput(props, ref) {
@@ -190,6 +209,32 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
             },
           })),
           newlineKeys,
+          autocompletion({
+            override: [(ctx: CompletionContext): CompletionResult | null => {
+              const line = ctx.state.doc.lineAt(ctx.pos);
+              const at = wordAt(line.text, ctx.pos - line.from);
+              if (!at) return null;
+              const opts = rank(at.word, cb.current.words ?? [], cb.current.files ?? []);
+              if (!opts.length) return null;
+              return {
+                from: line.from + at.from, filter: false,
+                options: opts.map((o) => ({ label: o.label, detail: o.detail, type: o.kind === "file" ? "file" : "variable", boost: o.boost })),
+              };
+            }],
+            // Above the line, as the composer sits at the window's foot, and the composer's own lists open upward too.
+            defaultKeymap: false, icons: false, maxRenderedOptions: 8, closeOnBlur: true, interactionDelay: 0, aboveCursor: true,
+            tooltipClass: () => "cm-mi-complete",
+          }),
+          // On the page, not in the composer's box, which clips what overflows it.
+          tooltips({ parent: document.body, position: "fixed" }),
+          Prec.high(keymap.of([
+            { key: "Tab", run: (v) => (completionStatus(v.state) === "active" ? acceptCompletion(v) : indentMore(v)), shift: indentLess },
+            { key: "ArrowDown", run: moveCompletionSelection(true) },
+            { key: "ArrowUp", run: moveCompletionSelection(false) },
+            { key: "PageDown", run: moveCompletionSelection(true, "page") },
+            { key: "PageUp", run: moveCompletionSelection(false, "page") },
+            { key: "Escape", run: closeCompletion },
+          ])),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           syntaxHighlighting(mdHighlight),
