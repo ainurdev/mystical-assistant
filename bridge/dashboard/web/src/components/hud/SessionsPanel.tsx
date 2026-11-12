@@ -3,7 +3,7 @@ import { AgentTree } from "./AgentTree";
 import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search, Ticket } from "lucide-react";
+import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
@@ -12,7 +12,6 @@ import type { ProjectTint } from "../../lib/surfaces";
 import { dayLabel, isJob, JOB_LABEL, jobGroup, jobLabel, JOBS_REL, jobTarget } from "../../lib/jobs";
 import { JOB_ICON, JobsTile } from "./JobTag";
 import { useIntegrations } from "../../lib/integrations";
-import { useAiFeatures } from "../../lib/ai";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
 import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
@@ -24,7 +23,6 @@ import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
-import { TicketsMode } from "./TicketsMode";
 import { NewSessionPop } from "./NewSessionPop";
 import { Spinner } from "../ui";
 import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
@@ -59,8 +57,6 @@ interface Props {
   activeProject: string | null;
   onTogglePin: (id: string) => void;
   onSelectSession: (s: SessionBrief) => void;
-  /** Open a session by id alone, listed in the sidebar or not (TICKETS: an archived ticket session). */
-  onOpenSessionId: (id: string) => void;
   onAnalyze: (rel: string) => void;
   onNewSession: (rel: string) => void;
   /** Start a typed session: the form's fields, already composed into a prompt. */
@@ -74,7 +70,7 @@ interface Props {
   workspace?: string;
 }
 
-type Mode = "attention" | "projects" | "plugins" | "tickets" | "recent";
+type Mode = "attention" | "projects" | "plugins" | "recent";
 /** Which pieces of a row's provenance it prints. Independent, because the four
  *  presets this replaced could not express the obvious wants — a sidebar that
  *  names the project but not the branch was simply not on the menu. `agents`
@@ -115,7 +111,6 @@ const DETAIL_DEFAULT: Record<Mode, Detail> = {
   attention: { proj: true, branch: true, wt: true, agents: false },
   projects: { proj: false, branch: true, wt: true, agents: false },
   plugins: { proj: true, branch: true, wt: true, agents: false },
-  tickets: { proj: true, branch: true, wt: true, agents: false },
   recent: { proj: true, branch: true, wt: true, agents: false },
 };
 
@@ -162,7 +157,7 @@ function loadPrefs(): Prefs {
     const r = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") as Partial<Prefs> & { tab?: string };
     // Pre-v3 prefs stored {tab: "recent"|"grouped"} — carry the choice over once.
     const mode: Mode =
-      r.mode === "attention" || r.mode === "projects" || r.mode === "plugins" || r.mode === "tickets" || r.mode === "recent" ? r.mode
+      r.mode === "attention" || r.mode === "projects" || r.mode === "plugins" || r.mode === "recent" ? r.mode
         : r.tab === "grouped" ? "projects" : r.tab === "recent" ? "recent" : "attention";
     return {
       mode,
@@ -608,7 +603,7 @@ export function SessionsPanel(props: Props) {
   useTreeWant("sidebar", treeChats);
   const {
     sessions, groups, hidden, show, onShow, status, done, flags, pins, selectedSessionId, activeProject, booting,
-    onTogglePin, onSelectSession, onOpenSessionId, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
+    onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
     workspace = "",
   } = props;
 
@@ -624,10 +619,7 @@ export function SessionsPanel(props: Props) {
   const [picked, setPicked] = useState<Mode>(() => loadPrefs().mode);
   // A saved PLUGINS pick renders as ATTENTION while Rivendell isn't installed,
   // and stays saved: installing it again puts you back on the tab you chose.
-  // Likewise TICKETS while its AI switch, or SKILL PATHS above it, is off.
-  const ai = useAiFeatures();
-  const tickets = !!(ai.router && ai.ticketruns);
-  const mode: Mode = (picked === "plugins" && !plugins.rivendell) || (picked === "tickets" && !tickets) ? "attention" : picked;
+  const mode: Mode = picked === "plugins" && !plugins.rivendell ? "attention" : picked;
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
   const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
   const [orderMenu, setOrderMenu] = useState(false);
@@ -1055,7 +1047,6 @@ export function SessionsPanel(props: Props) {
       count: attnOn.reduce((t, x) => t + attn[x.k]!, 0),
       tip: attnSay ? `Attention — ${attnSay}` : "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
-    ...(tickets ? [{ id: "tickets" as Mode, label: "Tickets", Icon: Ticket, count: 0, tip: "Tickets — a feature's ticket sets, building and merging" }] : []),
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
   ];
@@ -1070,7 +1061,7 @@ export function SessionsPanel(props: Props) {
   const cutN = inScope.filter((s) => !passes(s)).length;
   const off = offSay(show);
   // The filter emptied this tab: say so and offer the way back, not a blank panel.
-  const showEmpty = mode !== "tickets" && !sq && cutN > 0 && groups.length > 0
+  const showEmpty = !sq && cutN > 0 && groups.length > 0
     && (mode === "projects" ? tree.length === 0 : mode !== "plugins" && mine.length === 0);
 
   const laneHead = (it: Extract<LaneItem, { k: "head" }>) => (
@@ -1378,7 +1369,7 @@ export function SessionsPanel(props: Props) {
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
 
-        {mode === "tickets" ? <TicketsMode sessions={sessions} status={status} onSelectSession={onSelectSession} onOpenSessionId={onOpenSessionId} /> : mode !== "projects" ? (
+        {mode !== "projects" ? (
           <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
             {rowV.getVirtualItems().map((vi) => {
               const it = laneItems[vi.index];
@@ -1551,12 +1542,12 @@ export function SessionsPanel(props: Props) {
             >Show everything</button>
           </div>
         )}
-        {mode !== "tickets" && groups.length === 0 && (
+        {groups.length === 0 && (
           <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "10px 4px" }}>
             {booting ? "LOADING SESSIONS…" : "No projects with sessions yet."}
           </div>
         )}
-        {mode !== "tickets" && groups.length > 0 && sq && sorted.length === 0 && (
+        {groups.length > 0 && sq && sorted.length === 0 && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "72px 16px" }}>
             <div style={{ fontSize: "var(--t11)", color: "var(--txf)" }}>Nothing matches “{sessionQ.trim()}”</div>
             <button

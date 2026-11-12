@@ -258,7 +258,7 @@ FEATURES = (
      "tokens": "0",
      "about": "Off, BUILD starts as soon as /to-tickets has written the tickets (the skill is "
               "meant to ask you first, but can skip it). On, the set shows its breakdown in "
-              "the TICKETS tab and waits for Approve & build before any branch, worktree or "
+              "the ticket card above its chat's prompt box and waits for Approve & build before any branch, worktree or "
               "session is made."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",

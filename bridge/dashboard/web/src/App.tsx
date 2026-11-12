@@ -89,6 +89,7 @@ import { isLinuxApp, isMacApp, isNativeApp, linuxWindow, macAppearance, macDrag,
 import { watchWco } from "./lib/wco";
 import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
 import { WorkspaceButton } from "./components/hud/WorkspaceButton";
+import { TicketMapCard } from "./components/hud/TicketMap";
 import { chatToMarkdown } from "./lib/chatmd";
 import { ChatImagesScope } from "./lib/chatimages";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
@@ -3484,7 +3485,6 @@ export function App() {
                   activeProject={activeProject}
                   onTogglePin={togglePin}
                   onSelectSession={(s) => void selectSession(s)}
-                  onOpenSessionId={(id) => openSession(id)}
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
@@ -3584,6 +3584,8 @@ export function App() {
                           /^(HTTP 404|not found)$/i.test(e.message) ? "restart the bridge to run jobs again from here" : e.message)}
                       />
                     ) : (
+                    <>
+                    {sessionId && <TicketMapCard key={sessionId} sessionId={sessionId} status={statusMap} onOpenSession={(id) => openSession(id)} />}
                     <Composer
                       pills={
                         // Inside the composer's box, not on the bare panel above
@@ -3660,6 +3662,7 @@ export function App() {
                         : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…`
                         : selected?.parent_session ? `message ${selected.title || "this helper"}…` : undefined}
                     />
+                    </>
                     )}
                   </>
                 )}

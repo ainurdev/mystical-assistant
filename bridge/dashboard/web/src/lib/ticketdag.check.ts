@@ -1,5 +1,5 @@
 // Run: node src/lib/ticketdag.check.ts  (from web/) — grep the output for "Assertion failed".
-import { dagLayout, kindOf, slotsUsed } from "./ticketdag.ts";
+import { dagLayout, kindOf } from "./ticketdag.ts";
 
 const k = (status: string, state?: string, stalled?: boolean) => kindOf({ status, stalled }, state);
 console.assert(k("done") === "done" && k("fix") === "fix" && k("queued") === "q" && k("missing") === "q", "done, fix and waiting rows");
@@ -7,7 +7,6 @@ console.assert(k("running") === "run" && k("running", "working") === "run", "a r
 console.assert(k("running", undefined, true) === "idle" && k("running", "done", true) === "idle", "a stalled ticket is idle");
 console.assert(k("running", "asking") === "ask" && k("running", "awaiting", true) === "ask", "an ask wins over idle");
 console.assert(k("fix", "asking", true) === "fix" && k("done", "asking", true) === "done", "fix and done win over the session's state");
-console.assert(slotsUsed(["run", "ask", "idle", "q", "done", "fix"]) === 3, "run, ask and idle each hold a slot");
 
 const T = (n: string, ...blockedBy: string[]) => ({ n, blockedBy });
 const g = dagLayout([T("01"), T("02"), T("03"), T("04"), T("05", "04"), T("06", "02", "03")]);

@@ -11,8 +11,6 @@ const ASKING = ["awaiting", "asking", "credits"];
 export const kindOf = (t: { status: string; stalled?: boolean }, state?: string): Kind =>
   t.status === "done" ? "done" : t.status === "fix" ? "fix"
     : t.status === "running" ? (state && ASKING.includes(state) ? "ask" : t.stalled ? "idle" : "run") : "q";
-/** How many of the set's running slots are taken: an idle ticket keeps its slot until it is carried on. */
-export const slotsUsed = (kinds: Kind[]): number => kinds.filter((k) => k === "run" || k === "ask" || k === "idle").length;
 
 export type DagIn = { n: string; blockedBy: string[] };
 export type DagNode = { n: string; col: number; row: number };

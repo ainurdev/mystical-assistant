@@ -148,7 +148,7 @@ def test_bad_created_does_not_break_summary(tmp_path):
     assert tickets.summary_for("cr")["slug"] == "good"
 
 
-# --- the scheduler: BUILD, 3 at once -----------------------------------------
+# --- the scheduler: BUILD, all at once -----------------------------------------
 
 import subprocess  # noqa: E402
 import uuid  # noqa: E402
