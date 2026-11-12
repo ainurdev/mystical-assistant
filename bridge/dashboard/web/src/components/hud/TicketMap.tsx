@@ -4,7 +4,9 @@ import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../
 import { derivePending } from "../../chat";
 import { QuestionCard } from "../QuestionCard";
 import { dagLayout, kindOf, type Kind } from "../../lib/ticketdag";
+import { changeFlows, useFlowSettings } from "../../lib/flowsettings";
 import { askConfirm } from "../ui/Ask";
+import { Switch } from "../ui/Switch";
 
 /** A ticket set lives in the flow chat that made it, the super session: a strip docked
  *  above the prompt box (A · WAVES, picked 2026-11-12, .mystical/design-drafts/ticket-map-v2)
@@ -156,6 +158,20 @@ function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
   return [set, () => setGen((g) => g + 1)];
 }
 
+/** AUTO-START beside Approve & build while a set waits: every flow that builds as tickets at once
+ *  (the FLOWS sheet sets one), for later sets only; the set waiting now still waits for the tap. */
+function AutoStart({ onErr }: { onErr: (text: string) => void }) {
+  const flows = useFlowSettings()?.flows.filter((f) => f.tickets !== undefined) ?? [];
+  if (!flows.length) return null;
+  const on = flows.every((f) => !f.approve);
+  // One at a time: each answer is the whole settings, so the last one back must be the last one sent.
+  const flip = async () => { for (const f of flows) await changeFlows({ flow: f.id, key: "approve", value: on }); };
+  return (
+    <label className="fs-sw tm-auto" title="later sets in DESIGN, BUILD and REFACTOR start by themselves; this one still waits for Approve & build">
+      <Switch on={on} label="Auto-start later ticket sets" onClick={() => void flip().catch((e: Error) => onErr(e.message))} /><span className="caps">Auto-start</span></label>
+  );
+}
+
 /** What a set says in a few words, and the buttons that act on it: the strip and LIVE share these. */
 function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, reload: () => void, onOpenSession: (id: string) => void) {
   const [note, setNoteNow] = useState("");
@@ -202,7 +218,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     : first === "merge" ? <span className={`tm-call ${set.status === "fix" ? "err" : "warn"}`}>the merge {set.status === "fix" ? "needs a fix" : "stopped"}</span>
     : null;
   const action = note ? null
-    : set.status === "approve" ? <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button>
+    : set.status === "approve" ? <><AutoStart onErr={setNote} /><button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
     : set.status === "stopped" ? <button className="tm-btn" onClick={ops.build}>Build</button>
     : t && kinds[first] === "ask" ? <button className="tm-btn warn" onClick={() => onOpenSession(t.session_id)}>Answer</button>
     : t && kinds[first] === "fix" ? <button className="tm-btn" onClick={() => ops.retry(first)}><RotateCcw size={11} aria-hidden /> Retry</button>

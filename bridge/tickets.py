@@ -75,11 +75,13 @@ and the step after MERGE is REVIEW or RETRO. One lock serializes tick and every 
 turn ends arrive on several threads at once; it is held across git and session
 creation, which takes seconds only when tickets are starting.
 
-APPROVE BEFORE BUILD (a tickets flow's own, read from the flow that started the set) is the user's choice to trust the skill or not:
-/to-tickets is meant to quiz the user before it ends, but can skip it. On, start_build
-parses and validates the tickets, saves the set as `approve` and stops: no feature
-branch, carry or worktree. approve() (the Approve & build tap) does the rest. boot()
-and tick() leave an `approve` set alone.
+AUTO-START (a tickets flow's own, stored inverted as its `approve`, read from the flow that
+started the set) is the user's choice to trust the skill or not: /to-tickets is meant to
+quiz the user before it ends, but can skip it. Off, start_build parses and validates the
+tickets, saves the set as `approve` and stops: no feature branch, carry or worktree.
+approve() (the Approve & build tap) does the rest. The wait rings once (`tickets_wait`)
+and stays in Needs you until then, read live (notices.needs). boot() and tick() leave an
+`approve` set alone.
 
 Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's state and why,
 and how its session's last turn ended (StepDone or not, the last tool, the last words). It
@@ -284,7 +286,8 @@ def owners() -> "tuple[dict, dict]":
     Read from set.json on every call: a handful of small files, never stale."""
     of: dict = {}
     counts: dict = {}
-    for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0):
+    at = lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0   # noqa: E731
+    for r in sorted(sets(), key=at):
         if not isinstance(r.get("folder"), str):
             continue
         st = load(r["folder"])
@@ -298,8 +301,19 @@ def owners() -> "tuple[dict, dict]":
         if st.get("merge_session"):
             of[st["merge_session"]] = parent
         counts[parent] = {"done": sum(1 for t in ts.values() if isinstance(t, dict) and t.get("status") == "done"),
-                          "total": len(ts), "status": st.get("status") or ""}
+                          "total": len(ts), "status": st.get("status") or "", "at": at(r)}
     return of, counts
+
+
+def waiting() -> dict:
+    """{super session: owners()' counts} for each whose newest set waits for Approve & build, as
+    its sidebar row reads it: what Needs you lists (notices.needs). `at`: when it began to wait."""
+    return {p: c for p, c in owners()[1].items() if c["status"] == "approve"}
+
+
+def approval_line(n: int) -> str:
+    """What a set waiting for Approve & build says: its notice, its Needs-you row, Telegram."""
+    return f"{n} ticket{'s wait' if n != 1 else ' waits'} for your approval"
 
 
 def summary_for(session_id: str):
@@ -370,7 +384,8 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         old = load(folder)
         was = old.get("status")
         fl = old.get("flow") or paths.flow_id(flow.get("path"))   # the flow that started the set, kept on a rebuild
-        wait = flowsettings.approve(fl)   # APPROVE BEFORE BUILD: stop at the breakdown
+        # AUTO-START off: stop at the breakdown. It counts for later sets: one waiting stays waiting.
+        wait = flowsettings.approve(fl) or was == "approve"
         if was not in (None, "stopped", "approve"):
             return f"{slug} is already {was}"
         # flow_at: the flow's path this set builds for, kept when a stopped set builds again;
@@ -402,6 +417,15 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         register(folder, sess.get("project") or "", slug)
         if not wait:
             tick(folder)
+    if wait and was != "approve":   # one ring a set: built again while it waits, it rings nothing
+        from bridge import runner  # local import: runner<->tickets cycle
+        body = approval_line(len(tks))
+        try:
+            runner._notify(sess.get("chat_id"), f"▦ Tickets need you — {runner._session_label(flow_session_id)}\n{body}",  # noqa: SLF001
+                           runner._session_kb(sess.get("chat_id"), flow_session_id, "🛠 Open session"),  # noqa: SLF001
+                           kind="tickets_wait", sid=flow_session_id, body=body)
+        except Exception as e:  # noqa: BLE001 — the set waits either way
+            print(f"[tickets] approval notice failed: {e}", file=sys.stderr)
     return ""
 
 

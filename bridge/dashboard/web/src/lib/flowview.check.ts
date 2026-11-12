@@ -50,7 +50,7 @@ console.assert(flowView(atBuild, [], building, false).stations[3].state === "now
 console.assert(flowView(atBuild, [], { ...building, flow_at: 2 }).stations[3].state === "auto", "a set built for an earlier path is not this one's");
 console.assert(flowView(atBuild, [], { ...building, flow_at: 1 }).stations[3].state === "now", "the set this path built is");
 
-// APPROVE BEFORE BUILD: the set waits on the user's tap.
+// AUTO-START off: the set waits on the user's tap.
 const ap = flowView(atBuild, [], { status: "approve", tickets: {} });
 console.assert(ap.stations[3].state === "you" && ap.stations[3].who === "you", `approve: BUILD is yours (${ap.stations.map((x) => x.state).join()})`);
 console.assert(ap.note === "waiting for your approval", `approve note: ${ap.note}`);

@@ -61,7 +61,7 @@ A message Mystical sends a session on its own, marked as Mystical's, after the s
 _Avoid_: nudge, "go", auto-resume
 
 **Needs you**:
-Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in. It is worked out fresh each time, and a reply's to-dos are not part of it.
+Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Ticket set** waiting for your approval. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
 
 **Live board**:

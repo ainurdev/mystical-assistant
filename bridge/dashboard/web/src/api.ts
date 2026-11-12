@@ -2758,7 +2758,7 @@ export const api = {
   /** A stopped set builds again, once what stopped it is fixed. */
   buildTickets: (folder: string) =>
     req<{ text: string }>("/local/tickets/build", { method: "POST", body: { folder } }),
-  /** A set waiting in `approve` (APPROVE BEFORE BUILD) is approved and builds. */
+  /** A set waiting in `approve` (its flow's AUTO-START off) is approved and builds. */
   approveTickets: (folder: string) =>
     req<{ text: string }>("/local/tickets/approve", { method: "POST", body: { folder } }),
   cleanupTickets: (folder: string) =>

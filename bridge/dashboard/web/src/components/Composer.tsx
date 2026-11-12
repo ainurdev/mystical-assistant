@@ -570,8 +570,8 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
             <div className="fs-tk">
               <label className="fs-sw" title="approved tickets build as sessions, every ready one at once, merged at the end">
                 <Switch on={sheetPick.tickets} label={`${pickName} tickets`} onClick={() => flowChange({ flow: sheetPick.id, key: "tickets", value: !sheetPick.tickets })} />Tickets</label>
-              <label className="fs-sw" title="the tickets wait for Approve & build before any session starts">
-                <Switch on={!!sheetPick.approve} label={`${pickName} approve before build`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Approve before build</label>
+              <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
+                <Switch on={!sheetPick.approve} label={`${pickName} auto-start`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Auto-start</label>
             </div>
           )}
           <FlowRunRows f={sheetPick} change={flowChange} models={models} />

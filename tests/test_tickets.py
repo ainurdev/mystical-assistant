@@ -77,7 +77,8 @@ def test_owners_maps_ticket_and_merge_sessions_to_the_super_session(tmp_path):
     tickets.register(d, "proj", "own")
     of, counts = tickets.owners()
     assert of["t1"] == of["t2"] == of["m1"] == "sup" and "sup" not in of
-    assert counts["sup"] == {"done": 1, "total": 3, "status": "building"}
+    assert counts["sup"] == {"done": 1, "total": 3, "status": "building",
+                             "at": next(r["created"] for r in tickets.sets() if r["folder"] == d)}
 
 
 @pytest.mark.parametrize("line", ["Blocked by: #1, #3", "**Blocked by**: 01 and 3", "- **Blocked by:** 01, 03",
@@ -1003,7 +1004,7 @@ def test_a_rebuilt_set_stays_with_the_path_it_was_written_for(make_set, monkeypa
     assert s.state["flow_at"] == at
 
 
-# --- APPROVE BEFORE BUILD ------------------------------------------------------
+# --- AUTO-START off: a set waits for Approve & build ---------------------------
 
 def test_approve_before_build_waits_and_starts_nothing(make_set):
     s = make_set({"01": None, "02": "#01"}, on="approve")
@@ -1027,6 +1028,36 @@ def test_approve_endpoint_validates(make_set, tmp_path):
     assert _dpost("/local/tickets/approve", {"folder": s.folder}, chat=2)["code"] == 404
     assert _dpost("/local/tickets/approve", {"folder": s.folder})["obj"] == {"text": "Building."}
     assert s.state["status"] == "building"
+
+
+_EMIT = notices.emit   # the feed itself; BuiltSet swaps in a recorder
+
+
+def test_a_waiting_set_needs_you_until_approved_and_rings_once(make_set, monkeypatch):
+    s = make_set({"01": None, "02": "#01"}, build=False, on="approve")
+    monkeypatch.setattr(notices, "emit", _EMIT)
+    waits = lambda: [(n["kind"], n["verb"], n["body"]) for n in notices.needs({}) if n["session_id"] == s.flow]  # noqa: E731
+    assert s.build() == ""
+    assert waits() == [("tickets_wait", "TICKETS", "2 tickets wait for your approval")]
+    assert s.build() == ""                                  # built again while it waits: no second ring
+    assert [r["kind"] for r in notices.feed() if r["subject"] == s.flow] == ["tickets_wait"]
+    assert tickets.approve(s.folder) == ""
+    assert waits() == []
+
+
+def test_a_waiting_set_outlives_its_notice(make_set):
+    s = make_set({"01": None}, on="approve")               # the recorder: no feed row, as once it is a day old
+    [n] = [n for n in notices.needs({}) if n["session_id"] == s.flow]
+    assert (n["kind"], n["body"]) == ("tickets_wait", "1 ticket waits for your approval")
+    assert n["at"] == tickets.sets()[0]["created"]          # when it began to wait, from the set itself
+    asking = {s.flow: {"state": "awaiting", "kind": "question", "label": "which one?"}}
+    assert [n["kind"] for n in notices.needs(asking) if n["session_id"] == s.flow] == ["question"]   # one row a session
+
+
+def test_auto_start_counts_for_later_sets_only(make_set):
+    s = make_set({"01": None}, on="approve")
+    s.switch(True)                                          # AUTO-START on while the set waits
+    assert s.build() == "" and s.state["status"] == "approve" and s.starts == []
 
 
 def test_boot_leaves_an_approve_set_alone(make_set):

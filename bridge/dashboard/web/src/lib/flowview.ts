@@ -111,7 +111,7 @@ export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null =
   const held = set?.status === "building" && fix > 0 && !tks.some((t) => t.status === "running" || t.status === "retry");
   const elsewhere: Record<string, boolean> = { build: set?.status === "building" && !held, merge: set?.status === "merging",
     review: !!council && live(council) };
-  const approving = set?.status === "approve";   // APPROVE BEFORE BUILD: the set waits for the user's tap
+  const approving = set?.status === "approve";   // AUTO-START off: the set waits for the user's tap
   const yours = held || approving ? "build" : set?.status === "fix" ? "merge" : "";
   const stations = table.map(([key, skill, kind], i) => {
     // a started step with no turn running ended without StepDone (a question): it waits on you
