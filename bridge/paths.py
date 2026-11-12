@@ -443,10 +443,13 @@ BY = {"you": "you picked", "guess": "the box guessed"}
 
 def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
     """Why a send can't start `flow` ("" = it can): checked where the send comes in."""
+    from bridge import flowsettings   # local import: flowsettings reads PATHS
     if not on():
-        return "flows are off: SKILL PATHS is off in SETTINGS"
+        return "flows are off: FLOWS is off in the prompt box's gear"
     if flow not in FLOWS:
         return f"unknown flow {flow!r}"
+    if not flowsettings.flow_on(flow):
+        return f"{flow.upper()} is switched off in FLOWS"
     if by not in BY:
         return f"by must be one of {', '.join(BY)}"
     if prompt.startswith("/"):
@@ -461,8 +464,9 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
     any running flow, and the prompt returned with its first step's command in front
     (SHIP and ASK: the no-path line, so Claude moves them into no other flow). The
     flow already running keeps it: nothing recorded, nothing in front. A prompt queued
-    before SKILL PATHS went off goes as typed."""
-    if not on():
+    before FLOWS, or its flow, went off goes as typed."""
+    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if not on() or not flowsettings.flow_on(flow):
         return prompt
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):

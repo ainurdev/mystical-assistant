@@ -47,7 +47,8 @@ export type KindPick = KindId | "plain" | null;
 /** `start`: the session has had no turn yet. DESIGN and FIX are guessed only there: mid-thread
  *  "the list jumps" or "i mean UI" is a follow-up, and a guessed /design-first or diagnosing
  *  prefix would hijack it (a tap or Tab still picks them). `design`: Claude Design is installed. */
-export interface GuessCtx { start: boolean; design: boolean }
+export interface GuessCtx { start: boolean; design: boolean;
+  /** Flows switched off in the FLOWS sheet: never guessed. */ off?: readonly string[] }
 
 // First match wins, so order is priority: "merge the broken fix" is shipping, "why does it fail?" is a fix,
 // and a trailing "?" is a question even about the ui ("is the ui done?"). The yes/no openers
@@ -66,11 +67,12 @@ const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook 
 export function guessKind(text: string, c: GuessCtx): KindId | null {
   const t = text.trim().toLowerCase();
   if (t.startsWith("/") || t.split(/\s+/).length < 2) return null;
-  if (SHIP.test(t)) return "ship";
-  if (c.start && FIX.test(t)) return "fix";
-  if (ASK.test(t)) return "ask";
-  if (c.start && c.design && DESIGN.test(t)) return "design";
-  return BUILD.test(t) ? "build" : null;
+  const on = (k: KindId) => !c.off?.includes(k);   // an off flow is passed over: the next rule may still fit
+  if (on("ship") && SHIP.test(t)) return "ship";
+  if (c.start && on("fix") && FIX.test(t)) return "fix";
+  if (on("ask") && ASK.test(t)) return "ask";
+  if (c.start && c.design && on("design") && DESIGN.test(t)) return "design";
+  return on("build") && BUILD.test(t) ? "build" : null;
 }
 
 export function shownKind(pick: KindPick, text: string, c: GuessCtx): { kind: KindId | null; how: "auto" | "picked" | "plain" | "none" } {
@@ -80,9 +82,9 @@ export function shownKind(pick: KindPick, text: string, c: GuessCtx): { kind: Ki
   return { kind, how: kind ? "auto" : "none" };
 }
 
-/** Tab order: design … ask, then plain (null), then round again. */
-export function nextKind(from: KindId | null, dir: 1 | -1): KindId | null {
-  const ring: (KindId | null)[] = [null, ...KIND_ORDER];
+/** Tab order: design … ask, then plain (null), then round again; flows switched off are skipped. */
+export function nextKind(from: KindId | null, dir: 1 | -1, off: readonly string[] = []): KindId | null {
+  const ring: (KindId | null)[] = [null, ...KIND_ORDER.filter((k) => k === from || !off.includes(k))];
   return ring[(ring.indexOf(from) + dir + ring.length) % ring.length];
 }
 

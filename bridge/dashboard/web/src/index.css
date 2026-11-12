@@ -5077,7 +5077,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
            font-family: var(--ui-font, inherit); font-size: var(--t10); letter-spacing: .2px; color: var(--txm); }
 .pb-seg { display: flex; align-items: center; gap: 2px; height: 100%; padding: 0 8px; border-right: 1px solid var(--line, var(--border)); }
 .pb-seg:last-child { border-right: 0; }
-.pb-kinds { width: 188px; flex: none; }
+/* 224: six glyphs' room plus the gear after its hairline, kept with FLOWS off or flows switched off (a4-off) */
+.pb-kinds { width: 224px; flex: none; }
 .pb-facts { flex: 1; min-width: 0; }
 .pb-facts > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pb-facts [data-tone="warn"] { color: var(--warn); }
@@ -5178,6 +5179,41 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-flow-list > button { height: 24px; padding: 0 9px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px); background: transparent; color: var(--txh); text-align: left; letter-spacing: 1px; }
 .pb-flow-list > button:hover { background: color-mix(in oklab, var(--acc) 14%, transparent); color: var(--txb); }
 .pb-pf > button:disabled { cursor: default; color: var(--txl); font-weight: 600; opacity: .6; }
+/* The gear and its FLOWS sheet (Composer flowsPop, design-drafts/kind-gear a2-open, a4-off): the cog at
+   the row's end after a hairline; the sheet is PRESET's, hung from the card's left edge, two columns
+   (the flows | the picked one) in a body of one height whichever flow is picked. */
+.fs-gsep { flex: none; width: 1px; height: 14px; margin: 0 3px 0 auto; background: var(--line2, var(--border)); }
+.pb-kg.fs-gear { flex: none; width: 22px; color: var(--txl); }
+.pb-kg.fs-gear[aria-expanded="true"] { background: color-mix(in oklab, var(--acc) 18%, transparent); color: var(--txb); }
+.pb-kinds[data-dim] > :is(.fs-gear, .fs-gsep) { opacity: 1; cursor: pointer; }
+.fs-off { flex: none; padding-left: 4px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
+.pb-pp.fs-sheet { left: 0; right: auto; width: min(624px, 100%); }
+.fs-top { display: flex; align-items: center; gap: 16px; }
+.fs-top > .pb-pr { flex: 0 1 260px; }
+.fs-sw { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); cursor: pointer; }
+.fs-sw .set-toggle, .fs-row .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
+.fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 236px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
+.fs-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px 0 2px;
+  border-radius: var(--f-rad-s, 0); color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
+.fs-row > b { font-weight: 800; letter-spacing: .8px; }
+.fs-row > span:nth-of-type(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t9); color: var(--txl); }
+.fs-row s, .fs-chip:not([data-on]):not([data-fixed]) { text-decoration: line-through; opacity: .7; }
+.fs-row > em { font-style: normal; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
+.fs-row > svg { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 13%, transparent); box-shadow: inset 2px 0 0 var(--acc); }
+.fs-row[data-off] > :not(:first-child) { opacity: .42; }
+.fs-detail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 18px; font-size: var(--t10); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
+.fs-dh > svg { align-self: center; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.fs-dh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: .2px; font-size: var(--t9); color: var(--txl); }
+.fs-chips { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.fs-chips > i { font-style: normal; font-size: var(--t9); color: var(--txg, var(--txl)); }
+.fs-chip { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 4px; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
+  color: var(--txl); font-size: var(--t8); font-weight: 700; letter-spacing: .5px; }
+.fs-chip[data-on] { color: var(--txh); border-color: color-mix(in srgb, var(--acc) 42%, transparent); background: color-mix(in oklab, var(--acc) 10%, transparent); }
+.fs-chip[data-fixed] { color: var(--txb); border-color: transparent; background: color-mix(in oklab, var(--acc) 26%, transparent); }
+.fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
    card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under
    480px the kinds are glyphs (the lit one keeps its ink, AUTO goes), the facts go, the preset is

@@ -1686,6 +1686,23 @@ const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>
   return r;
 };
 
+/** GET /local/flows (bridge/flowsettings.py state): every flow setting, bridge-wide. */
+export interface FlowStep { step: string; fixed: boolean; on: boolean; ponytail_off: boolean }
+export interface FlowRunDefaults { model: string; mode: string; effort: string; trim: string }
+export interface FlowSetting {
+  id: string; on: boolean; next: boolean; tickets?: boolean; approve?: boolean;
+  run: FlowRunDefaults; run_saved: boolean; steps: FlowStep[];
+}
+export interface FlowSettings {
+  on: boolean; autopick: boolean; smartzone: boolean; guess: "auto" | "hand"; nokind: "claude" | "typed";
+  presets: boolean; flows: FlowSetting[];
+}
+export type FlowChange =
+  | { key: string; value: boolean | string }
+  | { flow: string; key: string; value: boolean | string; step?: string }
+  | { reset: string }
+  | { presets: Record<string, Record<string, string>> };
+
 export interface RunBody {
   prompt: string;
   images: string[];
@@ -2145,6 +2162,10 @@ export const api = {
       method: "POST",
       body: { key, enabled },
     }),
+  /** The FLOWS sheet's settings, kept on the bridge (bridge/flowsettings.py). */
+  flows: () => req<FlowSettings>("/local/flows"),
+  /** One change, `{reset: flow}` or `{presets}`; answers with every setting. */
+  setFlows: (body: FlowChange) => req<FlowSettings>("/local/flows", { method: "POST", body }),
   /** The Savers and their trials. A bridge older than them answers 404 "not found". */
   savers: () => req<{ savers: Saver[] }>("/local/savers"),
   setSaver: (key: string, mode: Saver["mode"]) =>

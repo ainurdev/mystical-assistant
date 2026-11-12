@@ -66,6 +66,13 @@ console.assert(nextKind("ask", 1) === null, "ask wraps to plain");
 console.assert(nextKind(null, 1) === "design", "plain wraps to design");
 console.assert(nextKind("design", -1) === null, "design back to plain");
 console.assert(nextKind(null, -1) === "ask", "plain back to ask");
+// Flows switched off in the FLOWS sheet leave Tab's cycle, and are never guessed.
+console.assert(nextKind("design", 1, ["build"]) === "fix", "an off flow is skipped");
+console.assert(nextKind(null, -1, ["ask", "ship"]) === "fix", "back past two off flows");
+console.assert(nextKind("build", 1, ["build"]) === "fix", "a lit flow switched off still moves on");
+console.assert(guessKind("merge this into master locally then clean up", { ...START, off: ["ship"] }) !== "ship", "SHIP off: not guessed");
+console.assert(guessKind("add avatar with its border to inbox header as well", { ...START, off: ["build"] }) === null, "BUILD off: nothing");
+console.assert(guessKind("why does the build fail on CI?", { ...START, off: ["fix"] }) === "ask", "FIX off: the next rule fits");
 console.assert(nextKind("build", 1) === "fix", "forward");
 
 // --- presetFor ---------------------------------------------------------------
