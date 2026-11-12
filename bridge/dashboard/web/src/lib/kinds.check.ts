@@ -124,7 +124,7 @@ console.assert(lastCheckOf([]) === null, "no turns, null");
 
 // --- kindFacts ---------------------------------------------------------------
 const git = (p: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...p });
-const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, pack: false, askPerm: "plan", ...p });
+const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, askPerm: "plan", ...p });
 const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => (f.lead ?? "") + f.text).join(" · ");
 console.assert(text("ship", ctx({ git: git({ ahead: 3 }) })) === "3 to push · 0 to pull", "ship push/pull");
 const dirty = kindFacts("ship", ctx({ git: git({ dirty: 2, ahead: 1 }) }));
@@ -144,10 +144,10 @@ console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claud
 console.assert(same(kindFacts("ask", ctx()), [{ text: "read-only, changes nothing" }]), "ask, no map");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits", mapBuiltAt: Date.now() / 1000 })).map((f) => f.text), ["map built just now"]), "ask: no read-only claim once its mode edits");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits" })), []), "ask: editing mode, no map, no facts");
-console.assert(text("build", ctx({ pack: true })) === "grill, then build here · working tree clean", "build with pack");
-console.assert(text("build", ctx({ git: git({ dirty: 2 }) })) === "builds here · 2 uncommitted", "build without pack");
-console.assert(text("build", ctx({ git: null })) === "builds here", "build: git unknown, no tree fact");
-console.assert(text("build", ctx({ git: git({ is_repo: false }), pack: true })) === "grill, then build here", "build: not a repo, no tree fact");
+console.assert(text("build", ctx()) === "working tree clean", "build: the steps lead (lib/flowsteps), the tree follows");
+console.assert(text("build", ctx({ git: git({ dirty: 2 }) })) === "2 uncommitted", "build: dirty tree");
+console.assert(text("build", ctx({ git: null })) === "", "build: git unknown, no tree fact");
+console.assert(text("build", ctx({ git: git({ is_repo: false }) })) === "", "build: not a repo, no tree fact");
 const mapped = text("ask", ctx({ mapBuiltAt: Date.now() / 1000 - 7300 }));
 console.assert(mapped === "read-only, changes nothing · map built 2h ago", `ask with a map: ${mapped}`);
 const fresh = text("ask", ctx({ mapBuiltAt: Date.now() / 1000 }));

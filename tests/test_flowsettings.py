@@ -139,8 +139,9 @@ def test_bad_changes_are_refused(api, body):
 def test_ponytails_steps_are_marked_while_ponytail_is_off(api):
     aifeatures.set_enabled("ponytail", False)
     st = api.get()
-    marked = {(f["id"], s["step"]) for f in st["flows"] for s in f["steps"] if s["ponytail_off"]}
-    assert marked == {("build", "audit"), ("refactor", "audit"), ("fix", "review")}   # BUILD's review may be the council's
+    marked = {(f["id"], s["step"], s["ponytail_off"]) for f in st["flows"] for s in f["steps"] if s["ponytail_off"]}
+    assert marked == {("build", "audit", True), ("refactor", "audit", True), ("fix", "review", True),
+                      ("build", "review", "here"), ("design", "review", "here")}   # after MERGE it is the council's
     aifeatures.set_enabled("ponytail", True)
     assert not any(s["ponytail_off"] for f in api.get()["flows"] for s in f["steps"])
 

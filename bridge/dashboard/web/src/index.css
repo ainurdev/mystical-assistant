@@ -5210,9 +5210,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-chips { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fs-chips > i { font-style: normal; font-size: var(--t9); color: var(--txg, var(--txl)); }
 .fs-chip { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 4px; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
-  color: var(--txl); font-size: var(--t8); font-weight: 700; letter-spacing: .5px; }
+  color: var(--txl); font-family: inherit; font-size: var(--t8); font-weight: 700; letter-spacing: .5px; background: none; cursor: pointer; }
+.fs-chip:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
+.fs-chip[data-pony][data-on] { border-style: dashed; }   /* PONYTAIL off: no REVIEW after a here build */
 .fs-chip[data-on] { color: var(--txh); border-color: color-mix(in srgb, var(--acc) 42%, transparent); background: color-mix(in oklab, var(--acc) 10%, transparent); }
-.fs-chip[data-fixed] { color: var(--txb); border-color: transparent; background: color-mix(in oklab, var(--acc) 26%, transparent); }
+.fs-chip[data-fixed] { color: var(--txb); border-color: transparent; background: color-mix(in oklab, var(--acc) 26%, transparent); cursor: default; }
 .fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
    card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under

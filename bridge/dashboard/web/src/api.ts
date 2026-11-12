@@ -1687,7 +1687,9 @@ const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>
 };
 
 /** GET /local/flows (bridge/flowsettings.py state): every flow setting, bridge-wide. */
-export interface FlowStep { step: string; fixed: boolean; on: boolean; ponytail_off: boolean }
+/** ponytail_off: PONYTAIL is off and the step is its plugin's, so it won't run; "here": only in a here
+ *  build (DESIGN's and BUILD's REVIEW, the council's after tickets merge). */
+export interface FlowStep { step: string; fixed: boolean; on: boolean; ponytail_off: boolean | "here" }
 export interface FlowRunDefaults { model: string; mode: string; effort: string; trim: string }
 export interface FlowSetting {
   id: string; on: boolean; next: boolean; tickets?: boolean; approve?: boolean;

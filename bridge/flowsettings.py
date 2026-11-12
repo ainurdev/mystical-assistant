@@ -187,15 +187,17 @@ def presets_taken() -> bool:
 
 
 def state() -> dict:
-    """Every setting, and each flow's steps as they stand, for GET /local/flows. A step
-    that is the ponytail plugin's in every form of its flow is marked while PONYTAIL is
-    off (it won't run then)."""
+    """Every setting, and each flow's steps as they stand, for GET /local/flows. While
+    PONYTAIL is off a step that is the ponytail plugin's won't run: marked True when it
+    is in every form of its flow (AUDIT, FIX's REVIEW), "here" when only in the here
+    build's (DESIGN's and BUILD's REVIEW: after tickets merge it is the council's)."""
     from bridge import paths   # local import: paths reads these settings
     pony_off = not aifeatures.enabled("ponytail")
 
-    def pony(fl: str, st: str) -> bool:
-        skills = [s.skill or "" for p in (fl, fl + "-here") for s in paths.PATHS.get(p, ()) if s.station == st]
-        return bool(skills) and all(sk.startswith("ponytail-") for sk in skills)
+    def pony(fl: str, st: str) -> "bool | str":
+        p = [(s.skill or "").startswith("ponytail-")
+             for f in (fl, fl + "-here") for s in paths.PATHS.get(f, ()) if s.station == st]
+        return bool(p) and all(p) or ("here" if any(p) else False)
     with _lock:
         c = _load_locked()
         out = {k: c[k] for k in CHOICES}
