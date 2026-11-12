@@ -162,8 +162,8 @@ def test_the_councils_review_off_is_passed_over_and_settled_when_merge_ends(sess
     assert "review" not in _steps(sess)
     paths.set_path(sess, "build", "x", "claude", done=built)
     paths.advance(sess, "merge")
-    _off("build", "review")                                           # reached, then switched off: passed over
-    assert paths.get(sess)["next"]["station"] == "retro"
+    _off("build", "review")                                           # reached, then switched off: settled, it stays
+    assert paths.get(sess)["next"]["station"] == "review"
 
 
 def test_ponytail_off_marks_audit_and_a_here_builds_review_in_the_sheet(monkeypatch):
