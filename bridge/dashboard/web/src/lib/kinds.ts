@@ -1,4 +1,4 @@
-/** The five kinds of work the prompt box guesses (DESIGN, BUILD, FIX, SHIP, ASK), as data and rules.
+/** The six kinds of work the prompt box guesses (DESIGN, BUILD, REFACTOR, FIX, SHIP, ASK), as data and rules.
  *
  *  Why the rules are local: the guess runs on every keystroke, so it has to be instant and free.
  *  A model call or a POST per keystroke would lag, cost, and send half-typed text off the machine.
@@ -21,8 +21,8 @@ import type { Turn } from "../chat.ts";
 import { checksLine } from "./receipt.ts";
 import { ago, hhmm } from "./surfaces.ts";
 
-export type KindId = "design" | "build" | "fix" | "ship" | "ask";
-export const KIND_ORDER: KindId[] = ["design", "build", "fix", "ship", "ask"];
+export type KindId = "design" | "build" | "refactor" | "fix" | "ship" | "ask";
+export const KIND_ORDER: KindId[] = ["design", "build", "refactor", "fix", "ship", "ask"];
 
 export interface KindRun { model: string; perm: string; effort: string; ponytail: string }
 export interface Kind { id: KindId; name: string; verb: string; starter: string; preset: KindRun }
@@ -36,6 +36,7 @@ const k = (id: KindId, name: string, verb: string, starter: string, model: strin
 export const KINDS: Record<KindId, Kind> = {
   design: k("design", "DESIGN", "Design", "screens · states · what must not change", OPUS, "", "high"),
   build: k("build", "BUILD", "Build", "what · why · done when", OPUS, "bypassPermissions", "max"),
+  refactor: k("refactor", "REFACTOR", "Refactor", "what's tangled · what must not change", OPUS, "bypassPermissions", "max"),
   fix: k("fix", "FIX", "Fix", "expected · got · where — paste a screenshot", OPUS, "bypassPermissions", "max"),
   ship: k("ship", "SHIP", "Ship", "merge this branch, then clean up", OPUS, "bypassPermissions", "high"),
   ask: k("ask", "ASK", "Ask", "ask about the code, a branch, a decision…", SONNET, "", "medium"),
@@ -44,7 +45,7 @@ export const KINDS: Record<KindId, Kind> = {
 /** null = guessing; "plain" = the user dropped the kind. */
 export type KindPick = KindId | "plain" | null;
 
-/** `start`: the session has had no turn yet. DESIGN and FIX are guessed only there: mid-thread
+/** `start`: the session has had no turn yet. DESIGN, REFACTOR and FIX are guessed only there: mid-thread
  *  "the list jumps" or "i mean UI" is a follow-up, and a guessed /design-first or diagnosing
  *  prefix would hijack it (a tap or Tab still picks them). `design`: Claude Design is installed. */
 export interface GuessCtx { start: boolean; design: boolean;
@@ -62,8 +63,10 @@ const FIX = /(?<![\w./-])(bug|broken|not working|doesn'?t work|fail(s|ed|ing)?|e
 // DESIGN wants a design phrase, not a UI word: "theme is bad", "the design tab", "explain design" were bug reports,
 // build asks and questions that went out as /design-first. A design prompt it misses costs one tap.
 const DESIGN = /(^(design|mock ?up)|(?<![\w./-])(re-?design|reimagine|restyle|mock-?ups?|look and feel)|\b(better|cooler|nicer|proper|bad|weird)( and \w+)? (ui|ux|layout))(?![\w/-]|\.\w)/;
+// REFACTOR's words are fixed (flow-gear spec): an opener, or "tangled"/"spaghetti" anywhere, guarded like FIX's.
+const REFACTOR = /^(refactor|untangle|restructure|reorgani[sz]e|decouple|dedupe|deduplicate)\b|(?<![\w./-])(tangled|spaghetti)(?![\w/-]|\.\w)/;
 const ASK = /\?$|^(what|why|how|where|which|who|when|explain|tell me|show me|give me|list)\b/;
-const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|refactor|improve|extend|write|put|let'?s|lets|we need|i want)\b/;
+const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook up|change|update|rename|move|remove|delete|replace|improve|extend|write|put|let'?s|lets|we need|i want)\b/;
 
 export function guessKind(text: string, c: GuessCtx): KindId | null {
   const t = text.trim().toLowerCase();
@@ -72,6 +75,7 @@ export function guessKind(text: string, c: GuessCtx): KindId | null {
   if (on("ship") && SHIP.test(t)) return "ship";
   if (c.start && on("fix") && FIX.test(t)) return "fix";
   if (on("ask") && ASK.test(t)) return "ask";
+  if (c.start && on("refactor") && REFACTOR.test(t)) return "refactor";
   if (c.start && c.design && on("design") && DESIGN.test(t)) return "design";
   return on("build") && BUILD.test(t) ? "build" : null;
 }
@@ -126,6 +130,7 @@ export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; 
 export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
 
 const uncommitted = (g: GitStatus | null): Fact | null => g?.dirty ? { text: `${g.dirty} uncommitted`, tone: "warn" } : null;
+const tree = (g: GitStatus | null): Fact[] => g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [];
 
 export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
   const g = c.git;
@@ -133,7 +138,9 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
     case "design":
       return c.designLinked === null ? [] : [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
     case "build":
-      return g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [];   // the steps lead the facts (lib/flowsteps)
+      return tree(g);   // the steps lead the facts (lib/flowsteps)
+    case "refactor":
+      return tree(g);
     case "fix":
       return c.lastCheck
         ? [{ lead: "last check ", text: c.lastCheck.line, tone: c.lastCheck.ok ? undefined : "err" }, ...(c.lastCheck.at ? [{ text: hhmm(c.lastCheck.at) }] : [])]
