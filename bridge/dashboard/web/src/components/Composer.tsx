@@ -1888,7 +1888,7 @@ export function Composer({
             return (
               <div key={f.id} className="fs-row" role="option" aria-selected={f.id === sheetPick.id} data-sel={f.id === sheetPick.id ? "" : undefined}
                 data-off={f.on ? undefined : ""} tabIndex={0} onClick={() => setSheetFlow(f.id)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheetFlow(f.id); } }}>
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSheetFlow(f.id); } }}>
                 <span onClick={(e) => e.stopPropagation()}>
                   <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
                 </span>
