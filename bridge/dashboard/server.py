@@ -1619,8 +1619,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/local/flow/set":
                 p = str(body.get("path") or "")
                 try:
-                    paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
-                                   str(body.get("skill") or "") or None)
+                    p = paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
+                                       str(body.get("skill") or "") or None)["path"]   # an old name: its flow's
                 except ValueError as e:   # an HTTP error would reach Claude as "Could not reach the bridge"
                     return self._json({"text": f"Path not recorded: {e}."})
                 return self._json({"text": f"Path recorded: {p}."})

@@ -51,6 +51,22 @@ export const PATHS: Record<string, [string, string | null, "you" | "auto"][]> = 
     ["build", null, "auto"], ["merge", null, "auto"], ["retro", "retro", "auto"]],
 };
 
+// The six flows (bridge/paths.py FLOWS), and the names an older bridge's records carry.
+const FLOWS = ["design", "build", "refactor", "fix", "ship", "ask"];
+const OLD: Record<string, string> = { feature: "build", bug: "fix" };
+
+/** The flow a path is: a here or tickets variant ("build-here") is its flow; null for a one-skill path. */
+export function flowOf(path: string): string | null {
+  const id = path.split("-")[0];
+  const f = OLD[id] ?? id;
+  return FLOWS.includes(f) ? f : null;
+}
+
+/** What FLOW names a path: its flow's name ("BUILD"), or a one-skill path's skill. */
+export function flowLabel(flow: Pick<Flow, "path" | "skill">): string {
+  return flowOf(flow.path)?.toUpperCase() ?? flow.skill ?? "one skill";
+}
+
 /** Whether the path can move with no turn in this session, so FLOW has to read it again by
     itself: tickets build or merge, a council runs, or a REVIEW is about to start. A council that
     stopped stays put until you act on it, and a held step starts nothing (`nextstep` is AUTO NEXT STEPS). */
@@ -109,7 +125,8 @@ export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null =
     land. null with no path, with nothing left to start, or on a bridge older than the chip
     (it can't hold a switch per session). */
 export interface FlowChip {
-  label: string;
+  /** The flow's name ("BUILD"), or a one-skill path's skill; `flow` is its id, null for one skill. */
+  label: string; flow: string | null;
   step: number; total: number;
   next: { key: string; label: string };
   /** auto: starts by itself · held: AUTO is held here · you: a step you start */
@@ -130,7 +147,7 @@ export function flowChip(flow: Flow | null, v: FlowView, ai: Partial<Record<Flow
   const away = v.stations.some((s) => s.state === "now") && !v.nowTurn;
   const opt = (k: FlowOption, on: boolean) => ({ on, here: k in own, global: !!ai[k] });
   return {
-    label: flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),
+    label: flowLabel(flow), flow: flowOf(flow.path),
     step: v.step, total: v.total,
     next: { key: rest[0].key, label: rest[0].label },
     mark: rest[0].who === "you" ? "you" : flow.auto ? "auto" : "held",

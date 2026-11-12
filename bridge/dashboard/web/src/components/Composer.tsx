@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
@@ -74,6 +74,8 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 // The prompt box's kinds of work (lib/kinds), each with its glyph on the rail.
 const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
+// The FLOW chip's glyph per flow (lib/flowview flowOf): the row's, and REFACTOR's before it joins the row.
+const FLOW_ICON: Record<string, LucideIcon> = { ...KIND_ICON, refactor: Blocks };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
@@ -1284,12 +1286,14 @@ export function Composer({
   const fchip = shelled && !onAgent && onFlow ? flowChip ?? null : null;
   const [flowAt, setFlowAt] = useState(0);
   useEffect(() => { if (!fchip) setOpenDrop((d) => (d === "flow" ? "" : d)); }, [fchip]);
+  const FlowGlyph = FLOW_ICON[fchip?.flow ?? ""] ?? RouteIcon;
   const flowBtn = fchip && (
     <div className="pb-flow-w">
       <button type="button" className="pb-flow" data-mark={fchip.mark} aria-haspopup="dialog" aria-expanded={openDrop === "flow"}
         title={`FLOW · ${fchip.label}, step ${fchip.step} of ${fchip.total}. Next: ${fchip.next.label.toUpperCase()}, ${MARK_WORDS[fchip.mark]}.`}
         onClick={(e) => { setFlowAt((e.currentTarget.parentElement as HTMLElement).offsetLeft); setOpenDrop((d) => (d === "flow" ? "" : "flow")); }}>
-        <RouteIcon size={12} strokeWidth={2} aria-hidden />
+        <FlowGlyph size={12} strokeWidth={2} aria-hidden />
+        {fchip.flow && <span className="pb-flow-n">{fchip.label} ·</span>}
         <b>{fchip.next.label.toUpperCase()}</b>
         {fchip.mark === "auto" ? <Zap size={11} strokeWidth={2.4} aria-hidden /> : <Hand size={11} strokeWidth={2.2} aria-hidden />}
       </button>

@@ -19,6 +19,14 @@ decided once (pack_for) and kept, like the Rivendell note. Unattended runs (Rive
 jobs, device runs) never get the pack or the plugin: nobody is there to answer a
 grill or press a step button, so a path would stall.
 
+The paths are the six Flows (ADR 0003): DESIGN, BUILD, REFACTOR, FIX, SHIP and ASK,
+plus `one` for a single skill and for ticket and merge sessions. DESIGN and BUILD each
+come as tickets (the flow's id) or here (`-here`), and the grill's StepDone choice
+picks, as feature and feature-here did. DESIGN's design step is /design-first, told
+that building is the next step's job, so its Approve is a StepDone. SHIP and ASK are
+one step, the turn itself, which ends at its clean end like a PONYTAIL step. Records
+and SetPath calls from before carry the old names (OLD); they load as their flow.
+
 Flow state (which path a session is on, which stations are done) is a small JSON
 file, flows.json, beside the bridge DB, written atomically like waits.json. It is
 a file rather than a table so a path survives a bridge restart without a schema
@@ -37,7 +45,7 @@ move the session into a worktree of its own first (flowbranch).
 REVIEW and AUDIT are the ponytail plugin's /ponytail-review and /ponytail-audit, so they
 are stations only while the PONYTAIL switch is on (its plugin is told `off` otherwise,
 and the prompt box hides the same two verbs). REVIEW reads the work this path did and
-follows the work that makes a diff (build here, a bug's fix); AUDIT reads the whole repo
+follows the work that makes a diff (build here, FIX's fix); AUDIT reads the whole repo
 and ends the paths that change a lot of it. On ticket paths each ticket reviews its own
 diff before its StepDone (tickets._prompt), and the REVIEW after MERGE is the council's
 (below): the same word, told apart by its skill (None there). Ponytail's skills know nothing of
@@ -67,6 +75,7 @@ import re
 import sys
 import threading
 import time
+from typing import NamedTuple
 
 from bridge import aifeatures, config, store
 
@@ -79,8 +88,9 @@ def on() -> bool:
 PACK_TEXT = "\n".join([
     "Skill paths. Matt Pocock's skills are loaded as /mattpocock-skills:<name>.",
     "On a prompt with no /command in front, before anything else (a tool call, a file read, a question), decide whether one of these paths fits it:",
-    "- feature: a new feature or idea, however small (a new command, function, option or behaviour). Start grill-with-docs.",
-    "- bug: something broken, failing, empty or slow, or a question why something is broken. Start diagnosing-bugs.",
+    "- design: a change to how something looks (a screen, a layout, a component) to draw before it is built. Start grill-with-docs.",
+    "- build: a new feature or idea, however small (a new command, function, option or behaviour). Start grill-with-docs.",
+    "- fix: something broken, failing, empty or slow, or a question why something is broken. Start diagnosing-bugs.",
     "- refactor: tangled code or architecture work. Start improve-codebase-architecture.",
     "- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a same-named skill from another plugin.",
     "If one fits, your first tool call is the Skill tool with that skill (mattpocock-skills:<name>). Don't explore, diagnose, build or ask questions before it: the skill does that. Don't wait for SetPath either: it is a deferred tool, so once the skill has started, load it with ToolSearch and call it with the path and a one-line why.",
@@ -108,21 +118,48 @@ def pack_for(claude_session_id: str) -> str:
     return PACK_TEXT if _pack_ok[claude_session_id] else ""
 
 
-# station, skill (None = no skill: the agent just does it), "you" | "auto"
-PATHS: dict[str, list[tuple[str, "str | None", str]]] = {
-    "feature": [("grill", "grill-with-docs", "you"), ("spec", "to-spec", "auto"),
-                ("tickets", "to-tickets", "you"), ("build", None, "auto"),
-                ("merge", None, "auto"), ("review", None, "auto"), ("retro", "retro", "auto"),
-                ("audit", "ponytail-audit", "auto")],
-    "feature-here": [("grill", "grill-with-docs", "you"), ("build-here", "implement", "auto"),
-                     ("review", "ponytail-review", "auto"), ("retro", "retro", "auto"),
-                     ("audit", "ponytail-audit", "auto")],
-    "bug": [("diagnose", "diagnosing-bugs", "auto"), ("review", "ponytail-review", "auto"),   # diagnosing-bugs fixes and tests
-            ("retro", "retro", "auto")],
-    "refactor": [("improve", "improve-codebase-architecture", "you"), ("tickets", "to-tickets", "you"),
-                 ("build", None, "auto"), ("merge", None, "auto"), ("review", None, "auto"),
-                 ("retro", "retro", "auto"), ("audit", "ponytail-audit", "auto")],
+class Step(NamedTuple):
+    station: str
+    skill: "str | None"   # None = no skill: the agent just does it, or the turn itself (SHIP, ASK)
+    who: str              # "you": it waits on you · "auto": it runs by itself
+    fixed: bool           # always runs (the step its flow exists for), else it can be switched off
+    own: bool = False     # runs in sessions of its own (a ticket set's BUILD and MERGE)
+
+
+def _tickets(fixed: bool) -> list:
+    """build as tickets: spec › tickets › build › merge, then the council's REVIEW."""
+    return [Step("spec", "to-spec", "auto", fixed), Step("tickets", "to-tickets", "you", fixed),
+            Step("build", None, "auto", fixed, True), Step("merge", None, "auto", fixed, True),
+            Step("review", None, "auto", False)]
+
+
+_GRILL, _RETRO = Step("grill", "grill-with-docs", "you", False), Step("retro", "retro", "auto", False)
+_AUDIT = Step("audit", "ponytail-audit", "auto", False)
+_REVIEW = Step("review", "ponytail-review", "auto", False)
+_DESIGN = Step("design", "design-first", "you", True)   # ends at Approve: StepDone, not a build
+
+
+def _here(fixed: bool) -> Step:
+    return Step("build-here", "implement", "auto", fixed)
+
+
+# The six Flows (ADR 0003), plus `one` (a single skill, ticket and merge sessions) outside
+# this table. DESIGN and BUILD come as tickets (the id) or here (-here): the grill's
+# StepDone choice picks, tickets without one. FLOWS names the six for the user.
+PATHS: dict[str, list[Step]] = {
+    "design": [_GRILL, _DESIGN, *_tickets(False), _RETRO],
+    "design-here": [_GRILL, _DESIGN, _here(False), _REVIEW, _RETRO],
+    "build": [_GRILL, *_tickets(True), _RETRO, _AUDIT],
+    "build-here": [_GRILL, _here(True), _REVIEW, _RETRO, _AUDIT],
+    "refactor": [Step("improve", "improve-codebase-architecture", "you", True), *_tickets(True)[1:],
+                 _RETRO, _AUDIT],
+    "fix": [Step("diagnose", "diagnosing-bugs", "auto", True), _REVIEW, _RETRO],   # diagnosing-bugs fixes and tests
+    "ship": [Step("ship", None, "auto", True)],      # the turn itself: merge, check, clean up
+    "ask": [Step("answer", None, "auto", True)],     # the turn itself
 }
+FLOWS = ("design", "build", "refactor", "fix", "ship", "ask")
+# Names from before the six flows: records still carry them, and runs in flight across the update.
+OLD = {"feature": "build", "feature-here": "build-here", "bug": "fix"}
 # Stations that are the ponytail plugin's (PONYTAIL on only): the argument each one's turn gets.
 _PONY = {"review": "the work on this path: this branch's commits since it left the default branch, "
                    "and anything uncommitted",
@@ -152,6 +189,7 @@ def _load_locked() -> None:
         if "overrides" not in f:
             f["overrides"] = {} if f.pop("auto", True) else {"nextstep": False}
         f.setdefault("skipped", [])
+        f["path"] = OLD.get(f["path"], f["path"])
 
 
 def _save_locked() -> None:
@@ -174,7 +212,7 @@ def _stations(flow: dict) -> list:
         return [(flow["skill"], flow["skill"], "auto")]
     pony = aifeatures.enabled("ponytail")
     # Ponytail's steps only while PONYTAIL is on; the council's REVIEW has no skill.
-    sts = [st for st in PATHS[flow["path"]] if pony or not (st[1] or "").startswith("ponytail-")]
+    sts = [st[:3] for st in PATHS[flow["path"]] if pony or not (st.skill or "").startswith("ponytail-")]
     if not any(st == ("review", None, "auto") for st in sts):
         return sts
     # Whether the council's REVIEW follows is settled when MERGE ends: until then the switches
@@ -196,6 +234,7 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
              done: "list | None" = None) -> dict:
     """`done`: stations already behind it (a path joined mid-way)."""
     skill = (skill or "").removeprefix("mattpocock-skills:") or None   # the pack's full name, as PACK_TEXT asks
+    path = OLD.get(path, path)
     if path != "one" and path not in PATHS:
         raise ValueError(f"unknown path {path!r}")
     if path == "one" and not skill:
@@ -366,8 +405,8 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
         cur = named or next((st for st in stations if st not in f["done"]), None)
         if cur is None:
             return None
-        if choice == "here" and f["path"] == "feature" and cur == "grill":
-            f["path"] = "feature-here"
+        if choice == "here" and f["path"] in ("build", "design") and cur == "grill":
+            f["path"] += "-here"
             stations = [st[0] for st in _stations(f)]
         f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"]]
         rest = [st for st in stations if st not in f["done"]]
@@ -379,8 +418,8 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
 
 # Where a typed /x joins: a path's first station, or one a user may enter mid-path.
 # Anything else, /tdd and /implement among them, is a one-step path of its own.
-_JOINS = {"grill-with-docs": "feature", "to-spec": "feature", "to-tickets": "feature",
-          "diagnosing-bugs": "bug", "improve-codebase-architecture": "refactor"}
+_JOINS = {"grill-with-docs": "build", "to-spec": "build", "to-tickets": "build",
+          "diagnosing-bugs": "fix", "improve-codebase-architecture": "refactor"}
 # Used inside whatever step runs (route.py offers it mid-grill): never a path of its own.
 _INSIDE = {"wait-what"}
 
@@ -390,7 +429,7 @@ def path_for_command(skill: str) -> tuple:
     path = _JOINS.get(skill)
     if not path:
         return "one", skill
-    return path, next(st for st, sk, _ in PATHS[path] if sk == skill)
+    return path, next(st.station for st in PATHS[path] if st.skill == skill)
 
 
 # --- starting the next step ---------------------------------------------------
@@ -400,7 +439,12 @@ def path_for_command(skill: str) -> tuple:
 # its own once every ticket is done (tickets.start_merge, then advance); with
 # TICKETS off both are the user's. A REVIEW with no skill is the council's, in that
 # merge session (tickets.start_review); one with a skill is ponytail's turn here.
-_AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit"}
+_AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit", "design"}
+# The design step's turn: /design-first draws, and the build step builds (it may be switched off).
+DESIGN_TEXT = ("/design-first the change the grill above settled. This is a flow's design step: building "
+               "is the next step's job, so when the user approves, call StepDone instead of implementing.")
+# The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
+_TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000
 
 
@@ -418,7 +462,7 @@ def on_turn_start(session_id: str, prompt: str) -> None:
             return
         from bridge import route
         path, station = path_for_command(skill)
-        before = [] if path == "one" else [st for st, _, _ in PATHS[path]]
+        before = [] if path == "one" else [st.station for st in PATHS[path]]
         set_path(session_id, path, route._WHY.get(skill) or f"started with /{skill}", "rule",  # noqa: SLF001
                  skill if path == "one" else None, before[:before.index(station)] if before else [])
     except Exception as e:  # noqa: BLE001 — never break a turn start
@@ -440,7 +484,8 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
         return False
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
-    texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY else f"/mattpocock-skills:{skill}"]
+    texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY
+             else DESIGN_TEXT if station == "design" else f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
@@ -527,11 +572,14 @@ def continue_after_turn(job, effort=None) -> bool:
 
 def _end_pony_step(session_id: str, turn_id: str) -> None:
     """A turn sent as /ponytail-review or /ponytail-audit ended cleanly: when the path is
-    on that step, it's done (ponytail's skills never call StepDone; one that does moves once)."""
-    m = _PONY_RE.match(_carried(session_id, turn_id)[1] or "")
-    f = get(session_id) if m else None
+    on that step, it's done (ponytail's skills never call StepDone; one that does moves once).
+    So is a SHIP or ASK step at any clean end: that step is the turn itself."""
+    f = get(session_id)
     rest = [(st, sk) for st, sk, _ in f["stations"] if st not in f["done"]] if f else []
-    if rest and rest[0] == (m.group(1), f"ponytail-{m.group(1)}"):   # not the council's REVIEW
+    if not rest:
+        return
+    m = _PONY_RE.match(_carried(session_id, turn_id)[1] or "")
+    if rest[0][0] in _TURN_STEPS or m and rest[0] == (m.group(1), f"ponytail-{m.group(1)}"):   # not the council's REVIEW
         step_done(session_id, turn_id)
 
 

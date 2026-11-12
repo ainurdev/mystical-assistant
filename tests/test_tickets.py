@@ -176,7 +176,7 @@ class BuiltSet:
         _git(self.main, "add", "-A")
         _git(self.main, "commit", "-qm", "init")
         self.flow = store.create_session(1, "proj", cwd=self.main)["id"]
-        paths.set_path(self.flow, "feature", "new", "claude")
+        paths.set_path(self.flow, "build", "new", "claude")
         self.folder = os.path.join(self.main, ".mystical", "tickets", "x")
         os.makedirs(self.folder)
         with open(os.path.join(self.main, ".mystical", ".gitignore"), "w") as f:
@@ -758,7 +758,7 @@ def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkey
     assert s.build() == ""
     real = time.time
     monkeypatch.setattr(time, "time", lambda: real() + 100)
-    paths.set_path(s.flow, "bug", "a new crash", "claude")      # the flow session moved on
+    paths.set_path(s.flow, "fix", "a new crash", "claude")      # the flow session moved on
     monkeypatch.setattr(time, "time", real)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
     s.finish("01")                                 # BUILD done, merge starts
@@ -768,7 +768,7 @@ def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkey
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "merged"
     f = paths.get(s.flow)
-    assert (f["path"], f["done"], f["next"]) == ("bug", [], None) and not q
+    assert (f["path"], f["done"], f["next"]) == ("fix", [], None) and not q
 
 
 def test_a_merge_step_done_with_a_branch_left_out_is_fix(make_set, monkeypatch):
@@ -969,7 +969,7 @@ def test_a_rebuilt_set_stays_with_the_path_it_was_written_for(make_set, monkeypa
     at = s.state["flow_at"]
     real = time.time
     monkeypatch.setattr(time, "time", lambda: real() + 100)
-    paths.set_path(s.flow, "bug", "a new crash", "claude")      # the flow session moved on
+    paths.set_path(s.flow, "fix", "a new crash", "claude")      # the flow session moved on
     monkeypatch.setattr(time, "time", real)
     _write(s.folder, "05", "T05")
     assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "Building."}
