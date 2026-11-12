@@ -77,7 +77,7 @@ import threading
 import time
 from typing import NamedTuple
 
-from bridge import aifeatures, config, store
+from bridge import aifeatures, config, flowsettings, store
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "mattpocock")
 
@@ -202,9 +202,18 @@ def _save_locked() -> None:
         print(f"[paths] persist failed: {e}", file=sys.stderr)
 
 
-def review_on() -> bool:
-    """REVIEW AFTER MERGE. Only a ticket set's MERGE leads to it, so TICKETS must be on too."""
-    return aifeatures.enabled("ticketruns") and aifeatures.enabled("mergereview")
+def flow_id(path: "str | None") -> str:
+    """The flow whose settings (NEXT, TICKETS, REVIEW) a path reads: its own, BUILD's for
+    a one-skill run or no path (ticket and merge sessions, a typed /command)."""
+    fl = (path or "").removesuffix("-here")
+    return fl if fl in flowsettings.FLOWS else "build"
+
+
+def review_on(path: "str | None") -> bool:
+    """Whether the council's REVIEW follows MERGE: the flow's TICKETS (only a ticket set's
+    MERGE leads to it) and its REVIEW step."""
+    fl = flow_id(path)
+    return flowsettings.tickets(fl) and flowsettings.steps(fl).get("review", False)
 
 
 # The flow's STEPS chip each station stands for (flowsettings.STEPS): DESIGN's and BUILD's
@@ -215,9 +224,8 @@ _CHIP = {"spec": "build", "tickets": "build", "merge": "build", "build-here": "b
 def _on(flow: dict, station: str) -> bool:
     """Whether the flow's STEPS chips let `station` run. Read on every call, so a chip
     switched off applies to running flows from their next step."""
-    if flow["path"] == "one":
-        return True
-    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if flow["path"] == "one" or station == "review" and "merge" in flow["done"]:
+        return True   # REVIEW is settled when MERGE ends (_all), whatever its chip says after
     chips = flowsettings.steps(flow["path"].removesuffix("-here"))
     chip = _CHIP.get(station, station)
     if chip == "review" and not chips.get("build", True):
@@ -263,14 +271,16 @@ def _all(flow: dict) -> list:
     if "merge" in flow["done"]:
         has = "review" in flow["done"] or (flow.get("next") or {}).get("station") == "review"
     else:
-        has = review_on()
+        has = review_on(flow["path"])
     return sts if has else [st for st in sts if st[0] != "review"]
 
 
 def _eff(flow: dict, key: str) -> bool:
-    """A switch as this session has it: its own override, else SETTINGS'."""
+    """A switch as this session has it: its own override, else SETTINGS' (NEXT is its flow's)."""
     own = flow.get("overrides") or {}
-    return bool(own[key]) if key in own else aifeatures.enabled(key)
+    if key in own:
+        return bool(own[key])
+    return flowsettings.next_auto(flow_id(flow["path"])) if key == "nextstep" else aifeatures.enabled(key)
 
 
 def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
@@ -576,7 +586,7 @@ def on_turn_start(session_id: str, prompt: str) -> None:
 
 def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     flow = get(session_id)
-    if flow and station == "build" and aifeatures.enabled("ticketruns"):
+    if flow and station == "build" and flowsettings.tickets(flow_id(flow["path"])):
         from bridge import tickets  # local import: tickets imports paths
         return not tickets.start_build(session_id)
     if not flow or station not in _AUTO_START:

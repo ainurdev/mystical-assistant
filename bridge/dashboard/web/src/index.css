@@ -5216,6 +5216,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-chip[data-on] { color: var(--txh); border-color: color-mix(in srgb, var(--acc) 42%, transparent); background: color-mix(in oklab, var(--acc) 10%, transparent); }
 .fs-chip[data-fixed] { color: var(--txb); border-color: transparent; background: color-mix(in oklab, var(--acc) 26%, transparent); cursor: default; }
 .fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
+.fs-detail .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }   /* NEXT: ⚡ beside AUTO */
+.fs-tk { display: flex; align-items: center; gap: 14px; height: 20px; }
+/* SETTINGS ▸ AI MANAGEMENT: the same sheet, in the page rather than hung over the prompt card */
+.pb-pp.fs-sheet[data-inline] { position: static; z-index: auto; width: 100%; max-width: 680px; box-shadow: none; animation: none; }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
    card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under
    480px the kinds are glyphs (the lit one keeps its ink, AUTO goes), the facts go, the preset is

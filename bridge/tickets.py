@@ -75,7 +75,7 @@ and the step after MERGE is REVIEW or RETRO. One lock serializes tick and every 
 turn ends arrive on several threads at once; it is held across git and session
 creation, which takes seconds only when tickets are starting.
 
-APPROVE BEFORE BUILD (`ticketapprove`) is the user's choice to trust the skill or not:
+APPROVE BEFORE BUILD (a tickets flow's own, read from the flow that started the set) is the user's choice to trust the skill or not:
 /to-tickets is meant to quiz the user before it ends, but can skip it. On, start_build
 parses and validates the tickets, saves the set as `approve` and stops: no feature
 branch, carry or worktree. approve() (the Approve & build tap) does the rest. boot()
@@ -85,7 +85,7 @@ Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's stat
 and how its session's last turn ended (StepDone or not, the last tool, the last words). It
 reads the registry, set.json and the DB read-only: run it first, before any query by hand.
 
-REVIEW AFTER MERGE (`mergereview`): once the set is merged, the flow's next step is
+REVIEW (the flow's REVIEW step, with its TICKETS on): once the set is merged, the flow's next step is
 REVIEW, and it starts the council in the merge session, on the feature checkout
 (start_review). The merge session fixes what the council finds; the council's pass
 ends the step and RETRO starts (council_passed); a council that stops moves nothing,
@@ -102,7 +102,7 @@ import threading
 import time
 from typing import NamedTuple
 
-from bridge import aifeatures, config, flowbranch, git, limits, notices, paths, profiles, state, store
+from bridge import aifeatures, config, flowbranch, flowsettings, git, limits, notices, paths, profiles, state, store
 
 
 class TicketError(ValueError):
@@ -294,8 +294,9 @@ _STATUS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 _build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
 
 
-def _on() -> bool:
-    return paths.on() and aifeatures.enabled("ticketruns")
+def _on(st: dict) -> bool:
+    """SKILL PATHS on, and TICKETS on in the flow that started the set (BUILD's for a set from before)."""
+    return paths.on() and flowsettings.tickets(st.get("flow") or "build")
 
 
 def _flow_folder(flow_session_id: str, co: str, since: float) -> str:
@@ -342,14 +343,15 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
     with _build:
         old = load(folder)
         was = old.get("status")
-        wait = aifeatures.enabled("ticketapprove")   # APPROVE BEFORE BUILD: stop at the breakdown
+        fl = old.get("flow") or paths.flow_id(flow.get("path"))   # the flow that started the set, kept on a rebuild
+        wait = flowsettings.approve(fl)   # APPROVE BEFORE BUILD: stop at the breakdown
         if was not in (None, "stopped", "approve"):
             return f"{slug} is already {was}"
         # flow_at: the flow's path this set builds for, kept when a stopped set builds again;
         # a new path in that session since is left alone (mark_done, advance)
         at = old.get("flow_at", flow.get("at"))
         since = at or 0
-        st = {"slug": slug, "parent_session": flow_session_id, "flow_at": at, "checkout": co,
+        st = {"slug": slug, "parent_session": flow_session_id, "flow": fl, "flow_at": at, "checkout": co,
               "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
         try:
             tks = parse_dir(folder)
@@ -548,9 +550,9 @@ def tick(folder: str) -> None:
     every one is done. Only while SKILL PATHS and TICKETS are on: switched off,
     running tickets finish and nothing new starts."""
     with _build:
-        if state.shutting_down or not _on():
-            return
         st = load(folder)
+        if state.shutting_down or not _on(st):
+            return
         tks = st.get("tickets") or {}
         if st.get("status") != "building" or not tks:
             return
@@ -1082,7 +1084,7 @@ def _boot_merge(folder: str) -> None:
             return
         sid = st.get("merge_session")
         if not sid:
-            if _on():
+            if _on(st):
                 save(folder, {**st, "status": "building"})   # start_merge opens one only from building
                 start_merge(folder)
             return

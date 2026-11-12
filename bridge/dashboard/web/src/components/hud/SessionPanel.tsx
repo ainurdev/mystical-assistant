@@ -4,7 +4,8 @@ import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
-import { flowLabel, flowView, movesElsewhere, startedBy, type Flow, type FlowSet } from "../../lib/flowview";
+import { flowGlobals, flowLabel, flowView, movesElsewhere, startedBy, type Flow, type FlowSet } from "../../lib/flowview";
+import { useFlowSettings } from "../../lib/flowsettings";
 import { FLOW_EVENT, flowChanged } from "../../lib/useFlow";
 import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
@@ -219,7 +220,8 @@ export function SessionPanel({
   const [reread, setReread] = useState(0);   // bumped to read the path again, after a Skip
   // Tickets build and merge, and the council reviews, in sessions of their own: no turn
   // here says when they move.
-  const busy = running || movesElsewhere(flow, set, !!ai.nextstep);
+  const glob = flowGlobals(flow, useFlowSettings(), ai);   // the session's flow's NEXT and TICKETS
+  const busy = running || movesElsewhere(flow, set, glob.nextstep);
   // Read on a turn's edges, and every few seconds while one runs: a path moves
   // mid-turn (StepDone), and the window grows request by request.
   useEffect(() => {
@@ -251,7 +253,7 @@ export function SessionPanel({
     const id = setInterval(() => setNow(Date.now() / 1000), 1000);
     return () => clearInterval(id);
   }, [running]);
-  const v = useMemo(() => flowView(flow, turns, set, !!ai.ticketruns), [flow, turns, set, ai.ticketruns]);
+  const v = useMemo(() => flowView(flow, turns, set, glob.ticketruns), [flow, turns, set, glob.ticketruns]);
   const path: Path | null = flow && v.stations.length ? { ...v, at: flow.at } : null;
 
   const rowsRef = useRef(rows);

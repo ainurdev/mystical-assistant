@@ -19,7 +19,7 @@ import { toolAccent } from "../../lib/tools";
 
 import { ago, projectName, setClock12, useClock12, windowLabels } from "../../lib/surfaces";
 import { fmtOffset, matchZones, placeName, zoneCity, zoneList, zoneTime } from "../../lib/almanac";
-import { ExtrasFold, SkillsPage } from "./SkillsFold";
+import { ExtrasFold, FLOW_SWITCHES, SkillsPage } from "./SkillsFold";
 import { saverFoot } from "../../lib/savers";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
@@ -3455,8 +3455,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
     auth: mcp.servers.filter((x) => !x.ok && x.status.trim().startsWith("!")).length,
     bad: mcp.servers.filter((x) => !x.ok && !x.status.trim().startsWith("!")).length,
   };
-  const extrasAll = Object.keys(aiFeatures).length;
-  const extrasOn = Object.values(aiFeatures).filter(Boolean).length;
+  const extrasAll = Object.keys(aiFeatures).filter((k) => !FLOW_SWITCHES.has(k)).length;   // the FLOWS sheet's aren't extras' rows
+  const extrasOn = Object.entries(aiFeatures).filter(([k, on]) => on && !FLOW_SWITCHES.has(k)).length;
   // Council's Codex "Sign in": opens the Accounts fold on its AGENTS list.
   const [goto, setGoto] = useState<string | null>(null);
   // Opened on one login (the composer's PROFILE menu, on a profile whose login
@@ -3720,7 +3720,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         </>}>
         {accountsBody}
       </AimFold>
-      <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS"]} openSec={openSec}
+      <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS", "FLOWS"]} openSec={openSec}
         count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
         hint="model calls the bridge makes on top of your turns">
         <ExtrasFold />

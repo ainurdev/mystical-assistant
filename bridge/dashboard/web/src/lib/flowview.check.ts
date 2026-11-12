@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/flowview.check.ts
-import { flowChip, flowLabel, flowOf, flowView, movesElsewhere, runningFlow, startedBy, type Flow } from "./flowview.ts";
+import { flowChip, flowGlobals, flowLabel, flowOf, flowView, movesElsewhere, runningFlow, startedBy, type Flow } from "./flowview.ts";
 import type { Turn } from "../chat.ts";
 
 const flow = (path: string, done: string[]): Flow => ({ path, by: "claude", why: "new feature", auto: true, at: 1, done, next: null });
@@ -133,4 +133,15 @@ console.assert(fixChip.label === "FIX" && fixChip.flow === "fix" && fixChip.next
   console.assert(startedBy("you", "you picked BUILD") === "you picked BUILD", "a tap says who");
   console.assert(startedBy("guess", "the box guessed BUILD") === "the box guessed BUILD", "a guess says who");
   console.assert(startedBy("claude", "new feature") === "Claude picked it: new feature", "Claude's pick");
+}
+
+// flow-gear 05: the chip's SETTINGS values are the session's flow's NEXT and TICKETS, BUILD's with none
+{
+  const cfg = { flows: [{ id: "build", next: true, tickets: true }, { id: "refactor", next: false, tickets: false }, { id: "fix", next: false }] };
+  const g = (path: string | null) => flowGlobals(path ? { path } as Flow : null, cfg, { nextstep: false, ticketruns: false });
+  console.assert(JSON.stringify(g("refactor")) === JSON.stringify({ nextstep: false, ticketruns: false }), "REFACTOR's own");
+  console.assert(g("build-here").nextstep && g("build-here").ticketruns, "a here build is BUILD's");
+  console.assert(g("one").nextstep && g(null).ticketruns, "a one-skill run, or no flow: BUILD's");
+  console.assert(!g("fix").ticketruns, "FIX builds no tickets");
+  console.assert(flowGlobals(null, null, { nextstep: true }).nextstep, "an older bridge: the old switches");
 }
