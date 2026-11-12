@@ -2115,6 +2115,11 @@ export const api = {
       body: { project, ...(branch ? { branch } : {}) },
     }),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
+  /** What the composer completes from disk (bridge/complete.py). */
+  completePaths: (project: string | null, prefix: string) =>
+    req<{ paths: { text: string; name: string; dir: boolean }[] }>(`/local/complete/paths?project=${encodeURIComponent(project ?? "")}&prefix=${encodeURIComponent(prefix)}`),
+  completeSymbols: (project: string) =>
+    req<{ symbols: { name: string; file: string }[] }>(`/local/complete/symbols?project=${encodeURIComponent(project)}`),
   filesTree: (project: string, branch?: string) =>
     req<{ files: string[]; ignored?: string[] }>(
       `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,

@@ -11,7 +11,8 @@ import { drawnAtCaret, dropSpot, fillSpot, holdSpot, imageEmbeds, openEmbed, set
 import { minimalChange } from "../lib/embeds";
 import { registerEditor } from "../lib/editorctx";
 import { leadCommand } from "../lib/slash";
-import { rank, wordAt } from "../lib/completewords";
+import { isDiskPath, rank, wordAt, type Symbol } from "../lib/completewords";
+import { startCompletion } from "@codemirror/autocomplete";
 import type { SlashCommand } from "../api";
 import { EmbedPopover } from "./EmbedPopover";
 import { useMultiOn } from "../lib/multistore";
@@ -167,6 +168,10 @@ type Props = {
   /** What to offer completing a word (lib/completewords): the chat's words, newest first, and its files. */
   words?: string[];
   files?: string[];
+  /** Names the project's code defines (bridge/complete.py). */
+  symbols?: Symbol[];
+  /** Entries on disk for a path being typed: ~/, /, ./ or ../ (bridge/complete.py). */
+  diskPaths?: (prefix: string) => Promise<{ text: string; name: string; dir: boolean }[]>;
 };
 
 export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function MarkdownInput(props, ref) {
@@ -210,15 +215,34 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
           })),
           newlineKeys,
           autocompletion({
-            override: [(ctx: CompletionContext): CompletionResult | null => {
+            override: [async (ctx: CompletionContext): Promise<CompletionResult | null> => {
               const line = ctx.state.doc.lineAt(ctx.pos);
               const at = wordAt(line.text, ctx.pos - line.from);
               if (!at) return null;
-              const opts = rank(at.word, cb.current.words ?? [], cb.current.files ?? []);
+              const from = line.from + at.from;
+              if (isDiskPath(at.word) && cb.current.diskPaths) {
+                // A short pause first, so a fast typist doesn't send a request per letter.
+                await new Promise((r) => setTimeout(r, 90));
+                if (ctx.aborted) return null;
+                const found = await cb.current.diskPaths(at.word).catch(() => []);
+                if (ctx.aborted || !found.length) return null;
+                return {
+                  from, filter: false,
+                  options: found.map((p, i) => ({
+                    label: p.text, displayLabel: p.name, type: p.dir ? "folder" : "file", boost: -i,
+                    // A folder goes on to its own entries.
+                    apply: (view: EditorView, _c: unknown, a: number, b: number) => {
+                      view.dispatch({ changes: { from: a, to: b, insert: p.text }, selection: { anchor: a + p.text.length } });
+                      if (p.dir) setTimeout(() => startCompletion(view), 0);
+                    },
+                  })),
+                };
+              }
+              const opts = rank(at.word, cb.current.words ?? [], cb.current.files ?? [], 40, cb.current.symbols ?? []);
               if (!opts.length) return null;
               return {
-                from: line.from + at.from, filter: false,
-                options: opts.map((o) => ({ label: o.label, detail: o.detail, type: o.kind === "file" ? "file" : "variable", boost: o.boost })),
+                from, filter: false,
+                options: opts.map((o) => ({ label: o.label, detail: o.detail, type: o.kind === "file" ? "file" : o.kind === "symbol" ? "function" : "variable", boost: o.boost })),
               };
             }],
             // Above the line, as the composer sits at the window's foot, and the composer's own lists open upward too.

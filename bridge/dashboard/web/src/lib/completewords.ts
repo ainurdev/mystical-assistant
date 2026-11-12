@@ -42,19 +42,24 @@ export function codeWords(turns: Turnish[], limit = 3000, last = 80): string[] {
 /** The word being typed: what ends at the caret, and where it starts. Null where another list owns
  *  the keys: an `@mention`, or a `/command` at the start of a line. */
 export function wordAt(line: string, col: number): { from: number; word: string } | null {
-  const m = /[\w$./-]+$/.exec(line.slice(0, col));
+  const m = /[\w$.~/-]+$/.exec(line.slice(0, col));
   if (!m) return null;
   const from = col - m[0].length;
   if (line[from - 1] === "@") return null;
-  if (m[0].startsWith("/") && !line.slice(0, from).trim()) return null;
+  // A leading /word is a command; a leading /path/ with a second slash is a path.
+  if (m[0].startsWith("/") && !line.slice(0, from).trim() && !m[0].slice(1).includes("/")) return null;
   return { from, word: m[0] };
 }
 
-export type Option = { label: string; detail?: string; kind: "word" | "file"; boost: number };
+/** A path on disk rather than in the project: from home, the root, or here and up. */
+export const isDiskPath = (word: string) => /^(~\/|\/|\.\.?\/)/.test(word);
+
+export type Option = { label: string; detail?: string; kind: "word" | "file" | "symbol"; boost: number };
+export type Symbol = { name: string; file: string };
 
 /** What's offered for a word, best first: words the chat used, then files, both by prefix (any case),
  *  then by the word appearing inside. Never the word itself. */
-export function rank(word: string, words: string[], files: string[], max = 40): Option[] {
+export function rank(word: string, words: string[], files: string[], max = 40, symbols: Symbol[] = []): Option[] {
   const q = word.toLowerCase();
   if (q.length < 3) return [];
   const out: Option[] = [];
@@ -63,6 +68,18 @@ export function rank(word: string, words: string[], files: string[], max = 40): 
   const pathy = word.includes("/");
   const score = (s: string) => (s.toLowerCase().startsWith(q) ? 2 : s.toLowerCase().includes(q) ? 1 : 0);
   words.forEach((w, i) => { const s = score(w); if (s) add({ label: w, kind: "word", boost: s * 100 - Math.min(i, 99) }); });
+  if (!pathy) {
+    let n = 0;
+    for (const s of symbols) {
+      const sc = score(s.name);
+      if (!sc) continue;
+      add({ label: s.name, detail: s.file.slice(s.file.lastIndexOf("/") + 1), kind: "symbol", boost: sc * 100 - 30 });
+      if (++n > 300) break;
+    }
+  }
+  // A path completes to folders too, which the file list only implies.
+  const dirs = pathy ? [...new Set(files.flatMap((f) => f.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/") + "/")))] : [];
+  for (const d of dirs) if (score(d)) add({ label: d, kind: "file", boost: score(d) * 100 - 40 });
   for (const f of files) {
     const base = f.slice(f.lastIndexOf("/") + 1);
     const label = pathy ? f : base;

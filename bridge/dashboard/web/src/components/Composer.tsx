@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound, Users } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
@@ -671,6 +671,17 @@ export function Composer({
       .catch(() => { if (live) setTree([]); });
     return () => { live = false; };
   }, [project]);
+
+  // Names the project's code defines, for completing as you type (bridge/complete.py). Once per
+  // project: the bridge caches them until the repo's index changes.
+  const [symbols, setSymbols] = useState<{ name: string; file: string }[]>([]);
+  useEffect(() => {
+    if (!project) { setSymbols([]); return; }
+    let live = true;
+    void api.completeSymbols(project).then((r) => { if (live) setSymbols(r.symbols); }).catch(() => { if (live) setSymbols([]); });
+    return () => { live = false; };
+  }, [project]);
+  const diskPaths = useCallback((prefix: string) => api.completePaths(project ?? null, prefix).then((r) => r.paths), [project]);
 
   const [caret, setCaret] = useState(0);
   const [mentionPick, setMentionPick] = useState(0);
@@ -1376,6 +1387,8 @@ export function Composer({
       commands={noList ? [] : cmds}
       words={words}
       files={tree}
+      symbols={symbols}
+      diskPaths={diskPaths}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       onKeyDown={(e) => {

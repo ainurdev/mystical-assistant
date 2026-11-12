@@ -687,6 +687,13 @@ class Handler(BaseHTTPRequestHandler):
             # working-tree diff: target the selected branch's worktree
             cwd = _worktree_cwd(project, (qs.get("branch", [""])[0] or "").strip())
             return self._json({"path": fpath, "diff": git.diff(cwd, fpath)})
+        if path in ("/local/complete/paths", "/local/complete/symbols"):
+            # The composer's completions from disk (bridge/complete.py): this dashboard only.
+            from bridge import complete
+            cwd = _worktree_cwd(qs.get("project", [None])[0], (qs.get("branch", [""])[0] or "").strip())
+            if path.endswith("/symbols"):
+                return self._json({"symbols": complete.symbols(cwd) if cwd else []})
+            return self._json({"paths": complete.paths(cwd or os.path.expanduser("~"), qs.get("prefix", [""])[0])})
         if path == "/local/files/tree":
             # EDITOR tab: the whole working tree of the selected branch/worktree
             cwd = _worktree_cwd(qs.get("project", [None])[0],
