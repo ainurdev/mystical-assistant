@@ -3312,6 +3312,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # Not for a turn a restart killed: its item must reach the persisted
             # queue still "running", which the reload re-queues (PreviewQueue._load).
             if not restart_killed:
+                paths.end_turn_step(job)   # first: the prompt the queue starts next may start another flow
                 try:
                     from bridge import queue_manager
                     queue_manager.notify_job_done(

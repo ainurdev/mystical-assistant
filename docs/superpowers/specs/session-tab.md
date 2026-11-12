@@ -44,7 +44,11 @@ they stood, the ones done and skipped, and the step it stopped on (null when it 
 flow that ends records `end` when its last step is done). `restore()` takes back the one a refused
 run pushed. GET /local/flow sends them as `past`, oldest first, beside the current flow. A turn
 belongs to the latest flow begun by its end, unless that flow had ended before the turn began;
-turns before the first flow, or after one ended, count only in TIME. The last 50 flows are kept.
+turns before the first flow, or after one ended, count only in TIME. The bridge keeps `at` and a
+turn's length in whole seconds, so a flow begun in a turn's last second (a prompt queued behind
+it) isn't that turn's (lib/meter flowOfRows). A turn's own SHIP, ASK, review or audit step ends
+before the queue starts the prompt behind it (paths.end_turn_step), so a flow that prompt starts
+finds the one before it finished. The last 50 flows are kept.
 
 Stored settings move over: a `rightTab`, `rightOrder` or `rightHidden` naming `turns` or `flow`
 names `session` (lib/theme.ts), and an old `hud:rail` link to either opens SESSION.

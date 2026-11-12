@@ -8,7 +8,7 @@ import os
 import pytest
 
 from bridge import aifeatures, flowsettings, paths, store
-from test_paths import _end, _git, _job, _turn, fake_queue, repo_session, sess, state_dir  # noqa: F401 — fixtures
+from test_paths import _end, _git, _job, _turn, _turn_end, fake_queue, repo_session, sess, state_dir  # noqa: F401 — fixtures
 
 store.init()
 
@@ -69,7 +69,7 @@ def test_the_step_underway_finishes_when_its_chip_goes_off(sess, fake_queue):  #
     paths.continue_after_turn(_end(sess, t))
     r = _turn(sess, fake_queue.items[-1]["prompt"])                   # /ponytail-review runs
     _off("fix", "review")                                             # switched off mid-turn
-    assert paths.continue_after_turn(_end(sess, r)) is True
+    assert _turn_end(_end(sess, r)) is True
     assert paths.get(sess)["done"] == ["diagnose", "review"]
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
 

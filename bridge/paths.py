@@ -790,7 +790,6 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted or (job.runtime or "").startswith("acp:"):
             return False
-        _end_pony_step(sid, job.id)
         flow = get(sid)
         nxt = flow and flow["next"]
         if not nxt or nxt.get("started") or nxt["turn_id"] != _carried(sid, job.id)[0]:
@@ -799,6 +798,19 @@ def continue_after_turn(job, effort=None) -> bool:
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[paths] continue failed: {e}", file=sys.stderr)
         return False
+
+
+def end_turn_step(job) -> None:
+    """Called once per finished turn, before the queue starts the prompt behind it: a clean end
+    ends the turn's own step (_end_pony_step). Not later, in continue_after_turn: that prompt may
+    start another flow, which would replace this one stopped on a step it finished, and whose own
+    SHIP or ASK step this turn's end would then take."""
+    try:
+        sid = job.store_session_id
+        if sid and job.status == "done" and not job.interrupted and not (job.runtime or "").startswith("acp:"):
+            _end_pony_step(sid, job.id)
+    except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
+        print(f"[paths] step end failed: {e}", file=sys.stderr)
 
 
 def _end_pony_step(session_id: str, turn_id: str) -> None:

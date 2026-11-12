@@ -1341,6 +1341,19 @@ def test_a_failed_turn_hands_the_queue_its_error(monkeypatch):
     assert (it["status"], it["error"]) == ("failed", "tests red")
 
 
+def test_a_turn_ends_its_flow_step_before_the_queue_starts_the_next(monkeypatch):
+    """The prompt queued behind it may start another flow (paths.end_turn_step)."""
+    from bridge import paths
+    q, sid = _queued_turn(monkeypatch, "p-step-queue")
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)   # no ping thread
+    seen = []
+    monkeypatch.setattr(paths, "end_turn_step", lambda job: seen.append("step"))
+    done = q.notify_job_done
+    monkeypatch.setattr(q, "notify_job_done", lambda *a, **kw: (seen.append("queue"), done(*a, **kw)))
+    runner._run_streaming(runner.Job("j1", 555, sid), "p", [], config.BASE_PATH)
+    assert seen == ["step", "queue"]
+
+
 # --- restart-safe runs: a stop signal is the restart, not a crash -------------
 
 def _child(rc, stderr=""):
