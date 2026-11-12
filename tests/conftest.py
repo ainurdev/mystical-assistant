@@ -179,11 +179,11 @@ from bridge import flowsettings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _own_flow_settings(monkeypatch, tmp_path):
-    """FLOWS settings of each test's own. They seed once from the switches as the first
-    read finds them and keep that, so a shared file would hand one test's seed to the next."""
-    monkeypatch.setattr(flowsettings, "_file", lambda: str(tmp_path / "conftest-flow-settings.json"))
-    flowsettings._cache.clear()
+def _fresh_flow_settings(monkeypatch, tmp_path):
+    """Every test's flow settings seed afresh from the switches as that test set them
+    (the engine and the scheduler read a flow's NEXT and TICKETS, seeded once from them)."""
+    monkeypatch.setattr(flowsettings, "_file", lambda: str(tmp_path / "conftest-flow_settings.json"))
+    monkeypatch.setattr(flowsettings, "_cache", {})
 
 
 # An empty selection is not a failure. pytest counts session.testscollected AFTER

@@ -158,7 +158,15 @@ from bridge import aifeatures, config, flowsettings, git, notices, paths, runner
 
 
 def _git(cwd, *a):
+    assert cwd, "no checkout: git -C '' would act on the repo the tests run in"
     return subprocess.run(["git", "-C", cwd, *a], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def _reseed():
+    """Flow settings read afresh from the switches, as on an install that never set them."""
+    flowsettings._cache.clear()   # noqa: SLF001
+    if os.path.exists(flowsettings._file()):   # noqa: SLF001
+        os.remove(flowsettings._file())   # noqa: SLF001
 
 
 class BuiltSet:
@@ -208,7 +216,9 @@ class BuiltSet:
         monkeypatch.setattr(tickets, "_path", lambda: os.path.join(root, "ticketsets.json"))
 
     def switch(self, on):
+        """The old switches, which an untouched install's flows seed from on their next read."""
         self.mp.setattr(aifeatures, "enabled", lambda key: key in ({"router", "ticketruns"} | ({"ticketapprove"} if on == "approve" else set()) if on else {"router"}))
+        _reseed()
 
     def build(self):
         return tickets.start_build(self.flow)
@@ -252,6 +262,7 @@ class BuiltSet:
 
     def commit(self, n, file=None):
         wt = self.state["tickets"][n]["worktree"]
+        assert wt, f"ticket {n} never started: no worktree to commit in"   # "" would commit in the cwd
         with open(os.path.join(wt, file or f"{n}.txt"), "w") as f:
             f.write(n)
         _git(wt, "add", "-A")
@@ -417,6 +428,7 @@ def test_ticket_step_done_starts_no_flow_step(make_set, monkeypatch):
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(kw))
     paths.step_done(s.sid("01"), store.latest_turn_id(s.sid("01")))
     monkeypatch.setattr(aifeatures, "enabled", lambda key: True)       # AUTO NEXT STEPS too
+    _reseed()
     assert paths.continue_after_turn(s.job("01")) is False and not q
 
 
@@ -497,6 +509,7 @@ def test_a_merged_set_goes_on_to_retro_and_builds_nothing_again(make_set, monkey
     q = []
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(kw["prompt"]))
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    _reseed()
     starts = len(s.starts)
     assert paths.advance(s.flow, "merge") is True
     assert q == ["/mattpocock-skills:retro"] and len(s.starts) == starts
@@ -592,6 +605,7 @@ def test_merge_done_enqueues_retro_in_flow_session(make_set, monkeypatch):
     q = []
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"])))
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    _reseed()
     sid = s.state["merge_session"]
     assert tickets.after_turn(_merge_job(s)) is True       # ended without StepDone: still merging, told to carry on
     assert s.state["status"] == "merging" and [x[0] for x in q] == [sid]
@@ -761,6 +775,7 @@ def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkey
     paths.set_path(s.flow, "fix", "a new crash", "claude")      # the flow session moved on
     monkeypatch.setattr(time, "time", real)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    _reseed()
     s.finish("01")                                 # BUILD done, merge starts
     _merge_for_real(s)
     sid = s.state["merge_session"]
@@ -1296,6 +1311,7 @@ def test_a_ticket_prompt_says_where_the_whole_set_stands(make_set):
 def test_with_ponytail_on_a_ticket_reviews_its_diff_before_step_done(make_set, monkeypatch):
     s = make_set({"01": None}, build=False)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ticketruns", "ponytail"))
+    _reseed()
     assert s.build() == ""
     assert (
         "When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
@@ -1339,7 +1355,7 @@ def reviewed(make_set, monkeypatch):
     monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
     monkeypatch.setattr(waits, "target_ended", lambda job: None)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
-    flowsettings.change({"flow": "build", "key": "step", "step": "review", "value": True})   # seeded before the switch came on
+    _reseed()
 
     def merged():
         _merge_for_real(s)
@@ -1421,6 +1437,7 @@ def test_a_merge_session_still_busy_gets_its_review_when_that_turn_ends(reviewed
 def test_a_council_run_after_the_flow_moved_on_starts_no_second_retro(reviewed, monkeypatch):
     r = reviewed
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))   # the switch is off
+    _reseed()
     r.merged()
     assert r.queued == [(r.s.flow, "/mattpocock-skills:retro")] and r.council.get(r.merge) is None
     r.said = [_said(9.5)]
@@ -1460,7 +1477,7 @@ def test_tickets_merged_by_hand_pass_the_review_over(make_set, monkeypatch):
     for t in ("a", "b", "c"):
         paths.step_done(s.flow, t)
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns", "mergereview"))
-    flowsettings.change({"flow": "build", "key": "step", "step": "review", "value": True})   # seeded before the switch came on
+    _reseed()
     assert s.build().startswith("cycle:")
     paths.step_done(s.flow, "built-by-hand")
     assert paths.step_done(s.flow, "merged-by-hand") == "review"

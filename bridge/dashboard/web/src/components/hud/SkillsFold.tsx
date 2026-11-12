@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { setAiFeatures, useGraphify } from "../../lib/ai";
 import { PluginsView } from "./PluginsView";
+import { FlowsSheet } from "../Composer";
 
 /* The extras and the skills — two kinds of card, one card grammar.
 
@@ -87,6 +88,9 @@ function Toggle({ on, busy, onClick, label }: { on: boolean; busy?: boolean; onC
 
 // ---- the extras --------------------------------------------------------------
 
+/** SKILL PATHS and its six switches: set in the FLOWS sheet now, shown below the grid in their place. */
+export const FLOW_SWITCHES = new Set(["router", "autopick", "nextstep", "ticketruns", "ticketapprove", "mergereview", "smartzone"]);
+
 function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
   f: AiFeature; busy: boolean; err?: string; open: boolean; onToggle: () => void; onInfo: () => void;
   install?: { busy: boolean; run: () => void };   // the tool it runs on is missing: Install stands where the switch was
@@ -164,7 +168,7 @@ function ExtrasGrid() {
     const p = f.parent ? all.find((x) => x.key === f.parent) : undefined;
     return !f.parent || (!!p && p.enabled && visible(p));
   };
-  const shown = all.filter(visible);
+  const shown = all.filter((f) => visible(f) && !FLOW_SWITCHES.has(f.key));
   const on = shown.filter((f) => f.enabled && !missing(f)).length;
   return (
     <>
@@ -185,6 +189,11 @@ function ExtrasGrid() {
           ))}
         </div>
       )}
+      <div className="aim-sub" data-sec="FLOWS">
+        <b>Flows</b>
+        <span className="aim-hint">the prompt box's flows and their steps — the gear beside them opens the same sheet</span>
+      </div>
+      <FlowsSheet inline />
     </>
   );
 }
