@@ -1282,3 +1282,20 @@ def test_a_ticket_that_names_another_repo_builds_only_there(make_set, monkeypatc
     paths.step_done(sid, store.latest_turn_id(sid))
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "merged"
+
+
+def test_a_ticket_or_merge_session_is_never_a_projects_latest_session():
+    # A plain bot message carries on the project's latest session: while a set builds, that was a ticket's.
+    chat = 777_201
+    mine = store.create_session(chat, "/")
+    store.create_session(chat, "/", origin="ticket")          # newer
+    store.create_session(chat, "/", origin="ticket-merge")    # newest
+    assert store.latest_session(chat, "/")["id"] == mine["id"]
+    assert store.ensure_session(chat, "/")["id"] == mine["id"]
+
+
+def test_a_ticket_prompt_says_where_the_whole_set_stands(make_set):
+    s = make_set({"01": None, "02": "#01"})
+    assert f"{tickets._STATUS} x." in s.starts[0]["prompt"]
+    s.finish("01")
+    assert f"{tickets._STATUS} x." in s.starts[-1]["prompt"]

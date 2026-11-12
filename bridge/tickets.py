@@ -282,6 +282,8 @@ def summary_for(session_id: str):
 # --- the scheduler: BUILD, MAX_RUNNING at once ---------------------------------
 
 MAX_RUNNING = 3
+# The bridge's own copy: a ticket's worktree can predate it, or be another repo's.
+_STATUS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "ticket-status")
 _build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
 
 
@@ -402,14 +404,16 @@ _FOREGROUND = " Run tests in the foreground: a background command dies when your
 
 def _elsewhere(st: dict, n: str) -> str:
     """Where a ticket's work in another repo goes: a worktree at the place
-    worktree_path_for gives that repo, on this ticket's branch name, so _repos finds it."""
+    worktree_path_for gives that repo, on this ticket's branch name, so _repos finds it.
+    Also the lines every ticket prompt ends with."""
     t = st["tickets"][n]
     base = ", ".join(st["tickets"][b]["branch"] for b in t["blocked_by"])
     return (f"\nIf the ticket needs another repo, work there in a worktree at "
             f"{os.path.join(config.BASE_PATH, '.worktrees', '<repo>', git.slug(t['branch']))} on branch {t['branch']} "
             + (f"(start from {base} there if it exists, else from that repo's up-to-date main)"
                if base else "(start from that repo's up-to-date main)")
-            + " and commit there too." + _FOREGROUND)
+            + " and commit there too." + _FOREGROUND
+            + f" For where the whole set stands, run {_STATUS} {st['slug']}.")
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:

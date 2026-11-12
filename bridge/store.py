@@ -422,9 +422,10 @@ def latest_session(chat_id: int, project: str) -> dict | None:
     # Unfiltered: resuming a project must find its latest session even if idle.
     # Except a teammate's device run or a session a teammate sent: they are read
     # only (bridge/device_view.py, bridge/team.py), so the bot and a run sent with
-    # no session never carry one on.
+    # no session never carry one on. Nor a ticket set's sessions (bridge/tickets.py):
+    # each works one ticket or the merge, and while a set built your messages landed there.
     rows = list_sessions(chat_id, project, max_age_secs=None)
-    return next((r for r in rows if not (r["origin"] or "").startswith(("device-run:", "team:"))), None)
+    return next((r for r in rows if not (r["origin"] or "").startswith(("device-run:", "team:", "ticket"))), None)
 
 
 def list_sessions_all(chat_id: int, include_archived: bool = False,
