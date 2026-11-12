@@ -664,7 +664,12 @@ class Handler(BaseHTTPRequestHandler):
             rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                     or browser.project_exists(r["project"]) or _rehome_moved(r)
                     or browser.gone(r["project"])]
-            return self._json({"sessions": [_session_brief(s) for s in rows]})
+            # Ticket and merge sessions name their super session; that one carries its set's count.
+            from bridge import tickets
+            of, counts = tickets.owners()
+            return self._json({"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
+                                             **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
+                                            for b in map(_session_brief, rows)]})
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).
         if path.startswith("/local/sessions/") and path.endswith("/breakdown"):

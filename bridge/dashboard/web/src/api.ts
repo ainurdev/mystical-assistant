@@ -104,6 +104,9 @@ export interface SessionBrief {
   helpers?: HelperConfig;
   parent_session?: string | null;
   member?: MemberInfo | null;
+  // A ticket or merge session names its super session (tickets.owners); that one carries its set's count.
+  ticket_of?: string;
+  tickets?: { done: number; total: number; status: string };
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the

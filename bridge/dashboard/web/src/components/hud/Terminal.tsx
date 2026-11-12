@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
+import { TicketLive } from "./TicketMap";
 import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
@@ -226,8 +227,12 @@ export function Terminal({
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
   run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
-  limit, logins, status, savers, gridMain,
+  limit, logins, status, savers, gridMain, statusAll, superTitle,
 }: {
+  /** Every session's status: LIVE colours a super session's ticket tiles from it. */
+  statusAll?: Map<string, SessionStatus>;
+  /** The open ticket session's super session, for its way back. */
+  superTitle?: string;
   /** The chat behind the open session, as the grid's main card: null with no multi-agent chats. */
   gridMain?: MainCard | null;
   view: View;
@@ -338,6 +343,17 @@ export function Terminal({
     window.addEventListener("hud:open-session", toChat);
     return () => window.removeEventListener("hud:open-session", toChat);
   }, []);
+  // A super session (the flow that made a ticket set) opens on LIVE while its tickets
+  // build or merge; CHAT | LIVE switches, and the strip's Live button asks for LIVE.
+  const tset = selected?.tickets;
+  const [livePick, setLivePick] = useState<{ id: string; on: boolean } | null>(null);
+  const tkLive = isChat && !grid && !!tset && !!sessionId
+    && (livePick?.id === sessionId ? livePick.on : tset.status === "building" || tset.status === "merging");
+  useEffect(() => {
+    const on = (e: Event) => { if (sessionId) setLivePick({ id: sessionId, on: !!(e as CustomEvent).detail }); };
+    window.addEventListener("hud:tickets-live", on);
+    return () => window.removeEventListener("hud:tickets-live", on);
+  }, [sessionId]);
   const empty = isChat && turns.length === 0;
   // COMPACT: the nameplate leaves the header for the composer's control row,
   // and the header shrinks to a pill of readouts on the right.
@@ -472,7 +488,7 @@ export function Terminal({
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
   const body = (
-    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || tkLive ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
       {dropping && (
         <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>
@@ -605,6 +621,11 @@ export function Terminal({
               <span aria-hidden>‹</span> {gridMain?.title || "chat"}
             </button>
           )}
+          {selected?.ticket_of && (
+            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "its super session"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
+              <span aria-hidden>‹</span> {superTitle || "super session"}
+            </button>
+          )}
           <button
             className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
@@ -671,6 +692,12 @@ export function Terminal({
           <span className="ma-viewsw" role="group" aria-label="Chat or grid">
             <button type="button" aria-pressed={!grid} onClick={() => setGridFor(null)}>CHAT</button>
             <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>
+          </span>
+        )}
+        {isChat && !!tset && !grid && sessionId && (
+          <span className="ma-viewsw" role="group" aria-label="Chat or its tickets at work">
+            <button type="button" aria-pressed={!tkLive} onClick={() => setLivePick({ id: sessionId, on: false })}>CHAT</button>
+            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}>LIVE</button>
           </span>
         )}
         <ViewTabs view={view} onView={onView} />
@@ -760,6 +787,7 @@ export function Terminal({
       // auto-placed side columns, and would take the first track from SESSIONS.
       data-bg={hud?.chatBg ?? "none"}
       data-layout={compact ? "compact" : "default"}
+      data-tklive={tkLive || undefined}
       style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
@@ -777,6 +805,7 @@ export function Terminal({
         <>
           {body}
           {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
+          {tkLive && sessionId && <TicketLive key={sessionId} sessionId={sessionId} title={selected?.title || ""} status={statusAll ?? new Map()} onOpenSession={openAgentSession} />}
           <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>

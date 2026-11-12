@@ -2371,7 +2371,13 @@ export function App() {
   // rather than by HIDE, which PLUGINS deliberately ignores.
   const ws = useWorkspaces();
   const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
-  const sidebarSessions = useMemo(() => sessions.filter((s) => !s.parent_session && inWs(jobGroup(s))), [sessions, inWs]);
+  const sidebarSessions = useMemo(() => sessions.filter((s) => !s.parent_session && !s.ticket_of && inWs(jobGroup(s))), [sessions, inWs]);
+  // Ticket and merge sessions fold under their super session's row instead of listing on their own.
+  const ticketKids = useMemo(() => {
+    const m = new Map<string, SessionBrief[]>();
+    for (const s of sessions) if (s.ticket_of) m.set(s.ticket_of, [...(m.get(s.ticket_of) ?? []), s]);
+    return m;
+  }, [sessions]);
 
   // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
   // itself, as PLUGINS still lists the runs of a hidden folder or group.
@@ -3485,7 +3491,7 @@ export function App() {
                   workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
                   folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
-                  sessions={sidebarSessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
+                  sessions={sidebarSessions} ticketKids={ticketKids} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   show={showKinds} onShow={setShowKinds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}
@@ -3514,6 +3520,7 @@ export function App() {
                   void jumpTo(id, seq != null ? revealKey(0, seq) : undefined);
                 }}
                 gridMain={gridMain}
+                statusAll={statusMap} superTitle={selected?.ticket_of ? sessions.find((x) => x.id === selected.ticket_of)?.title ?? undefined : undefined}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}

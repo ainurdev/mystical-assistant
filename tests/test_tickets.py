@@ -68,6 +68,18 @@ def test_set_json_round_trip(tmp_path):
     assert tickets.summary_for("nope") is None
 
 
+def test_owners_maps_ticket_and_merge_sessions_to_the_super_session(tmp_path):
+    d = str(tmp_path / "own")
+    os.makedirs(d)
+    tickets.save(d, {"slug": "own", "parent_session": "sup", "status": "building", "merge_session": "m1",
+                     "tickets": {"01": {"status": "done", "session_id": "t1"}, "02": {"status": "running", "session_id": "t2"},
+                                 "03": {"status": "queued"}}})
+    tickets.register(d, "proj", "own")
+    of, counts = tickets.owners()
+    assert of["t1"] == of["t2"] == of["m1"] == "sup" and "sup" not in of
+    assert counts["sup"] == {"done": 1, "total": 3, "status": "building"}
+
+
 @pytest.mark.parametrize("line", ["Blocked by: #1, #3", "**Blocked by**: 01 and 3", "- **Blocked by:** 01, 03",
                                   "* blocked by: #1, 03.", "**Blocked by:** #01 (Base), #3 (Ui)."])
 def test_blocked_by_variants(tmp_path, line):

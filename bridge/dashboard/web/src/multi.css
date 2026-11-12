@@ -58,6 +58,22 @@ button.ma-tr-row:hover { background: var(--ac-08, color-mix(in srgb, var(--acc) 
 .ma-tr-more { appearance: none; align-self: flex-start; padding: 1px 2px; border: 0; background: none; cursor: pointer; font: inherit; font-size: var(--t95); color: var(--txd); }
 .ma-tr-more:hover { color: var(--acc); }
 
+/* ---- a super session's tickets: pips at its row's edge, its ticket sessions under it ---- */
+.tk-pips { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: var(--t85); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tk-pips > span { display: inline-flex; align-items: center; gap: 2px; height: 15px; padding: 0 4px; border-radius: var(--f-rad-s, 0px);
+  border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent); color: var(--txm); }
+.tk-pips > span.w { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.tk-kids { margin: 0 0 4px 12px; padding-left: 8px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); display: flex; flex-direction: column; font-size: var(--t105); }
+.tk-kid { appearance: none; display: grid; grid-template-columns: 8px auto 1fr auto; align-items: center; gap: 6px; min-height: 22px; padding: 1px 4px 1px 2px;
+  border: 0; background: none; font: inherit; text-align: left; color: var(--tx); cursor: pointer; }
+.tk-kid:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.tk-kid[data-on] { background: color-mix(in srgb, var(--acc) 12%, transparent); box-shadow: inset 2px 0 0 var(--acc); }
+.tk-kid:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
+.tk-kid i { width: 7px; height: 7px; border-radius: 50%; }
+.tk-kid .no { font-weight: 700; color: var(--txd); font-variant-numeric: tabular-nums; }
+.tk-kid .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-kid .tm { font-size: var(--t95); color: var(--txd); }
+
 /* ---- the nameplate's CHAT | GRID and a helper's path back ---- */
 .ma-viewsw { display: inline-flex; flex: none; border: 1px solid color-mix(in srgb, var(--acc) 20%, transparent); border-radius: var(--f-rad-s, 0); overflow: hidden; }
 .ma-viewsw button { appearance: none; padding: 1px 7px; border: 0; background: none; cursor: pointer; font-family: var(--mono); font-size: var(--t85, var(--t9)); letter-spacing: 1.2px; color: var(--txd); }
