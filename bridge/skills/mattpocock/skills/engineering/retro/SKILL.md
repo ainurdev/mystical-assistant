@@ -10,7 +10,7 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
 
 1. Call the Skill tool with `writing-for-agents` for the writing style guide.
 
-2. Read the primary sources for the session the user specifies. This may mean searching through session logs on this machine. If the user doesn't specify a session, default to the current one.
+2. Read the primary sources for the session the user specifies. This may mean searching through session logs on this machine. If the user doesn't specify a session, default to the current one. `scan.py` in this skill's folder reads a transcript: `python3 scan.py <transcript.jsonl> stats`, then `list`, `errors`, `top N`, `slow N`, `show N`, `text` or `grep RE [all]`. A helper's calls are in `<session-id>/subagents/agent-*.jsonl` beside the transcript; scan those the same way.
 
 3. Look for candidates for improvement in these categories.
 
