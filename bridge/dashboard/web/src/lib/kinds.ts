@@ -129,6 +129,7 @@ export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; 
 export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
 
 const uncommitted = (g: GitStatus | null): Fact | null => g?.dirty ? { text: `${g.dirty} uncommitted`, tone: "warn" } : null;
+const tree = (g: GitStatus | null): Fact[] => g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [];
 
 export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
   const g = c.git;
@@ -136,9 +137,9 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
     case "design":
       return c.designLinked === null ? [] : [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
     case "build":
-      return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...(g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [])];
+      return [{ text: c.pack ? "grill, then build here" : "builds here" }, ...tree(g)];
     case "refactor":
-      return g?.is_repo ? [uncommitted(g) ?? { text: "working tree clean" }] : [];
+      return tree(g);
     case "fix":
       return c.lastCheck
         ? [{ lead: "last check ", text: c.lastCheck.line, tone: c.lastCheck.ok ? undefined : "err" }, ...(c.lastCheck.at ? [{ text: hhmm(c.lastCheck.at) }] : [])]
