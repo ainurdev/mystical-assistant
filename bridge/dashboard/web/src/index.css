@@ -8206,6 +8206,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
 .tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
 /* A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
+@container (max-width: 800px) { .tm-row:has(.tm-call) > .tm-c, .tm-row:has(.tm-call) > .tm-c + .tm-div { display: none; } }
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
 @container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
 .tm-call b { font-weight: 700; }
