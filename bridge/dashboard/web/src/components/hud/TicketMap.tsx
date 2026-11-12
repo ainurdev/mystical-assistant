@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
-import { ChevronDown, ChevronLeft, ChevronUp, GitMerge, Hand, Maximize2, MoreHorizontal, RotateCcw, Ticket, Zap } from "lucide-react";
-import { api, type SessionStatus, type TicketSet } from "../../api";
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { ChevronDown, ChevronUp, Hand, Maximize2, Minimize2, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
+import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../api";
+import { derivePending } from "../../chat";
+import { QuestionCard } from "../QuestionCard";
 import { dagLayout, kindOf, type Kind } from "../../lib/ticketdag";
 import { askConfirm } from "../ui/Ask";
 
-/** A ticket set lives in the flow chat that made it: a strip docked above the prompt box,
- *  and a full ticket map it opens (A · WAVES, picked 2026-11-12, .mystical/design-drafts/
- *  ticket-map-v2; it replaced the left sidebar's TICKETS tab). Every ready ticket starts at
- *  once, so a graph column (1 + its longest blocker chain) is a wave that runs together:
- *  the columns are drawn as labelled waves, the first unfinished one lit as NOW, and the
- *  edges into running tickets march. The strip is one line (a dot group per wave, what
- *  waits on you, its button) so it never eats the chat; its chevron opens the graph in
- *  place, remembered per set. A merged set stays a strip that opens to its full map:
- *  there is no dismiss that can't be undone. A ticket's live state comes from its session
- *  (App's status map); the set is polled while the chat is open, since ticket turns end
- *  on the bridge with no dashboard event to announce them. */
+/** A ticket set lives in the flow chat that made it, the super session: a strip docked
+ *  above the prompt box (A · WAVES, picked 2026-11-12, .mystical/design-drafts/ticket-map-v2)
+ *  and LIVE, its ticket sessions at work inside it (C · LIVE GRID, picked the same day,
+ *  .mystical/design-drafts/ticket-flow). LIVE replaced a full-window ticket map: the user
+ *  wanted the working sessions shown in the session, not a modal over the app, and the
+ *  ticket sessions out of the sidebar (they fold under the super session's row there).
+ *  Every ready ticket starts at once, so a graph column (1 + its longest blocker chain) is
+ *  a wave that runs together; the strip shows a dot group per wave, what waits on you and
+ *  its button, and its chevron opens the graph in place, remembered per set. A ticket's
+ *  live state comes from its session (App's status map); the set is polled while the chat
+ *  is open, since ticket turns end on the bridge with no dashboard event to announce them. */
 
 const WORD: Record<Kind, string> = { run: "Running", ask: "Asks you", idle: "Stopped", q: "Waiting", done: "Done", fix: "Fix" };
 const COLOR: Record<Kind, string> = { run: "var(--acc)", ask: "var(--warn)", idle: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)" };
@@ -130,18 +131,14 @@ function urgent(set: TicketSet, ns: string[], kinds: Record<string, Kind>): stri
     ?? ((set.status === "fix" || set.merge_stalled) ? "merge" : "");
 }
 
-export function TicketMapCard({ sessionId, status, onOpenSession }: {
-  sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
-}) {
+/** The flow session's ticket set, polled while its chat is open: quick while the set
+ *  builds or merges, lazy when it rests, nothing while the window is hidden. Ticket turns
+ *  end on the bridge with no dashboard event to announce them. */
+function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
   const [set, setSet] = useState<TicketSet | null>(null);
   const [gen, setGen] = useState(0);
-  const [open, setOpen] = useState<string | null>(null);   // the map, with this ticket picked ("" = the default)
-  const [note, setNoteNow] = useState("");
-  const [wide, setWide] = useState(false);
-  const noteT = useRef(0);
   useEffect(() => {
     let live = true, t = 0;
-    // Quick while the set builds or merges, lazy when it rests; nothing while the window is hidden.
     const next = (fast: boolean) => { t = window.setTimeout(tick, fast ? 4000 : 15000); };
     const tick = () => {
       if (document.hidden) return next(false);
@@ -150,25 +147,28 @@ export function TicketMapCard({ sessionId, status, onOpenSession }: {
         if (!live) return;
         const s = (r.set as unknown as TicketSet | null) ?? null;
         setSet(s);
-        setWide(!!s && localStorage.getItem(openKey(s.folder)) === "1");
         next(!!s && (s.status === "building" || s.status === "merging"));
       }).catch(() => { if (live) next(false); });
     };
     tick();
     return () => { live = false; window.clearTimeout(t); };
   }, [sessionId, gen]);
+  return [set, () => setGen((g) => g + 1)];
+}
+
+/** What a set says in a few words, and the buttons that act on it: the strip and LIVE share these. */
+function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, reload: () => void, onOpenSession: (id: string) => void) {
+  const [note, setNoteNow] = useState("");
+  const noteT = useRef(0);
   useEffect(() => () => window.clearTimeout(noteT.current), []);
   if (!set || !set.tickets) return null;
-
   // What a retry, build or clean-up answered, for a few seconds: the bridge's replies are the only feedback.
   const setNote = (text: string) => {
     setNoteNow(text);
     window.clearTimeout(noteT.current);
     if (text) noteT.current = window.setTimeout(() => setNoteNow(""), 8000);
   };
-  const reload = () => setGen((g) => g + 1);
   const act = (p: Promise<{ text: string }>, fail: string) => { p.then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : fail)).then(reload); };
-  const toggle = () => { const v = !wide; setWide(v); if (v) localStorage.setItem(openKey(set.folder), "1"); else localStorage.removeItem(openKey(set.folder)); };
   const ns = Object.keys(set.tickets).sort();
   const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id)?.state)])) as Record<string, Kind>;
   const name = set.slug.replace(/-/g, " ");
@@ -209,23 +209,44 @@ export function TicketMapCard({ sessionId, status, onOpenSession }: {
     : t ? <button className="tm-btn" onClick={() => ops.retry(first)}>Continue</button>
     : first === "merge" ? <button className="tm-btn" onClick={() => ops.retry("merge")}>{set.status === "fix" ? "Retry" : "Continue"}</button>
     : null;
+  const dots = (
+    <span className="tm-dots" aria-hidden>
+      {Array.from({ length: g.cols }, (_, c) => (
+        <span key={c} className={`tm-wv${c === now ? " now" : ""}`}>
+          {c === g.cols - 1 ? <i className="m" />
+            : g.nodes.filter((x) => x.col === c).map((x) => <i key={x.n} style={kinds[x.n] === "q" ? undefined : { background: COLOR[kinds[x.n]], color: COLOR[kinds[x.n]] }} className={busy(kinds[x.n]) ? "on" : undefined} />)}
+        </span>
+      ))}
+    </span>
+  );
+  return { set, ns, kinds, name, facts, ops, call, action, dots, first };
+}
+
+/** Switch the open super session's view (Terminal listens): the strip's Live button. */
+export const showTicketsLive = (on: boolean) => window.dispatchEvent(new CustomEvent("hud:tickets-live", { detail: on }));
+
+export function TicketMapCard({ sessionId, status, onOpenSession }: {
+  sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
+}) {
+  const [set, reload] = useTicketSet(sessionId);
+  const [wide, setWide] = useState(false);
+  useEffect(() => { setWide(!!set && localStorage.getItem(openKey(set.folder)) === "1"); }, [set?.folder]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const v = useSetView(set, status, reload, onOpenSession);
+  if (!v) return null;
+  const { ns, kinds, name, facts, call, action, dots } = v;
+  const toggle = () => { const x = !wide; setWide(x); if (x) localStorage.setItem(openKey(v.set.folder), "1"); else localStorage.removeItem(openKey(v.set.folder)); };
   // The expanded strip's last line: what runs together now, and what starts next.
   const together = ns.filter((n) => busy(kinds[n]));
-  const nextUp = ns.find((n) => kinds[n] === "q" && set.tickets[n].blocked_by.every((b) => kinds[b] === "done" || busy(kinds[b])));
-  const waitsOn = nextUp ? set.tickets[nextUp].blocked_by.filter((b) => kinds[b] !== "done") : [];
+  const nextUp = ns.find((n) => kinds[n] === "q" && v.set.tickets[n].blocked_by.every((b) => kinds[b] === "done" || busy(kinds[b])));
+  const waitsOn = nextUp ? v.set.tickets[nextUp].blocked_by.filter((b) => kinds[b] !== "done") : [];
   return (
+    <>
+    <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} />
     <div className="tm-card" role="region" aria-label={`Tickets: ${name}`}>
       <div className="tm-row">
         <Ticket size={15} aria-hidden className="tm-ic" /><span className="caps tm-k">Tickets</span><span className="tm-nm">{name}</span>
         <span className="tm-div" />
-        <span className="tm-dots" aria-hidden>
-          {Array.from({ length: g.cols }, (_, c) => (
-            <span key={c} className={`tm-wv${c === now ? " now" : ""}`}>
-              {c === g.cols - 1 ? <i className="m" />
-                : g.nodes.filter((x) => x.col === c).map((x) => <i key={x.n} style={kinds[x.n] === "q" ? undefined : { background: COLOR[kinds[x.n]], color: COLOR[kinds[x.n]] }} className={busy(kinds[x.n]) ? "on" : undefined} />)}
-            </span>
-          ))}
-        </span>
+        {dots}
         <span className="tm-c">{facts}</span>
         {call && <><span className="tm-div" />{call}</>}
         <span style={{ flex: 1 }} />
@@ -233,11 +254,11 @@ export function TicketMapCard({ sessionId, status, onOpenSession }: {
         <button className="tm-btn ghost" onClick={toggle} aria-expanded={wide} aria-label={wide ? "Fold the ticket graph" : "Show the ticket graph"} title={wide ? "Fold" : "Show the graph"}>
           {wide ? <ChevronUp size={15} aria-hidden /> : <ChevronDown size={15} aria-hidden />}
         </button>
-        <button className="tm-btn acc" onClick={() => setOpen("")} aria-label="Open the ticket map"><span className="tm-open-w">Open map</span> <Maximize2 size={11} aria-hidden /></button>
+        <button className="tm-btn acc" onClick={() => showTicketsLive(true)} aria-label="Watch the tickets at work"><span className="tm-open-w">Live</span> <Radio size={11} aria-hidden /></button>
       </div>
       {wide && (
         <>
-          <div className="tm-body-s"><Graph set={set} kinds={kinds} status={status} onPick={(n) => setOpen(n)} /></div>
+          <div className="tm-body-s"><Graph set={v.set} kinds={kinds} status={status} onPick={(n) => { const sid = n === "merge" ? v.set.merge_session : v.set.tickets[n]?.session_id; if (sid) onOpenSession(sid); }} /></div>
           {(together.length > 0 || nextUp) && (
             <div className="tm-ft">
               <Zap size={12} aria-hidden />
@@ -250,125 +271,210 @@ export function TicketMapCard({ sessionId, status, onOpenSession }: {
           )}
         </>
       )}
-      {open !== null && createPortal(
-        <TicketMapPane set={set} kinds={kinds} status={status} name={name} pick={open || first || ns.find((n) => busy(kinds[n])) || ns[0]}
-                       note={note} ops={ops} onOpenSession={onOpenSession} onClose={() => setOpen(null)} />, document.body)}
+    </div>
+    </>
+  );
+}
+
+/** LIVE (C · LIVE GRID, picked 2026-11-12, .mystical/design-drafts/ticket-flow): the super
+ *  session shows its ticket sessions at work inside it, one tile each, instead of a map
+ *  over the app. Its own chat is the first tile (the composer under the grid still writes
+ *  to it); each ticket tile is a live tail of its session, its question answerable there,
+ *  and a box that queues a message to it. ⤢ puts one tile on the stage, the rest keep
+ *  running in a column beside it. Done and waiting tickets are chips in the bar. */
+export function TicketLive({ sessionId, title, status, onOpenSession }: {
+  sessionId: string; title: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
+}) {
+  const [set, reload] = useTicketSet(sessionId);
+  const [stage, setStage] = useState<string | null>(null);
+  const v = useSetView(set, status, reload, onOpenSession);
+  if (!v) return <div className="tl-live"><div className="tl-empty">No ticket set in this session.</div></div>;
+  const { ns, kinds, name, facts, ops, call, action, dots } = v;
+  const tk = v.set.tickets;
+  const merging = v.set.status === "merging" || v.set.status === "fix" || !!v.set.merge_stalled;
+  const tiles: { sid: string; label: string; no: string; kind: Kind | "merge" | "self"; retry?: () => void }[] = [
+    { sid: sessionId, label: title || "this session", no: "", kind: "self" },
+    ...ns.filter((n) => busy(kinds[n]) || kinds[n] === "fix").filter((n) => tk[n].session_id)
+      .map((n) => ({ sid: tk[n].session_id, label: tk[n].title, no: `#${n}`, kind: kinds[n],
+                     retry: kinds[n] === "fix" || kinds[n] === "idle" ? () => ops.retry(n) : undefined })),
+    ...(merging && v.set.merge_session ? [{ sid: v.set.merge_session, label: `merge into ${v.set.feature_branch || "the feature branch"}`, no: "⇢", kind: "merge" as const,
+                                           retry: v.set.status === "fix" || v.set.merge_stalled ? () => ops.retry("merge") : undefined }] : []),
+  ];
+  const staged = stage && tiles.some((x) => x.sid === stage) ? stage : null;
+  const order = staged ? [...tiles.filter((x) => x.sid === staged), ...tiles.filter((x) => x.sid !== staged)] : tiles;
+  const chip = (n: string) => (
+    <button key={n} className="tl-chip" title={`#${n} ${tk[n].title}: ${WORD[kinds[n]]}`}
+            onClick={() => tk[n].session_id && onOpenSession(tk[n].session_id)} disabled={!tk[n].session_id}>
+      {kinds[n] !== "q" && <i style={{ background: COLOR[kinds[n]] }} />}#{n}
+    </button>
+  );
+  const doneNs = ns.filter((n) => kinds[n] === "done"), nextNs = ns.filter((n) => kinds[n] === "q");
+  const n = tiles.length;
+  return (
+    <div className="tl-live" role="region" aria-label={`Tickets at work: ${name}`}>
+      <div className="tl-bar">
+        <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Tickets</span>
+        {dots}<span className="tm-c">{facts}</span>
+        {call && <><span className="tm-div" />{call}</>}
+        {action}
+        <span style={{ flex: 1 }} />
+        {doneNs.length > 0 && <span className="tl-chips"><span className="tl-chl">done</span>{doneNs.map(chip)}</span>}
+        {nextNs.length > 0 && <span className="tl-chips"><span className="tl-chl">next</span>{nextNs.map(chip)}</span>}
+        {v.set.status === "merged" && <button className="tm-btn ghost" onClick={() => void ops.clean()}>Clean up</button>}
+        {/* The way back where the header's CHAT | LIVE has no room (COMPACT). */}
+        <button className="tm-btn ghost" onClick={() => showTicketsLive(false)} title="Back to this session's chat">Chat</button>
+      </div>
+      <div className={`tl-grid${staged ? " staged" : ""}`} style={staged ? { gridTemplateRows: `repeat(${Math.max(1, n - 1)}, minmax(0, 1fr))` }
+        : { gridTemplateColumns: n <= 1 ? "1fr" : n === 2 ? "1fr 1fr" : `minmax(0, .8fr) repeat(${Math.min(2, n - 1)}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${n <= 3 ? 1 : Math.ceil((n - 1) / 2)}, minmax(0, 1fr))` }}>
+        {order.map((x, i) => (
+          <LiveTile key={x.sid} sid={x.sid} label={x.label} no={x.no} kind={x.kind} st={status.get(x.sid)}
+                    big={!!staged && i === 0} small={!!staged && i > 0}
+                    span={!staged && x.kind === "self" && n > 3 ? Math.ceil((n - 1) / 2) : staged && i === 0 ? Math.max(1, n - 1) : 1}
+                    onStage={() => setStage(staged === x.sid ? null : x.sid)} retry={x.retry} onOpen={() => onOpenSession(x.sid)} />
+        ))}
+      </div>
+      {tiles.length === 1 && <div className="tl-empty">{v.set.status === "approve" ? "Approve the tickets to start them." : "No ticket is at work right now."}</div>}
     </div>
   );
 }
 
-function TicketMapPane({ set, kinds, status, name, pick, note, ops, onOpenSession, onClose }: {
-  set: TicketSet; kinds: Record<string, Kind>; status: Map<string, SessionStatus>; name: string; pick: string; note: string;
-  ops: { retry: (n: string) => void; build: () => void; approve: () => void; clean: () => void };
-  onOpenSession: (id: string) => void; onClose: () => void;
-}) {
-  const [sel, setSel] = useState(pick);
-  const [menu, setMenu] = useState(false);
-  const shell = useRef<HTMLDivElement>(null);
+/** A session's last turn, polled: quick while it runs, lazy at rest, nothing while hidden.
+ *  `gen` bumps it after an answer, so the card it answered goes at once. */
+function useTail(sid: string) {
+  const [turn, setTurn] = useState<{ id: string; status: string; events: TimedEvent[] } | null>(null);
+  const [gen, setGen] = useState(0);
   useEffect(() => {
-    const prev = document.activeElement as HTMLElement | null;
-    shell.current?.focus();
-    // Esc and Tab are the map's only while focus is in it: a confirm opened over it takes its own.
-    const key = (e: KeyboardEvent) => {
-      const el = shell.current;
-      if (!el || !el.contains(document.activeElement)) return;
-      if (e.key === "Escape") { e.stopPropagation(); if (menu) setMenu(false); else onClose(); }
-      if (e.key === "Tab") {   // keep focus inside the map: it covers the whole app
-        const f = [...el.querySelectorAll<HTMLElement | SVGElement>("button, [tabindex='0']")];
-        if (!f.length) return;
-        const at = f.indexOf(document.activeElement as HTMLElement);
-        if (e.shiftKey && at <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
-        else if (!e.shiftKey && at === f.length - 1) { e.preventDefault(); f[0].focus(); }
-      }
+    let live = true, t = 0;
+    const tick = () => {
+      if (document.hidden) { t = window.setTimeout(tick, 5000); return; }
+      api.transcript(sid, 0, { tail: 1 }).then((r) => {
+        if (!live) return;
+        const last = r.turns[r.turns.length - 1];
+        setTurn(last ? { id: last.id, status: last.status, events: r.events.filter((e) => e.turn_id === last.id) } : null);
+        t = window.setTimeout(tick, last?.status === "running" ? 2500 : 8000);
+      }).catch(() => { if (live) t = window.setTimeout(tick, 8000); });
     };
-    document.addEventListener("keydown", key, true);
-    return () => { document.removeEventListener("keydown", key, true); prev?.focus?.(); };
-  }, [menu, onClose]);
-  const ns = Object.keys(set.tickets).sort();
-  const { g, ticketCols, now } = waves(set, kinds);
-  const t = sel !== "merge" ? set.tickets[sel] : null;
-  const k = t ? kinds[sel] : null;
-  const holds = t ? ns.filter((n) => set.tickets[n].blocked_by.includes(sel)) : [];
-  const col = t ? g.nodes.find((x) => x.n === sel)?.col ?? 0 : 0;
-  const mates = t ? g.nodes.filter((x) => x.col === col && x.n !== sel && x.n !== "MERGE").map((x) => `#${x.n}`) : [];
-  const open = (sid: string) => { onClose(); onOpenSession(sid); };
-  const branch = set.feature_branch || "the feature branch";
-  const n = (want: (k: Kind) => boolean) => ns.filter((x) => want(kinds[x])).length;
-  const counts: [number, string, string][] = [
-    [n((x) => x === "done"), "done", COLOR.done], [n(busy), "at work", COLOR.run], [n((x) => x === "fix"), "fix", COLOR.fix], [n((x) => x === "q"), "waiting", COLOR.q]];
-  const legend: Kind[] = ["done", "run", "ask", "q", "fix"];
-  const took = t && k && busy(k) ? ago(status.get(t.session_id)?.since) : "";
+    tick();
+    return () => { live = false; window.clearTimeout(t); };
+  }, [sid, gen]);
+  const pending = turn?.status === "running" ? derivePending(turn.events) : [];
+  return { turn, q: pending[0], refresh: () => setGen((g) => g + 1) };
+}
+
+/** NEEDS YOU: every ticket session that waits on you, one full-width row each, stacked like
+ *  a queue above the prompt box, oldest first (the user's call, 2026-11-12: a question in a
+ *  small tile was hard to read). A plain pick answers in a tap; anything more opens its session. */
+function TicketAsks({ set, kinds, status, onOpenSession }: {
+  set: TicketSet; kinds: Record<string, Kind>; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
+}) {
+  const asking = Object.keys(set.tickets).sort()
+    .filter((n) => kinds[n] === "ask" && set.tickets[n].session_id)
+    .sort((a, b) => (status.get(set.tickets[a].session_id)?.since ?? 0) - (status.get(set.tickets[b].session_id)?.since ?? 0));
+  if (!asking.length) return null;
   return (
-    <div className="tm-pane" role="dialog" aria-modal="true" aria-label={`Ticket map: ${name}`} ref={shell} tabIndex={-1}>
-      <div className="tm-ph">
-        <button className="tm-back" onClick={onClose}><ChevronLeft size={14} aria-hidden /> Back to chat</button>
-        <span className="tm-sep" />
-        <Ticket size={18} aria-hidden className="tm-ic" /><h2>{name}</h2>
-        <span className="tm-c">{note || "every ready ticket runs at once · merge when all are done"}</span>
+    <div className="tk-asks" role="region" aria-label={`${asking.length} ticket${asking.length === 1 ? "" : "s"} waiting on you`}>
+      <div className="tk-asks-h"><Hand size={12} aria-hidden /><span className="caps">Needs you</span><span>{asking.length}</span></div>
+      {asking.map((n) => <AskRow key={n} n={n} title={set.tickets[n].title} sid={set.tickets[n].session_id} st={status.get(set.tickets[n].session_id)}
+                                 onOpen={() => onOpenSession(set.tickets[n].session_id)} />)}
+    </div>
+  );
+}
+
+function AskRow({ n, title, sid, st, onOpen }: { n: string; title: string; sid: string; st?: SessionStatus; onOpen: () => void }) {
+  const { turn, q, refresh } = useTail(sid);
+  const one = q?.kind === "question" && q.questions?.length === 1 && !q.questions[0].multiSelect ? q.questions[0] : null;
+  const ask = q?.kind === "question" ? q.questions?.[0]?.question : q?.kind === "permission" ? `${q.tool_name}: ${q.summary ?? ""}` : st?.label;
+  const answer = (body: Parameters<typeof api.respond>[1]) => { if (turn) void api.respond(turn.id, body).then(refresh); };
+  return (
+    <div className="tk-ask">
+      <span className="no">#{n}</span>
+      <span className="body">
+        <span className="tt">{title}{st?.since && <em> · {ago(st.since)}</em>}</span>
+        <span className="qq">{ask || "It waits for your answer in its session."}</span>
+      </span>
+      <span className="acts">
+        {one && turn && one.options.map((o) => (
+          <button key={o.label} className="tm-btn sm" title={o.description} onClick={() => answer({ request_id: q!.request_id, answers: [{ header: one.header, labels: [o.label] }] })}>{o.label}</button>
+        ))}
+        {q?.kind === "permission" && turn && <>
+          <button className="tm-btn acc sm" onClick={() => answer({ request_id: q.request_id, behavior: "allow" })}>Allow</button>
+          <button className="tm-btn sm" onClick={() => answer({ request_id: q.request_id, behavior: "deny" })}>Deny</button>
+        </>}
+        <button className={`tm-btn sm${one || q?.kind === "permission" ? " ghost" : " warn"}`} onClick={onOpen}>{one || q?.kind === "permission" ? "Open" : "Answer"}</button>
+      </span>
+    </div>
+  );
+}
+
+/** One session, live: its last turn's tools and words, newest at the bottom, what it asks
+ *  you, and a box that queues a message to it. Polls its transcript tail while shown. */
+function LiveTile({ sid, label, no, kind, st, big, small, span, onStage, retry, onOpen }: {
+  sid: string; label: string; no: string; kind: Kind | "merge" | "self"; st?: SessionStatus;
+  big: boolean; small: boolean; span: number; onStage: () => void; retry?: () => void; onOpen: () => void;
+}) {
+  const { turn, q, refresh } = useTail(sid);
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState("");
+  const running = turn?.status === "running";
+  const lines = (turn?.events ?? []).flatMap((e, i): ReactElement[] => {
+    if (e.type === "tool") return [<div key={i}><b>{e.name}</b> {e.summary}</div>];
+    if (e.type === "text") return e.text.trim().split(/\n+/).filter(Boolean).slice(-4).map((l, j) => <div key={`${i}.${j}`} className="say">{l}</div>);
+    if (e.type === "tool_done" && (e as { is_error?: boolean }).is_error) return [<div key={i} className="er">that failed</div>];
+    return [];
+  }).slice(big ? -60 : small ? -4 : -14);
+  const c = kind === "self" || kind === "merge" ? (running ? COLOR.run : "var(--txl)") : COLOR[kind];
+  const word = kind === "self" ? (running ? "working" : "this session") : kind === "merge" ? (running ? "merging" : "merge") : WORD[kind];
+  const took = st?.since && running ? ago(st.since) : "";
+  const send = () => {
+    const p = text.trim();
+    if (!p) return;
+    setText("");
+    api.queueEnqueue({ session_id: sid, text: p, prompt: p, surface: "dashboard" })
+      .then(() => { setSent("queued"); refresh(); }, (e) => setSent(e instanceof Error ? e.message : "not sent"));
+  };
+  return (
+    <div className={`tl-tile k-${kind}${big ? " big" : ""}${small ? " small" : ""}`} style={span > 1 ? { gridRow: `span ${span}` } : undefined}>
+      <div className="tl-th">
+        <span className="tl-dot" style={{ background: c, boxShadow: running ? `0 0 6px ${c}` : undefined }} />
+        {kind === "self" ? <Ticket size={12} aria-hidden className="tm-ic" /> : <span className="tl-no">{no}</span>}
+        <button className="tl-name" onClick={onOpen} title={`Open ${no ? `${no} ` : ""}${label}`}>{label}</button>
         <span style={{ flex: 1 }} />
-        <span className="tm-cnt">{counts.filter(([v], i) => v || i < 2).map(([v, w, c]) => <span key={w}><i style={{ background: c }} /><b>{v}</b>{w}</span>)}</span>
-        {set.feature_branch && <><span className="tm-sep" /><span className="tm-c">⎇ {set.feature_branch}</span></>}
-        {set.status === "approve" && <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button>}
-        {set.status === "stopped" && <button className="tm-btn" onClick={ops.build}>Build</button>}
-        {set.status === "merged" && (
-          <span style={{ position: "relative" }}>
-            <button className="tm-btn ghost" aria-label={`More for ${name}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><MoreHorizontal size={14} aria-hidden /></button>
-            {menu && <div className="tm-menu" role="menu"><button role="menuitem" onClick={() => { setMenu(false); void ops.clean(); }}>Clean up worktrees</button></div>}
-          </span>
+        <span className="tl-st" style={{ color: c }}>{q ? "asks you" : word}</span>
+        {took && <span className="tl-tm">{took}</span>}
+        {retry && <button className="tm-btn sm" onClick={retry}><RotateCcw size={10} aria-hidden /> {kind === "fix" ? "Retry" : "Continue"}</button>}
+        {kind !== "self" && <button className="tm-btn ghost sm" onClick={onStage} aria-label={big ? "Back to the grid" : `Put ${no || label} on the stage`} title={big ? "Back to the grid" : "On the stage"}>
+          {big ? <Minimize2 size={11} aria-hidden /> : <Maximize2 size={11} aria-hidden />}
+        </button>}
+      </div>
+      <div className="tl-tb"><div>
+        {lines.length ? lines : <div className="say dim">{turn ? "Nothing to show yet." : "Loading…"}</div>}
+        {q?.kind === "question" && q.questions && !small && turn && (big ? (
+          <div className="tl-q">
+            <QuestionCard questions={q.questions} requestId={q.request_id}
+              onSubmit={(a) => api.respond(turn.id, { request_id: q.request_id, answers: a }).then(() => { refresh(); return true; }, () => false)} />
+          </div>
+        ) : (
+          <div className="say" style={{ color: "var(--warn)" }}>asks you: answer it in NEEDS YOU below</div>
+        ))}
+        {q?.kind === "permission" && big && turn && (
+          <div className="tl-q">
+            <p><b>{q.tool_name}</b> {q.summary}</p>
+            <span className="tl-qa">
+              <button className="tm-btn acc sm" onClick={() => void api.respond(turn.id, { request_id: q.request_id, behavior: "allow" }).then(() => refresh())}>Allow</button>
+              <button className="tm-btn sm" onClick={() => void api.respond(turn.id, { request_id: q.request_id, behavior: "deny" }).then(() => refresh())}>Deny</button>
+            </span>
+          </div>
         )}
-      </div>
-      <div className="tm-body">
-        <div className="tm-map">
-          <div className="tm-canvas"><Graph set={set} kinds={kinds} status={status} big sel={sel} onPick={setSel} /></div>
-          <div className="tm-legend">{legend.map((x) => <span key={x}><i style={{ background: COLOR[x] }} />{WORD[x]}</span>)}</div>
-        </div>
-        <aside className="tm-det">
-          {set.status === "stopped" && <div className="tm-stop" role="alert"><b>Stopped:</b> {set.error || "BUILD could not start"}</div>}
-          {t && k ? (
-            <>
-              <span className="tm-no">#{sel}{t.branch ? ` · ${t.branch}` : ""}</span>
-              <h3>{t.title}</h3>
-              <span className={`tm-pill ${k}`}>{k === "ask" && <Hand size={12} aria-hidden />}{WORD[k]}{took && ` · ${took}`}</span>
-              {k === "ask" && (
-                <div className="tm-q">
-                  <span className="caps">Its question</span>
-                  <p>{status.get(t.session_id)?.label || "It waits for your answer in its session."}</p>
-                  <button className="tm-btn warn" onClick={() => open(t.session_id)}>Answer in its session</button>
-                </div>
-              )}
-              <dl>
-                <dt>Wave</dt><dd>{col + 1} of {ticketCols}{col === now ? " · now" : ""}{mates.length ? ` · with ${mates.join(", ")}` : ""}</dd>
-                <dt>Blocked by</dt><dd>{t.blocked_by.length ? t.blocked_by.map((b) => `#${b} · ${WORD[kinds[b]].toLowerCase()}`).join(", ") : "nothing"}</dd>
-                <dt>Holds</dt><dd>{holds.length ? holds.map((h) => `#${h} ${set.tickets[h].title}`).join(", ") : "the merge"}</dd>
-                {k === "run" && status.get(t.session_id)?.label && <><dt>Now</dt><dd>{status.get(t.session_id)!.label}</dd></>}
-                {k === "fix" && <><dt>Why</dt><dd>{t.why || "its turn failed"}</dd></>}
-                {k === "idle" && <><dt>Why</dt><dd>its turn ended without finishing</dd></>}
-                {t.status === "missing" && <><dt>Why</dt><dd>its ticket file is missing</dd></>}
-              </dl>
-              <div className="tm-acts">
-                {t.session_id && <button className="tm-btn" onClick={() => open(t.session_id)}>Open session</button>}
-                {(k === "fix" || k === "idle") && <button className="tm-btn" onClick={() => ops.retry(sel)}><RotateCcw size={11} aria-hidden /> {k === "fix" ? "Retry" : "Continue"}</button>}
-              </div>
-            </>
-          ) : (
-            <>
-              <span className="tm-no"><GitMerge size={12} aria-hidden /> Merge</span>
-              <h3>Merge into {branch}</h3>
-              <span className={`tm-pill ${set.status === "merged" ? "done" : set.status === "fix" ? "fix" : set.status === "merging" ? "run" : "q"}`}>
-                {set.status === "merged" ? "Done" : set.status === "fix" ? "Fix" : set.status === "merging" ? `${set.merged} of ${ns.length} merged` : `${ns.filter((x) => kinds[x] !== "done").length} to go`}
-              </span>
-              <dl>
-                <dt>How</dt><dd>One pass, once every ticket is done, each branch merged in order.</dd>
-                {set.merge_stalled && <><dt>Why</dt><dd>its turn ended without finishing</dd></>}
-              </dl>
-              <div className="tm-acts">
-                {set.merge_session && <button className="tm-btn" onClick={() => open(set.merge_session!)}>Open session</button>}
-                {(set.status === "fix" || set.merge_stalled) && <button className="tm-btn" onClick={() => ops.retry("merge")}><RotateCcw size={11} aria-hidden /> {set.status === "fix" ? "Retry" : "Continue"}</button>}
-              </div>
-            </>
-          )}
-        </aside>
-      </div>
+        {q && !big && (small || q.kind === "permission") && <div className="say" style={{ color: "var(--warn)" }}>asks you: answer it in NEEDS YOU below</div>}
+      </div></div>
+      {kind !== "self" && !small && (
+        <form className="tl-reply" onSubmit={(e) => { e.preventDefault(); send(); }}>
+          <span aria-hidden className="pr">❯</span>
+          <input value={text} onChange={(e) => { setText(e.target.value); setSent(""); }} placeholder={sent || `${q ? "answer or " : ""}write to ${no || label}…`}
+                 aria-label={`Message ${no || label}`} />
+        </form>
+      )}
     </div>
   );
 }

@@ -3520,6 +3520,7 @@ export function App() {
                   void jumpTo(id, seq != null ? revealKey(0, seq) : undefined);
                 }}
                 gridMain={gridMain}
+                statusAll={statusMap} superTitle={selected?.ticket_of ? sessions.find((x) => x.id === selected.ticket_of)?.title ?? undefined : undefined}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
