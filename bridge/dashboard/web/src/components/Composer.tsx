@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
-import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { api, type AccountInfo, type FlowChange, type FlowSetting, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
@@ -24,6 +24,7 @@ import { Tip } from "./ui/Tip";
 import { Switch } from "./hud/SettingsModal";
 import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
 import { promptSteps, runs } from "../lib/flowsteps";
+import { flowRuns, saveRun } from "../lib/flowruns";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
@@ -86,6 +87,8 @@ const FLOW_ABOUT: Record<string, string> = {
   ship: "merge, check, clean up", ask: "an answer, nothing changed",
 };
 const ONE_STEP: Record<string, string> = { ship: "ship: merge, check, clean up" };
+// PRESET names a run's fields as the box does; the bridge's flow settings as they do (lib/flowruns).
+const RUN_KEY: Record<keyof KindRun, string> = { model: "model", perm: "mode", effort: "effort", ponytail: "trim" };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
@@ -439,14 +442,17 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
  *  the card's left edge as PRESET hangs from its segment, and `inline` in SETTINGS ▸ AI MANAGEMENT,
  *  where SKILL PATHS was. Two columns, so picking a flow never changes its height (a2-open).
  *  Tickets 04 to 08 of flow-gear each fill their own section of it. */
-export function FlowsSheet({ initial, inline }: { initial?: string | null; inline?: boolean }) {
+type FlowChangeFn = (c: FlowChange) => void;
+export function FlowsSheet({ initial, inline, runRows }: { initial?: string | null; inline?: boolean;
+  /** The picked flow's Model, Mode, Effort and Trim rows: the box's own PRESET rows (none inline in SETTINGS). */
+  runRows?: (f: FlowSetting, change: FlowChangeFn) => ReactNode }) {
   const flowCfg = useFlowSettings();
   const [sheetFlow, setSheetFlow] = useState(initial ?? "build");
   const [flowsErr, setFlowsErr] = useState("");
   useEffect(() => { if (inline) void refreshFlowSettings(); }, [inline]);   // the popover re-reads as the gear opens it
   const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
   const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
-  const flowChange = (c: Parameters<typeof changeFlows>[0]) => { setFlowsErr(""); void changeFlows(c).catch((e: Error) => setFlowsErr(e.message)); };
+  const flowChange: FlowChangeFn = (c) => { setFlowsErr(""); void changeFlows(c).catch((e: Error) => setFlowsErr(e.message)); };
   if (!flowCfg || !sheetPick) return inline ? <div className="aim-hint">Reading the flow settings…</div> : null;
   const SheetGlyph = FLOW_ICON[sheetPick.id] ?? RouteIcon;
   const pickName = flowName(sheetPick.id);
@@ -523,7 +529,7 @@ export function FlowsSheet({ initial, inline }: { initial?: string | null; inlin
                 <Switch on={!!sheetPick.approve} label={`${pickName} approve before build`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Approve before build</label>
             </div>
           )}
-          {/* Model, Mode, Effort and Trim, the flow's run defaults: flow-gear 06 */}
+          {runRows?.(sheetPick, flowChange)}
         </div>
       </div>
       <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
@@ -539,7 +545,6 @@ export function Composer({
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
   dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked,
-  kindPresets, onSaveKindPreset,
 }: {
   /** Multi-agent chats (ComposerMulti). */
   multi?: ComposerMulti | null;
@@ -646,10 +651,6 @@ export function Composer({
   designLinked?: boolean | null;
   /** The open session is a helper: its next turn runs on its own picks, so the kinds dim like an agent's. */
   helper?: boolean;
-  /** The kinds' presets this browser saved (settings), over the defaults (lib/kinds presetFor). */
-  kindPresets?: Partial<Record<KindId, Partial<KindRun>>>;
-  /** PRESET's "Save as <Kind>'s preset": keep this run as the kind's preset in this browser. */
-  onSaveKindPreset?: (k: KindId, r: KindRun) => void;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -659,7 +660,7 @@ export function Composer({
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
-  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
+  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump" | "fs-model" | "fs-mode">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
   // PRESET stays open across picks, so it takes a dialog's Esc as well as a
@@ -931,7 +932,7 @@ export function Composer({
   const [hidden, setHidden] = useState(false);                  // Esc on the route on show, until the box empties or fills
   const [noPath, setNoPath] = useState(false);                 // Esc took an auto pick out of this draft: its send says "no path"
   const [kindPick, setKindPick] = useState<KindPick>(null);     // COMPACT: the kind you tapped or Tabbed to; null = guess it from the text
-  // PRESET's edits to a kind's run, per session; they win over the saved preset (lib/kinds presetFor).
+  // PRESET's edits to a kind's run, per session; they win over the flow's bridge default (lib/kinds presetFor).
   // shortcut: in memory, a reload drops them; persist per session if that's missed
   const [runEdits, setRunEdits] = useState<Record<string, Partial<Record<KindId, Partial<KindRun>>>>>({});
   const [fitPick, setFitPick] = useState(0);
@@ -990,7 +991,7 @@ export function Composer({
   const kindsOn = shelled && flowsOn && !onAgent && !helper && !ask?.send && !leadsSlash;
   const pick = kindPick && kindPick !== "plain" && flowsOff.includes(kindPick) ? null : kindPick;
   const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff }) : { kind: null, how: "none" as const };
-  const run = kind ? presetFor(kind, kindPresets, runEdits[sessionId ?? ""]?.[kind]) : null;
+  const run = kind ? presetFor(kind, flowRuns(flowCfg?.flows), runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
   // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
@@ -1882,23 +1883,28 @@ export function Composer({
     else onPonytail(v);
   };
   // A select is the chips' own Drop: its MenuRows list opens over the popover.
-  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => {
-    const list = k === "model" ? "model" : "mode", prof = profPick(k);
+  // The FLOWS sheet reuses these rows for the picked flow's bridge default: `src` is its run and
+  // its change; no profile marks there, the default is for every session.
+  type PreSrc = { val: KindRun; edit: (k: keyof KindRun, v: string) => void };
+  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string, src?: PreSrc) => {
+    const list = `${src ? "fs-" : ""}${k === "model" ? "model" : "mode"}` as const, prof = src ? null : profPick(k);
+    const val = (src?.val ?? pre)[k], edit = src?.edit ?? preEdit;
     return (
-      <div className="pb-pr"><b>{label}{setHere(k) && <OverrideDot />}</b>
-        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} fallback={{ id: pre[k], label: shown }}
+      <div className="pb-pr"><b>{label}{!src && setHere(k) && <OverrideDot />}</b>
+        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={val} fallback={{ id: val, label: shown }}
           options={prof === null ? opts : opts.map((o) => (o.id === prof ? { ...o, tag: "PROFILE" } : o))}
-          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { preEdit(k, v); setPpList(""); }} />
+          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { edit(k, v); setPpList(""); }} />
       </div>
     );
   };
-  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => {
-    const prof = k === "effort" ? profPick(k) : null;
+  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[], src?: PreSrc) => {
+    const prof = k === "effort" && !src ? profPick(k) : null;
+    const val = (src?.val ?? pre)[k], edit = src?.edit ?? preEdit;
     return (
-      <div className="pb-pr"><b>{label}{k === "effort" && setHere(k) && <OverrideDot />}</b>
+      <div className="pb-pr"><b>{label}{!src && k === "effort" && setHere(k) && <OverrideDot />}</b>
         <div className="pb-sg" role="group" aria-label={label}>
           {opts.map((o) => (
-            <button key={o.id || "-"} type="button" aria-pressed={o.id === pre[k]} onClick={() => preEdit(k, o.id)}
+            <button key={o.id || "-"} type="button" aria-pressed={o.id === val} onClick={() => edit(k, o.id)}
               data-prof={o.id === prof ? "" : undefined} title={o.id === prof ? "your profile's pick" : undefined}>{o.label}</button>
           ))}
         </div>
@@ -1916,7 +1922,7 @@ export function Composer({
       {trimOn && preSeg("ponytail", "Trim", PONYTAILS)}
       {kind && (
         <div className="pb-pf">A change here wins in this session.
-          {onSaveKindPreset && <button type="button" onClick={() => { onSaveKindPreset(kind, run!); setOpenDrop(""); }}>Save as {KINDS[kind].verb}'s preset</button>}
+          <button type="button" onClick={() => { void saveFlowRun(kind, run!); setOpenDrop(""); }}>Save as {KINDS[kind].verb}'s preset</button>
         </div>
       )}
       {/* The chat's helper limits are the session's, not a kind's: they stay with its own picks. */}
@@ -1945,6 +1951,11 @@ export function Composer({
     : kind && <span>{[...(steps ? [{ text: steps } as Fact] : []), ...kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null,
         designLinked: designLinked ?? null, mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
+  // PRESET's "Save as <Flow>'s preset": the flow's bridge default, so the sheet shows it at once.
+  const saveFlowRun = async (fl: string, r: KindRun) => {
+    // shortcut: a failed save only logs (PRESET has closed by then), surface it if saves start failing
+    try { for (const c of saveRun(fl, r)) await changeFlows(c); } catch (e) { console.warn("flow preset save failed", e); }
+  };
   // The gear: the FLOWS sheet (FlowsSheet below), hung from the card's left edge.
   const gear = (
     <>
@@ -1959,7 +1970,19 @@ export function Composer({
       </button>
     </>
   );
-  const flowsPop = openDrop === "flows" && <FlowsSheet initial={kind} />;
+  // PRESET's own rows, holding the picked flow's run default for every session.
+  const flowRunRows = (f: FlowSetting, change: FlowChangeFn) => {
+    // Flows are Claude's: an agent session's own models never reach a flow's default.
+    const claudeModels = agentPick ? modelRows(models, usage) : modelOpts;
+    const src: PreSrc = { val: flowRuns([f])[f.id], edit: (k, v) => change({ flow: f.id, key: RUN_KEY[k], value: v }) };
+    return <>
+      {preSel("model", "Model", claudeModels, modelName(src.val.model), src)}
+      {preSel("perm", "Mode", PERMS, src.val.perm ? optLabel(PERMS, src.val.perm) ?? modeRow(src.val.perm).label : "Session", src)}
+      {preSeg("effort", "Effort", EFFORTS.filter((e) => e.id), src)}
+      {showPonytail && preSeg("ponytail", "Trim", PONYTAILS, src)}
+    </>;
+  };
+  const flowsPop = openDrop === "flows" && <FlowsSheet initial={kind} runRows={flowRunRows} />;
   const rail = (
     <div className="pb-rail">
       {!flowsOn ? (

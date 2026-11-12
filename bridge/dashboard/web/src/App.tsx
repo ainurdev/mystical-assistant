@@ -74,6 +74,8 @@ import { copySelection, cutSelection, editorFor, pasteInto, selectedText } from 
 import { redo, selectAll, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 import { useAiFeatures } from "./lib/ai";
+import { carryPresets } from "./lib/flowruns";
+import { changeFlows } from "./lib/flowsettings";
 import { useIntegrations } from "./lib/integrations";
 import { useSessionPins, useStickyObj, useStickySet } from "./lib/prefs";
 import { SHOW_ALL, shows } from "./lib/sessionfilter";
@@ -389,6 +391,12 @@ export function App() {
   // Which tab the next open lands on, when something asked for one by name
   // (lib/opensettings) — cleared on close, so the menus keep their default.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
+  // The kind presets this browser kept itself go to the bridge once, where every flow's run
+  // default now lives (lib/flowruns), and leave the browser once it has answered.
+  useEffect(() => {
+    void carryPresets(settings.kindPresets, changeFlows, () => patchSettings({ kindPresets: {} })).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Ponytail is this browser's: a setting, so it survives a reload. Model, mode
   // and effort belong to the open session — its brief (the session's own picks
   // over its profile's) is the source of truth, loaded by the effect beside the
@@ -3654,8 +3662,6 @@ export function App() {
                       onSend={(t, i, noPath, run, typed, flow) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed, flow } : {}),
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
-                      kindPresets={settings.kindPresets}
-                      onSaveKindPreset={(k, r) => patchSettings({ kindPresets: { ...settings.kindPresets, [k]: r } })}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
                       designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
                       // An agent turn can't be steered unless the bridge says this one can
