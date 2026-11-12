@@ -228,6 +228,15 @@ def note_event(creds_path: "str | None", info: dict) -> None:
         e.update(data=data, live_at=now, status=info.get("status"))
 
 
+def cached(creds_path: str | None = None) -> dict:
+    """What get_usage() would serve from the cache, never reading anew: for a
+    caller that looks often (the Live board) and must not spawn claude."""
+    with _lock:
+        e = _entry(creds_path or CREDENTIALS_FILE)
+        fresh = e["ts"] and time.time() - e["ts"] < STALE_MAX
+        return _view(e) if fresh or e.get("live_at") else {"available": False}
+
+
 def get_usage(creds_path: str | None = None, max_age: float = CACHE_TTL) -> dict:
     """Usage for one account. creds_path=None is the ambient ~/.claude login;
     max_age=0 reads it now (the PROFILE menu's Check now)."""

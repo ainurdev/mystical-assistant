@@ -5,6 +5,7 @@ Approved 2026-11-06 through /design-first. The pick was **A · SCOREBOARD** with
 ## Behaviour (decided by the user)
 
 - **Start:** RUN in the COUNCIL tab. It works only when the session is idle and there is something a push would send.
+  - Since 2026-11-11 a flow's REVIEW step starts a run too, by itself, in a ticket set's merge session once MERGE ends (the REVIEW AFTER MERGE switch; `skill-paths.md`, section 4). A pass there starts RETRO. A stop waits on you like any other.
 - **A round:**
   - Every enabled reviewer reads the change in a fresh, hidden, read-only run. The seats are Claude (a one-shot `claude -p`) and Codex (over ACP).
   - Each rates it 1–10 and lists findings with a severity (`must` / `should` / `nit`), a file, a line and a one-line title.
@@ -52,7 +53,7 @@ Approved 2026-11-06 through /design-first. The pick was **A · SCOREBOARD** with
 ## Not built
 
 - The Mini App and the bot. The dashboard is 99% of use, and the bot gets the notice.
-- A push gate. RUN is the only start.
+- A push gate. RUN and a flow's REVIEW step are the only starts.
 - A chairman model.
 - Live updates over SSE: the tab polls, every 3 s while a run is active and every 15 s otherwise.
 - A third reviewer.

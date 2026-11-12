@@ -96,7 +96,7 @@ The 7th argument is the same `Runtime.evaluate` string `shot2.mjs` takes, run
 with `awaitPromise`, so an async IIFE with `await sleep()` between clicks is the
 whole step language — no separate DSL.
 
-- **Output is VP8/webm, never mp4.** Playwright's bundled ffmpeg (the only one
+- **Output is webm (VP8, or VP9 from Playwright's ffmpeg 1013 on), never mp4.** Playwright's bundled ffmpeg (the only one
   on this machine) is built `--disable-everything`: mjpeg in, libvpx out, webm
   muxed. No h264, no concat demuxer, no gif. Telegram accepts it via
   `sendVideo` (measured 2026-08-31); `send.py` falls back to `sendDocument` if

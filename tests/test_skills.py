@@ -14,7 +14,7 @@ def _no_network(monkeypatch):
 
 def test_catalog_shape():
     ids = [e["id"] for e in CATALOG]
-    assert len(ids) == len(set(ids)) == 63
+    assert len(ids) == len(set(ids)) == 24
     assert {e["category"] for e in CATALOG} == set(CATEGORIES)
     # every entry renders locally or downloads — never neither, never both
     assert all(bool(e.get("steps")) != bool(e.get("url")) for e in CATALOG)
@@ -27,16 +27,16 @@ def test_install_scan_remove_project(tmp_path):
     proj = str(tmp_path)
     assert skills.installed(proj)["project"] == []
 
-    assert skills.install("readme", "project", proj) == (True, "")
-    md = tmp_path / ".claude" / "skills" / "readme" / "SKILL.md"
-    assert md.read_text() == skill_md(next(e for e in CATALOG if e["id"] == "readme"))
+    assert skills.install("changelog", "project", proj) == (True, "")
+    md = tmp_path / ".claude" / "skills" / "changelog" / "SKILL.md"
+    assert md.read_text() == skill_md(next(e for e in CATALOG if e["id"] == "changelog"))
 
     found = skills.installed(proj)["project"]
     assert [(s["id"], s["category"], s["from_catalog"]) for s in found] == [
-        ("readme", "writing", True)]
+        ("changelog", "writing", True)]
     assert found[0]["description"]  # parsed back out of the front matter
 
-    assert skills.remove("readme", "project", proj) == (True, "")
+    assert skills.remove("changelog", "project", proj) == (True, "")
     assert skills.installed(proj)["project"] == []
 
 
@@ -52,34 +52,34 @@ def test_description_survives_the_round_trip(tmp_path):
 
 def test_community_entry_installs_the_upstream_file(tmp_path):
     proj = str(tmp_path)
-    assert skills.install("brainstorming", "project", proj) == (True, "")
-    d = tmp_path / ".claude" / "skills" / "brainstorming"
+    assert skills.install("verification-before-completion", "project", proj) == (True, "")
+    d = tmp_path / ".claude" / "skills" / "verification-before-completion"
     assert "raw.githubusercontent.com" in (d / "SKILL.md").read_text()
     assert "obra/superpowers" in (d / skills.MARKER).read_text()
 
 
 def test_download_failure_leaves_nothing_behind(tmp_path, monkeypatch):
     monkeypatch.setattr(skills, "_fetch", lambda url: ("", "download failed: URLError"))
-    ok, err = skills.install("brainstorming", "project", str(tmp_path))
+    ok, err = skills.install("verification-before-completion", "project", str(tmp_path))
     assert (ok, err) == (False, "download failed: URLError")
-    assert not (tmp_path / ".claude" / "skills" / "brainstorming").exists()
+    assert not (tmp_path / ".claude" / "skills" / "verification-before-completion").exists()
 
 
 def test_check_updates_spots_an_upstream_change(tmp_path, monkeypatch):
     proj = str(tmp_path)
     monkeypatch.setattr(skills, "SYSTEM_ROOT", str(tmp_path / "sys"))
-    skills.install("brainstorming", "project", proj)   # downloaded entry
-    skills.install("readme", "system")                 # locally rendered entry
+    skills.install("verification-before-completion", "project", proj)   # downloaded entry
+    skills.install("changelog", "system")                 # locally rendered entry
     assert skills.check_updates(proj) == {"outdated": [], "checked": 2, "unreachable": 0}
 
     # upstream moves on
     monkeypatch.setattr(skills, "_fetch", lambda url: ("---\nname: x\n---\nrewritten\n", ""))
     r = skills.check_updates(proj)
-    assert r["outdated"] == [{"id": "brainstorming", "scope": "project"}]
+    assert r["outdated"] == [{"id": "verification-before-completion", "scope": "project"}]
     assert (r["checked"], r["unreachable"]) == (2, 0)
 
     # re-installing IS the update
-    assert skills.install("brainstorming", "project", proj) == (True, "")
+    assert skills.install("verification-before-completion", "project", proj) == (True, "")
     assert skills.check_updates(proj)["outdated"] == []
 
 
@@ -88,8 +88,8 @@ def test_check_updates_leaves_your_edits_alone(tmp_path, monkeypatch):
     ALL must never throw the edit away."""
     proj = str(tmp_path)
     monkeypatch.setattr(skills, "SYSTEM_ROOT", str(tmp_path / "sys"))
-    skills.install("brainstorming", "project", proj)
-    md = tmp_path / ".claude" / "skills" / "brainstorming" / "SKILL.md"
+    skills.install("verification-before-completion", "project", proj)
+    md = tmp_path / ".claude" / "skills" / "verification-before-completion" / "SKILL.md"
     md.write_text(md.read_text() + "\nmy own note\n")
 
     monkeypatch.setattr(skills, "_fetch", lambda url: ("---\nname: x\n---\nrewritten\n", ""))
@@ -100,7 +100,7 @@ def test_check_updates_leaves_your_edits_alone(tmp_path, monkeypatch):
 def test_check_updates_treats_offline_as_not_outdated(tmp_path, monkeypatch):
     proj = str(tmp_path)
     monkeypatch.setattr(skills, "SYSTEM_ROOT", str(tmp_path / "sys"))
-    skills.install("brainstorming", "project", proj)
+    skills.install("verification-before-completion", "project", proj)
     monkeypatch.setattr(skills, "_fetch", lambda url: ("", "download failed: URLError"))
     assert skills.check_updates(proj) == {"outdated": [], "checked": 1, "unreachable": 1}
 
@@ -116,9 +116,9 @@ def test_check_updates_ignores_skills_of_your_own(tmp_path, monkeypatch):
 
 def test_system_scope_uses_system_root(tmp_path, monkeypatch):
     monkeypatch.setattr(skills, "SYSTEM_ROOT", str(tmp_path / "sys"))
-    assert skills.install("adr", "system") == (True, "")
-    assert [s["id"] for s in skills.installed()["system"]] == ["adr"]
-    assert skills.remove("adr", "system") == (True, "")
+    assert skills.install("changelog", "system") == (True, "")
+    assert [s["id"] for s in skills.installed()["system"]] == ["changelog"]
+    assert skills.remove("changelog", "system") == (True, "")
 
 
 def test_never_clobbers_a_skill_of_your_own(tmp_path):
@@ -139,12 +139,25 @@ def test_never_clobbers_a_skill_of_your_own(tmp_path):
     assert got["from_catalog"] is False and got["category"] == "other"
 
 
+def test_a_skill_dropped_from_the_catalog_can_still_be_removed(tmp_path, monkeypatch):
+    """Trimming the catalog must not strand the copies already installed: the
+    dashboard still shows their ✕, so remove() has to honour it."""
+    proj = str(tmp_path)
+    monkeypatch.setitem(skills._BY_ID, "gone", {"id": "gone", "url": "https://example.invalid/SKILL.md"})
+    assert skills.install("gone", "project", proj) == (True, "")
+    monkeypatch.delitem(skills._BY_ID, "gone")          # a later release drops it
+
+    assert skills.installed(proj)["project"][0]["from_catalog"] is True
+    assert skills.remove("gone", "project", proj) == (True, "")
+    assert skills.installed(proj)["project"] == []
+
+
 def test_remove_refuses_when_files_were_added(tmp_path):
     proj = str(tmp_path)
-    skills.install("readme", "project", proj)
-    (tmp_path / ".claude" / "skills" / "readme" / "notes.md").write_text("mine")
-    assert skills.remove("readme", "project", proj) == (False, "directory has other files")
-    assert (tmp_path / ".claude" / "skills" / "readme" / "SKILL.md").exists()
+    skills.install("changelog", "project", proj)
+    (tmp_path / ".claude" / "skills" / "changelog" / "notes.md").write_text("mine")
+    assert skills.remove("changelog", "project", proj) == (False, "directory has other files")
+    assert (tmp_path / ".claude" / "skills" / "changelog" / "SKILL.md").exists()
 
 
 def test_scan_lists_hand_written_skills(tmp_path):
@@ -158,9 +171,9 @@ def test_scan_lists_hand_written_skills(tmp_path):
 
 
 def test_bad_scope_and_unknown_id(tmp_path):
-    assert skills.install("readme", "nope", str(tmp_path))[0] is False
+    assert skills.install("changelog", "nope", str(tmp_path))[0] is False
     assert skills.install("no-such-skill", "project", str(tmp_path))[0] is False
-    assert skills.install("readme", "project", None)[0] is False
+    assert skills.install("changelog", "project", None)[0] is False
 
 
 def test_a_design_sourced_skill_is_labelled_as_one(tmp_path):

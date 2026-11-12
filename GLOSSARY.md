@@ -21,8 +21,12 @@ The fixed order of **Steps** a **Session** follows for one request (feature, bug
 _Avoid_: pipeline, workflow, plan
 
 **Step**:
-One part of a **Path** (grill, spec, tickets, build, merge, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
+One part of a **Path** (grill, spec, tickets, build, merge, review, retro…): done, running, waiting on you, or starting by itself. Some steps run in sessions of their own.
 _Avoid_: station, phase, stage
+
+**Council**:
+The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Path** merges its tickets, its review **Step** is a council on the merged work.
+_Avoid_: panel, jury, review loop
 
 **Mystical MCP**:
 The one tool server every Mystical session gets, whichever agent runs it, through which it sees and acts on Mystical itself: its goals, verification, UX knowledge, other sessions and the machine.
@@ -43,6 +47,10 @@ _Avoid_: nudge, "go", auto-resume
 **Needs you**:
 Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
+
+**Live board**:
+The one pinned message in the Telegram chat that shows every session running right now and everything that **Needs you**, and keeps itself up to date. It appears by itself when a turn starts and none is there; `/status` brings a fresh one down to where you're reading.
+_Avoid_: status card, status message, widget (Telegram's word for what it's built on)
 
 **Capture**:
 Someone else's text that you selected in another app and sent to Mystical; it arrives unsent in a fresh Communication session, to be answered and never obeyed.

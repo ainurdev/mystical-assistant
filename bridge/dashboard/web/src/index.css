@@ -5141,6 +5141,38 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-pf { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line, var(--border)); font-size: var(--t9); line-height: 1.35; color: var(--txl); }
 .pb-pf > button { appearance: none; cursor: pointer; margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-weight: 700;
                   color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+/* FLOW (Composer flowBtn + flowPop, design-drafts/flow-chip A · STEP CHIP): the path's next step
+   beside +, ⚡ when it starts by itself, an amber ✋ when it waits on you (held, or a step you
+   start). Its sheet is PRESET's, hung from the chip's left edge (--fp-at), kept inside the card. */
+.pb-flow-w { position: relative; flex: none; z-index: 26; }
+.pb-flow { box-sizing: border-box; height: 24px; margin-top: -2px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px 0 8px;
+           appearance: none; cursor: pointer; border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); border-radius: 12px;
+           background: transparent; color: var(--txd); font-family: var(--ui-font, inherit); font-size: var(--t10); letter-spacing: .7px; white-space: nowrap; }
+[data-fam] .pb-flow { border-color: var(--line2); border-radius: 12px; }
+.pb-flow > b { font-weight: 700; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-flow > svg:last-child { color: var(--acc); }
+.pb-flow:is([data-mark="held"], [data-mark="you"]) > svg:last-child { color: var(--warn); }
+.pb-flow:hover, [data-fam] .pb-flow:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+.pb-flow[aria-expanded="true"], [data-fam] .pb-flow[aria-expanded="true"] { border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+                                                                             background: color-mix(in oklab, var(--acc) 12%, transparent); }
+.pb-pp.pb-flow-pp { right: auto; left: clamp(0px, var(--fp-at, 0px), calc(100% - 304px)); width: min(304px, 100%); }
+.pb-flow-pp .pb-pr { grid-template-columns: 58px minmax(0, 1fr); }
+.pb-flow-pp .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.pb-flow-acts { display: flex; gap: 6px; min-width: 0; }
+.pb-flow-acts button, .pb-flow-list button { appearance: none; cursor: pointer; font: inherit; font-size: var(--t10); font-weight: 600; letter-spacing: .3px; white-space: nowrap; }
+.pb-flow-acts > button, .pb-flow-jump > button { flex: 1; height: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px;
+  border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); color: var(--txh); }
+.pb-flow-acts > button > svg { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-flow-jump > button > i { font-style: normal; font-size: var(--t8); color: var(--txl); }
+.pb-flow-acts button:disabled { cursor: default; opacity: .45; }
+.pb-flow-acts > button:hover:not(:disabled), .pb-flow-jump > button:hover:not(:disabled) { color: var(--txb); border-color: color-mix(in srgb, var(--acc) 35%, transparent); }
+.pb-flow-jump { position: relative; flex: 1; display: flex; min-width: 0; }
+.pb-flow-list { position: absolute; z-index: 2; right: 0; bottom: calc(100% + 4px); min-width: 100%; display: flex; flex-direction: column; padding: 3px;
+  background: var(--panel); border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 35%, transparent)); border-radius: var(--f-rad-s, 0);
+  box-shadow: var(--f-pop-shadow, 0 -8px 26px var(--shadow-pop)); }
+.pb-flow-list > button { height: 24px; padding: 0 9px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px); background: transparent; color: var(--txh); text-align: left; letter-spacing: 1px; }
+.pb-flow-list > button:hover { background: color-mix(in oklab, var(--acc) 14%, transparent); color: var(--txb); }
+.pb-pf > button:disabled { cursor: default; color: var(--txl); font-weight: 600; opacity: .6; }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
    card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under
    480px the kinds are glyphs (the lit one keeps its ink, AUTO goes), the facts go, the preset is
@@ -6832,6 +6864,7 @@ button.ss-fold:hover { color: var(--txb); }
 .ss-why { margin: -2px 14px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t105)/1.3 var(--f); color: var(--txl); }
 .ss-st:disabled { cursor: default; }
 .ss-st.done .ss-ht { color: var(--txg); }
+.ss-st.skipped .ss-ht { text-decoration: line-through; text-decoration-thickness: 1px; }
 .ss-st .ss-sd { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; }
 .ss-st.now .ss-sd { background: currentColor; }
 .ss-st > .ss-sn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6931,6 +6964,7 @@ button.ss-fold:hover { color: var(--txb); }
 .ss-auto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 0; border-radius: 7px; cursor: pointer;
   font: 800 var(--t9)/1 var(--f); letter-spacing: .06em; color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
 .ss-auto.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 15%, transparent); }
+.ss-auto + .ss-auto { margin-left: 0; }   /* Skip sits against AUTO: one auto margin pushes both right */
 @media (prefers-reduced-motion: reduce) { .tn-dot, .ss-t.run .ss-n, .ss-hi.run::after { animation: none; } }
 
 /* === COUNCIL TAB ===============================================================

@@ -92,18 +92,18 @@ def test_choice_here_switches_to_feature_here(state_dir):
 
 
 def test_step_done_same_turn_twice_is_one_step(state_dir):
-    paths.set_path("s1", "bug", "crash", "rule")
-    assert paths.step_done("s1", "t1") == "retro" and paths.step_done("s1", "t1") == "retro"
+    paths.set_path("s1", "bug", "crash", "rule")            # PONYTAIL is on by default: REVIEW follows
+    assert paths.step_done("s1", "t1") == "review" and paths.step_done("s1", "t1") == "review"
     assert paths.get("s1")["done"] == ["diagnose"]
 
 
 def test_last_station_returns_none(state_dir):
-    paths.set_path("s1", "feature-here", "x", "rule")
-    for i in range(2):
+    paths.set_path("s1", "feature-here", "x", "rule")     # grill, build here, review, retro, audit
+    for i in range(4):
         paths.step_done("s1", f"t{i}")
     assert paths.step_done("s1", "t9") is None
     assert paths.step_done("s1", "t9") is None
-    assert paths.get("s1")["next"] is None and paths.get("s1")["done"][-1] == "retro"
+    assert paths.get("s1")["next"] is None and paths.get("s1")["done"][-1] == "audit"
 
 
 def test_flows_survive_reload(state_dir):
@@ -654,3 +654,274 @@ def test_build_here_moves_the_session_into_its_feature_worktree(repo_session, fa
     assert _git(main, "rev-parse", "master") == master
     assert fake_queue.items[-1]["prompt"] == \
         f"/mattpocock-skills:implement Work in {cwd} on branch feat/my-feature, and commit there."
+
+
+# --- the FLOW chip: REVIEW and AUDIT steps, per-session overrides, skipping ----------
+# (.mystical/design-drafts/flow-chip/SPEC.md; the chip is Composer's, the overrides are flows.json's)
+
+import json  # noqa: E402
+
+
+@pytest.fixture
+def pony_on(monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ponytail"))
+
+
+def _stations(sid):
+    return [s[0] for s in paths.get(sid)["stations"]]
+
+
+def test_review_and_audit_join_the_paths_while_ponytail_is_on(state_dir, pony_on):
+    for path, want in (("feature-here", "grill build-here review retro audit"),
+                       ("bug", "diagnose review retro"),
+                       ("feature", "grill spec tickets build merge retro audit"),
+                       ("refactor", "improve tickets build merge retro audit")):
+        paths.set_path("s1", path, "x", "rule")
+        assert " ".join(_stations("s1")) == want, path
+
+
+def test_no_review_or_audit_while_ponytail_is_off(state_dir, nextstep_on):
+    paths.set_path("s1", "feature-here", "x", "rule")
+    assert _stations("s1") == ["grill", "build-here", "retro"]
+    paths.set_path("s1", "bug", "x", "rule")
+    assert paths.step_done("s1", "t1") == "retro"
+
+
+def test_review_runs_as_the_ponytail_command_and_ends_by_itself(sess, fake_queue, pony_on):
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    assert paths.step_done(sess, t) == "review"
+    assert paths.continue_after_turn(_end(sess, t)) is True
+    assert fake_queue.items[-1]["prompt"].startswith("/ponytail-review ")
+    r = _turn(sess, fake_queue.items[-1]["prompt"])     # its turn never calls StepDone
+    assert paths.get(sess)["path"] == "bug"              # a /ponytail- command keeps the path
+    assert paths.continue_after_turn(_end(sess, r)) is True
+    assert paths.get(sess)["done"] == ["diagnose", "review"]
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
+
+
+def test_a_review_that_calls_step_done_moves_once(sess, fake_queue, pony_on):
+    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    r = _turn(sess, "/ponytail-review the work on this path")
+    assert paths.step_done(sess, r) == "retro"
+    assert paths.continue_after_turn(_end(sess, r)) is True
+    assert paths.get(sess)["done"] == ["diagnose", "review"] and len(fake_queue.items) == 1
+
+
+def test_a_typed_review_off_its_step_marks_nothing(sess, fake_queue, pony_on):
+    paths.set_path(sess, "feature-here", "x", "rule")          # GRILL is the step
+    r = _turn(sess, "/ponytail-review")
+    assert paths.continue_after_turn(_end(sess, r)) is False
+    assert paths.get(sess)["done"] == []
+
+
+def test_audit_runs_last(sess, fake_queue, pony_on):
+    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here", "review"])
+    t = _turn(sess, "/mattpocock-skills:retro")
+    assert paths.step_done(sess, t) == "audit"
+    paths.continue_after_turn(_end(sess, t))
+    assert fake_queue.items[-1]["prompt"] == "/ponytail-audit"
+    a = _turn(sess, "/ponytail-audit")
+    assert paths.continue_after_turn(_end(sess, a)) is False   # the last step: nothing after it
+    assert paths.get(sess)["done"][-1] == "audit" and paths.get(sess)["next"] is None
+
+
+def test_a_session_override_wins_over_the_switch(sess, fake_queue, monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "router")   # AUTO NEXT STEPS off
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sess, t)
+    assert paths.get(sess)["auto"] is False and paths.get(sess)["overrides"] == {}
+    paths.set_option(sess, "nextstep", True)                                # this session only
+    assert paths.get(sess)["auto"] is True and paths.get(sess)["overrides"] == {"nextstep": True}
+    assert paths.continue_after_turn(_end(sess, t)) is True
+
+
+def test_reset_follows_settings_again(sess, nextstep_on):
+    paths.set_path(sess, "bug", "x", "rule")
+    paths.set_option(sess, "autopick", False)
+    paths.set_option(sess, "smartzone", False)
+    paths.set_auto(sess, False)
+    assert paths.get(sess)["overrides"] == {"autopick": False, "smartzone": False, "nextstep": False}
+    paths.set_option(sess, "smartzone", None)
+    assert paths.get(sess)["overrides"] == {"autopick": False, "nextstep": False}
+    paths.reset(sess)
+    assert paths.get(sess)["overrides"] == {} and paths.get(sess)["auto"] is True
+
+
+def test_only_the_three_switches_can_be_set_here(sess, nextstep_on):
+    paths.set_path(sess, "bug", "x", "rule")
+    with pytest.raises(ValueError):
+        paths.set_option(sess, "ponytail", True)
+
+
+def test_overrides_outlive_a_new_path(sess, nextstep_on):
+    paths.set_path(sess, "bug", "x", "rule")
+    paths.set_auto(sess, False)
+    paths.set_path(sess, "feature", "y", "claude")
+    assert paths.get(sess)["overrides"] == {"nextstep": False} and paths.get(sess)["auto"] is False
+
+
+def test_a_flow_held_before_overrides_stays_held(state_dir, nextstep_on):
+    old = {"path": "bug", "skill": None, "by": "rule", "why": "x", "at": 1, "done": [], "next": None, "last": None}
+    with open(paths._file(), "w") as f:   # noqa: SLF001
+        json.dump({"a": dict(old, auto=True), "b": dict(old, auto=False)}, f)
+    paths._cache.clear()
+    assert paths.get("a")["overrides"] == {} and paths.get("a")["auto"] is True
+    assert paths.get("b")["overrides"] == {"nextstep": False} and paths.get("b")["auto"] is False
+
+
+def test_a_smart_zone_override_skips_the_compact(fake_queue, flow_job_with_next_at_160k):
+    paths.set_option("f1", "smartzone", False)
+    paths.continue_after_turn(flow_job_with_next_at_160k)
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:to-spec"]
+
+
+def test_skip_to_marks_the_steps_between_skipped_and_starts_the_target(sess, fake_queue, pony_on):
+    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here"])
+    assert paths.skip_to(sess, "retro") == ""
+    f = paths.get(sess)
+    assert f["done"] == ["grill", "build-here", "review"] and f["skipped"] == ["review"]
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
+
+
+def test_skip_to_the_end_completes_the_path(sess, fake_queue, pony_on):
+    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here", "review", "retro"])
+    assert paths.skip_to(sess, "") == ""
+    f = paths.get(sess)
+    assert f["next"] is None and f["skipped"] == ["audit"] and not fake_queue.items
+
+
+def test_a_skip_while_held_waits_for_the_release(sess, fake_queue, pony_on):
+    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    paths.set_auto(sess, False)
+    assert paths.skip_to(sess, "retro") == ""
+    assert paths.get(sess)["next"]["station"] == "retro" and not fake_queue.items
+    paths.set_auto(sess, True)
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
+
+
+def test_a_skip_mid_turn_spares_the_running_step_and_waits_for_its_end(sess, fake_queue, pony_on):
+    paths.set_path(sess, "feature-here", "x", "rule", done=["grill"])
+    t = _turn(sess, "/mattpocock-skills:implement the thing")      # BUILD HERE runs
+    assert paths.skip_to(sess, "retro") == ""
+    assert paths.get(sess)["skipped"] == ["review"] and not fake_queue.items
+    assert paths.step_done(sess, t) == "retro"
+    assert paths.continue_after_turn(_end(sess, t)) is True
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
+
+
+def test_a_skip_to_a_done_or_unknown_step_is_refused(sess, pony_on):
+    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    assert paths.skip_to(sess, "diagnose") and paths.skip_to(sess, "nope")
+    assert paths.skip_to("nopath", "") and paths.get(sess)["skipped"] == []
+
+
+def test_settings_and_step_routes(server, flow_session, monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ponytail"))
+    paths.set_path(flow_session, "bug", "x", "claude")
+    r = server.post("/local/flow/settings", {"session": flow_session, "key": "autopick", "on": False})
+    assert r["code"] == 200 and r["obj"]["flow"]["overrides"] == {"autopick": False}
+    assert server.post("/local/flow/settings", {"session": flow_session, "reset": True})["obj"]["flow"]["overrides"] == {}
+    assert server.post("/local/flow/settings", {"session": flow_session, "key": "ponytail", "on": True})["code"] == 400
+    assert server.post("/local/flow/settings", {"session": "zzz", "reset": True})["code"] == 404
+    r = server.post("/local/flow/step", {"session": flow_session, "to": "retro"})   # DIAGNOSE's turn runs
+    assert r["code"] == 200 and r["obj"]["flow"]["skipped"] == ["review"]
+    assert server.post("/local/flow/step", {"session": flow_session, "to": "nope"})["code"] == 400
+    assert server.post("/local/flow/step", {"session": "zzz", "to": ""})["code"] == 404
+
+
+def test_route_reads_the_session_overrides(server, flow_session, monkeypatch):
+    from bridge import commands, route
+    seen = {}
+    monkeypatch.setattr(route, "pick", lambda text, **kw: seen.update(kw) or None)
+    monkeypatch.setattr(commands, "available", lambda root: [])
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "autopick", "smartzone"))
+    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.set_option(flow_session, "autopick", False)
+    server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
+    assert seen["off"] == frozenset({"autopick"})
+    paths.reset(flow_session)
+    paths.set_option(flow_session, "smartzone", False)
+    server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
+    assert seen["off"] == frozenset({"smartzone"})
+
+
+def test_route_hears_the_pending_step(server, flow_session, monkeypatch):
+    from bridge import commands, route
+    seen = {}
+    monkeypatch.setattr(route, "pick", lambda text, **kw: seen.update(kw) or None)
+    monkeypatch.setattr(commands, "available", lambda root: [])
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ponytail"))
+    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.step_done(flow_session, "t-" + flow_session)                  # DIAGNOSE done: REVIEW waits
+    server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
+    assert seen["flow_next"] == ("ponytail-review", paths._PONY["review"])   # noqa: SLF001
+
+
+# --- REVIEW after MERGE -----------------------------------------------------------
+
+_BUILT = ["grill", "spec", "tickets", "build"]
+
+
+def _steps(sid):
+    return [st[0] for st in paths.stations(sid)]
+
+
+def _switches(monkeypatch, *on):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in on)
+
+
+@pytest.mark.parametrize("path, before", [("feature", ["grill", "spec", "tickets", "build"]),
+                                          ("refactor", ["improve", "tickets", "build"])])
+def test_review_follows_merge_only_with_tickets_and_its_own_switch_on(state_dir, monkeypatch, path, before):
+    paths.set_path("f1", path, "new", "claude")
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    assert _steps("f1") == before + ["merge", "review", "retro"]
+    for on in (("router", "ticketruns"), ("router", "mergereview")):    # its own switch off, then TICKETS off
+        _switches(monkeypatch, *on)
+        assert _steps("f1") == before + ["merge", "retro"], on
+
+
+def test_the_paths_that_merge_nothing_have_no_review(state_dir, monkeypatch):
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    paths.set_path("h", "feature-here", "new", "claude")
+    paths.set_path("b", "bug", "broken", "claude")
+    assert _steps("h") == ["grill", "build-here", "retro"] and _steps("b") == ["diagnose", "retro"]
+
+
+def test_merge_ending_settles_whether_review_follows(state_dir, monkeypatch):
+    """The switches say until MERGE ends, and what the flow recorded says after: a flow
+    past MERGE from before the step, or with it off, never grows one, and one that
+    reached REVIEW keeps it when the switch goes off."""
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    paths.set_path("old", "feature", "x", "claude", done=_BUILT + ["merge"])     # MERGE ended before the step existed
+    assert _steps("old")[-2:] == ["merge", "retro"]
+    paths.set_path("new", "feature", "x", "claude", done=_BUILT)
+    assert paths.advance("new", "merge") is False                                 # AUTO NEXT STEPS is off: nothing starts
+    assert paths.get("new")["next"]["station"] == "review"
+    _switches(monkeypatch, "router", "ticketruns")
+    assert _steps("new")[-3:] == ["merge", "review", "retro"]                     # reached: it stays
+    paths.set_path("off", "feature", "x", "claude", done=_BUILT)
+    paths.advance("off", "merge")
+    assert paths.get("off")["next"]["station"] == "retro" and "review" not in _steps("off")
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    assert "review" not in _steps("off")                                          # passed over: it stays out
+
+
+def test_review_done_goes_on_to_retro(state_dir, fake_queue, monkeypatch):
+    _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
+    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
+    assert paths.advance("f1", "review") is True
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
+    assert paths.get("f1")["done"][-2:] == ["merge", "review"]
+
+
+
+def test_step_done_in_the_flow_session_takes_a_waiting_review_as_done(state_dir, monkeypatch):
+    """The way on when the council stopped and you accept the work as it is: tell the
+    flow's session to go on, and its StepDone ends REVIEW."""
+    _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
+    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
+    assert paths.step_done("f1", "t-go-on") == "retro"
+    assert paths.get("f1")["done"][-2:] == ["merge", "review"]

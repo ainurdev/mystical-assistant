@@ -1,7 +1,7 @@
 // Screen-record a page: shot2.mjs's chrome+CDP skeleton, but Page.startScreencast
 // instead of one captureScreenshot, JPEG frames piped into Playwright's ffmpeg.
 //
-// Output is VP8/webm, not mp4, because that bundled ffmpeg is built
+// Output is webm (VP8 or VP9), not mp4, because that bundled ffmpeg is built
 // --disable-everything: mjpeg in, libvpx out, webm muxed. No h264, no concat
 // demuxer. So real timing is kept by duplicating the last frame to fill each
 // gap -- screencast only emits frames on *change*, and a fixed rate over
@@ -28,9 +28,13 @@ const PW = `${os.homedir()}/.cache/ms-playwright`;
 const dirs = await fs.readdir(PW);
 const CHROME = dirs.filter(d => d.startsWith("chromium_headless_shell-"))
   .sort((a, b) => +b.split("-")[1] - +a.split("-")[1])[0];
-const BIN = `${PW}/${CHROME}/chrome-headless-shell-linux64/chrome-headless-shell`;
-const FF = `${PW}/${dirs.filter(d => d.startsWith("ffmpeg-"))
-  .sort((a, b) => +b.split("-")[1] - +a.split("-")[1])[0]}/ffmpeg-linux`;
+const FFDIR = dirs.filter(d => d.startsWith("ffmpeg-"))
+  .sort((a, b) => +b.split("-")[1] - +a.split("-")[1])[0];
+// Playwright names what is inside after the platform (chrome-headless-shell-linux64 or
+// -mac-arm64, ffmpeg-linux or ffmpeg-mac): take what is there.
+const inside = async (d, start) => `${PW}/${d}/${(await fs.readdir(`${PW}/${d}`)).find(f => f.startsWith(start))}`;
+const BIN = `${await inside(CHROME, "chrome-headless-shell-")}/chrome-headless-shell`;
+const FF = await inside(FFDIR, "ffmpeg-");
 
 const PORT = 9333 + (process.pid % 500);
 const dir = await fs.mkdtemp(`${os.tmpdir()}/cdp-`);
@@ -54,8 +58,10 @@ for (let i = 0; i < 40 && !tab; i++) {
 }
 if (!tab) { await cleanup(); throw new Error("chrome never opened its debug port"); }
 
+// No encoder is named for the output: webm's default is the one this build has
+// (VP8 in Playwright's ffmpeg 1011, only VP9 in 1013, where "libvpx" is unknown).
 const ff = spawn(FF, ["-hide_banner", "-loglevel", "error", "-f", "image2pipe", "-c:v", "mjpeg",
-  "-r", String(fps), "-i", "pipe:0", "-y", "-an", "-c:v", "libvpx", "-b:v", "2M", "-crf", "20",
+  "-r", String(fps), "-i", "pipe:0", "-y", "-an", "-b:v", "2M", "-crf", "20",
   "-deadline", "realtime", "-cpu-used", "4", out], { stdio: ["pipe", "ignore", "inherit"] });
 ff.stdin.on("error", () => {});  // ffmpeg dying mid-record must not kill us with EPIPE
 const done = new Promise(r => ff.on("close", r));
