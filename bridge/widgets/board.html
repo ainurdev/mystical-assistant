@@ -1,0 +1,71 @@
+<!doctype html><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}
+body{color:var(--tg-theme-text-color);font:14px/1.3 -apple-system,system-ui,sans-serif;padding:10px 12px 4px;font-variant-numeric:tabular-nums}
+.wh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.wh b{font-weight:600;font-size:15px}
+.wh span,.s,.r,.more{color:var(--tg-theme-hint-color);font-size:13px}
+.li{display:grid;grid-template-columns:30px 1fr auto;gap:0 11px;align-items:center;padding:7px 0;position:relative}
+.li+.li:before{content:"";position:absolute;left:41px;right:0;top:0;height:1px;background:var(--tg-theme-section-separator-color)}
+.li>div{min-width:0}
+.ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:600}
+.t{font-size:15px}
+.t,.s,.ul{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{color:var(--tg-theme-hint-color);text-align:center;padding:10px 0 8px}
+.more{padding:2px 0 6px 41px}
+.v{color:var(--tg-theme-link-color)}
+.li .r{display:flex;align-items:center;gap:9px}
+.x,.b{position:relative}
+.x{width:30px;height:30px;border-radius:50%;background:rgba(236,57,66,.16);color:#ec3942;display:grid;place-items:center;font-size:10px}
+.x:after,.b:after{content:"";position:absolute;inset:-7px}
+.b{color:#fff;background:#ec3942;font-weight:600;padding:6px 13px;border-radius:15px}
+.b:after{inset:-8px -2px}
+.g{background:rgba(106,179,243,.12);color:var(--tg-theme-link-color)}
+.u{margin-top:4px;padding:6px 0 4px;border-top:1px solid var(--tg-theme-section-separator-color);font-size:13px;color:var(--tg-theme-hint-color)}
+.ub{display:grid;grid-template-columns:36px 1fr 36px 62px;gap:8px;align-items:center;height:22px}
+.ub i{height:6px;border-radius:3px;background:var(--tg-theme-section-separator-color);overflow:hidden}
+.ub b{display:block;height:100%}
+.ub em,.ub em+span{font-style:normal;text-align:right}
+.ub em{color:var(--tg-theme-text-color)}
+</style><div id="b"></div><script>
+var T=window.TelegramWidget,D=null,O=null,S={};
+var C=["#ff885e,#ff516a","#ffcd6a,#ffa85c","#a695e7,#7c6fd3","#a0de7e,#54cb68","#53edd6,#28c9b7","#72d5fd,#2a9ef1","#e0a2f3,#d669ed"];
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return"&#"+c.charCodeAt(0)+";"})}
+function two(n){return(n<10?"0":"")+n}
+function clock(s){s=Math.max(0,s|0);var h=s/3600|0,m=s%3600/60|0;return(h?h+":"+two(m):m)+":"+two(s%60)}
+function ago(s){return s<5?"just now":s<60?(s|0)+"s ago":s<3600?(s/60|0)+"m ago":(s/3600|0)+"h ago"}
+function ic(r){for(var i=0,n=0;i<r.k.length;i++)n+=r.k.charCodeAt(i);return'<span class="ic" style="background:linear-gradient('+(r.g||C[n%7])+')">'+esc(r.i||(Array.from(r.t||"?")[0]||"?").toUpperCase())+"</span>"}
+function wait(s){return s<60?(s|0)+"s":s<3600?(s/60|0)+"m":s<86400?(s/3600|0)+"h":(s/86400|0)+"d"}
+function hm(a){var d=new Date(a*1000);return d.getHours()+":"+two(d.getMinutes())}
+function li(r,s,right,t){return'<div class="li" data-k="'+esc(r.k)+'">'+ic(r)+'<div><div class="t" dir="auto">'+(t||esc(r.t))+'</div><div class="s" dir="auto">'+s+'</div></div><span class="r">'+right+"</span></div>"}
+// One drawing function per row kind: later kinds add theirs beside these.
+var K={
+r:function(r,now,open){return open==r.k?ask(r):li(r,esc(r.s)+(r.n?" · "+esc(r.n):""),S[r.k]?"Stopping…":clock(now-r.a)+sq(r))},
+h:function(r,now){return li(r,esc(r.s),r.a?clock(now-r.a):"")},
+n:function(r,now){return li(r,'<span class="v">'+esc(r.v)+":</span> "+esc(r.s),r.a?wait(now-r.a):"")},
+w:function(r,now,open){var p=r.p;return K.r({k:r.k,t:r.t,a:r.a,s:"work run · "+p[0]+" of "+p[1]+" done"+(r.s?" · "+r.s:"")+(p[2]?" +"+p[2]:"")},now,open)}};
+function bt(c,a,k,l,t){return'<span class="'+c+'" role="button" aria-label="'+l+" "+t+'" data-a="'+a+'" data-k="'+esc(k)+'">'+(c=="x"?"■":l)+"</span>"}
+function sq(r){return bt("x","x",r.k,"Stop",esc(r.t))}
+function ask(r){var t=esc(r.t);return li(r,"The work so far stays.",bt("b g","k",r.k,"Keep",t)+bt("b","s",r.k,"Stop",t),"Stop "+t+"?")}
+function tap(a,k){if(a=="x")O=k;else{O=null;if(a=="s"&&!S[k]){var c="s";for(var i in D.rows)if(D.rows[i].k==k){S[k]=D.rows[i].a;if(D.rows[i].c=="w")c="w"}T.request(c+":"+k).then(function(r){if(r.result!="ok")delete S[k];draw()},function(){delete S[k];draw()})}}draw()}
+function head(d,now){return'<div class="wh"><b>Live sessions</b><span>'+ago(now-d.at)+"</span></div>"}
+function quiet(d){for(var h='<div class="empty">Nothing is running.</div>',l=d.last||[],i=0;i<l.length;i++)h+=li({k:"",t:l[i].t,i:l[i].ok?"✓":"!",g:C[l[i].ok?3:0]},esc(l[i].s),hm(l[i].a));return h}
+function left(d){return'<div class="empty">'+(d.left=="off"?"The Live board is off.":"This board moved down the chat.")+"</div>"}
+function rleft(s){s=Math.max(0,s);return s<60?"now":s<3600?(s/60|0)+"m":s<86400?(s/3600|0)+"h "+two(s%3600/60|0)+"m":(s/86400|0)+"d "+(s%86400/3600|0)+"h"}
+var UC=["var(--tg-theme-button-color)","#f5a623","#e5484d"];
+function bar(n,w,now){if(!w)return"";var c=UC[w[2]]||UC[0],p=w[0]|0;return'<div class="ub"><span>'+n+'</span><i><b style="width:'+Math.min(100,p)+"%;background:"+c+'"></b></i><em'+(w[2]?' style="color:'+c+'"':"")+">"+p+"%</em><span>"+(w[1]?"↻ "+rleft(w[1]-now):"")+"</span></div>"}
+function foot(d,now){var u=d.u;return u&&u.w?'<div class="u">'+(u.l?'<div class="ul" dir="auto">'+esc(u.l)+"</div>":"")+bar("5h",u.w[0],now)+bar("week",u.w[1],now)+"</div>":""}
+function more(d){return d.more?'<div class="more">+'+d.more+" more</div>":""}
+function render(d,open,now){
+if(!d||d.v!==1)return'<div class="empty">Send /status for a fresh board.</div>';
+if(d.left)return left(d);
+var rs=d.rows||[],h=head(d,now)+(rs.length?"":quiet(d));
+for(var i=0;i<rs.length;i++)if(K[rs[i].c])h+=K[rs[i].c](rs[i],now,open);
+return h+more(d)+foot(d,now)}
+function parse(){try{return JSON.parse(T.chatData)}catch(e){return null}}
+function draw(){document.getElementById("b").innerHTML=render(D,O,Date.now()/1000|0)}
+D=parse();draw();setInterval(draw,1000);
+T.onEvent("chatDataChanged",function(){D=parse();draw()});
+T.onEvent("chatDataChanged",function(){var ks={},rs=D&&D.rows||[],i;for(i in rs)ks[rs[i].k]=rs[i].a;if(!(O in ks))O=null;for(var k in S)if(ks[k]!==S[k])delete S[k];draw()});
+document.getElementById("b").addEventListener("click",function(e){for(var n=e.target;n&&n.getAttribute;n=n.parentNode){var a=n.getAttribute("data-a");if(a)return tap(a,n.getAttribute("data-k"))}});
+T.ready&&T.ready();
+</script>

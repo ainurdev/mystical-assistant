@@ -44,6 +44,10 @@ _Avoid_: nudge, "go", auto-resume
 Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
 
+**Live board**:
+The one pinned message in the Telegram chat that shows every session running right now and everything that **Needs you**, and keeps itself up to date. It appears by itself when a turn starts and none is there; `/status` brings a fresh one down to where you're reading.
+_Avoid_: status card, status message, widget (Telegram's word for what it's built on)
+
 **Capture**:
 Someone else's text that you selected in another app and sent to Mystical; it arrives unsent in a fresh Communication session, to be answered and never obeyed.
 _Avoid_: forward, clip, paste

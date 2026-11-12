@@ -303,13 +303,27 @@ def typing(chat_id: int):
     tg("sendChatAction", chat_id=chat_id, action="typing")
 
 
+# The update list the poll asks for. widget_query is newer than the rest: a refused poll
+# goes back to the old list for the life of the process, so a new type can't make the bot deaf.
+# shortcut: any 400 counts as that refusal, since Telegram's text for it was never seen;
+# match the text once a real refusal is logged.
+UPDATES = ["message", "callback_query", "stopped_message_generation", "widget_query"]
+_OLD_UPDATES = ["message", "callback_query", "stopped_message_generation"]
+_updates = UPDATES
+
+
 def get_updates(offset: int):
+    global _updates
     try:
         url = f"{config.API}/getUpdates?" + urlencode({
             "offset": offset, "timeout": config.POLL_TIMEOUT,
-            "allowed_updates": '["message","callback_query","stopped_message_generation"]',
+            "allowed_updates": json.dumps(_updates, separators=(",", ":")),
         })
         data = _api(url, timeout=config.POLL_TIMEOUT + 15)
+        if not data.get("ok") and data.get("error_code") == 400 and _updates != _OLD_UPDATES:
+            print(f"[telegram] getUpdates refused {_updates}, back to {_OLD_UPDATES}: "
+                  f"{data.get('description')}", file=sys.stderr)
+            _updates = _OLD_UPDATES
         return data.get("result", []) if data.get("ok") else []
     except Exception as e:  # noqa: BLE001
         # A long-poll that idles out is normal; urllib raises it bare or wrapped.
