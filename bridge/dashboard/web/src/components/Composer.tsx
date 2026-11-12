@@ -434,6 +434,99 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
   return EFFORTS.find((e) => e.id === effort) ?? EFFORTS[0];
 }
 
+/** The FLOWS sheet, for every session (bridge/flowsettings.py): in the gear's popover, hung from
+ *  the card's left edge as PRESET hangs from its segment, and `inline` in SETTINGS ▸ AI MANAGEMENT,
+ *  where SKILL PATHS was. Two columns, so picking a flow never changes its height (a2-open).
+ *  Tickets 04 to 08 of flow-gear each fill their own section of it. */
+export function FlowsSheet({ initial, inline }: { initial?: string | null; inline?: boolean }) {
+  const flowCfg = useFlowSettings();
+  const [sheetFlow, setSheetFlow] = useState(initial ?? "build");
+  const [flowsErr, setFlowsErr] = useState("");
+  useEffect(() => { if (inline) void refreshFlowSettings(); }, [inline]);   // the popover re-reads as the gear opens it
+  const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
+  const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
+  const flowChange = (c: Parameters<typeof changeFlows>[0]) => { setFlowsErr(""); void changeFlows(c).catch((e: Error) => setFlowsErr(e.message)); };
+  if (!flowCfg || !sheetPick) return inline ? <div className="aim-hint">Reading the flow settings…</div> : null;
+  const SheetGlyph = FLOW_ICON[sheetPick.id] ?? RouteIcon;
+  const pickName = flowName(sheetPick.id);
+  return (
+    <div className="pb-pp fs-sheet" role={inline ? "group" : "dialog"} aria-label="Flows" data-inline={inline ? "" : undefined} style={{ overflow: "visible" }}>
+      <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows<span>for every session</span></h4>
+      <div className="fs-top">
+        <div className="pb-pr"><b>Flows</b>
+          <div className="pb-sg" role="group" aria-label="Flows">
+            {[true, false].map((v) => (
+              <button key={String(v)} type="button" aria-pressed={flowCfg.on === v} onClick={() => flowChange({ key: "on", value: v })}>{v ? "ON" : "OFF"}</button>
+            ))}
+          </div>
+        </div>
+        {/* GUESS AUTO | BY HAND: flow-gear 07 */}
+        <label className="fs-sw"><Switch on={flowCfg.autopick} label="Auto picks" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />Auto picks</label>
+        <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
+      </div>
+      <div className="fs-body">
+        <div className="fs-col" role="listbox" aria-label="Flows">
+          {flowCfg.flows.map((f) => {
+            const Icon = FLOW_ICON[f.id] ?? RouteIcon;
+            return (
+              <div key={f.id} className="fs-row" role="option" aria-selected={f.id === sheetPick.id} data-sel={f.id === sheetPick.id ? "" : undefined}
+                data-off={f.on ? undefined : ""} tabIndex={0} onClick={() => setSheetFlow(f.id)}
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSheetFlow(f.id); } }}>
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
+                </span>
+                <Icon size={13} strokeWidth={2} aria-hidden />
+                <b>{flowName(f.id)}</b>
+                <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
+                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{st.on && !st.ponytail_off ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
+                <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
+              </div>
+            );
+          })}
+          {/* NO KIND CLAUDE PICKS | AS TYPED: flow-gear 07 */}
+        </div>
+        <div className="fs-detail">
+          <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
+          <div className="pb-pr"><b>Steps</b>
+            {/* switched on and off by flow-gear 04; a fixed step always runs */}
+            <div className="fs-chips">
+              {sheetPick.steps.map((st, i) => (
+                <Fragment key={st.step}>{i > 0 && <i aria-hidden>›</i>}
+                  <span className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={st.on && !st.ponytail_off ? "" : undefined}
+                    title={st.ponytail_off ? "PONYTAIL is off: this step doesn't run" : undefined}>{st.step.toUpperCase()}</span></Fragment>
+              ))}
+            </div>
+          </div>
+          {sheetPick.steps.length > 1 && (
+            <div className="pb-pr"><b>Next</b>
+              <div className="pb-sg" role="group" aria-label={`${pickName} next`}>
+                {[true, false].map((v) => (
+                  <button key={String(v)} type="button" aria-pressed={sheetPick.next === v} onClick={() => flowChange({ flow: sheetPick.id, key: "next", value: v })}
+                    title={v ? "its steps start by themselves" : "each step waits for you"}>
+                    {v ? <><Zap size={10} strokeWidth={2.4} aria-hidden />AUTO</> : "HOLD"}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {sheetPick.tickets !== undefined && (
+            <div className="fs-tk">
+              <label className="fs-sw" title="approved tickets build as sessions, every ready one at once, merged at the end">
+                <Switch on={sheetPick.tickets} label={`${pickName} tickets`} onClick={() => flowChange({ flow: sheetPick.id, key: "tickets", value: !sheetPick.tickets })} />Tickets</label>
+              <label className="fs-sw" title="the tickets wait for Approve & build before any session starts">
+                <Switch on={!!sheetPick.approve} label={`${pickName} approve before build`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Approve before build</label>
+            </div>
+          )}
+          {/* Model, Mode, Effort and Trim, the flow's run defaults: flow-gear 06 */}
+        </div>
+      </div>
+      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
+        : "A change here is for every session. PRESET and the FLOW chip change one session."}
+        <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}>Reset {pickName}</button>
+      </div>
+    </div>
+  );
+}
+
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
@@ -1844,87 +1937,21 @@ export function Composer({
     : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
         mapBuiltAt: graph?.exists ? graph.built_at : null, pack, askPerm: run?.perm ?? "" })
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
-  // The gear: the FLOWS sheet, for every session (bridge/flowsettings.py). It hangs from the card's
-  // left edge as PRESET hangs from its segment, two columns so picking a flow never changes its
-  // height (a2-open). Tickets 04 to 08 of flow-gear each fill their own section of it.
-  const [sheetFlow, setSheetFlow] = useState("build");
-  const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
-  const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
-  const flowChange = (c: Parameters<typeof changeFlows>[0]) => void changeFlows(c).catch((e: Error) => setFlowsErr(e.message));
-  const [flowsErr, setFlowsErr] = useState("");
+  // The gear: the FLOWS sheet (FlowsSheet below), hung from the card's left edge.
   const gear = (
     <>
       <span className="fs-gsep" aria-hidden />
       <button type="button" className="pb-kg fs-gear" aria-label="Flow settings" aria-haspopup="dialog" aria-expanded={openDrop === "flows"}
         title="FLOWS — settings for every session" onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
-          if (openDrop !== "flows") { void refreshFlowSettings(); setFlowsErr(""); if (kind) setSheetFlow(kind); }
+          if (openDrop !== "flows") void refreshFlowSettings();
           setOpenDrop((d) => (d === "flows" ? "" : "flows"));
         }}>
         <Settings size={13} strokeWidth={2} aria-hidden />
       </button>
     </>
   );
-  const SheetGlyph = FLOW_ICON[sheetPick?.id ?? ""] ?? RouteIcon;
-  const flowsPop = openDrop === "flows" && flowCfg && sheetPick && (
-    <div className="pb-pp fs-sheet" role="dialog" aria-label="Flows" style={{ overflow: "visible" }}>
-      <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows<span>for every session</span></h4>
-      <div className="fs-top">
-        <div className="pb-pr"><b>Flows</b>
-          <div className="pb-sg" role="group" aria-label="Flows">
-            {[true, false].map((v) => (
-              <button key={String(v)} type="button" aria-pressed={flowCfg.on === v} onClick={() => flowChange({ key: "on", value: v })}>{v ? "ON" : "OFF"}</button>
-            ))}
-          </div>
-        </div>
-        {/* GUESS AUTO | BY HAND: flow-gear 07 */}
-        <label className="fs-sw"><Switch on={flowCfg.autopick} label="Auto picks" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />Auto picks</label>
-        <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
-      </div>
-      <div className="fs-body">
-        <div className="fs-col" role="listbox" aria-label="Flows">
-          {flowCfg.flows.map((f) => {
-            const Icon = FLOW_ICON[f.id] ?? RouteIcon;
-            return (
-              <div key={f.id} className="fs-row" role="option" aria-selected={f.id === sheetPick.id} data-sel={f.id === sheetPick.id ? "" : undefined}
-                data-off={f.on ? undefined : ""} tabIndex={0} onClick={() => setSheetFlow(f.id)}
-                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSheetFlow(f.id); } }}>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
-                </span>
-                <Icon size={13} strokeWidth={2} aria-hidden />
-                <b>{flowName(f.id)}</b>
-                <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
-                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{st.on && !st.ponytail_off ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
-                <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
-              </div>
-            );
-          })}
-          {/* NO KIND CLAUDE PICKS | AS TYPED: flow-gear 07 */}
-        </div>
-        <div className="fs-detail">
-          <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{flowName(sheetPick.id)}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
-          <div className="pb-pr"><b>Steps</b>
-            {/* switched on and off by flow-gear 04; a fixed step always runs */}
-            <div className="fs-chips">
-              {sheetPick.steps.map((st, i) => (
-                <Fragment key={st.step}>{i > 0 && <i aria-hidden>›</i>}
-                  <span className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={st.on && !st.ponytail_off ? "" : undefined}
-                    title={st.ponytail_off ? "PONYTAIL is off: this step doesn't run" : undefined}>{st.step.toUpperCase()}</span></Fragment>
-              ))}
-            </div>
-          </div>
-          {/* NEXT ⚡AUTO | HOLD: flow-gear 05 */}
-          {/* TICKETS and APPROVE BEFORE BUILD (the flows that build as tickets): flow-gear 05 */}
-          {/* Model, Mode, Effort and Trim, the flow's run defaults: flow-gear 06 */}
-        </div>
-      </div>
-      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
-        : "A change here is for every session. PRESET and the FLOW chip change one session."}
-        <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}>Reset {flowName(sheetPick.id)}</button>
-      </div>
-    </div>
-  );
+  const flowsPop = openDrop === "flows" && <FlowsSheet initial={kind} />;
   const rail = (
     <div className="pb-rail">
       {!flowsOn ? (

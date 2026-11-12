@@ -64,6 +64,14 @@ export function flowOf(path: string): string | null {
   return FLOWS.includes(f) ? f : null;
 }
 
+/** The SETTINGS values a session's flow reads (bridge/paths.py flow_id): its flow's NEXT and TICKETS,
+    BUILD's for a one-skill run or no flow; the old switches from a bridge older than the FLOWS sheet. */
+export function flowGlobals(flow: Flow | null, cfg: { flows: { id: string; next: boolean; tickets?: boolean }[] } | null,
+  ai: Partial<Record<string, boolean>>): { nextstep: boolean; ticketruns: boolean } {
+  const f = cfg?.flows.find((x) => x.id === ((flow && flowOf(flow.path)) || "build"));
+  return f ? { nextstep: f.next, ticketruns: !!f.tickets } : { nextstep: !!ai.nextstep, ticketruns: !!ai.ticketruns };
+}
+
 /** The flow the session is on until its last step is done (the row's dot), else null. */
 export function runningFlow(flow: Flow | null): string | null {
   return flow && (flow.stations ?? []).some(([k]) => !flow.done.includes(k)) ? flowOf(flow.path) : null;

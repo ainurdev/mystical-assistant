@@ -167,7 +167,8 @@ import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
-import { flowChip, flowView, runningFlow } from "./lib/flowview";
+import { flowChip, flowGlobals, flowView, runningFlow } from "./lib/flowview";
+import { useFlowSettings } from "./lib/flowsettings";
 import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
@@ -614,8 +615,12 @@ export function App() {
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
   const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
     `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
-  const boxChip = useMemo(() => flowChip(boxFlow, flowView(boxFlow, turns, boxSet, !!ai.ticketruns), ai),
-    [boxFlow, boxSet, turns, ai]);
+  // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
+  const flowCfg = useFlowSettings();
+  const boxChip = useMemo(() => {
+    const g = flowGlobals(boxFlow, flowCfg, ai);
+    return flowChip(boxFlow, flowView(boxFlow, turns, boxSet, g.ticketruns), { ...ai, ...g });
+  }, [boxFlow, boxSet, turns, ai, flowCfg]);
   // A Rivendell job whose answer is the point (lib/jobs oneShot) shows its job
   // bar instead of the composer, until you ask about it or it already has a
   // follow-up. Asked-about sessions are remembered for this page's life only.
