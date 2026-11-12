@@ -1,5 +1,6 @@
-/** A ticket set as columns for the TICKETS card's graph: a ticket's column is 1 + its
- *  longest blocker chain, rows go by number inside a column, and MERGE is a last column
+/** A ticket set as columns for the ticket map: a ticket's column is 1 + its longest
+ *  blocker chain (with every ready ticket starting at once, a column is a wave that runs
+ *  together), rows go by the blockers' average row inside a column, and MERGE is a last column
  *  of its own, fed by every ticket nothing else waits on. A blocker the set doesn't
  *  have is ignored (a deleted ticket file) rather than looped on; a cycle can't reach
  *  here, since the bridge refuses to build one. */
@@ -26,13 +27,21 @@ export function dagLayout(tickets: DagIn[]): { nodes: DagNode[]; edges: { from: 
     colOf.set(n, c);
     return c;
   };
-  const rows: Record<number, number> = {};
-  const nodes: DagNode[] = [...tickets].sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0)).map((t) => {
-    const c = col(t.n);
-    rows[c] = (rows[c] ?? -1) + 1;
-    return { n: t.n, col: c, row: rows[c] };
-  });
-  const cols = nodes.length ? Math.max(...nodes.map((x) => x.col)) + 1 : 0;
+  // Column 0 goes by number; every later column by its blockers' average row (ties by
+  // number), which keeps most edges from crossing.
+  const rowOf = new Map<string, number>();
+  const byNum = [...tickets].sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+  const cols = byNum.length ? Math.max(...byNum.map((t) => col(t.n))) + 1 : 0;
+  const nodes: DagNode[] = [];
+  for (let c = 0; c < cols; c++) {
+    const here = byNum.filter((t) => col(t.n) === c);
+    const mean = (t: DagIn) => {
+      const rs = t.blockedBy.filter((b) => rowOf.has(b)).map((b) => rowOf.get(b)!);
+      return rs.length ? rs.reduce((x, y) => x + y, 0) / rs.length : 0;
+    };
+    if (c > 0) here.sort((a, b) => mean(a) - mean(b));   // stable: equal means keep number order
+    here.forEach((t, i) => { rowOf.set(t.n, i); nodes.push({ n: t.n, col: c, row: i }); });
+  }
   const edges = tickets.flatMap((t) => t.blockedBy.filter((b) => by.has(b)).map((b) => ({ from: b, to: t.n })));
   const waited = new Set(edges.map((e) => e.from));
   for (const x of nodes) if (!waited.has(x.n)) edges.push({ from: x.n, to: "MERGE" });

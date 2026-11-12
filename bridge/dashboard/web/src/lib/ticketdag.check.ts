@@ -18,7 +18,12 @@ console.assert(at("05").col === 1 && at("06").col === 1, "05 and 06 sit in colum
 console.assert(g.cols === 3, "three columns, MERGE the last");
 console.assert(at("MERGE").col === 2, "MERGE is in the last column");
 console.assert(["01", "02", "03", "04"].map((n) => at(n).row).join() === "0,1,2,3", "rows go by number");
-console.assert(at("05").row === 0 && at("06").row === 1, "rows count inside a column");
+console.assert(at("06").row === 0 && at("05").row === 1, "a later column goes by its blockers' average row: 06 (rows 1, 2) above 05 (row 3)");
+// The Watcher set: 06 waits on 01 (row 0) alone, so it sits above 03, 04 and 05, and 01's edge to it never crosses 02's.
+const w = dagLayout([T("01"), T("02"), T("03", "01", "02"), T("04", "02"), T("05", "02"), T("06", "01"), T("07", "03", "04"), T("08", "05", "07"), T("09", "06")]);
+const wr = (n: string) => w.nodes.find((x) => x.n === n)!.row;
+console.assert(["06", "03", "04", "05"].map(wr).join() === "0,1,2,3", "wave 2 orders 06, 03, 04, 05");
+console.assert(wr("09") === 0 && wr("07") === 1, "wave 3 follows: 09 under 06's row, 07 under 03/04");
 console.assert(e("04", "05") && e("02", "06") && e("03", "06"), "blocker edges");
 console.assert(e("01", "MERGE") && e("05", "MERGE") && e("06", "MERGE"), "tickets nothing waits on feed MERGE");
 console.assert(!e("04", "MERGE") && g.edges.length === 6, "no other edges");
