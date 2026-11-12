@@ -7063,8 +7063,13 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-t > small { flex: none; min-width: 40px; text-align: right; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
 .ss-t.err > small { color: var(--err); }
 .ss-t > em { flex: none; width: 38px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
-/* quiet rows: number, prompt and time; marks, spend, copy and send again on hover */
-.ss-t:not(:hover, :focus-within, .sel) :is(.ss-mk, .ss-acts), .ss-t:not(:hover, :focus-within, .sel) > em { display: none; }
+/* quiet rows: number, prompt and time; marks, spend, copy and send again on hover. The buttons
+   hide out of sight, not display: none, so Tab still reaches them and its focus shows them. */
+.ss-t:not(:hover, :focus-within, .sel) > em { display: none; }
+.ss-t:not(:hover, :focus-within, .sel) :is(.ss-mk, .ss-acts) {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
 .ss-acts { flex: none; display: flex; gap: 2px; }
 .ss-acts .gp-ib { width: 20px; height: 20px; }
 /* the path's next step, and AUTO */
