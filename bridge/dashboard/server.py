@@ -1387,8 +1387,9 @@ class Handler(BaseHTTPRequestHandler):
                 flowsettings.change(body)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
-            if body.get("key") in ("on", "tickets") and body.get("value") is True:
-                # Switched back on: ticket sets carry on where they stopped (idempotent, as at a restart).
+            if body.get("value") is True and (body.get("key") == "tickets" or body.get("key") == "on" and "flow" not in body):
+                # FLOWS or a flow's TICKETS back on (what tickets._on reads): ticket sets carry on
+                # where they stopped (idempotent, as at a restart).
                 from bridge import tickets
                 threading.Thread(target=tickets.boot, daemon=True).start()
             return self._json(flowsettings.state())
@@ -1639,6 +1640,8 @@ class Handler(BaseHTTPRequestHandler):
                 p = str(body.get("path") or "")
                 from bridge import flowsettings
                 name = paths.OLD.get(p, p).removesuffix("-here")
+                if not paths.on():
+                    return self._json({"text": "Path not recorded: FLOWS is off in the prompt box's gear. Start nothing."})
                 if name in flowsettings.FLOWS and not flowsettings.flow_on(name):
                     return self._json({"text": f"Path not recorded: {name.upper()} is switched off in FLOWS. "
                                                "Pick another path, or start nothing."})

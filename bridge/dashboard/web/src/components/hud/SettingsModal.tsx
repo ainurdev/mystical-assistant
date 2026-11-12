@@ -622,9 +622,8 @@ function Placeholder({ icon: Icon, spin, children }: {
 
 /** On/off, the way an app's settings page says it: a toggle (each family
  *  draws its own — index.css, THE FAMILIES · SETTINGS). */
-export function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label?: string }) {
-  return <button className="set-toggle" role="switch" aria-checked={on} aria-label={label} data-on={on || undefined} onClick={onClick}><i /></button>;
-}
+import { Switch } from "../ui/Switch";   // its own module: Composer imports it without this file
+export { Switch };
 
 function Volume({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (v: number) => void }) {
   return (
@@ -3722,7 +3721,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       </AimFold>
       <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS", "FLOWS"]} openSec={openSec}
         count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
-        hint="model calls the bridge makes on top of your turns">
+        hint="model calls the bridge makes on top of your turns, and the flows your prompts follow">
         <ExtrasFold models={models} />
       </AimFold>
       <SaversFold openSec={openSec} />

@@ -37,6 +37,12 @@ def test_base_cmd_no_plugin_dir_when_off_or_skip_pack(router_off, monkeypatch):
 
 
 @pytest.fixture
+def flows_on(monkeypatch):
+    """FLOWS on, every other switch as it is: SetPath records nothing while FLOWS is off."""
+    monkeypatch.setattr(paths, "on", lambda: True)
+
+
+@pytest.fixture
 def session_c1():
     s = store.create_session(1, "p")
     store.set_claude_session_id(s["id"], "c1")
@@ -194,7 +200,7 @@ def test_path_tools_hidden_for_rivendell_origin(router_on, rivendell_origin):
     assert "SetPath" not in {t["name"] for t in _list_tools()}
 
 
-def test_set_path_and_step_done_idempotent(server, flow_session):
+def test_set_path_and_step_done_idempotent(server, flow_session, flows_on):
     assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "build", "why": "new"})["obj"] == \
         {"text": "Path recorded: build."}
     a = server.post("/local/flow/done", {"claude_session_id": "cf1"})
@@ -208,7 +214,7 @@ def test_step_done_without_a_path_changes_nothing(server, flow_session):
     assert r["obj"] == {"text": "No path is running in this session."} and paths.get(flow_session) is None
 
 
-def test_a_bad_path_is_told_to_claude(server, flow_session):
+def test_a_bad_path_is_told_to_claude(server, flow_session, flows_on):
     # an HTTP error reaches Claude as "Could not reach the bridge"; the reason must get through
     assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "nope", "why": "x"}) == \
         {"obj": {"text": "Path not recorded: unknown path 'nope'."}, "code": 200}
@@ -995,7 +1001,7 @@ def test_old_records_carry_on_under_the_new_names(state_dir):
     assert paths.step_done("a", "t2") == "tickets"                     # and it carries on
 
 
-def test_set_path_takes_the_old_names(state_dir, server, flow_session):
+def test_set_path_takes_the_old_names(state_dir, server, flow_session, flows_on):
     assert paths.set_path("s1", "feature-here", "x", "rule")["path"] == "build-here"
     assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "bug", "why": "x"})["obj"] == \
         {"text": "Path recorded: fix."}

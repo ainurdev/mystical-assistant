@@ -21,7 +21,8 @@ import { SMART_ZONE, caption, ghostFor, isDropped, isStale, shouldAutoApply, swa
 import type { FlowChip, FlowOption } from "../lib/flowview";
 import type { FlowAct } from "../lib/useFlow";
 import { Tip } from "./ui/Tip";
-import { Switch } from "./hud/SettingsModal";
+import { Switch } from "./ui/Switch";
+import { notify } from "./hud/Notifications";
 import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
 import { useAiFeatures } from "../lib/ai";
 import { promptSteps, runs } from "../lib/flowsteps";
@@ -509,18 +510,18 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
         <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
       </div>
       <div className="fs-body">
-        <div className="fs-col" role="listbox" aria-label="Flows">
+        <div className="fs-col" role="group" aria-label="Flows">
           {flowCfg.flows.map((f) => {
             const Icon = FLOW_ICON[f.id] ?? RouteIcon;
             return (
-              <div key={f.id} className="fs-row" role="option" aria-selected={f.id === sheetPick.id} data-sel={f.id === sheetPick.id ? "" : undefined}
-                data-off={f.on ? undefined : ""} tabIndex={0} onClick={() => setSheetFlow(f.id)}
-                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSheetFlow(f.id); } }}>
+              // The name is the row's button (a row holding the switch can't be one); a click anywhere else picks it too.
+              <div key={f.id} className="fs-row" data-sel={f.id === sheetPick.id ? "" : undefined}
+                data-off={f.on ? undefined : ""} onClick={() => setSheetFlow(f.id)}>
                 <span onClick={(e) => e.stopPropagation()}>
                   <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
                 </span>
                 <Icon size={13} strokeWidth={2} aria-hidden />
-                <b>{flowName(f.id)}</b>
+                <button type="button" className="fs-name" aria-pressed={f.id === sheetPick.id}>{flowName(f.id)}</button>
                 <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
                   : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{runs(st) ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
                 <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
@@ -1993,8 +1994,10 @@ export function Composer({
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   // PRESET's "Save as <Flow>'s preset": the flow's bridge default, so the sheet shows it at once.
   const saveFlowRun = async (fl: string, r: KindRun) => {
-    // shortcut: a failed save only logs (PRESET has closed by then), surface it if saves start failing
-    try { for (const c of saveRun(fl, r)) await changeFlows(c); } catch (e) { console.warn("flow preset save failed", e); }
+    // One POST per setting, so a refusal can land after some saved: the pill says so (PRESET has closed).
+    let saved = 0;
+    try { for (const c of saveRun(fl, r)) { await changeFlows(c); saved++; } }
+    catch (e) { notify("error", `${KINDS[fl as KindId]?.name ?? fl.toUpperCase()}'s preset ${saved ? "only partly saved" : "not saved"}: ${(e as Error).message}`); }
   };
   // The gear: the FLOWS sheet (FlowsSheet below), hung from the card's left edge.
   const gear = (

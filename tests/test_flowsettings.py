@@ -155,6 +155,14 @@ def test_switching_flows_or_tickets_on_carries_ticket_sets_on(api, monkeypatch, 
     assert booted.wait(2)
 
 
+def test_one_flow_switched_on_leaves_ticket_sets_alone(api, monkeypatch):
+    from bridge import tickets
+    booted = threading.Event()
+    monkeypatch.setattr(tickets, "boot", booted.set)
+    api.post({"flow": "fix", "key": "on", "value": True})   # ticket sets read FLOWS and TICKETS only
+    assert not booted.wait(0.3)
+
+
 def test_a_flow_switched_off_is_refused_and_a_running_one_finishes(api, monkeypatch, tmp_path):
     aifeatures.set_enabled("router", True)
     api.post({"flow": "fix", "key": "on", "value": False})
@@ -171,6 +179,11 @@ def test_a_flow_switched_off_is_refused_and_a_running_one_finishes(api, monkeypa
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
     h._post_api("/local/flow/set", {"claude_session_id": "cfs1", "path": "bug", "why": "crash"})  # noqa: SLF001
     assert "FIX is switched off" in box["obj"]["text"] and paths.get(s["id"]) is None
+    # With FLOWS off, no path is recorded at all
+    aifeatures.set_enabled("router", False)
+    h._post_api("/local/flow/set", {"claude_session_id": "cfs1", "path": "build", "why": "add"})  # noqa: SLF001
+    assert "FLOWS is off" in box["obj"]["text"] and paths.get(s["id"]) is None
+    aifeatures.set_enabled("router", True)
     # A queued prompt whose flow went off goes as typed; a session already on it keeps it.
     assert paths.start_flow(s["id"], "fix", "you", "it crashes") == "it crashes" and paths.get(s["id"]) is None
     api.post({"flow": "fix", "key": "on", "value": True})
