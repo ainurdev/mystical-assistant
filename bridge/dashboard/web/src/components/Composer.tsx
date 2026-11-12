@@ -81,7 +81,7 @@ const CTX_SEGMENTS = 8;
 // The prompt box's kinds of work (lib/kinds), each with its glyph on the rail.
 const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, refactor: Blocks, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 // The FLOW chip's and the FLOWS sheet's glyph per flow id (lib/flowview flowOf), looked up by plain string.
-const FLOW_ICON: Record<string, LucideIcon> = KIND_ICON;
+export const FLOW_ICON: Record<string, LucideIcon> = KIND_ICON;
 // The FLOWS sheet's line under a flow's name, and a one-step flow's row (a2-open).
 const FLOW_ABOUT: Record<string, string> = {
   design: "grill, then draw it, then build", build: "grill, then build: here, or as tickets",

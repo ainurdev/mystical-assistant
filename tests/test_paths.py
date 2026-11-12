@@ -130,6 +130,40 @@ def test_new_path_replaces_old(state_dir):
     assert g["path"] == "refactor" and g["done"] == [] and g["next"] is None
 
 
+def test_a_replaced_flow_is_kept_stopped_where_it_was(state_dir):
+    paths.set_path("s1", "fix", "crash", "rule")
+    paths.step_done("s1", "t1")                                     # DIAGNOSE done: REVIEW is next
+    at = paths.get("s1")["at"]
+    paths.set_path("s1", "refactor", "mess", "claude")
+    paths._cache.clear()                                            # kept across a restart
+    [p] = paths.past("s1")
+    assert (p["path"], p["by"], p["why"], p["at"], p["done"], p["stopped"]) == ("fix", "rule", "crash", at, ["diagnose"], "review")
+    assert p["end"] >= at and paths.get("s1")["path"] == "refactor"
+    assert [st[0] for st in p["stations"]] == ["diagnose", "review", "retro"]   # its steps, as they stood
+
+
+def test_a_finished_flow_keeps_when_it_ended(state_dir, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(paths.time, "time", lambda: clock[0])
+    paths.set_path("s1", "ask", "why", "you")
+    clock[0] = 1060
+    paths.step_done("s1", "t1")                                     # ASK's one step: the flow is done
+    assert paths.get("s1")["end"] == 1060
+    clock[0] = 5000
+    paths.set_path("s1", "fix", "crash", "you")
+    [p] = paths.past("s1")
+    assert (p["at"], p["end"], p["done"], p["stopped"]) == (1000, 1060, ["answer"], None)
+    assert paths.get("s1")["end"] is None
+
+
+def test_a_refused_runs_restore_takes_its_flow_back_out_of_the_past(state_dir):
+    paths.set_path("s1", "fix", "crash", "rule")
+    snap = paths.get("s1")
+    paths.set_path("s1", "one", "merge x", "rule", skill="merge")
+    paths.restore("s1", snap)
+    assert paths.get("s1")["path"] == "fix" and paths.past("s1") == []
+
+
 def test_one_path_uses_skill(state_dir):
     paths.set_path("s1", "one", "dig", "claude", skill="research")
     assert paths.step_done("s1", "t1") is None
@@ -176,6 +210,10 @@ def server(flow_session):
         def post(self, path, body):
             h._post_api(path, body)  # noqa: SLF001
             return dict(box)
+
+        def get(self, path, qs):
+            h._get_api(path, qs)  # noqa: SLF001
+            return dict(box)
     return S()
 
 
@@ -198,6 +236,13 @@ def test_path_tools_hidden_when_off(router_off, session_c1, monkeypatch):
 
 def test_path_tools_hidden_for_rivendell_origin(router_on, rivendell_origin):
     assert "SetPath" not in {t["name"] for t in _list_tools()}
+
+
+def test_get_flow_sends_the_flows_before_this_one(server, flow_session):
+    paths.set_path(flow_session, "ask", "why", "you")
+    paths.set_path(flow_session, "fix", "crash", "you")
+    r = server.get("/local/flow", {"session": [flow_session]})["obj"]
+    assert r["flow"]["path"] == "fix" and [p["path"] for p in r["past"]] == ["ask"]
 
 
 def test_set_path_and_step_done_idempotent(server, flow_session, flows_on):
@@ -549,6 +594,12 @@ def _end(sid, t, status="done"):
     return job
 
 
+def _turn_end(job):
+    """A turn's end as the runner runs it: its own step ends before the queue moves, then what follows."""
+    paths.end_turn_step(job)
+    return paths.continue_after_turn(job)
+
+
 def test_a_resumed_turn_starts_the_step_its_cut_turn_recorded(sess, fake_queue, nextstep_on):
     from bridge import runner as r
     t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
@@ -700,7 +751,7 @@ def test_review_runs_as_the_ponytail_command_and_ends_by_itself(sess, fake_queue
     assert fake_queue.items[-1]["prompt"].startswith("/ponytail-review ")
     r = _turn(sess, fake_queue.items[-1]["prompt"])     # its turn never calls StepDone
     assert paths.get(sess)["path"] == "fix"              # a /ponytail- command keeps the path
-    assert paths.continue_after_turn(_end(sess, r)) is True
+    assert _turn_end(_end(sess, r)) is True
     assert paths.get(sess)["done"] == ["diagnose", "review"]
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
 
@@ -709,14 +760,14 @@ def test_a_review_that_calls_step_done_moves_once(sess, fake_queue, pony_on):
     paths.set_path(sess, "fix", "x", "rule", done=["diagnose"])
     r = _turn(sess, "/ponytail-review the work on this path")
     assert paths.step_done(sess, r) == "retro"
-    assert paths.continue_after_turn(_end(sess, r)) is True
+    assert _turn_end(_end(sess, r)) is True
     assert paths.get(sess)["done"] == ["diagnose", "review"] and len(fake_queue.items) == 1
 
 
 def test_a_typed_review_off_its_step_marks_nothing(sess, fake_queue, pony_on):
     paths.set_path(sess, "build-here", "x", "rule")          # GRILL is the step
     r = _turn(sess, "/ponytail-review")
-    assert paths.continue_after_turn(_end(sess, r)) is False
+    assert _turn_end(_end(sess, r)) is False
     assert paths.get(sess)["done"] == []
 
 
@@ -727,7 +778,7 @@ def test_audit_runs_last(sess, fake_queue, pony_on):
     paths.continue_after_turn(_end(sess, t))
     assert fake_queue.items[-1]["prompt"] == "/ponytail-audit"
     a = _turn(sess, "/ponytail-audit")
-    assert paths.continue_after_turn(_end(sess, a)) is False   # the last step: nothing after it
+    assert _turn_end(_end(sess, a)) is False   # the last step: nothing after it
     assert paths.get(sess)["done"][-1] == "audit" and paths.get(sess)["next"] is None
 
 
@@ -977,9 +1028,9 @@ def test_a_one_step_flow_ends_at_its_turns_clean_end(state_dir, nextstep_on, fak
     paths.set_path("o1", flow, "you picked it", "rule")
     failed, stopped = _job("o1", "t1"), _job("o1", "t2")
     failed.status, stopped.interrupted = "error", True
-    assert paths.continue_after_turn(failed) is False and paths.continue_after_turn(stopped) is False
+    assert _turn_end(failed) is False and _turn_end(stopped) is False
     assert paths.get("o1")["done"] == []                               # a stopped or failed turn leaves it open
-    paths.continue_after_turn(_job("o1", "t3"))
+    _turn_end(_job("o1", "t3"))
     f = paths.get("o1")
     assert f["done"] == [step] and f["next"] is None and not fake_queue.items
 
@@ -1044,8 +1095,21 @@ def test_ship_and_ask_go_behind_the_no_path_line_and_end_with_the_turn(sess, nex
     assert prompt == paths.NO_PATH + "merge this"
     t = _turn(sess, prompt)
     assert paths.get(sess)["path"] == flow
-    paths.continue_after_turn(_job(sess, t))
+    _turn_end(_job(sess, t))
     assert paths.get(sess)["done"] == [step] and not fake_queue.items
+
+
+def test_a_flow_queued_behind_a_turn_step_finds_it_finished(sess, nextstep_on, fake_queue):
+    """The runner ends a turn's own step before the queue starts the prompt behind it, which may
+    start another flow: that flow's step is never taken for the turn before it."""
+    job = _end(sess, _turn(sess, paths.start_flow(sess, "ask", "you", "why")))
+    paths.end_turn_step(job)                                              # the runner, before the queue moves
+    _turn(sess, paths.start_flow(sess, "ship", "guess", "merge it"))      # the prompt queued behind it
+    assert paths.continue_after_turn(job) is False                        # then the ASK turn's after-turn
+    [ask] = paths.past(sess)
+    assert (ask["done"], ask["stopped"]) == (["answer"], None)
+    f = paths.get(sess)
+    assert (f["path"], f["done"], f["end"]) == ("ship", [], None)
 
 
 def test_another_flow_replaces_the_running_one_the_same_keeps_it(sess, nextstep_on):
@@ -1061,7 +1125,7 @@ def test_another_flow_replaces_the_running_one_the_same_keeps_it(sess, nextstep_
 
 def test_a_finished_flow_tapped_again_starts_over(sess, nextstep_on, fake_queue):
     paths.start_flow(sess, "ask", "you", "why")
-    paths.continue_after_turn(_job(sess, _turn(sess, paths.NO_PATH + "why")))
+    _turn_end(_job(sess, _turn(sess, paths.NO_PATH + "why")))
     assert paths.start_flow(sess, "ask", "you", "and how") == paths.NO_PATH + "and how"
     assert paths.get(sess)["done"] == []
 

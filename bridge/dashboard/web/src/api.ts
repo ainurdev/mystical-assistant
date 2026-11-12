@@ -1,6 +1,6 @@
 import type { DataEv } from "./lib/dataview";
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
-import type { Flow, FlowOption, FlowSet } from "./lib/flowview";
+import type { Flow, FlowOption, FlowSet, PastFlow } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
 
@@ -2088,7 +2088,7 @@ export const api = {
         body: { disabled_tools: rules },
       }),
   // The FLOW tab: the session's skill path, and the switch that holds or releases its auto-start.
-  getFlow: (id: string) => req<{ flow: Flow | null; set: FlowSet | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
+  getFlow: (id: string) => req<{ flow: Flow | null; past?: PastFlow[]; set: FlowSet | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
   // The SESSION tab's window, time and spend (bridge/meter.py); {} when there's no transcript yet.
   getMeter: (id: string) => req<Meter | Record<string, never>>(`/local/sessions/${encodeURIComponent(id)}/meter`),
   setFlowAuto: (id: string, on: boolean) =>

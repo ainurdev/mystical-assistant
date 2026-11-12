@@ -68,6 +68,11 @@ the merge session (tickets.start_review), and its pass is the step's end
 it waits on you. Whether a flow has the step is settled when its MERGE ends, so
 shipping the step, or switching it later, never puts one into a flow already past
 MERGE. stations() gives the steps as they stand, and FLOW draws those.
+
+A flow another one replaces is kept in its session's record (`past`, oldest first): who
+started it and why, when it began and ended, its steps, the ones done and skipped, and the one
+it stopped on (None: it ran to its end, which `end` records when its last step is done). SESSION
+▸ FLOWS draws every flow a session ran from these; restore() takes back the one it pushed.
 """
 
 import json
@@ -217,7 +222,9 @@ _PONY = {"review": "the work on this path: this branch's commits since it left t
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 # The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
 OPTIONS = ("nextstep", "autopick", "smartzone")
-_STORED = ("path", "skill", "by", "why", "at", "done", "skipped", "next", "overrides")
+_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides")
+# shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
+_PAST = 50
 
 _lock = threading.Lock()
 _cache: dict = {}  # session id -> flow; emptied by tests to simulate a reload
@@ -346,12 +353,28 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         _load_locked()
         old = _cache.get(session_id) or {}
         own = dict(old.get("overrides") or {})   # the session's, not the path's
+        past = (list(old.get("past") or []) + [_ended(old)])[-_PAST:] if old else []
         # `at` names this path to its ticket set (flow_at): a path replaced in the same second must differ.
         _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "overrides": own,
                               "at": max(int(time.time()), (old.get("at") or 0) + 1), "done": list(done or []), "skipped": [],
-                              "next": None, "last": None}
+                              "next": None, "last": None, "past": past}
         _save_locked()
         return dict(_cache[session_id])
+
+
+def _ended(f: dict) -> dict:
+    """A replaced flow as `past` keeps it: its steps as they stood, stopped on the one it was at,
+    unless it had ended."""
+    return {**{k: f.get(k) for k in ("path", "skill", "by", "why", "at")}, "end": f.get("end") or int(time.time()),
+            "done": list(f["done"]), "skipped": list(f.get("skipped") or []),
+            "stopped": None if f.get("end") else _underway(f), "stations": [list(st) for st in _stations(f)]}
+
+
+def past(session_id: str) -> list:
+    """The flows this session ran before its current one, oldest first."""
+    with _lock:
+        _load_locked()
+        return [dict(p) for p in (_cache.get(session_id) or {}).get("past") or []]
 
 
 def claude_path(session_id: str, path: str, why: str, skill: "str | None", turn_id: str) -> dict:
@@ -382,6 +405,8 @@ def restore(session_id: str, snap: "dict | None") -> None:
         f = _cache.get(session_id)
         if f:
             f.update({k: v for k, v in snap.items() if k in _STORED})
+            if (f.get("past") or [{}])[-1].get("at") == snap.get("at"):
+                f["past"] = f["past"][:-1]   # the flow set_path moved there is current again
             _save_locked()
 
 
@@ -393,7 +418,7 @@ def get(session_id: str) -> "dict | None":
         f = _cache.get(session_id)
         if not f:
             return None
-        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "next": _next(f),
+        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "end": f.get("end"), "next": _next(f),
                 "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
@@ -522,6 +547,8 @@ def _pass(f: dict, cur: "str | None", on: list) -> list:
     end = [] if rest else [st for st in full if st not in f["done"]]
     f["done"] += end
     f["skipped"] = list(f.get("skipped") or []) + [st for st in new if st != cur and st not in on] + end
+    if not rest and not f.get("end"):
+        f["end"] = int(time.time())   # the flow ran to its end: FLOWS times it to here
     return rest
 
 
@@ -763,7 +790,6 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted or (job.runtime or "").startswith("acp:"):
             return False
-        _end_pony_step(sid, job.id)
         flow = get(sid)
         nxt = flow and flow["next"]
         if not nxt or nxt.get("started") or nxt["turn_id"] != _carried(sid, job.id)[0]:
@@ -772,6 +798,19 @@ def continue_after_turn(job, effort=None) -> bool:
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[paths] continue failed: {e}", file=sys.stderr)
         return False
+
+
+def end_turn_step(job) -> None:
+    """Called once per finished turn, before the queue starts the prompt behind it: a clean end
+    ends the turn's own step (_end_pony_step). Not later, in continue_after_turn: that prompt may
+    start another flow, which would replace this one stopped on a step it finished, and whose own
+    SHIP or ASK step this turn's end would then take."""
+    try:
+        sid = job.store_session_id
+        if sid and job.status == "done" and not job.interrupted and not (job.runtime or "").startswith("acp:"):
+            _end_pony_step(sid, job.id)
+    except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
+        print(f"[paths] step end failed: {e}", file=sys.stderr)
 
 
 def _end_pony_step(session_id: str, turn_id: str) -> None:

@@ -584,7 +584,7 @@ class Handler(BaseHTTPRequestHandler):
             flow = paths.get(sid)
             if flow:
                 flow["stations"] = paths.stations(sid)   # the steps as they stand: FLOW draws these
-            return self._json({"flow": flow, "set": tset})
+            return self._json({"flow": flow, "past": paths.past(sid), "set": tset})
         if path == "/local/tickets":
             from bridge import tickets
             return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only

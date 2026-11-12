@@ -6,28 +6,49 @@ picked **B · CURVE** (not the recommended A · CHAPTERS), asked for time beside
 four add-ons, and approved round 2 as drawn. Drafts: `.mystical/design-drafts/session-tab/`
 (cards 01–04, SPEC.md). UX pattern: `session-tab`.
 
-## The tab (components/hud/SessionPanel.tsx)
+## The tab (components/hud/SessionPanel.tsx), quiet since 2026-11-12
 
-One right-rail tile, SESSION, where TURNS stood; FLOW's tile is gone. Top to bottom:
+Asked 2026-11-12 (DESIGN flow): "less details on first glance and on clicking have more data … all
+flows and which is active and how time … each section unique to its purpose". Picked per section,
+HORIZON · TRACK · DIAL · BLOCKS · BY FLOW · QUIET ROWS. Drafts:
+`.mystical/design-drafts/session-quiet/` (08-picks.html, SPEC.md). Each section is one line until a
+click opens it in place, and remembers open or closed (`hud-session-folds`; all start folded). No
+token count shows before a click except the window's own number. Top to bottom:
 
-1. **Hero (132px): the window on the clock.** One step per request (lib/meter `stepLine`), the 150k
-   smart zone dashed, compactions marked. Under it a strip of who was working at each moment: Claude
-   (accent), tools (`--info`), helpers (`--purple`), waiting on you (ask hue), away (hatched). A wait
-   on you, or away, over 30 minutes folds into a 20px break labelled with its length. Under the strip
-   the path's steps as bands (a `/mattpocock-skills:x` turn opens x's step, `/compact` is a sliver),
-   or one band per row with no path; while a step runs, the next is a dashed band. **Compact** shows
-   once the window passes the zone; it goes through `send`, so behind a running turn it queues.
-2. The now bar from TURNS (working / waits on you, with Answer).
-3. **TIME**: total since the first turn, "worked" = Claude + tools + helpers, a stacked bar, five sums.
-4. **ON WHAT**: a WINDOW / SPENT switch over rows per kind (top five, the rest folded into Other).
-   Both lenses sit in one grid cell, so switching never resizes the box. A row opens its three
-   biggest items; WINDOW by size now, SPENT by size × the requests that re-read it ("11K ×387").
-   An item opens the turn it came in.
-5. **HELPERS**: running first, then by spend; time and tokens each; a tap opens its run in AGENTS.
-6. **TURNS**: one line per prompt (resumes folded, as TURNS did), skill commands shown as their
-   name, moments as marks (each jumps to its place), time and spend. Click jumps; copy / send again
-   on hover; find, ⌥↑/⌥↓ and the lit row that follows the chat are TURNS' own.
-7. **NEXT**: the path's next step, who starts it, AUTO; who picked the path and why on hover.
+1. **WINDOW (HORIZON)**: its number of the session's max, Compact past the 150k zone, over a 40px
+   slim curve: the 150k line, the compactions as ticks, long waits as narrow gaps. Opened: the 62px
+   curve, who was working under it, the flows as bands (their steps' starts as hairlines; the turns
+   while no flow ran), the clock with only the longest break named, a legend.
+2. The now bar (working / waits on you, with Answer).
+3. **FLOWS (TRACK)**: one bar, a segment per flow the session ran, oldest left, sized by the time
+   worked on it (18px at least). The active flow is striped, a flow another one stopped is hatched;
+   ASK, SHIP and each one-skill run fold into one segment where their latest run is. Names (or
+   icons, where a segment is narrow) and times under it; the active flow and its step on the right.
+   A click on a segment opens why the flow started, its steps as stops on a line with the time and
+   tokens of each (a folded segment: its runs), and on the active flow NEXT, AUTO and Skip on a
+   REVIEW. A flow's time is the worked seconds from its first turn to the next turn's start.
+4. **TIME (DIAL)**: a ring and "9h 50m worked of 23h 15m"; opened, a big ring and the five times.
+5. **ON WHAT (BLOCKS)**: one sentence on what fills the window ("Mostly start-up (40%), then Claude
+   wrote and files read"); opened, the WINDOW / SPENT switch over a treemap of the kinds, a block
+   opening its three biggest items (each opens the turn it came in).
+6. **HELPERS (BY FLOW)**: a face pile, "33 ran · 2 running"; opened, the helpers under the flow
+   whose turn started them, newest flow first, running first; a tap opens its run in AGENTS.
+7. **TURNS (QUIET ROWS)**: number, prompt, time. Marks, spend, copy and send again show on hover;
+   a click jumps; find, ⌥↑/⌥↓ and the lit row that follows the chat stay.
+
+## The flows a session ran (bridge/paths.py `past`, GET /local/flow)
+
+A session follows one flow at a time (GLOSSARY: Flow). When another takes its place, flows.json
+keeps the old one in the session's record: who started it and why, `at`, its end, its steps as
+they stood, the ones done and skipped, and the step it stopped on (null when it ran to its end; a
+flow that ends records `end` when its last step is done). `restore()` takes back the one a refused
+run pushed. GET /local/flow sends them as `past`, oldest first, beside the current flow. A turn
+belongs to the latest flow begun by its end, unless that flow had ended before the turn began;
+turns before the first flow, or after one ended, count only in TIME. The bridge keeps `at` and a
+turn's length in whole seconds, so a flow begun in a turn's last second (a prompt queued behind
+it) isn't that turn's (lib/meter flowOfRows). A turn's own SHIP, ASK, review or audit step ends
+before the queue starts the prompt behind it (paths.end_turn_step), so a flow that prompt starts
+finds the one before it finished. The last 50 flows are kept.
 
 Stored settings move over: a `rightTab`, `rightOrder` or `rightHidden` naming `turns` or `flow`
 names `session` (lib/theme.ts), and an old `hud:rail` link to either opens SESSION.

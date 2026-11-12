@@ -1,24 +1,24 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { ArrowUp, Bot, Check, ChevronRight, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, ListEnd, Search, Shrink, SkipForward, X, Zap } from "lucide-react";
-import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { ArrowUp, Bot, Check, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, ListEnd, Search, Shrink, SkipForward, Sparkles, X, Zap } from "lucide-react";
+import { api, type Meter, type MeterHelper, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
-import { flowGlobals, flowLabel, flowView, movesElsewhere, startedBy, type Flow, type FlowSet } from "../../lib/flowview";
+import { flowGlobals, flowLabel, flowOf, flowView, movesElsewhere, pastSteps, startedBy, type Flow, type FlowSet, type PastFlow, type StationState } from "../../lib/flowview";
 import { useFlowSettings } from "../../lib/flowsettings";
 import { FLOW_EVENT, flowChanged } from "../../lib/useFlow";
-import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
+import { BREAK, KIND, ZONE, bands, calm, clock, flowSpans, helperGroups, kindRows, mixLine, stepLine, stepStarts, stepStats, timeOf, toNow, trackSegs, trackWidths, treemap, type TrackSeg } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
 import { openAgent } from "../../lib/subagents";
 import { hhmm, useClock12 } from "../../lib/surfaces";
 import { fmtTokens } from "../../lib/week";
 import type { TranscriptNav } from "../Transcript";
-import { SteerIcon } from "../Composer";
+import { FLOW_ICON, SteerIcon } from "../Composer";
 import { TabKick } from "./TabKick";
 
-// Which sections are open, kept across sessions. FLOW starts open, the numbers start folded.
+// Which sections are open, kept across sessions. Every one starts folded: a click opens it in place.
 const FOLDS = "hud-session-folds";
-const OPEN0 = { flow: true, time: false, onwhat: false, helpers: false };
+const OPEN0 = { window: false, flows: false, time: false, onwhat: false, helpers: false };
 type Fold = keyof typeof OPEN0;
 function readOpen(): Record<Fold, boolean> {
   try { return { ...OPEN0, ...JSON.parse(localStorage.getItem(FOLDS) || "{}") }; } catch { return OPEN0; }
@@ -69,8 +69,15 @@ export const RULE = { height: 1, background: "linear-gradient(90deg,var(--acc),t
 const WHO: [MeterWho, string][] = [["claude", "Claude"], ["tools", "tools"], ["helpers", "helpers"], ["you", "waiting on you"], ["away", "away"]];
 const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const at = (t: number, day: boolean) => `${day ? DAY[new Date(t * 1000).getDay()] + " " : ""}${hhmm(t)}`;
-const long = (s: number) => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+/** A stretch of time as the tab says it: 40s, 12m, 9h 05m. */
+const dur = (s: number) => {
+  if (s < 59.5) return `${Math.round(s)}s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+};
 const tok = (n: number) => fmtTokens(Math.round(n));
+// A kind as ON WHAT's sentence says it: "files read", but Claude and MCP keep their capitals.
+const kindWord = (k: string) => { const n = KIND[k] ?? k; return /^(Claude|MCP)/.test(n) ? n : n[0].toLowerCase() + n.slice(1); };
 
 function glyph(m: Moment): ReactNode {
   if (m.kind === "ask") return "?";
@@ -93,8 +100,6 @@ function hit(r: TurnRow, q: string): boolean {
   return words.some((w) => w.toLowerCase().includes(q));
 }
 
-type Path = ReturnType<typeof flowView> & { at: number };
-
 // A band's name as it fits: whole, else its first word ("BUILD HERE" → "BUILD"), else none.
 const fit = (label: string, w: number) => [label, label.split(" ")[0]].find((l) => l && 12 + l.length * 5.6 <= w) ?? "";
 
@@ -105,19 +110,32 @@ function promptLine(prompt: string, q: string): ReactNode {
   return <><span className="ss-cmd">{cmd[1]}</span>{cmd[2] && <> · {marked(cmd[2], q)}</>}</>;
 }
 
-/** The hero: the window on the clock, one step per request, the 150k zone, a
- *  strip of who was working under it and the path's steps (or the turns) as
- *  bands; a wait over half an hour folds into a break (lib/meter clock). */
-function Curve({ meter, turns, rows, path, live, now, width, max }: {
-  meter: Meter; turns: Turn[]; rows: TurnRow[]; path: Path | null; live: boolean; now: number; width: number; max: number;
+/** A flow's colour class (index.css .sq-f-*): its flow, or one skill. */
+const tint = (path: string) => `sq-f-${flowOf(path) ?? "one"}`;
+const FlowIcon = ({ path }: { path: string }) => {
+  const I = FLOW_ICON[flowOf(path) ?? ""] ?? Sparkles;
+  return <I size={11} strokeWidth={2.2} aria-hidden />;
+};
+/** A step's name, and a flow's, in natural case ("Build here", "Fix", a skill as it is):
+ *  `.caps` shouts them where the theme does (CODING_STANDARDS: capitals come from `.caps`). */
+const stepName = (key: string) => key[0].toUpperCase() + key.slice(1).replace(/-/g, " ");
+const flowName = (f: Pick<Flow, "path" | "skill">) => { const l = flowLabel(f); return l[0] + l.slice(1).toLowerCase(); };
+
+/** A flow under the opened curve: its turns' span, and when each of its steps began. */
+type FlowBand = { from: number; to: number; label: string; path: string; active: boolean; starts: number[] };
+
+/** The window on the clock, one step per request, the 150k line and the compactions;
+ *  a wait over half an hour folds into a break (lib/meter clock). Slim, as the tab
+ *  opens: 40px, the breaks as gaps. Opened: who was working under it, the flows as
+ *  bands (their steps as hairlines; the turns while no flow ran) and the clock. */
+function Curve({ meter, turns, rows, flowBands, live, now, width, max, slim }: {
+  meter: Meter; turns: Turn[]; rows: TurnRow[]; flowBands: FlowBand[]; live: boolean; now: number; width: number; max: number; slim: boolean;
 }) {
-  const W = Math.max(160, width), CH = 62, SY = CH + 4, SH = 6, BY = SY + SH + 3, BH = 14, AY = BY + BH + 10;
-  const next = path?.stations.find((s) => s.state !== "done" && s.state !== "now");
-  const ghost = live && next ? 0.14 : 0;
-  const span = W * (1 - ghost) - (live && !ghost ? 7 : 0);   // room for the live dot at the end
+  const W = Math.max(160, width), CH = slim ? 40 : 62, SY = CH + 4, SH = 6, BY = SY + SH + 3, BH = 14, AY = BY + BH + 11;
+  const span = W - (live ? 7 : 0);   // room for the live dot at the end
   const segs = toNow(meter.segs, now, live);
   if (!segs.length) return null;
-  const c = clock(segs, span);
+  const c = clock(segs, span, slim ? 6 : BREAK);
   const series = meter.series;
   const peak = series.reduce((m, [, v]) => Math.max(m, v), 0);
   const ymax = Math.min(max, Math.max(ZONE * 1.25, peak * 1.1));
@@ -126,12 +144,28 @@ function Curve({ meter, turns, rows, path, live, now, width, max }: {
   const d = stepLine(series, c.at, y, endX);
   const x0 = c.at(series[0][0]);
   const z = y(ZONE);
-  const zoneLeft = y(series[0][1]) > z + 10;   // the line starts under the zone: room above it at the left
+  // Long waits side by side (on you, then away) read as one break.
+  const breaks: { x0: number; x1: number; secs: number; who: MeterWho }[] = [];
+  for (const m of c.marks) {
+    if (!m.fold) continue;
+    const g = breaks[breaks.length - 1];
+    if (g && Math.abs(g.x1 - m.x0) < 0.5) { g.x1 = m.x1; g.secs += m.b - m.a; }
+    else breaks.push({ x0: m.x0, x1: m.x1, secs: m.b - m.a, who: m.who });
+  }
   const multiDay = new Date(segs[0][0] * 1000).toDateString() !== new Date((segs.at(-1)?.[1] ?? now) * 1000).toDateString();
-  const bs = bands(turns, rows, path ? { stations: path.stations, at: path.at } : null);
+  const first = at(segs[0][0], multiDay), last = live ? `now ${hhmm(now)}` : at(series[series.length - 1][0], multiDay);
+  // Only the longest break is named (names of breaks side by side would print on each other),
+  // under it, slid in from the ends so it never sits on the clock's two times (~5.2px a character).
+  const longest = breaks.reduce<(typeof breaks)[number] | null>((l, b) => (!l || b.secs > l.secs ? b : l), null);
+  const named = longest && `${dur(longest.secs)} ${longest.who === "you" ? "on you" : "away"}`;
+  const half = named ? named.length * 2.6 : 0;
+  const lo = first.length * 5.2 + 6 + half, hi = W - last.length * 5.2 - 6 - half;
+  const lx = longest ? Math.min(hi, Math.max(lo, (longest.x0 + longest.x1) / 2)) : 0;
+  const turnBands = !slim && !flowBands.length ? bands(turns, rows, null) : [];
+  const H = slim ? CH + 2 : AY + 3;
   const label = `Window ${tok(meter.window.total)} of ${tok(max)}, ${tok(peak)} at its peak.`;
   return (
-    <svg className="ss-curve" width={W} height={AY + 3} viewBox={`0 0 ${W} ${AY + 3}`} role="img" aria-label={label}>
+    <svg className="ss-curve" width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       <defs>
         <linearGradient id="ss-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" className="ss-a0" /><stop offset="1" className="ss-a1" /></linearGradient>
         <pattern id="ss-fold" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" className="ss-f0" /><rect width="1.4" height="4" className="ss-f1" /></pattern>
@@ -139,22 +173,34 @@ function Curve({ meter, turns, rows, path, live, now, width, max }: {
       <line x1="0" x2={W} y1={CH} y2={CH} className="ss-base" />
       <path d={`${d}V${CH}H${x0.toFixed(1)}Z`} fill="url(#ss-area)" />
       <path d={d} className="ss-line" />
+      {breaks.map((b) => (
+        <rect key={b.x0} x={b.x0 + 1} y="0" width={Math.max(1, b.x1 - b.x0 - 2)} height={CH} className={slim ? "ss-gap" : undefined} fill={slim ? undefined : "url(#ss-fold)"} />
+      ))}
       {ZONE < ymax && <>
         <line x1="0" x2={span} y1={z} y2={z} className="ss-zone" />
-        <text x={zoneLeft ? 2 : span - 2} y={z - 3} textAnchor={zoneLeft ? "start" : "end"} className="ss-zt">150k zone</text>
+        <text x="1" y={z - 3} className="ss-zt">150k</text>
       </>}
-      {c.marks.filter((m) => m.fold).map((m) => (
-        <g key={m.a}>
-          <rect x={m.x0 + 3} y="0" width={m.x1 - m.x0 - 6} height={CH} className="ss-gap" />
-          <path d={`M${m.x0 + 4},1 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4`} className="ss-cut" />
-          <path d={`M${m.x1 - 7},1 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4 l-3,4 l3,4`} className="ss-cut" />
-          <text x={m.x0 - 2} y={AY} textAnchor="end" className="ss-ft">{long(m.b - m.a)} {m.who === "you" ? "on you" : "away"} ⏸</text>
-        </g>
-      ))}
-      {calm(c.marks).map((m) => m.fold
+      {meter.compactions.map(([t]) => slim
+        ? <path key={t} d={`M${c.at(t) - 3},${CH} l3,-4 l3,4z`} className="ss-tick" />
+        : (
+          <g key={t} transform={`translate(${c.at(t) - 6.5},${Math.min(CH - 14, z + 5)})`} className="ss-cmp">
+            <rect width="13" height="13" rx="3" /><Shrink x="2" y="2" width="9" height="9" strokeWidth={2.6} />
+          </g>
+        ))}
+      {!slim && calm(c.marks).map((m) => m.fold
         ? <rect key={m.a} x={m.x0 + 2} y={SY - 1} width={Math.max(1, m.x1 - m.x0 - 4)} height={SH + 2} rx="1" fill="url(#ss-fold)" />
         : <rect key={m.a} x={m.x0} y={SY} width={Math.max(0.6, m.x1 - m.x0)} height={SH} className={`ss-w-${m.who}`} />)}
-      {bs.map((b) => {
+      {!slim && flowBands.map((f) => {
+        const a = c.at(f.from) + 0.5, w = Math.max(2.5, c.at(f.to) - a - 1.5);
+        return (
+          <g key={f.from} className={tint(f.path)}>
+            <rect x={a} y={BY} width={w} height={BH} rx="3" className={`ss-fb${f.active ? " now" : ""}`} />
+            {f.starts.filter((t) => t > f.from).map((t) => <line key={t} x1={c.at(t)} x2={c.at(t)} y1={BY + 2} y2={BY + BH - 2} className="ss-fh" />)}
+            {w > 40 && <text x={a + 5} y={BY + 10} className={`ss-bt-flow caps${f.active ? " now" : ""}`}>{f.label}</text>}
+          </g>
+        );
+      })}
+      {turnBands.map((b) => {
         const a = c.at(b.from) + 0.5, e = b.to == null ? endX : c.at(b.to);
         return (
           <g key={b.from}>
@@ -163,28 +209,69 @@ function Curve({ meter, turns, rows, path, live, now, width, max }: {
           </g>
         );
       })}
-      {ghost > 0 && next && <>
-        <rect x={span + 2} y={BY} width={W - span - 2.5} height={BH} rx="3" className="ss-b-next" />
-        <text x={span + 6} y={BY + 10} className="ss-bt-next">{next.label.toUpperCase()}</text>
-      </>}
-      {meter.compactions.map(([t]) => (
-        <g key={t} transform={`translate(${c.at(t) - 6.5},${Math.min(CH - 14, z + 5)})`} className="ss-cmp">
-          <rect width="13" height="13" rx="3" /><Shrink x="2" y="2" width="9" height="9" strokeWidth={2.6} />
-        </g>
-      ))}
       {live && <><circle cx={c.end} cy={y(series[series.length - 1][1])} r="6.5" className="ss-now0" /><circle cx={c.end} cy={y(series[series.length - 1][1])} r="3" className="ss-now1" /></>}
-      <text x="0" y={AY} className="ss-axis">{at(segs[0][0], multiDay)}</text>
-      <text x={endX} y={AY} textAnchor="end" className="ss-axis">{live ? `now ${hhmm(now)}` : at(series[series.length - 1][0], multiDay)}</text>
+      {!slim && <>
+        <text x="0" y={AY} className="ss-axis">{first}</text>
+        {named && lo <= hi && <text x={lx} y={AY} textAnchor="middle" className="ss-ft">{named}</text>}
+        <text x={W} y={AY} textAnchor="end" className="ss-axis">{last}</text>
+      </>}
     </svg>
   );
 }
 
-/** The SESSION tab (design .mystical/design-drafts/session-tab, B · CURVE round
- *  2): the window on the clock with who was working under it, TIME, ON WHAT (the
- *  window now, or what the session spent, by kind, each kind opening its biggest
- *  items), HELPERS, then your turns with their moments, time and spend, and the
- *  path's next step. Numbers come from bridge/meter.py (the CLI's transcript);
- *  the path from GET /local/flow. TURNS and FLOW were two tabs before this. */
+/** TIME's ring: worked, waiting on you and away, round the clock of the session. */
+function Dial({ size, w, time, all, center }: { size: number; w: number; time: Record<MeterWho, number>; all: number; center?: string }) {
+  const r = size / 2 - w / 2, c = 2 * Math.PI * r, mid = size / 2;
+  let off = 0;
+  return (
+    <svg className="sq-dial" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+      {WHO.map(([k]) => {
+        const len = all > 0 ? (time[k] / all) * c : 0;
+        const arc = len > 0 && <circle key={k} cx={mid} cy={mid} r={r} className={`sq-arc ss-w-${k}`} strokeWidth={w}
+          strokeDasharray={`${Math.max(0, len - 1)} ${c}`} strokeDashoffset={-off} transform={`rotate(-90 ${mid} ${mid})`} />;
+        off += len;
+        return arc;
+      })}
+      {center && <><text x={mid} y={mid - 1} textAnchor="middle" className="sq-dn">{center}</text>
+        <text x={mid} y={mid + 11} textAnchor="middle" className="sq-dw">worked</text></>}
+    </svg>
+  );
+}
+
+/** A stop on an opened flow's line: one of its steps, or for a folded segment one of its runs. */
+type StopState = StationState | "skip" | "stopped";
+type Stop = { key: string; label: string; state: StopState; secs?: number; tokens?: number; turn: string | null };
+const WORD: Partial<Record<StopState, string>> = { skip: "skipped", stopped: "stopped", you: "on you", now: "running", done: "done" };
+
+/** An opened flow's steps (or a folded flow's runs) as stops on a line, each with what it took. */
+function Metro({ stops, onJump }: { stops: Stop[]; onJump: (turnId: string) => void }) {
+  // Past five a line can't hold the names: the stops go on two lines.
+  const per = stops.length > 5 ? Math.ceil(stops.length / 2) : stops.length;
+  const lines: Stop[][] = [];
+  for (let i = 0; i < stops.length; i += per) lines.push(stops.slice(i, i + per));
+  return <>{lines.map((line, k) => (
+    <div key={k} className="sq-metro" style={{ gridTemplateColumns: `repeat(${per}, 1fr)`, "--l": `${50 / per}%`, "--r": `${((per - line.length + 0.5) / per) * 100}%` } as CSSProperties}>
+      {line.map((n) => (
+        <button key={n.key} type="button" className={`sq-mn ${n.state}`} disabled={!n.turn} onClick={() => n.turn && onJump(n.turn)}
+          title={n.turn ? "go to its first turn" : undefined}>
+          <span className="sq-md">{n.state === "done" ? <Check size={9} strokeWidth={3} aria-hidden /> : n.state === "skip" ? <SkipForward size={8} strokeWidth={2.4} aria-hidden />
+            : n.state === "you" ? <Hand size={8} strokeWidth={2.4} aria-hidden /> : null}</span>
+          <span className="sq-ml caps">{n.label}</span>
+          {n.secs ? <><span className="sq-mt">{dur(n.secs)}</span>{!!n.tokens && <span className="sq-mk">{tok(n.tokens)}</span>}</>
+            : <span className="sq-mt">{WORD[n.state] ?? "next"}</span>}
+        </button>
+      ))}
+    </div>
+  ))}</>;
+}
+
+/** The SESSION tab, quiet at first glance (docs/superpowers/specs/session-tab.md:
+ *  HORIZON · TRACK · DIAL · BLOCKS · BY FLOW · QUIET ROWS): each section says one thing
+ *  until a click opens it in place. WINDOW is a slim curve and its number; FLOWS a track
+ *  of every flow the session ran, the active one striped, a segment opening its steps;
+ *  TIME a ring; ON WHAT a sentence over blocks; HELPERS a face pile over the helpers by
+ *  the flow that started them; then your turns, their extras on hover. Numbers come from
+ *  bridge/meter.py (the CLI's transcript), the flows from GET /local/flow. */
 export function SessionPanel({
   sessionId, turns, scrollRef, nav, following, max, onJump, onLatest, onCopy, onReuse, onCompact,
 }: {
@@ -214,30 +301,33 @@ export function SessionPanel({
 
   const ai = useAiFeatures();
   const [flow, setFlow] = useState<Flow | null>(null);
-  const [flowRead, setFlowRead] = useState(false);   // "no path" only once the bridge said so
+  const [past, setPast] = useState<PastFlow[]>([]);
+  const [flowRead, setFlowRead] = useState(false);   // "none yet" only once the bridge said so
   const [set, setSet] = useState<FlowSet | null>(null);
   const [meter, setMeter] = useState<Meter | null>(null);
-  const [reread, setReread] = useState(0);   // bumped to read the path again, after a Skip
+  const [reread, setReread] = useState(0);   // bumped to read the flow again, after a Skip
   // Tickets build and merge, and the council reviews, in sessions of their own: no turn
   // here says when they move.
   const glob = flowGlobals(flow, useFlowSettings(), ai);   // the session's flow's NEXT and TICKETS
   const busy = running || movesElsewhere(flow, set, glob.nextstep);
-  // Read on a turn's edges, and every few seconds while one runs: a path moves
+  // Read on a turn's edges, and every few seconds while one runs: a flow moves
   // mid-turn (StepDone), and the window grows request by request.
   useEffect(() => {
-    if (!sessionId) { setFlow(null); setSet(null); setMeter(null); return; }
+    if (!sessionId) { setFlow(null); setPast([]); setSet(null); setMeter(null); return; }
     let live = true;
     const read = () => {
       api.getMeter(sessionId).then((m) => { if (live) setMeter((m as Partial<Meter>).series?.length ? (m as Meter) : null); }).catch(() => {});
-      if (ai.router) api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setSet(r.set ?? null); setFlowRead(true); } }).catch(() => {});
+      if (ai.router) api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setPast(r.past ?? []); setSet(r.set ?? null); setFlowRead(true); } }).catch(() => {});
     };
     read();
     if (!busy) return () => { live = false; };
     const id = setInterval(() => { setNow(Date.now() / 1000); read(); }, 4000);
     return () => { live = false; clearInterval(id); };
   }, [sessionId, busy, ai.router, reread]);
-  // Another session's path never shows under this one while its own loads.
-  useEffect(() => { setFlow(null); setSet(null); setFlowRead(false); }, [sessionId]);
+  const [pick, setPick] = useState<string | null>(null);   // the FLOWS segment opened
+  const [moreOf, setMoreOf] = useState<Record<string, boolean>>({});   // HELPERS groups shown whole
+  // Another session's flows never show under this one while its own load.
+  useEffect(() => { setFlow(null); setPast([]); setSet(null); setFlowRead(false); setPick(null); setMoreOf({}); }, [sessionId]);
   // A change from the prompt box's FLOW chip shows here at once.
   useEffect(() => {
     const heard = (e: Event) => {
@@ -254,7 +344,6 @@ export function SessionPanel({
     return () => clearInterval(id);
   }, [running]);
   const v = useMemo(() => flowView(flow, turns, set, glob.ticketruns), [flow, turns, set, glob.ticketruns]);
-  const path: Path | null = flow && v.stations.length ? { ...v, at: flow.at } : null;
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -270,9 +359,9 @@ export function SessionPanel({
     return () => { document.removeEventListener("scroll", onScroll, { capture: true }); cancelAnimationFrame(raf); };
   }, [scrollRef, nav, turns]);
 
-  // The hero draws to its own width: the rail's seam resizes it. A callback ref,
+  // Every section draws to the hero's width: the rail's seam resizes it. A callback ref,
   // because the hero mounts whenever both the turns and the meter are in, in either order.
-  const [width, setWidth] = useState(275);
+  const [width, setWidth] = useState(265);
   const watch = useRef<ResizeObserver | null>(null);
   const heroRef = useCallback((el: HTMLDivElement | null) => {
     watch.current?.disconnect();
@@ -288,17 +377,8 @@ export function SessionPanel({
     try { localStorage.setItem(FOLDS, JSON.stringify(next)); } catch { /* ignore */ }
     return next;
   });
-  /** A section's header: a button that folds what's under it; `shut` shows only while folded. */
-  const head = (k: Fold, name: string, tag: ReactNode, right: ReactNode, shut?: ReactNode, title?: string) => (
-    <button type="button" className={`ss-lbl ss-fold${open[k] ? " open" : ""}`} aria-expanded={open[k]} onClick={() => flip(k)} title={title}>
-      <ChevronRight size={11} strokeWidth={2.6} className="ss-fc" aria-hidden />{name}
-      {tag != null && tag !== false && <span className="ss-tag">{tag}</span>}
-      {(right || (!open[k] && shut)) && <span className="ss-r">{right}{!open[k] && shut}</span>}
-    </button>
-  );
   const [lens, setLens] = useState<"window" | "spent">("window");
-  const [opened, setOpened] = useState<string | null>(null);
-  const [allHelpers, setAllHelpers] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);   // the ON WHAT block whose biggest items show
   const [find, setFind] = useState<string | null>(null);
   const [pickAt, setSel] = useState(0);
   const q = (find ?? "").trim().toLowerCase();
@@ -359,111 +439,275 @@ export function SessionPanel({
     </div>
   ));
 
+  // The flows this session ran, oldest first, the current one last, and what each took.
+  const segs = meter ? toNow(meter.segs, now, running) : [];
+  const flows: (Flow | PastFlow)[] = flow ? [...past, flow] : past;
+  const cur = flow ? flows.length - 1 : -1;   // the current flow's index; the rest are past
+  const spans = flowSpans(flows, rows, segs, meter?.turns ?? {}, now);
+  const active = !!flow && v.stations.some((s) => s.state !== "done");   // on it until its last step is done
+  const stateOf = (i: number) => (i === cur ? (active ? "now" : "done") : (flows[i] as PastFlow).stopped ? "stopped" : "done");
+  const stepsOf = (i: number) => (i === cur ? v.stations : pastSteps(flows[i] as PastFlow));
+  const firstRow = (i: number) => rows[spans[i].rows[0]] as TurnRow | undefined;
+  /** A flow's own turns and their bands, the last band ending where the flow does. */
+  const bandsOf = (i: number) => {
+    const ids = new Set(spans[i].rows.flatMap((j) => rows[j].ids));
+    const ts = turns.filter((t) => ids.has(t.id));
+    const bs = bands(ts, [], { stations: stepsOf(i), at: flows[i].at });
+    if (bs.length) bs[bs.length - 1].to = spans[i].to;
+    return { ts, bs };
+  };
+
   const win = meter?.window.total ?? 0;
   const peak = meter?.series.reduce((m, [, w]) => Math.max(m, w), 0) ?? 0;
+  const flowBands: FlowBand[] = flows.flatMap((f, i) => spans[i].rows.length ? [{ from: spans[i].from, to: spans[i].to, label: flowName(f), path: f.path,
+    active: stateOf(i) === "now", starts: stepsOf(i).length > 1 ? stepStarts(bandsOf(i).bs) : [] }] : []);
   const hero = meter && (
-    <div className="ss-hero" ref={heroRef}>
+    <div className={`ss-hero${open.window ? " open" : ""}`} ref={heroRef}>
       <div className="ss-top">
-        <span className="ss-k">WINDOW</span><b>{tok(win)}</b><span>of {tok(max)}</span>
+        <button type="button" className="sq-wbtn" aria-expanded={open.window} onClick={() => flip("window")}
+          title={open.window ? "fold the curve" : "who was working, the flows and the clock"}>
+          <span className="ss-k caps">Window</span><b>{tok(win)}</b><span>of {tok(max)}</span>
+        </button>
         {win >= ZONE && sessionId
           ? <button type="button" className="ss-compact" onClick={onCompact} title={running ? "compacts after this turn" : "summarise the session so far and start the window again"}>
               <Shrink size={11} strokeWidth={2.2} aria-hidden /> Compact</button>
-          : peak > win * 1.2 && <span className="ss-r">peaked {tok(peak)}</span>}
+          : open.window && peak > win * 1.2 && <span className="ss-r">peaked {tok(peak)}</span>}
       </div>
-      <Curve meter={meter} turns={turns} rows={rows} path={path} live={running} now={now} width={width} max={max} />
+      {/* the curve opens and folds too; the button above is the keyboard's way in */}
+      <div className="sq-curve" onClick={() => flip("window")}>
+        <Curve meter={meter} turns={turns} rows={rows} flowBands={flowBands} live={running} now={now} width={width} max={max} slim={!open.window} />
+      </div>
+      {open.window && <div className="sq-wleg">{WHO.map(([w, n]) => <span key={w}><i className={`ss-dot ss-w-${w}`} />{w === "you" ? "you" : n}</span>)}</div>}
     </div>
   );
 
-  const segs = meter ? toNow(meter.segs, now, running) : [];
+  // FLOWS: one segment per flow, sized by the time worked on it; a click opens its steps.
+  const track = trackSegs(flows, spans);
+  const ws = trackWidths(track.map((g) => g.secs), width);
+  const lastOf = (g: TrackSeg) => g.runs[g.runs.length - 1];
+  const segName = (g: TrackSeg) => `${flowName(flows[lastOf(g)])}${g.runs.length > 1 ? ` ×${g.runs.length}` : ""}`;
+  const openSeg = open.flows ? track.find((g) => g.key === pick) ?? track.find((g) => stateOf(lastOf(g)) === "now") ?? track[track.length - 1] : undefined;
+  const tap = (g: TrackSeg) => {
+    if (open.flows && openSeg?.key === g.key) { flip("flows"); return; }
+    setPick(g.key);
+    if (!open.flows) flip("flows");
+  };
+  // The header names the step the active flow is on: one running or started, else the one it waits to start.
+  const underway = v.stations.find((s) => s.state === "now")
+    ?? v.stations.find((s) => s.key === flow?.next?.station && flow.next.started && s.state !== "done");
+  const onStep = active && v.stations.length > 1 ? underway ?? v.stations.find((s) => s.state !== "done") : undefined;
+
+  // The active flow's NEXT and AUTO, under its steps.
+  const nxt = v.stations.find((s) => s.state !== "done" && s.state !== "now");
+  const toggle = () => {
+    if (!flow || !sessionId) return;
+    const on = !flow.auto;
+    const was = flow;
+    flowChanged(sessionId, { ...flow, auto: on, overrides: flow.overrides && { ...flow.overrides, nextstep: on } });
+    api.setFlowAuto(sessionId, on).catch(() => flowChanged(sessionId, was));
+  };
+  // Skip shows on a REVIEW that isn't running: one that stopped, or never started.
+  const skipReview = () => {
+    if (sessionId) api.skipReview(sessionId).then(() => setReread((n) => n + 1)).catch(() => {});
+  };
+  const nextLine = flow && (
+    <div className="ss-next">
+      {nxt ? <><span className="caps">Next</span> <b className="caps">{stepName(nxt.key)}</b>
+        <span className="ss-nm">{nxt.who === "you" ? "waits for you" : flow.auto ? (running ? "after this turn" : "starts by itself") : "held: you start it"}</span></>
+        : <span className="ss-nm">flow complete · {v.total} {v.total === 1 ? "step" : "steps"}</span>}
+      {nxt?.key === "review" && flow.next?.station === "review" && (
+        <button type="button" className="ss-auto caps" onClick={skipReview}
+          title="go on to RETRO with the work as it stands, without the council's pass">
+          <SkipForward size={11} strokeWidth={2.2} aria-hidden /> Skip
+        </button>
+      )}
+      <button type="button" className={`ss-auto caps${flow.auto ? " on" : ""}`} aria-pressed={flow.auto} onClick={toggle}
+        title={flow.auto ? "steps start by themselves; click to hold" : "held: you start each step; click to release"}>
+        {nxt?.who === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden /> : <Zap size={11} strokeWidth={2.4} aria-hidden />} Auto
+      </button>
+    </div>
+  );
+
+  /** An opened segment: why its flow started, its steps (a folded one's runs) and, on the
+   *  active flow, what comes next. */
+  const detail = (g: TrackSeg) => {
+    const i = lastOf(g);
+    const f = flows[i];
+    const stopped = i !== cur && (f as PastFlow).stopped;
+    let stops: Stop[];
+    if (g.runs.length > 1) {
+      // a run that never got a turn of its own (replaced inside the turn that set it) has nothing to show
+      const ran = g.runs.filter((k) => spans[k].rows.length);
+      stops = (ran.length ? ran : g.runs).map((k) => ({ key: String(k), label: firstRow(k) ? `#${firstRow(k)!.n}` : "—", state: stateOf(k),
+        secs: spans[k].secs, tokens: spans[k].tokens, turn: firstRow(k)?.id ?? null }));
+    } else {
+      const { ts, bs } = bandsOf(i);
+      const nums = meter ? stepStats(bs, segs, ts, meter.turns) : undefined;
+      stops = stepsOf(i).map((s) => {
+        const n = nums?.get(s.label.toUpperCase());
+        return { key: s.key, label: stepName(s.key), state: s.skipped ? "skip" : s.state, secs: n?.secs, tokens: n?.tokens, turn: n?.turn ?? null };
+      });
+    }
+    // A step with no skill (BUILD, MERGE, the REVIEW after it) runs in sessions of its own: the ticket set's word.
+    const away = i === cur && v.note ? v.stations.find((s) => s.skill === null && s.state !== "done") : undefined;
+    return (
+      <div className="sq-flow">
+        <div className="sq-why" title={f.why}><span className="caps">{segName(g)}</span>
+          {stopped && <> · stopped at <span className="caps">{stepName(stopped)}</span></>} · {startedBy(f.by, f.why)}</div>
+        <Metro stops={stops} onJump={(t) => onJump(t)} />
+        {away && <div className="sq-note"><span className="caps">{stepName(away.key)}</span>: {v.note}</div>}
+        {i === cur && active && g.runs.length === 1 && nextLine}
+      </div>
+    );
+  };
+  const flowsBlock = (flows.length > 0 || (ai.router && flowRead)) && (
+    <section className="sq">
+      <button type="button" className="sq-head" aria-expanded={open.flows} disabled={!flows.length} onClick={() => flip("flows")}>
+        <span className="sq-lab caps">Flows</span>
+        <span className="sq-cap">{active && flow ? <><b className="caps">{flowName(flow)}</b>
+          {onStep && <> · {onStep === underway ? "on" : "next"} <span className="caps">{stepName(onStep.key)}</span></>}
+          {spans[cur].secs > 0 && <> · {dur(spans[cur].secs)}</>}</>
+          : flows.length ? "none running" : "none yet"}</span>
+      </button>
+      {flows.length > 0 && <>
+        <div className="sq-track">
+          {track.map((g, k) => {
+            const st = stateOf(lastOf(g));
+            return (
+              <button key={g.key} type="button" className={`sq-seg ${st} ${tint(flows[lastOf(g)].path)}${openSeg?.key === g.key ? " sel" : ""}`} style={{ width: ws[k] }}
+                aria-pressed={openSeg?.key === g.key} onClick={() => tap(g)}
+                title={`${segName(g)}${st === "stopped" ? " · stopped" : st === "now" ? " · running" : ""}${g.secs > 0 ? ` · ${dur(g.secs)}` : ""}`} />
+            );
+          })}
+        </div>
+        <div className="sq-tlab" aria-hidden>
+          {track.map((g, k) => (
+            <span key={g.key} className={stateOf(lastOf(g))} style={{ width: ws[k] }}>
+              {ws[k] > 48 ? <span className="caps">{segName(g)}</span> : <FlowIcon path={flows[lastOf(g)].path} />}
+              <em>{ws[k] > 30 && g.secs > 0 ? dur(g.secs) : ""}</em>
+            </span>
+          ))}
+        </div>
+        {/* every segment's detail in one cell, the others hidden: switching never resizes the box */}
+        {openSeg && <div className="sq-details">{track.map((g) => (
+          <div key={g.key} className={g.key === openSeg.key ? undefined : "off"} aria-hidden={g.key !== openSeg.key || undefined}>{detail(g)}</div>
+        ))}</div>}
+      </>}
+    </section>
+  );
+
   const time = timeOf(segs);
   const all = WHO.reduce((s, [w]) => s + time[w], 0);
   const worked = time.claude + time.tools + time.helpers;
   const timeBlock = meter && all > 0 && (
-    <>
-      {head("time", "TIME", open.time && long(all), <>worked <b>{long(worked)}</b></>)}
-      {open.time && <><div className="ss-tbar" role="img" aria-label={WHO.map(([w, n]) => `${n} ${fmtElapsed(time[w])}`).join(", ")}>
-        {WHO.map(([w]) => time[w] > 0 && <i key={w} className={`ss-w-${w}`} style={{ width: `${(time[w] / all) * 100}%` }} />)}
-      </div>
-      <div className="ss-tleg">
-        {WHO.map(([w, n]) => <span key={w}><i className={`ss-dot ss-w-${w}`} />{n}<em>{fmtElapsed(time[w])}</em></span>)}
-      </div></>}
-    </>
+    <section className="sq">
+      <button type="button" className="sq-head" aria-expanded={open.time} onClick={() => flip("time")}
+        aria-label={`time: ${WHO.map(([w, n]) => `${n} ${dur(time[w])}`).join(", ")}`}>
+        <span className="sq-lab caps">Time</span>
+        <Dial size={20} w={4.5} time={time} all={all} />
+        <span className="sq-tv"><b>{dur(worked)}</b> worked of {dur(all)}</span>
+      </button>
+      {open.time && (
+        <div className="sq-dialbig">
+          <Dial size={86} w={11} time={time} all={all} center={dur(worked).split(" ")[0]} />
+          <div className="sq-dleg">{WHO.map(([w, n]) => <div key={w}><i className={`ss-dot ss-w-${w}`} />{n}<em>{dur(time[w])}</em></div>)}</div>
+        </div>
+      )}
+    </section>
   );
 
-  const lensRows = (which: "window" | "spent") => {
-    if (!meter) return null;
-    const kinds = kindRows(which === "window" ? meter.window.kinds : meter.spent.kinds);
-    const top = kinds[0]?.tokens || 1;
-    const items = (k: { kind: string; folded: string[] }): MeterItem[] => (k.folded.length ? k.folded : [k.kind])
-      .flatMap((f) => meter.biggest[which][f] ?? []).sort((a, b) => b.tokens - a.tokens).slice(0, 3);
-    return (
-      <div className={`ss-lens${lens === which ? "" : " off"}`} aria-hidden={lens !== which}>
-        {kinds.map((k) => {
-          const open = opened === k.kind;
-          const list = open ? items(k) : [];
-          return (
-            <Fragment key={k.kind}>
-              <button type="button" className={`ss-kr${open ? " open" : ""}`} tabIndex={lens === which ? 0 : -1}
-                aria-expanded={open} onClick={() => setOpened(open ? null : k.kind)}>
-                <i className={`ss-dot ss-k-${k.kind}`} /><span className="ss-kn">{KIND[k.kind] ?? k.kind}</span>
-                <span className="ss-kb"><i className={`ss-k-${k.kind}`} style={{ width: `${(k.tokens / top) * 100}%` }} /></span>
-                <em>{tok(k.tokens)}</em><ChevronRight size={12} className="ss-kc" aria-hidden />
+  // ON WHAT: one sentence on what fills the window; opened, the window (or what the session
+  // spent) as blocks, a block opening its biggest items.
+  const kinds = meter ? kindRows(lens === "window" ? meter.window.kinds : meter.spent.kinds) : [];
+  const mix = meter ? mixLine(meter.window.kinds) : [];
+  const kw = (k: string) => <b className={`sq-kw ss-k-${k}`}>{kindWord(k)}</b>;
+  const blk = kinds.find((k) => k.kind === opened) ?? kinds[0];
+  const biggest = blk ? (blk.folded.length ? blk.folded : [blk.kind]).flatMap((f) => meter?.biggest[lens][f] ?? [])
+    .sort((a, b) => b.tokens - a.tokens).slice(0, 3) : [];
+  const boxes = treemap(kinds.map((k) => k.tokens), width, 132);
+  const onWhat = meter && mix.length > 0 && (
+    <section className="sq">
+      <button type="button" className="sq-head sq-col" aria-expanded={open.onwhat} onClick={() => flip("onwhat")}>
+        <span className="sq-lab caps">On what</span>
+        <span className="sq-sent">{mix.length === 1 ? <>All {kw(mix[0].kind)}</>
+          : <>Mostly {kw(mix[0].kind)} ({mix[0].pct}%), then {kw(mix[1].kind)}{mix[2] && <> and {kw(mix[2].kind)}</>}</>}</span>
+      </button>
+      {open.onwhat && <>
+        <div className="ss-switch" role="tablist" aria-label="on what">
+          {(["window", "spent"] as const).map((w) => (
+            <button key={w} type="button" role="tab" aria-selected={lens === w} className={`caps${lens === w ? " on" : ""}`} onClick={() => setLens(w)}>
+              {w === "window" ? "Window" : "Spent"} <em>{tok(w === "window" ? meter.window.total : meter.spent.total)}</em>
+            </button>
+          ))}
+        </div>
+        <div className="sq-tmap">
+          {kinds.map((k, i) => {
+            const b = boxes[i];
+            return (
+              <button key={k.kind} type="button" className={`sq-blk ss-k-${k.kind}${blk?.kind === k.kind ? " sel" : ""}`} aria-pressed={blk?.kind === k.kind}
+                style={{ left: b.x + 1, top: b.y + 1, width: Math.max(1, b.w - 2), height: Math.max(1, b.h - 2) }}
+                title={`${KIND[k.kind] ?? k.kind} · ${tok(k.tokens)}`} onClick={() => setOpened(k.kind)}>
+                {b.w > 52 && b.h > 30 ? <><b>{KIND[k.kind] ?? k.kind}</b><em>{tok(k.tokens)}</em></> : b.w > 26 && b.h > 16 ? <em>{tok(k.tokens)}</em> : null}
               </button>
-              {open && (
-                <div className="ss-big">
-                  {list.map((it, i) => (
-                    <button type="button" key={i} className="ss-bi" disabled={!it.turn} onClick={() => it.turn && onJump(it.turn)}
-                      title={it.turn ? "go to the turn it came in" : undefined}>
-                      <span className="ss-bx">{it.label}</span>
-                      {which === "spent" && it.reads != null && it.size != null && <span className="ss-bw">{tok(it.size)} ×{it.reads}</span>}
-                      <em>{tok(it.tokens)}</em>
-                    </button>
-                  ))}
-                  {!list.length && <div className="ss-bi none">nothing big enough to list</div>}
-                </div>
-              )}
-            </Fragment>
-          );
-        })}
-      </div>
-    );
-  };
-  const onWhat = meter && (
-    <>
-      {head("onwhat", "ON WHAT", null, null, <>window <b>{tok(meter.window.total)}</b></>)}
-      {open.onwhat && <><div className="ss-switch" role="tablist" aria-label="on what">
-        {(["window", "spent"] as const).map((w) => (
-          <button key={w} type="button" role="tab" aria-selected={lens === w} className={lens === w ? "on" : ""} onClick={() => setLens(w)}>
-            {w === "window" ? "WINDOW" : "SPENT"} <em>{tok(w === "window" ? meter.window.total : meter.spent.total)}</em>
-          </button>
-        ))}
-      </div>
-      {/* both lenses in one cell: switching never resizes the box */}
-      <div className="ss-lenses">{lensRows("window")}{lensRows("spent")}</div></>}
-    </>
+            );
+          })}
+        </div>
+        {blk && (
+          <div className="ss-big sq-big">
+            {biggest.map((it: MeterItem, i) => (
+              <button type="button" key={i} className="ss-bi" disabled={!it.turn} onClick={() => it.turn && onJump(it.turn)}
+                title={it.turn ? "go to the turn it came in" : undefined}>
+                <span className="ss-bx">{it.label}</span>
+                {lens === "spent" && it.reads != null && it.size != null && <span className="ss-bw">{tok(it.size)} ×{it.reads}</span>}
+                <em>{tok(it.tokens)}</em>
+              </button>
+            ))}
+            {!biggest.length && <div className="ss-bi none">nothing big enough to list</div>}
+          </div>
+        )}
+      </>}
+    </section>
   );
 
+  // HELPERS: a face pile; opened, the helpers under the flow that started them, newest flow first.
   const hs = meter?.helpers ?? [];
+  const nRun = hs.filter((h) => h.running).length;
+  const grouped = helperGroups(hs, rows, spans, track);
+  const flat = grouped.length === 1 && grouped[0][0] < 0;   // no flow ran: one list, no headings
+  const faces = [...hs].sort((a, b) => Number(b.running) - Number(a.running) || b.start - a.start).slice(0, 5);
+  const helperRow = (h: MeterHelper) => (
+    <button type="button" key={h.id} className="ss-h" onClick={() => openAgent(h.id)} title="open its run">
+      <span className={`ss-hi${h.running ? " run" : ""}`}><Bot size={11} strokeWidth={2.2} aria-hidden /></span>
+      <span className="ss-ht">{h.what}</span>
+      <small>{dur(Math.max(0, (h.running ? now : h.end) - h.start))}</small><em>{tok(h.tokens)}</em>
+    </button>
+  );
   const helpers = hs.length > 0 && (
-    <>
-      {head("helpers", "HELPERS", hs.some((h) => h.running) ? `${hs.filter((h) => h.running).length} running` : `${hs.length} ran`,
-        tok(hs.reduce((s, h) => s + h.tokens, 0)))}
-      {open.helpers && (allHelpers ? hs : hs.slice(0, 3)).map((h) => (
-        <button type="button" key={h.id} className="ss-h" onClick={() => openAgent(h.id)} title="open its run">
-          <span className={`ss-hi${h.running ? " run" : ""}`}><Bot size={11} strokeWidth={2.2} aria-hidden /></span>
-          <span className="ss-ht">{h.what}</span>
-          <small>{fmtElapsed(Math.max(0, (h.running ? now : h.end) - h.start))}</small><em>{tok(h.tokens)}</em>
-        </button>
-      ))}
-      {open.helpers && hs.length > 3 && <button type="button" className="ss-h more" onClick={() => setAllHelpers(!allHelpers)}>
-        <span className="ss-hi" /><span className="ss-ht">{allHelpers ? "fewer" : `${hs.length - 3} more`}</span></button>}
-    </>
+    <section className="sq">
+      <button type="button" className="sq-head" aria-expanded={open.helpers} onClick={() => flip("helpers")}>
+        <span className="sq-lab caps">Helpers</span>
+        <span className="sq-pile" aria-hidden>{faces.map((h) => <span key={h.id} className={h.running ? "run" : ""}><Bot size={11} strokeWidth={2} /></span>)}</span>
+        <span className="sq-hc">{hs.length} ran{nRun > 0 && <> · <b>{nRun} running</b></>}</span>
+      </button>
+      {open.helpers && grouped.map(([k, list]) => {
+        const id = track[k]?.key ?? "", keep = flat ? 3 : 2, whole = !!moreOf[id];
+        return (
+          <Fragment key={id}>
+            {!flat && <div className="sq-grp caps">{k >= 0 ? <><FlowIcon path={flows[lastOf(track[k])].path} />{segName(track[k])}</> : "Outside a flow"}
+              <em>{list.length} · {tok(list.reduce((s, h) => s + h.tokens, 0))}</em></div>}
+            {(whole ? list : list.slice(0, keep)).map(helperRow)}
+            {list.length > keep && <button type="button" className="ss-h more" onClick={() => setMoreOf((m) => ({ ...m, [id]: !whole }))}>
+              <span className="ss-hi" /><span className="ss-ht">{whole ? "fewer" : `${list.length - keep} more`}</span></button>}
+          </Fragment>
+        );
+      })}
+    </section>
   );
 
   const spentOf = (r: TurnRow) => meter ? r.ids.reduce((s, id) => s + (meter.turns[id]?.spent ?? 0), 0) : 0;
   const turnList = (
     <>
-      {find === null && <div className="ss-lbl">TURNS <span className="ss-r">time · spent</span></div>}
+      {find === null && <div className="ss-lbl caps">Turns</div>}
       <div className="ss-turns" ref={listRef}>
         {q && !shown.length && <div className="tn-none">nothing answers to “{find?.trim()}”.</div>}
         {shown.map(({ r, i }, k) => {
@@ -477,12 +721,13 @@ export function SessionPanel({
               onMouseEnter={find !== null ? () => setSel(k) : undefined}>
               <i className="ss-n">{r.n}</i>
               <span className="ss-p">{promptLine(r.prompt, q)}</span>
+              {/* marks, spend, copy and send again: on hover */}
               <span className="ss-mk">{ms.map((m, j) => (
                 <button key={j} type="button" className={`ss-m ${m.tone}`} title={`${m.kind}${m.text ? ` · ${m.text}` : ""}`}
                   onClick={(e) => { e.stopPropagation(); onJump(m.jump, m.key); }}>{glyph(m)}</button>
               ))}</span>
               <small>{ended || (r.secs != null ? fmtElapsed(r.secs) : "")}</small>
-              <em>{spend ? tok(spend) : ""}</em>
+              {spend > 0 && <em>{tok(spend)}</em>}
               <span className="ss-acts">
                 <button className="gp-ib" title="copy the prompt" aria-label="copy the prompt"
                   onClick={(e) => { e.stopPropagation(); onCopy(r.prompt); }}><Copy size={12} /></button>
@@ -493,66 +738,6 @@ export function SessionPanel({
           );
         })}
       </div>
-    </>
-  );
-
-  // The path's step after the one running (or the next to start), and AUTO.
-  const nxt = path?.stations.find((s) => s.state !== "done" && s.state !== "now");
-  const toggle = () => {
-    if (!flow || !sessionId) return;
-    const on = !flow.auto;
-    const was = flow;
-    flowChanged(sessionId, { ...flow, auto: on, overrides: flow.overrides && { ...flow.overrides, nextstep: on } });
-    api.setFlowAuto(sessionId, on).catch(() => flowChanged(sessionId, was));
-  };
-  // Skip shows on a REVIEW that isn't running: one that stopped, or never started.
-  const skipReview = () => {
-    if (sessionId) api.skipReview(sessionId).then(() => setReread((n) => n + 1)).catch(() => {});
-  };
-  const nextLine = path && flow && find === null && (
-    <div className="ss-next" title={`${flowLabel(flow)} ${flow.path === "one" ? "skill" : "flow"}: ${startedBy(path.by, path.why)}`}>
-      {nxt ? <>NEXT <b>{nxt.label.toUpperCase()}</b>
-        <span className="ss-nm">{nxt.who === "you" ? "waits for you" : flow.auto ? (running ? "starts by itself after this turn" : "starts by itself") : "held: you start it"}</span></>
-        : <span className="ss-nm">path complete · {path.total} {path.total === 1 ? "step" : "steps"}</span>}
-      {nxt?.key === "review" && flow.next?.station === "review" && (
-        <button type="button" className="ss-auto caps" onClick={skipReview}
-          title="go on to RETRO with the work as it stands, without the council's pass">
-          <SkipForward size={11} strokeWidth={2.2} aria-hidden /> Skip
-        </button>
-      )}
-      <button type="button" className={`ss-auto${flow.auto ? " on" : ""}`} aria-pressed={flow.auto} onClick={toggle}
-        title={flow.auto ? "steps start by themselves; click to hold" : "held: you start each step; click to release"}>
-        {nxt?.who === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden /> : <Zap size={11} strokeWidth={2.4} aria-hidden />} AUTO
-      </button>
-    </div>
-  );
-
-  // FLOW: the path's steps, each with the time worked on it and what its turns spent.
-  // A step with no skill (BUILD, MERGE, the REVIEW after it) runs in sessions of its own: the ticket set's word stands in.
-  const stats = meter && path ? stepStats(bands(turns, rows, { stations: path.stations, at: path.at }), segs, turns, meter.turns) : null;
-  const away = path?.stations.find((s) => s.skill === null && s.state !== "done")?.key;
-  const flowBlock = !path || !flow ? (flowRead || !ai.router) && <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
-    <>
-      {head("flow", "FLOW", flowLabel(flow),
-        path.stations.every((s) => s.state === "done") ? "complete" : <>step <b>{path.step}</b> of {path.total}</>, null,
-        startedBy(path.by, path.why))}
-      {open.flow && path.why && <div className="ss-why" title={path.why}>{startedBy(path.by, path.why)}</div>}
-      {open.flow && path.stations.map((s) => {
-        const n = stats?.get(s.label.toUpperCase());
-        const note = s.key === away ? path.note : undefined;
-        return (
-          <button type="button" key={s.key} className={`ss-h ss-st ${s.state}${s.skipped ? " skipped" : ""}`} disabled={!n?.turn} onClick={() => n?.turn && onJump(n.turn)}
-            title={n?.turn ? "go to the step's first turn" : s.skipped ? "skipped" : undefined}>
-            <span className={`ss-hi${s.state === "now" ? " run" : ""}`}>
-              {s.skipped ? <SkipForward size={11} strokeWidth={2.2} aria-hidden /> : s.state === "done" ? <Check size={11} strokeWidth={2.6} aria-hidden /> : s.state === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden />
-                : <i className="ss-sd" aria-hidden />}</span>
-            <span className="ss-ht">{s.label.toUpperCase()}</span>
-            {note ? <small className="ss-sn">{note}</small> : <>
-              <small>{n && n.secs > 0 ? fmtElapsed(n.secs) : ""}</small><em>{n?.tokens ? tok(n.tokens) : ""}</em></>}
-          </button>
-        );
-      })}
-      {nextLine}
     </>
   );
 
@@ -574,7 +759,7 @@ export function SessionPanel({
       {find === null && hero}
       {bar}
       <div className="mscroll">
-        {find === null && flowBlock}
+        {find === null && flowsBlock}
         {find === null && timeBlock}
         {find === null && onWhat}
         {find === null && helpers}
