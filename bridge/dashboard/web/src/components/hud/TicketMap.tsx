@@ -200,6 +200,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     retry: (n: string) => act(api.retryTicket(set.folder, n), "retry failed"),
     build: () => act(api.buildTickets(set.folder), "build failed"),
     approve: () => act(api.approveTickets(set.folder), "approve failed"),
+    decline: () => act(api.declineTickets(set.folder), "not now failed"),
     clean: async () => {
       if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; their .mystical/ scratch moves to .mystical/archive/, other ignored files (.env) go with them.`, { ok: "Clean up" }))) return;
       try {
@@ -211,14 +212,16 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
   const first = urgent(set, ns, kinds);
   const t = first && first !== "merge" ? set.tickets[first] : null;
   const call = note ? <span className="tm-call">{note}</span>
-    : set.status === "stopped" ? <span className="tm-call err" title={set.error}>{set.error || "BUILD could not start"}</span>
+    : set.status === "stopped" && set.error !== undefined   // Not now leaves no error: set aside, nothing failed
+      ? <span className="tm-call err" title={set.error}>{set.error || "BUILD could not start"}</span>
     : t && kinds[first] === "ask" ? <span className="tm-call warn" title={status.get(t.session_id)?.label ?? undefined}><Hand size={13} aria-hidden /><b>#{first}</b> asks you</span>
     : t && kinds[first] === "fix" ? <span className="tm-call err" title={t.why}><b>#{first}</b> needs a fix</span>
     : t ? <span className="tm-call warn"><b>#{first}</b> stopped</span>
     : first === "merge" ? <span className={`tm-call ${set.status === "fix" ? "err" : "warn"}`}>the merge {set.status === "fix" ? "needs a fix" : "stopped"}</span>
     : null;
   const action = note ? null
-    : set.status === "approve" ? <><AutoStart onErr={setNote} /><button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
+    : set.status === "approve" ? <><AutoStart onErr={setNote} /><button className="tm-btn ghost" onClick={ops.decline}>Not now</button>
+      <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
     : set.status === "stopped" ? <button className="tm-btn" onClick={ops.build}>Build</button>
     : t && kinds[first] === "ask" ? <button className="tm-btn warn" onClick={() => onOpenSession(t.session_id)}>Answer</button>
     : t && kinds[first] === "fix" ? <button className="tm-btn" onClick={() => ops.retry(first)}><RotateCcw size={11} aria-hidden /> Retry</button>

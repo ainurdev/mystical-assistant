@@ -1576,7 +1576,8 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
-        if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build", "/local/tickets/approve"):
+        if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build", "/local/tickets/approve",
+                    "/local/tickets/decline"):
             from bridge import tickets
             folder = body.get("folder")
             if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()} \
@@ -1585,6 +1586,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/local/tickets/approve":
                 try:
                     return self._json({"text": tickets.approve(folder) or "Building."})
+                except Exception as e:  # noqa: BLE001
+                    return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
+            if path == "/local/tickets/decline":   # Not now on a set waiting for Approve & build
+                try:
+                    return self._json({"text": tickets.decline(folder) or "Stopped."})
                 except Exception as e:  # noqa: BLE001
                     return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
             if path == "/local/tickets/build":   # a stopped set, once what stopped it is fixed

@@ -2761,6 +2761,9 @@ export const api = {
   /** A set waiting in `approve` (its flow's AUTO-START off) is approved and builds. */
   approveTickets: (folder: string) =>
     req<{ text: string }>("/local/tickets/approve", { method: "POST", body: { folder } }),
+  /** Not now on a set waiting in `approve`: it stops, out of Needs you; Build makes it wait again. */
+  declineTickets: (folder: string) =>
+    req<{ text: string }>("/local/tickets/decline", { method: "POST", body: { folder } }),
   cleanupTickets: (folder: string) =>
     req<{ removed: string[]; skipped: string[] }>("/local/tickets/cleanup", { method: "POST", body: { folder } }),
   clearStorage: (clear: StorageClear[], move_files: string[] = []) =>

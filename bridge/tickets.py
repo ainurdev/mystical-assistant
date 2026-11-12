@@ -79,9 +79,10 @@ AUTO-START (a tickets flow's own, stored inverted as its `approve`, read from th
 started the set) is the user's choice to trust the skill or not: /to-tickets is meant to
 quiz the user before it ends, but can skip it. Off, start_build parses and validates the
 tickets, saves the set as `approve` and stops: no feature branch, carry or worktree.
-approve() (the Approve & build tap) does the rest. The wait rings once (`tickets_wait`)
-and stays in Needs you until then, read live (notices.needs). boot() and tick() leave an
-`approve` set alone.
+approve() (the Approve & build tap) does the rest; decline() (Not now) stops it instead,
+the one way out short of building it. The wait rings once (`tickets_wait`) and stays in
+Needs you until then, read live (notices.needs), unless its session is abandoned. boot()
+and tick() leave an `approve` set alone.
 
 Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's state and why,
 and how its session's last turn ended (StepDone or not, the last tool, the last words). It
@@ -458,7 +459,19 @@ def approve(folder: str) -> str:
     return ""
 
 
-_FOREGROUND = " Run tests in the foreground: a background command dies when your turn ends."
+def decline(folder: str) -> str:
+    """Not now, the other tap on a set waiting in `approve`: it stops, so it leaves Needs you,
+    with no error, as nothing failed. Build makes it wait again. "" once stopped, else why not."""
+    with _build:
+        st = load(folder)
+        if st.get("status") != "approve":
+            return f"{st.get('slug') or 'the set'} is already {st.get('status')}"
+        st["status"] = "stopped"
+        save(folder, st)
+    return ""
+
+
+_FOREGROUND =" Run tests in the foreground: a background command dies when your turn ends."
 
 
 def _elsewhere(st: dict, n: str) -> str:

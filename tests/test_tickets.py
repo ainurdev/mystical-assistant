@@ -1060,6 +1060,21 @@ def test_auto_start_counts_for_later_sets_only(make_set):
     assert s.build() == "" and s.state["status"] == "approve" and s.starts == []
 
 
+def test_an_abandoned_session_takes_its_waiting_set_out_of_needs_you(make_set):
+    s = make_set({"01": None}, on="approve")
+    store.set_lifecycle(s.flow, "abandoned")                # gone from the sidebar: gone from the bell too
+    assert [n for n in notices.needs({}) if n["session_id"] == s.flow] == []
+
+
+def test_not_now_stops_a_waiting_set_and_build_makes_it_wait_again(make_set):
+    s = make_set({"01": None}, on="approve")
+    assert _dpost("/local/tickets/decline", {"folder": s.folder})["obj"] == {"text": "Stopped."}
+    assert s.state["status"] == "stopped" and "error" not in s.state and s.starts == []   # set aside, not failed
+    assert [n for n in notices.needs({}) if n["session_id"] == s.flow] == []
+    assert tickets.decline(s.folder) == "x is already stopped"
+    assert s.build() == "" and s.state["status"] == "approve"
+
+
 def test_boot_leaves_an_approve_set_alone(make_set):
     s = make_set({"01": None}, on="approve")
     tickets.boot()

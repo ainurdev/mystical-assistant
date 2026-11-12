@@ -457,7 +457,8 @@ def needs(status: dict) -> list:
         out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],
                          r["body"], r["at"], {"project": sess.get("project"), **r["meta"]}))
     # Ticket sets waiting for Approve & build, live off set.json as the sidebar reads them: the
-    # feed's 200 rows hold about a day, and a set can wait longer. A session shows once, its Ask first.
+    # feed's 200 rows hold about a day, and a set can wait longer. A session shows once, its Ask first;
+    # an abandoned one (archived) not at all, as it left the sidebar.
     listed = {n["subject"] for n in out}
     try:
         from bridge import tickets                # local import: tickets imports this
@@ -465,7 +466,7 @@ def needs(status: dict) -> list:
     except Exception:  # noqa: BLE001 — never the bell's whole list for one bad set.json
         waiting = {}
     for sid, c in waiting.items():
-        if sid not in listed and (sess := store.get_session(sid)):
+        if sid not in listed and (sess := store.get_session(sid)) and not sess.get("archived"):
             out.append(_need("tickets_wait", sid, sid, sess.get("title") or "", tickets.approval_line(c["total"]),
                              c["at"] or None, {"project": sess.get("project")}))
     try:
