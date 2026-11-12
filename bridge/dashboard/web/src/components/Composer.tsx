@@ -467,7 +467,14 @@ export function FlowsSheet({ initial, inline, runRows }: { initial?: string | nu
             ))}
           </div>
         </div>
-        {/* GUESS AUTO | BY HAND: flow-gear 07 */}
+        <div className="pb-pr"><b>Guess</b>
+          <div className="pb-sg" role="group" aria-label="Guess">
+            {(["auto", "hand"] as const).map((v) => (
+              <button key={v} type="button" aria-pressed={flowCfg.guess === v} onClick={() => flowChange({ key: "guess", value: v })}
+                title={v === "auto" ? "The box guesses a flow as you type" : "Only a tap or Tab lights a flow"}>{v === "auto" ? "AUTO" : "BY HAND"}</button>
+            ))}
+          </div>
+        </div>
         <label className="fs-sw"><Switch on={flowCfg.autopick} label="Auto picks" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />Auto picks</label>
         <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
       </div>
@@ -490,7 +497,14 @@ export function FlowsSheet({ initial, inline, runRows }: { initial?: string | nu
               </div>
             );
           })}
-          {/* NO KIND CLAUDE PICKS | AS TYPED: flow-gear 07 */}
+          <div className="pb-pr fs-nokind"><b>No kind</b>
+            <div className="pb-sg" role="group" aria-label="No kind: a prompt sent with no flow lit">
+              {(["claude", "typed"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={flowCfg.nokind === v} onClick={() => flowChange({ key: "nokind", value: v })}
+                  title={v === "claude" ? "Claude picks one of the flows that are on" : "Claude picks nothing: the prompt goes as typed"}>{v === "claude" ? "CLAUDE PICKS" : "AS TYPED"}</button>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="fs-detail">
           <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
@@ -990,7 +1004,7 @@ export function Composer({
   const flowsOff = useMemo(() => flowCfg?.flows.filter((f) => !f.on).map((f) => f.id) ?? [], [flowCfg]);
   const kindsOn = shelled && flowsOn && !onAgent && !helper && !ask?.send && !leadsSlash;
   const pick = kindPick && kindPick !== "plain" && flowsOff.includes(kindPick) ? null : kindPick;
-  const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff }) : { kind: null, how: "none" as const };
+  const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff, hand: flowCfg?.guess === "hand" }) : { kind: null, how: "none" as const };
   const run = kind ? presetFor(kind, flowRuns(flowCfg?.flows), runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;

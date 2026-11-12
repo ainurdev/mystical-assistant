@@ -51,7 +51,7 @@ def rivendell_session_c2():
 
 
 def test_pack_in_prompt_when_on(router_on, session_c1):
-    assert paths.PACK_TEXT in runner._compose_system_prompt(paths_pack=paths.pack_for("c1"))
+    assert paths.pack_text() in runner._compose_system_prompt(paths_pack=paths.pack_for("c1"))
 
 
 def test_pack_is_constant(router_on, session_c1):
@@ -1006,8 +1006,8 @@ def test_set_path_and_the_routing_text_name_the_new_flows():
     enum = next(t for t in goal_mcp._PATH_TOOLS if t["name"] == "SetPath")["inputSchema"]["properties"]["path"]["enum"]
     assert enum == ["design", "build", "refactor", "fix", "one"]
     for name in ("design", "build", "fix", "refactor"):
-        assert f"\n- {name}: " in paths.PACK_TEXT
-    assert "feature:" not in paths.PACK_TEXT and "bug:" not in paths.PACK_TEXT
+        assert f"\n- {name}: " in paths.pack_text()
+    assert "feature:" not in paths.pack_text() and "bug:" not in paths.pack_text()
 
 
 # --- ticket 02: the flow a send names starts at its turn ----------------------

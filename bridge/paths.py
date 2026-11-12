@@ -11,9 +11,10 @@ mid-session. Checked by hand: when the plugin is also installed, the CLI logs
 'from --plugin-dir overrides installed version' and runs one copy, so the
 installed one needs no disabling.
 
-The routing instructions ride the system prompt as PACK_TEXT, a constant: the
-appended prompt sits after the last cache breakpoint, so text that varied by
-turn would re-write the whole block at cache-write price. The switch is read every
+The routing instructions ride the system prompt as pack_text(), built from the FLOWS
+settings alone (NO KIND, the flows that are on, their grills): the appended prompt sits
+after the last cache breakpoint, so text that varied by turn would re-write the whole
+block at cache-write price. It changes only when a setting does. The switch is read every
 run, so flipping it applies from the next turn; only the session's origin is
 decided once (pack_for) and kept, like the Rivendell note. Unattended runs (Rivendell
 jobs, device runs) never get the pack or the plugin: nobody is there to answer a
@@ -85,27 +86,75 @@ PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "m
 def on() -> bool:
     return aifeatures.enabled("router")
 
-PACK_TEXT = "\n".join([
-    "Skill paths. Matt Pocock's skills are loaded as /mattpocock-skills:<name>.",
-    "On a prompt with no /command in front, before anything else (a tool call, a file read, a question), decide whether one of these paths fits it:",
-    "- design: a change to how something looks (a screen, a layout, a component) to draw before it is built. Start grill-with-docs.",
-    "- build: a new feature or idea, however small (a new command, function, option or behaviour). Start grill-with-docs.",
-    "- fix: something broken, failing, empty or slow, or a question why something is broken. Start diagnosing-bugs.",
-    "- refactor: tangled code or architecture work. Start improve-codebase-architecture.",
-    "- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a same-named skill from another plugin.",
-    "If one fits, your first tool call is the Skill tool with that skill (mattpocock-skills:<name>). Don't explore, diagnose, build or ask questions before it: the skill does that. Don't wait for SetPath either: it is a deferred tool, so once the skill has started, load it with ToolSearch and call it with the path and a one-line why.",
-    "A path's skill comes before the skills and modes this session injects: start it instead of superpowers brainstorming or systematic-debugging, and don't skip it for ponytail's smallest change or for a clarifying question (a grill asks those).",
-    "If none fits (a question about how the code works, an edit spelled out exactly like a rename, a chat reply), just answer or do it, and start nothing.",
+# The routing text's parts. pack_text() puts them together from the FLOWS settings.
+_INTRO = "Skill paths. Matt Pocock's skills are loaded as /mattpocock-skills:<name>."
+_ASK = ("On a prompt with no /command in front, before anything else (a tool call, a file read, a question), "
+        "decide whether one of these paths fits it:")
+# The flows Claude may pick, in order: what each is for, and its first skill (the grill's).
+# SHIP and ASK are never Claude's: their one step is the turn itself.
+_PICKS = {
+    "design": ("a change to how something looks (a screen, a layout, a component) to draw before it is built",
+               "Start grill-with-docs."),
+    "build": ("a new feature or idea, however small (a new command, function, option or behaviour)",
+              "Start grill-with-docs."),
+    "fix": ("something broken, failing, empty or slow, or a question why something is broken",
+            "Start diagnosing-bugs."),
+    "refactor": ("tangled code or architecture work", "Start improve-codebase-architecture."),
+}
+# With the grill switched off (flowsettings): DESIGN starts at its design, BUILD builds here,
+# started by the bridge at the turn's end so it moves onto its own branch first (claude_path).
+_NO_GRILL = {
+    "design": "Start the design-first skill (named just design-first, not mattpocock-skills:), then call SetPath with path design; when the user approves the design, "
+              "call StepDone instead of building.",
+    "build": "Don't start a skill or build in this turn: call SetPath with path build and end your turn; "
+             "the build starts on its own branch when the turn ends.",
+}
+_ONE = ("- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, "
+        "code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a "
+        "same-named skill from another plugin.")
+_FIRST = ("If one fits, your first tool call is the Skill tool with that skill (mattpocock-skills:<name>). "
+          "Don't explore, diagnose, build or ask questions before it: the skill does that. Don't wait for "
+          "SetPath either: it is a deferred tool, so once the skill has started, load it with ToolSearch and "
+          "call it with the path and a one-line why.")
+_FIRST_SETPATH = " A path whose line says SetPath instead: load SetPath with ToolSearch and call it first."
+_ROUTE_TAIL = [
+    "A path's skill comes before the skills and modes this session injects: start it instead of superpowers "
+    "brainstorming or systematic-debugging, and don't skip it for ponytail's smallest change or for a "
+    "clarifying question (a grill asks those).",
+    "If none fits (a question about how the code works, an edit spelled out exactly like a rename, a chat "
+    "reply), just answer or do it, and start nothing.",
     'If the message begins "No path for this message.", start nothing.',
-    'When you finish a step of a path and need nothing more from the user, make StepDone the last tool call of your turn: the next step starts when the turn ends (build-here on its own feature branch) and does its own work. After a grill, pass choice "here" if the work fits this one session, or "tickets" if it needs several. Never call StepDone while waiting on the user.',
-])
+]
+_STEPDONE = ('When you finish a step of a path and need nothing more from the user, make StepDone the last tool '
+             'call of your turn: the next step starts when the turn ends (build-here on its own feature branch) '
+             'and does its own work. After a grill, pass choice "here" if the work fits this one session, or '
+             '"tickets" if it needs several. Never call StepDone while waiting on the user.')
+
+
+def pack_text() -> str:
+    """The routing text, from the FLOWS settings only: NO KIND, which of DESIGN, BUILD,
+    REFACTOR and FIX are on, and their grills. Nothing per turn goes in, so the text, and
+    the cache write it costs, change only when a setting does. AS TYPED keeps the StepDone line."""
+    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if flowsettings.nokind() == "typed":
+        return "\n".join([_INTRO, _STEPDONE])
+    lines, setpath = [], False
+    for fl, (what, start) in _PICKS.items():
+        if not flowsettings.flow_on(fl):
+            continue
+        if fl in _NO_GRILL and not flowsettings.steps(fl)["grill"]:
+            start, setpath = _NO_GRILL[fl], setpath or fl == "build"
+        lines.append(f"- {fl}: {what}. {start}")
+    return "\n".join([_INTRO, _ASK, *lines, _ONE, _FIRST + (_FIRST_SETPATH if setpath else ""),
+                      *_ROUTE_TAIL, _STEPDONE])
+
 
 # claude session id -> whether its origin gets the pack, decided at its first run.
 _pack_ok: dict[str, bool] = {}
 
 
 def pack_for(claude_session_id: str) -> str:
-    """PACK_TEXT for an attended run of this session while the switch is on, else "".
+    """pack_text() for an attended run of this session while the switch is on, else "".
     The switch is read every run (it applies to the next turn); the origin once."""
     if not on():
         return ""
@@ -115,7 +164,7 @@ def pack_for(claude_session_id: str) -> str:
         except Exception:  # noqa: BLE001 — the pack never blocks a turn
             origin = ""
         _pack_ok[claude_session_id] = not origin.startswith(("rivendell", "device-run"))
-    return PACK_TEXT if _pack_ok[claude_session_id] else ""
+    return pack_text() if _pack_ok[claude_session_id] else ""
 
 
 class Step(NamedTuple):
@@ -287,7 +336,7 @@ def _eff(flow: dict, key: str) -> bool:
 def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
              done: "list | None" = None) -> dict:
     """`done`: stations already behind it (a path joined mid-way)."""
-    skill = (skill or "").removeprefix("mattpocock-skills:") or None   # the pack's full name, as PACK_TEXT asks
+    skill = (skill or "").removeprefix("mattpocock-skills:") or None   # the pack's full name, as pack_text() asks
     path = OLD.get(path, path)
     if path != "one" and path not in PATHS:
         raise ValueError(f"unknown path {path!r}")
@@ -303,6 +352,25 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
                               "next": None, "last": None}
         _save_locked()
         return dict(_cache[session_id])
+
+
+def claude_path(session_id: str, path: str, why: str, skill: "str | None", turn_id: str) -> dict:
+    """SetPath: the path Claude picked. A DESIGN or BUILD whose grill is switched off
+    goes as its here form with the grill behind it. DESIGN's design is this turn's work
+    (pack_text tells Claude to start it); BUILD's build is recorded as the next step of
+    this turn, so it starts at the turn's end and moves onto its own branch first, never
+    building on the default branch inside the picking turn."""
+    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    name = OLD.get(path, path)
+    if name not in ("design", "build") or flowsettings.steps(name)["grill"]:
+        return set_path(session_id, path, why, "claude", skill)
+    f = set_path(session_id, name + "-here", why, "claude", None, ["grill"])
+    if name == "build":
+        turn = _carried(session_id, turn_id)[0] if turn_id else ""
+        with _lock:
+            _cache[session_id]["next"] = f["next"] = {"station": "build-here", "turn_id": turn, "started": False}
+            _save_locked()
+    return f
 
 
 def restore(session_id: str, snap: "dict | None") -> None:
@@ -490,7 +558,7 @@ def path_for_command(skill: str) -> tuple:
 
 # --- a flow the prompt box sends ---------------------------------------------
 
-# Esc's line, and SHIP's and ASK's: PACK_TEXT tells Claude to start no path behind it.
+# Esc's line, and SHIP's and ASK's: pack_text() tells Claude to start no path behind it.
 NO_PATH = "No path for this message.\n\n"
 BY = {"you": "you picked", "guess": "the box guessed"}
 # A build that couldn't move to its own branch must not land on the default one.
