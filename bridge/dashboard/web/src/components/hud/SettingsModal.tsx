@@ -3723,7 +3723,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS", "FLOWS"]} openSec={openSec}
         count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
         hint="model calls the bridge makes on top of your turns">
-        <ExtrasFold />
+        <ExtrasFold models={models} />
       </AimFold>
       <SaversFold openSec={openSec} />
       <CouncilFold openSec={openSec} projects={projects} onSignIn={() => {

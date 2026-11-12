@@ -23,6 +23,7 @@ import type { FlowAct } from "../lib/useFlow";
 import { Tip } from "./ui/Tip";
 import { Switch } from "./hud/SettingsModal";
 import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
+import { useAiFeatures } from "../lib/ai";
 import { promptSteps, runs } from "../lib/flowsteps";
 import { flowRuns, saveRun } from "../lib/flowruns";
 import { askConfirm } from "./ui/Ask";
@@ -443,9 +444,38 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
  *  where SKILL PATHS was. Two columns, so picking a flow never changes its height (a2-open).
  *  Tickets 04 to 08 of flow-gear each fill their own section of it. */
 type FlowChangeFn = (c: FlowChange) => void;
-export function FlowsSheet({ initial, inline, runRows }: { initial?: string | null; inline?: boolean;
-  /** The picked flow's Model, Mode, Effort and Trim rows: the box's own PRESET rows (none inline in SETTINGS). */
-  runRows?: (f: FlowSetting, change: FlowChangeFn) => ReactNode }) {
+
+/** The picked flow's run default for every session: PRESET's Model, Mode, Effort and Trim rows,
+ *  drawn the same, with no profile marks (the default is no profile's). */
+function FlowRunRows({ f, change, models }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[] }) {
+  const [list, setList] = useState<"" | "model" | "perm">("");
+  const trim = useAiFeatures().ponytail;
+  const val = flowRuns([f])[f.id];
+  const edit = (k: keyof KindRun, v: string) => change({ flow: f.id, key: RUN_KEY[k], value: v });
+  const sel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => (
+    <div className="pb-pr"><b>{label}</b>
+      <Drop<string> label={label.toUpperCase()} className="pb-sel" value={val[k]} fallback={{ id: val[k], label: shown }} options={opts}
+        open={list === k} onToggle={() => setList((l) => (l === k ? "" : k))} onPick={(v) => { edit(k, v); setList(""); }} />
+    </div>
+  );
+  const seg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => (
+    <div className="pb-pr"><b>{label}</b>
+      <div className="pb-sg" role="group" aria-label={label}>
+        {opts.map((o) => <button key={o.id || "-"} type="button" aria-pressed={o.id === val[k]} onClick={() => edit(k, o.id)}>{o.label}</button>)}
+      </div>
+    </div>
+  );
+  const perm = PERMS.find((o) => o.id === val.perm);
+  return <>
+    {sel("model", "Model", models, modelName(val.model))}
+    {sel("perm", "Mode", PERMS, val.perm ? perm?.label ?? modeRow(val.perm).label : "Session")}
+    {seg("effort", "Effort", EFFORTS.filter((e) => e.id))}
+    {trim && seg("ponytail", "Trim", PONYTAILS)}
+  </>;
+}
+export function FlowsSheet({ initial, inline, models }: { initial?: string | null; inline?: boolean;
+  /** The rows of the picked flow's Model select: Claude's, never an agent session's own. */
+  models: DropOption<string>[] }) {
   const flowCfg = useFlowSettings();
   const [sheetFlow, setSheetFlow] = useState(initial ?? "build");
   const [flowsErr, setFlowsErr] = useState("");
@@ -543,7 +573,7 @@ export function FlowsSheet({ initial, inline, runRows }: { initial?: string | nu
                 <Switch on={!!sheetPick.approve} label={`${pickName} approve before build`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Approve before build</label>
             </div>
           )}
-          {runRows?.(sheetPick, flowChange)}
+          <FlowRunRows f={sheetPick} change={flowChange} models={models} />
         </div>
       </div>
       <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
@@ -674,7 +704,7 @@ export function Composer({
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
-  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump" | "fs-model" | "fs-mode">("");
+  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
   // PRESET stays open across picks, so it takes a dialog's Esc as well as a
@@ -1898,28 +1928,23 @@ export function Composer({
     else onPonytail(v);
   };
   // A select is the chips' own Drop: its MenuRows list opens over the popover.
-  // The FLOWS sheet reuses these rows for the picked flow's bridge default: `src` is its run and
-  // its change; no profile marks there, the default is for every session.
-  type PreSrc = { val: KindRun; edit: (k: keyof KindRun, v: string) => void };
-  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string, src?: PreSrc) => {
-    const list = `${src ? "fs-" : ""}${k === "model" ? "model" : "mode"}` as const, prof = src ? null : profPick(k);
-    const val = (src?.val ?? pre)[k], edit = src?.edit ?? preEdit;
+  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => {
+    const list = k === "model" ? "model" : "mode", prof = profPick(k);
     return (
-      <div className="pb-pr"><b>{label}{!src && setHere(k) && <OverrideDot />}</b>
-        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={val} fallback={{ id: val, label: shown }}
+      <div className="pb-pr"><b>{label}{setHere(k) && <OverrideDot />}</b>
+        <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} fallback={{ id: pre[k], label: shown }}
           options={prof === null ? opts : opts.map((o) => (o.id === prof ? { ...o, tag: "PROFILE" } : o))}
-          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { edit(k, v); setPpList(""); }} />
+          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { preEdit(k, v); setPpList(""); }} />
       </div>
     );
   };
-  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[], src?: PreSrc) => {
-    const prof = k === "effort" && !src ? profPick(k) : null;
-    const val = (src?.val ?? pre)[k], edit = src?.edit ?? preEdit;
+  const preSeg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => {
+    const prof = k === "effort" ? profPick(k) : null;
     return (
-      <div className="pb-pr"><b>{label}{!src && k === "effort" && setHere(k) && <OverrideDot />}</b>
+      <div className="pb-pr"><b>{label}{k === "effort" && setHere(k) && <OverrideDot />}</b>
         <div className="pb-sg" role="group" aria-label={label}>
           {opts.map((o) => (
-            <button key={o.id || "-"} type="button" aria-pressed={o.id === val} onClick={() => edit(k, o.id)}
+            <button key={o.id || "-"} type="button" aria-pressed={o.id === pre[k]} onClick={() => preEdit(k, o.id)}
               data-prof={o.id === prof ? "" : undefined} title={o.id === prof ? "your profile's pick" : undefined}>{o.label}</button>
           ))}
         </div>
@@ -1985,19 +2010,7 @@ export function Composer({
       </button>
     </>
   );
-  // PRESET's own rows, holding the picked flow's run default for every session.
-  const flowRunRows = (f: FlowSetting, change: FlowChangeFn) => {
-    // Flows are Claude's: an agent session's own models never reach a flow's default.
-    const claudeModels = agentPick ? modelRows(models, usage) : modelOpts;
-    const src: PreSrc = { val: flowRuns([f])[f.id], edit: (k, v) => change({ flow: f.id, key: RUN_KEY[k], value: v }) };
-    return <>
-      {preSel("model", "Model", claudeModels, modelName(src.val.model), src)}
-      {preSel("perm", "Mode", PERMS, src.val.perm ? optLabel(PERMS, src.val.perm) ?? modeRow(src.val.perm).label : "Session", src)}
-      {preSeg("effort", "Effort", EFFORTS.filter((e) => e.id), src)}
-      {showPonytail && preSeg("ponytail", "Trim", PONYTAILS, src)}
-    </>;
-  };
-  const flowsPop = openDrop === "flows" && <FlowsSheet initial={kind} runRows={flowRunRows} />;
+  const flowsPop = openDrop === "flows" && <FlowsSheet initial={kind} models={agentPick ? modelRows(models, usage) : modelOpts} />;
   const rail = (
     <div className="pb-rail">
       {!flowsOn ? (
