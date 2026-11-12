@@ -3449,7 +3449,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         extra_args: list[str] | None = None,
                         hang_timeout: float | None = None,
                         skip_pack: bool = False,
-                        native_resume: bool = False) -> Job | None:
+                        native_resume: bool = False,
+                        flow: str | None = None, flow_by: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -3555,6 +3556,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.runtime = runtime
         job.hang_timeout = hang_timeout
         _register(job)
+        if flow and not refusal and not is_acp:   # the box's flow starts with this turn, queued or not
+            prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt)
         # A session CONTINUE HERE made from a teammate's: their turns are on screen, not in
         # Claude, so its runs carry them until one of yours has finished (bridge/team.py seed).
         run_prompt = prompt

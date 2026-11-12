@@ -1698,6 +1698,8 @@ export interface RunBody {
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
   pick_once?: boolean; // a kind's preset: this prompt only, the session's saved picks stay
   no_path?: boolean; // Esc took the auto-applied skill out of this prompt: the run is told there is no path
+  flow?: string; // the flow this prompt starts; the bridge puts its first step in front (bridge/paths.py start_flow)
+  by?: "you" | "guess"; // a tap or Tab, or the box's guess
 }
 
 // /local/run either starts a job or holds the prompt because it looks unrelated to

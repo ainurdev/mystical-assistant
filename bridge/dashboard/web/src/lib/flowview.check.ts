@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/flowview.check.ts
-import { flowChip, flowLabel, flowOf, flowView, movesElsewhere, type Flow } from "./flowview.ts";
+import { flowChip, flowLabel, flowOf, flowView, movesElsewhere, runningFlow, startedBy, type Flow } from "./flowview.ts";
 import type { Turn } from "../chat.ts";
 
 const flow = (path: string, done: string[]): Flow => ({ path, by: "claude", why: "new feature", auto: true, at: 1, done, next: null });
@@ -122,3 +122,15 @@ console.assert(flowLabel({ path: "feature-here" }) === "BUILD" && flowLabel({ pa
 console.assert(flowLabel({ path: "one", skill: "implement" }) === "implement" && flowOf("one") === null, "a one-skill path names its skill");
 const fixChip = flowChip({ ...skilled, overrides: {} }, flowView(skilled, []), {})!;
 console.assert(fixChip.label === "FIX" && fixChip.flow === "fix" && fixChip.next.label === "review", `FIX · REVIEW: ${JSON.stringify(fixChip)}`);
+
+// --- the row's dot: the flow runs until its last step is done ------------------------
+{
+  const st: Flow["stations"] = [["grill", "grill-with-docs", "you"], ["build-here", "implement", "auto"]];
+  const f = (path: string, done: string[]) => ({ path, by: "you", why: "you picked BUILD", auto: true, at: 1, done, next: null, stations: st }) as Flow;
+  console.assert(runningFlow(f("build-here", ["grill"])) === "build", "a here build is BUILD's dot");
+  console.assert(runningFlow(f("build", ["grill", "build-here"])) === null, "no dot once the last step is done");
+  console.assert(runningFlow(null) === null && runningFlow(f("one", [])) === null, "no flow, or one skill: no dot");
+  console.assert(startedBy("you", "you picked BUILD") === "you picked BUILD", "a tap says who");
+  console.assert(startedBy("guess", "the box guessed BUILD") === "the box guessed BUILD", "a guess says who");
+  console.assert(startedBy("claude", "new feature") === "Claude picked it: new feature", "Claude's pick");
+}

@@ -80,22 +80,31 @@ console.assert(presetFor("fix", { ship: { effort: "low" } }).effort === "max", "
 for (const [t, c] of [["can you check sentry for finding a real case?", MID], ["cant we fix it using logs from sentry?", MID],
   ["wait until he send files, how we can continue to resolve tasks?", START], ["better ui for the plugins tab", START]] as const) {
   const kind = guessKind(t, c)!;
-  const perm = sendPlan({ kind, text: t, diagnose: true, answering: false, agent: false, run: presetFor(kind) }).run!.perm;
+  const perm = sendPlan({ kind, how: "auto", text: t, running: null, flows: true, answering: false, agent: false, run: presetFor(kind) }).run!.perm;
   console.assert(perm === "" || perm === "bypassPermissions", `${kind} (${JSON.stringify(t)}) runs a bypass session in ${perm}`);
 }
 
-// --- sendPlan ----------------------------------------------------------------
+// --- sendPlan: the flow and who picked it go to the bridge, the text never changes -------
 const run = presetFor("build");
-const o = { text: "do it", diagnose: true, answering: false, agent: false, run };
-console.assert(sendPlan({ ...o, kind: "design" }).text === "/design-first do it", "design");
-console.assert(sendPlan({ ...o, kind: "fix" }).text === "/mattpocock-skills:diagnosing-bugs do it", "fix with pack");
-console.assert(sendPlan({ ...o, kind: "fix", diagnose: false }).text === "do it", "fix without pack");
-for (const k of ["build", "ship", "ask"] as const) console.assert(sendPlan({ ...o, kind: k }).text === "do it", `${k} as typed`);
-console.assert(sendPlan({ ...o, kind: "build" }).run === run, "run rides along");
-for (const x of [{ answering: true }, { agent: true }, { kind: null }]) {
-  const p = sendPlan({ ...o, kind: "design", ...x });
-  console.assert(p.text === "do it" && p.run === null, `no kind for ${JSON.stringify(x)}`);
+const o = { text: "do it", how: "picked" as const, running: null, flows: true, answering: false, agent: false, run };
+for (const k of KIND_ORDER) {
+  const p = sendPlan({ ...o, kind: k });
+  console.assert(p.text === "do it" && p.flow === k && p.by === "you" && p.run === run, `${k} tapped at the start`);
 }
+const g = sendPlan({ ...o, kind: "fix", how: "auto" });
+console.assert(g.flow === "fix" && g.by === "guess", "a guess with no flow running starts it");
+const mid = sendPlan({ ...o, kind: "fix", how: "auto", running: "build" });
+console.assert(mid.flow === undefined && mid.by === undefined && mid.run === run, "a guess mid-flow only sets the run");
+console.assert(sendPlan({ ...o, kind: "fix", running: "build" }).flow === "fix", "a tap mid-flow starts the tapped flow");
+console.assert(sendPlan({ ...o, kind: "build", running: "build" }).flow === "build", "a tap on the running flow sends it (the bridge keeps it)");
+for (const x of [{ answering: true }, { agent: true }, { kind: null }, { text: "/compact do it" }]) {
+  const p = sendPlan({ ...o, kind: "design", ...x });
+  console.assert(p.text === (x.text ?? "do it") && p.run === null && p.flow === undefined, `no flow, no run for ${JSON.stringify(x)}`);
+}
+const off = sendPlan({ ...o, kind: "build", flows: false });
+console.assert(off.flow === undefined && off.run === run, "SKILL PATHS off: the run, no flow");
+const esc = shownKind("plain", "add a digest", { start: true, design: true });
+console.assert(sendPlan({ ...o, kind: esc.kind, how: esc.how }).flow === undefined, "Esc on a lit flow sends no flow");
 
 // --- lastCheckOf -------------------------------------------------------------
 const chk = (ok: boolean, at?: number) => ({ type: "checks" as const, command: "t", ok, code: ok ? 0 : 1, ms: 1, passed: 3, failed: ok ? 0 : 1, skipped: 0, new: [], known: [], log: "", tail: "", at });

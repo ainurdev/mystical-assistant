@@ -91,11 +91,16 @@ export function presetFor(kind: KindId, saved?: Partial<Record<KindId, Partial<K
   return { ...KINDS[kind].preset, ...saved?.[kind], ...session };
 }
 
-export function sendPlan(o: { kind: KindId | null; text: string; diagnose: boolean; answering: boolean; agent: boolean; run: KindRun | null }):
-  { text: string; run: KindRun | null } {
-  if (!o.kind || o.answering || o.agent) return { text: o.text, run: null };
-  const prefix = o.kind === "design" ? "/design-first " : o.kind === "fix" && o.diagnose ? "/mattpocock-skills:diagnosing-bugs " : "";
-  return { text: prefix + o.text, run: o.run };
+/** What a send carries. The bridge starts the flow and puts its first step's command in front
+ *  (bridge/paths.py start_flow), so the text goes as typed. A flow goes only when the prompt starts
+ *  one: a tap or Tab (`you`), or a guess (`guess`) while no flow runs. A guess during a running flow
+ *  shapes only this prompt's run, and the prompt stays in that flow. `flows`: SKILL PATHS is on. */
+export function sendPlan(o: { kind: KindId | null; how: "auto" | "picked" | "plain" | "none"; text: string; running: string | null;
+  flows: boolean; answering: boolean; agent: boolean; run: KindRun | null }):
+  { text: string; run: KindRun | null; flow?: KindId; by?: "you" | "guess" } {
+  if (!o.kind || o.answering || o.agent || o.text.startsWith("/")) return { text: o.text, run: null };
+  const by = o.how === "picked" ? "you" : o.running ? null : "guess";
+  return o.flows && by ? { text: o.text, run: o.run, flow: o.kind, by } : { text: o.text, run: o.run };
 }
 
 export interface LastCheck { ok: boolean; line: string; at: number | null }

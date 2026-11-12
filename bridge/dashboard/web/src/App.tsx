@@ -167,7 +167,7 @@ import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
-import { flowChip, flowView } from "./lib/flowview";
+import { flowChip, flowView, runningFlow } from "./lib/flowview";
 import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
@@ -266,6 +266,9 @@ function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
 // A prompt the relevance guardrail parked, with everything needed to route it
 // later — the session and project it was written in, not whichever is open when
 // the user finally answers the card.
+/** The flow a prompt starts, and who picked it (lib/kinds sendPlan). */
+type SendFlow = { id: string; by: "you" | "guess" };
+
 interface HeldPrompt {
   sid: string;
   project?: string;
@@ -276,7 +279,7 @@ interface HeldPrompt {
   title: string | null;
   noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
   // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
-  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string };
+  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string; flow?: SendFlow };
   typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
 
@@ -1747,7 +1750,7 @@ export function App() {
     // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
              picks?: { model: string; perm: string; effort: string }; ponytail?: string;
-             pickOnce?: boolean; typed?: string },
+             pickOnce?: boolean; typed?: string; flow?: SendFlow },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1807,6 +1810,7 @@ export function App() {
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
         ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1825,6 +1829,7 @@ export function App() {
         permission_mode: (knobs && pk.perm) || undefined, ponytail: (opts?.ponytail ?? ponytail) || undefined,
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
         pick_once: opts?.pickOnce || undefined,
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -1833,7 +1838,7 @@ export function App() {
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
                    text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath, typed: opts?.typed,
-                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail } : undefined },
+                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail, flow: opts.flow } : undefined },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -2052,7 +2057,7 @@ export function App() {
                              profiles?.profiles.find((p) => p.id === session.profile_id) ?? null);
       return await send(prompt, opts?.images ?? [],
                         { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude",
-                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, pickOnce: true } : { picks }) });
+                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, flow: opts.kind.flow, pickOnce: true } : { picks }) });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);
@@ -3641,7 +3646,7 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       // A kind's preset rides with its prompt, and never becomes this browser's picks.
-                      onSend={(t, i, noPath, run, typed) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed } : {}),
+                      onSend={(t, i, noPath, run, typed, flow) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed, flow } : {}),
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       kindPresets={settings.kindPresets}
@@ -3663,7 +3668,7 @@ export function App() {
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
                       routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={boxChip?.opts.smartzone.on ?? ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
-                      flowChip={boxChip} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
+                      flowChip={boxChip} runningFlow={runningFlow(boxFlow)} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
