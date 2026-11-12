@@ -5194,6 +5194,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-sw .set-toggle, .fs-row .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
 .fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 236px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
 .fs-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fs-nokind { margin-top: auto; padding-top: 10px; }
 .fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px 0 2px;
   border-radius: var(--f-rad-s, 0); color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
 .fs-row > b { font-weight: 800; letter-spacing: .8px; }

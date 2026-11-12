@@ -48,7 +48,8 @@ export type KindPick = KindId | "plain" | null;
  *  "the list jumps" or "i mean UI" is a follow-up, and a guessed /design-first or diagnosing
  *  prefix would hijack it (a tap or Tab still picks them). `design`: Claude Design is installed. */
 export interface GuessCtx { start: boolean; design: boolean;
-  /** Flows switched off in the FLOWS sheet: never guessed. */ off?: readonly string[] }
+  /** Flows switched off in the FLOWS sheet: never guessed. */ off?: readonly string[];
+  /** GUESS BY HAND: the box guesses nothing; only a tap or Tab lights a flow. */ hand?: boolean }
 
 // First match wins, so order is priority: "merge the broken fix" is shipping, "why does it fail?" is a fix,
 // and a trailing "?" is a question even about the ui ("is the ui done?"). The yes/no openers
@@ -66,7 +67,7 @@ const BUILD = /^(add|make|build|implement|create|support|allow|enable|wire|hook 
 
 export function guessKind(text: string, c: GuessCtx): KindId | null {
   const t = text.trim().toLowerCase();
-  if (t.startsWith("/") || t.split(/\s+/).length < 2) return null;
+  if (c.hand || t.startsWith("/") || t.split(/\s+/).length < 2) return null;
   const on = (k: KindId) => !c.off?.includes(k);   // an off flow is passed over: the next rule may still fit
   if (on("ship") && SHIP.test(t)) return "ship";
   if (c.start && on("fix") && FIX.test(t)) return "fix";
