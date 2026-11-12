@@ -13,7 +13,9 @@ can reach. A feature's own UI is hidden while its switch is off.
 The skill router (bridge/route.py) is the exception: it picks with rules and spends
 no model budget, and is listed so that each piece of it can be turned off on its
 own. Those pieces name the router as their `parent`, and ship ON because they do
-nothing until it is switched on.
+nothing until it is switched on. REVIEW AFTER MERGE does spend budget (a council
+run per merged set) and ships ON all the same, the user's choice on 2026-11-11: its
+parent is TICKETS, which ships OFF, so an untouched install still spends nothing.
 
 Precedence is `ladder.default_policy`'s: the persisted setting wins; with none,
 the environment setting (config.*) decides; with neither, off. Persisting next to
@@ -260,6 +262,19 @@ FEATURES = (
               "meant to ask you first, but can skip it). On, the set shows its breakdown in "
               "the TICKETS tab and waits for Approve & build before any branch, worktree or "
               "session is made."},
+    {"key": "mergereview", "env": "MERGE_REVIEW", "label": "REVIEW AFTER MERGE",
+     "parent": "ticketruns",
+     "hint": "the council reads the merged work before RETRO",
+     "cost": "one council run per merged set",
+     "tokens": "the merged diff per reviewer and round, and the fix turns",
+     "about": "On, once the merge session has merged every ticket, the council reads the "
+              "merged branch there, with its own settings (bar, rounds, reviewers), and the "
+              "merge session fixes what it finds. FLOW shows this as REVIEW. When the "
+              "council passes, RETRO starts. When it stops without passing, "
+              "RETRO does not start and you get Council needs you: go on from the merge "
+              "session's COUNCIL tab, or press Skip on REVIEW in FLOW to take the work as it "
+              "stands. If a push would send nothing, or you merged the tickets by hand, the "
+              "step is passed over. Off, RETRO follows MERGE."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",
      "hint": "marks 150k tokens and offers /compact first past it",

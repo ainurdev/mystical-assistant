@@ -19,7 +19,9 @@ const shells = (await fs.readdir(`${home}/.cache/ms-playwright`))
   .filter((d) => d.startsWith("chromium_headless_shell-"))
   .sort((a, b) => +b.split("-")[1] - +a.split("-")[1]);
 if (!shells.length) { console.log(JSON.stringify({ error: "no headless chrome is installed" })); process.exit(0); }
-const BIN = `${home}/.cache/ms-playwright/${shells[0]}/chrome-headless-shell-linux64/chrome-headless-shell`;
+const shell = `${home}/.cache/ms-playwright/${shells[0]}`;
+// Playwright names the folder inside after the platform (-linux64, -mac-arm64): take the one that is there.
+const BIN = `${shell}/${(await fs.readdir(shell)).find((d) => d.startsWith("chrome-headless-shell-"))}/chrome-headless-shell`;
 const width = spec.width || 1280, height = spec.height || 800;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dir = await fs.mkdtemp(`${os.tmpdir()}/drive-`);

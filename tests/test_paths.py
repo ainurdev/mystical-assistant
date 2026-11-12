@@ -855,3 +855,73 @@ def test_route_hears_the_pending_step(server, flow_session, monkeypatch):
     paths.step_done(flow_session, "t-" + flow_session)                  # DIAGNOSE done: REVIEW waits
     server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
     assert seen["flow_next"] == ("ponytail-review", paths._PONY["review"])   # noqa: SLF001
+
+
+# --- REVIEW after MERGE -----------------------------------------------------------
+
+_BUILT = ["grill", "spec", "tickets", "build"]
+
+
+def _steps(sid):
+    return [st[0] for st in paths.stations(sid)]
+
+
+def _switches(monkeypatch, *on):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in on)
+
+
+@pytest.mark.parametrize("path, before", [("feature", ["grill", "spec", "tickets", "build"]),
+                                          ("refactor", ["improve", "tickets", "build"])])
+def test_review_follows_merge_only_with_tickets_and_its_own_switch_on(state_dir, monkeypatch, path, before):
+    paths.set_path("f1", path, "new", "claude")
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    assert _steps("f1") == before + ["merge", "review", "retro"]
+    for on in (("router", "ticketruns"), ("router", "mergereview")):    # its own switch off, then TICKETS off
+        _switches(monkeypatch, *on)
+        assert _steps("f1") == before + ["merge", "retro"], on
+
+
+def test_the_paths_that_merge_nothing_have_no_review(state_dir, monkeypatch):
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    paths.set_path("h", "feature-here", "new", "claude")
+    paths.set_path("b", "bug", "broken", "claude")
+    assert _steps("h") == ["grill", "build-here", "retro"] and _steps("b") == ["diagnose", "retro"]
+
+
+def test_merge_ending_settles_whether_review_follows(state_dir, monkeypatch):
+    """The switches say until MERGE ends, and what the flow recorded says after: a flow
+    past MERGE from before the step, or with it off, never grows one, and one that
+    reached REVIEW keeps it when the switch goes off."""
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    paths.set_path("old", "feature", "x", "claude", done=_BUILT + ["merge"])     # MERGE ended before the step existed
+    assert _steps("old")[-2:] == ["merge", "retro"]
+    paths.set_path("new", "feature", "x", "claude", done=_BUILT)
+    assert paths.advance("new", "merge") is False                                 # AUTO NEXT STEPS is off: nothing starts
+    assert paths.get("new")["next"]["station"] == "review"
+    _switches(monkeypatch, "router", "ticketruns")
+    assert _steps("new")[-3:] == ["merge", "review", "retro"]                     # reached: it stays
+    paths.set_path("off", "feature", "x", "claude", done=_BUILT)
+    paths.advance("off", "merge")
+    assert paths.get("off")["next"]["station"] == "retro" and "review" not in _steps("off")
+    _switches(monkeypatch, "router", "ticketruns", "mergereview")
+    assert "review" not in _steps("off")                                          # passed over: it stays out
+
+
+def test_review_done_goes_on_to_retro(state_dir, fake_queue, monkeypatch):
+    _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
+    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
+    assert paths.advance("f1", "review") is True
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
+    assert paths.get("f1")["done"][-2:] == ["merge", "review"]
+
+
+
+def test_step_done_in_the_flow_session_takes_a_waiting_review_as_done(state_dir, monkeypatch):
+    """The way on when the council stopped and you accept the work as it is: tell the
+    flow's session to go on, and its StepDone ends REVIEW."""
+    _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
+    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
+    assert paths.step_done("f1", "t-go-on") == "retro"
+    assert paths.get("f1")["done"][-2:] == ["merge", "review"]

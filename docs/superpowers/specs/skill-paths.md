@@ -114,9 +114,9 @@ switch is on, about 250 tokens) carries Matt's map as the paths table below, plu
 
 | Path | Starts on | Stations (who moves it) |
 |---|---|---|
-| FEATURE | a new feature or idea | GRILL `grill-with-docs` (you) → SPEC `to-spec` (auto) → TICKETS `to-tickets` (you approve) → BUILD tickets (auto) → MERGE (auto) → RETRO `retro` (auto). If the grill concludes the work fits one session, the path becomes GRILL → BUILD here `implement` → RETRO. |
+| FEATURE | a new feature or idea | GRILL `grill-with-docs` (you) → SPEC `to-spec` (auto) → TICKETS `to-tickets` (you approve) → BUILD tickets (auto) → MERGE (auto) → REVIEW the council (auto, while REVIEW AFTER MERGE is on) → RETRO `retro` (auto). If the grill concludes the work fits one session, the path becomes GRILL → BUILD here `implement` → RETRO. |
 | BUG | something broken, an error, a regression | DIAGNOSE `diagnosing-bugs` → RETRO (diagnosing-bugs fixes and tests; FIX dropped 11-08) |
-| REFACTOR | tangled code, architecture | IMPROVE `improve-codebase-architecture` (you) → TICKETS → BUILD → MERGE → RETRO |
+| REFACTOR | tangled code, architecture | IMPROVE `improve-codebase-architecture` (you) → TICKETS → BUILD → MERGE → REVIEW → RETRO |
 | ONE STEP | research, prototype, review, PR, teach, wizard, writing for agents, questionnaire, domain modelling, codebase design; and `triage` / `wayfinder` when the user takes the rule's suggestion | that one skill |
 
 `SetPath` and `StepDone` (section 3) are new tools on the `mystical-goals` MCP server. They are listed only while
@@ -140,8 +140,8 @@ router keeps working, and this part waits.
   needed from the user.
 - On `StepDone`, if the session's auto is on, the bridge starts the next station's command as the session's next
   turn (`/mattpocock-skills:to-spec`, …), through the same path a queued prompt takes. SMART ZONE still applies:
-  past 150k tokens, `/compact <keep the decisions so far>` goes first. BUILD and MERGE start ticket machinery
-  (section 4) instead of a turn here.
+  past 150k tokens, `/compact <keep the decisions so far>` goes first. BUILD, MERGE and REVIEW start ticket
+  machinery (section 4) instead of a turn here.
 - If a turn ends **without** `StepDone` (it asked a question in prose, failed or was stopped), nothing starts by
   itself. The composer falls back to today's ghost suggestion of the next command.
 - An open AskUserQuestion is "the user is needed". The step waits for the answer and continues inside its own turn.
@@ -199,6 +199,26 @@ project's tests, commits and calls `StepDone`. The TICKETS tab counts merged bra
 session per clash. It is less code, and Claude has to resolve the clashes and find the test command anyway. The
 mockups' "a resolve session is on it" reads "the merge session is on it".
 
+**REVIEW** (added 2026-11-11, from the user's picks on cards that day). When the merge session's turn ends merged
+and REVIEW AFTER MERGE is on, the council (`council-tab.md`) starts by itself in the merge session, on the feature
+checkout. It reads what a push of the feature branch would send, and the merge session fixes what it finds, round
+by round, under the council's own settings. FLOW shows REVIEW between MERGE and RETRO, running while the council
+reads or a fix turn runs.
+- A pass ends the step, and RETRO starts.
+- A stop doesn't. The council's own notice comes (Council needs you) and FLOW shows REVIEW waiting on you. The way
+  on is the merge session's COUNCIL tab (2 more rounds, side with the session, fix it anyway), or **Skip** on
+  REVIEW in FLOW, which takes the work as it stands and starts RETRO. Skip shows on a REVIEW that isn't running.
+- A restart cuts a round that is reading. At boot that run is settled as stopped ("interrupted by a restart"), so
+  the notice comes then and not when someone next opens the tab.
+- Whether a flow has the step is settled when its MERGE ends. A flow that passed MERGE before the step shipped, or
+  with the switch off, never gets one. With TICKETS off nothing changes.
+- *My calls:* the step is passed over when no council can read anything: a push would send nothing, or the tickets
+  were merged by hand, so there is no merge session. The set stays `merged` through the review, since the merge
+  session's council run and the flow's own record already say where it stands. The FLOW tab draws the steps the
+  bridge sends (`flow.stations`) instead of its own copy of the table. A merge session that is mid-turn when MERGE
+  ends (a prompt of yours was queued there) gets its review when that turn ends.
+- *Not built:* the council reads the feature checkout only. A set's work in other repos goes unreviewed.
+
 **With TICKETS off** (SKILL PATHS on), FEATURE and REFACTOR stop once `/to-tickets` has written the files. FLOW
 shows BUILD as YOU, and the composer offers the first ticket in a fresh session, as today. *My call.*
 
@@ -245,6 +265,7 @@ Drawn in `04-flow-tickets.html`, columns 2–3.
 | TICKETS IN FRESH SESSIONS | **Replaced** by TICKETS. |
 | **TICKETS** (new, under SKILL PATHS) | Ticket sessions, the scheduler, MERGE and the sidebar tab. Ships OFF, under a **new key** (the old `tickets` sub-switch defaults ON, so it can't be reused). |
 | GRILL AS CARDS | Unchanged, separate. |
+| **REVIEW AFTER MERGE** (new 2026-11-11, under TICKETS) | The council reads a merged set before RETRO (section 4). Ships ON, and obeys TICKETS, which ships off. |
 
 Existing defaults hold: new installs ship SKILL PATHS and TICKETS off. This machine already has the router on.
 

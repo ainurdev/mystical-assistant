@@ -38,9 +38,9 @@ REVIEW and AUDIT are the ponytail plugin's /ponytail-review and /ponytail-audit,
 are stations only while the PONYTAIL switch is on (its plugin is told `off` otherwise,
 and the prompt box hides the same two verbs). REVIEW reads the work this path did and
 follows the work that makes a diff (build here, a bug's fix); AUDIT reads the whole repo
-and ends the paths that change a lot of it. Ticket paths get no REVIEW station: BUILD
-runs in ticket sessions and MERGE is what joins their branches, so each ticket reviews
-its own diff before its StepDone (tickets._prompt). Ponytail's skills know nothing of
+and ends the paths that change a lot of it. On ticket paths each ticket reviews its own
+diff before its StepDone (tickets._prompt), and the REVIEW after MERGE is the council's
+(below): the same word, told apart by its skill (None there). Ponytail's skills know nothing of
 StepDone, so the clean end of a turn sent as their command, while the path is on that
 step, is the step's end (_end_pony_step); one that calls StepDone anyway moves once.
 
@@ -51,6 +51,14 @@ A record from before them kept `auto`, True by default and False once held: a he
 loads as an override of AUTO NEXT STEPS. skip_to marks the steps before a target done
 and `skipped`, sparing the one a running turn works on, then the target starts as any
 next step would.
+
+REVIEW follows MERGE on the paths that merge tickets, while REVIEW AFTER MERGE and
+TICKETS are on. It has no skill and no turn here: the council reads the merged work in
+the merge session (tickets.start_review), and its pass is the step's end
+(tickets.council_passed, then advance). A council that stops leaves the step open, and
+it waits on you. Whether a flow has the step is settled when its MERGE ends, so
+shipping the step, or switching it later, never puts one into a flow already past
+MERGE. stations() gives the steps as they stand, and FLOW draws those.
 """
 
 import json
@@ -104,15 +112,16 @@ def pack_for(claude_session_id: str) -> str:
 PATHS: dict[str, list[tuple[str, "str | None", str]]] = {
     "feature": [("grill", "grill-with-docs", "you"), ("spec", "to-spec", "auto"),
                 ("tickets", "to-tickets", "you"), ("build", None, "auto"),
-                ("merge", None, "auto"), ("retro", "retro", "auto"), ("audit", "ponytail-audit", "auto")],
+                ("merge", None, "auto"), ("review", None, "auto"), ("retro", "retro", "auto"),
+                ("audit", "ponytail-audit", "auto")],
     "feature-here": [("grill", "grill-with-docs", "you"), ("build-here", "implement", "auto"),
                      ("review", "ponytail-review", "auto"), ("retro", "retro", "auto"),
                      ("audit", "ponytail-audit", "auto")],
     "bug": [("diagnose", "diagnosing-bugs", "auto"), ("review", "ponytail-review", "auto"),   # diagnosing-bugs fixes and tests
             ("retro", "retro", "auto")],
     "refactor": [("improve", "improve-codebase-architecture", "you"), ("tickets", "to-tickets", "you"),
-                 ("build", None, "auto"), ("merge", None, "auto"), ("retro", "retro", "auto"),
-                 ("audit", "ponytail-audit", "auto")],
+                 ("build", None, "auto"), ("merge", None, "auto"), ("review", None, "auto"),
+                 ("retro", "retro", "auto"), ("audit", "ponytail-audit", "auto")],
 }
 # Stations that are the ponytail plugin's (PONYTAIL on only): the argument each one's turn gets.
 _PONY = {"review": "the work on this path: this branch's commits since it left the default branch, "
@@ -155,11 +164,26 @@ def _save_locked() -> None:
         print(f"[paths] persist failed: {e}", file=sys.stderr)
 
 
+def review_on() -> bool:
+    """REVIEW AFTER MERGE. Only a ticket set's MERGE leads to it, so TICKETS must be on too."""
+    return aifeatures.enabled("ticketruns") and aifeatures.enabled("mergereview")
+
+
 def _stations(flow: dict) -> list:
     if flow["path"] == "one":
         return [(flow["skill"], flow["skill"], "auto")]
     pony = aifeatures.enabled("ponytail")
-    return [st for st in PATHS[flow["path"]] if pony or st[0] not in _PONY]
+    # Ponytail's steps only while PONYTAIL is on; the council's REVIEW has no skill.
+    sts = [st for st in PATHS[flow["path"]] if pony or not (st[1] or "").startswith("ponytail-")]
+    if not any(st == ("review", None, "auto") for st in sts):
+        return sts
+    # Whether the council's REVIEW follows is settled when MERGE ends: until then the switches
+    # say, after it what the flow recorded (a flow past MERGE from before the step grows none).
+    if "merge" in flow["done"]:
+        has = "review" in flow["done"] or (flow.get("next") or {}).get("station") == "review"
+    else:
+        has = review_on()
+    return sts if has else [st for st in sts if st[0] != "review"]
 
 
 def _eff(flow: dict, key: str) -> bool:
@@ -228,6 +252,15 @@ def set_option(session_id: str, key: str, on: "bool | None") -> None:
     if key not in OPTIONS:
         raise ValueError(f"{key!r} isn't a switch a session sets")
     _set(session_id, lambda own: own.pop(key, None) if on is None else own.update({key: bool(on)}))
+
+
+def stations(session_id: str) -> list:
+    """The path's steps as they stand now, each [step, skill, "you" | "auto"]: what FLOW
+    draws. Worked out on every read, never stored."""
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        return [list(st) for st in _stations(f)] if f else []
 
 
 def set_auto(session_id: str, on: bool) -> None:
@@ -365,7 +398,8 @@ def path_for_command(skill: str) -> tuple:
 # Stations _start queues a turn for in this session. build starts ticket sessions
 # instead while TICKETS is on (tickets.start_build), and merge runs in a session of
 # its own once every ticket is done (tickets.start_merge, then advance); with
-# TICKETS off both are the user's.
+# TICKETS off both are the user's. A REVIEW with no skill is the council's, in that
+# merge session (tickets.start_review); one with a skill is ponytail's turn here.
 _AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit"}
 ZONE_TOKENS = 150_000
 
@@ -399,6 +433,9 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     if not flow or station not in _AUTO_START:
         return False
     skill = next((sk for st, sk, _ in _stations(_cache[session_id]) if st == station), None)
+    if station == "review" and not skill:
+        from bridge import tickets  # local import: tickets imports paths
+        return tickets.start_review(session_id)
     if not skill:
         return False
     from bridge import queue_manager
@@ -493,8 +530,8 @@ def _end_pony_step(session_id: str, turn_id: str) -> None:
     on that step, it's done (ponytail's skills never call StepDone; one that does moves once)."""
     m = _PONY_RE.match(_carried(session_id, turn_id)[1] or "")
     f = get(session_id) if m else None
-    rest = [st for st, _, _ in f["stations"] if st not in f["done"]] if f else []
-    if rest and rest[0] == m.group(1):
+    rest = [(st, sk) for st, sk, _ in f["stations"] if st not in f["done"]] if f else []
+    if rest and rest[0] == (m.group(1), f"ponytail-{m.group(1)}"):   # not the council's REVIEW
         step_done(session_id, turn_id)
 
 
@@ -520,9 +557,10 @@ def advance(session_id: str, station: str, at: "int | None" = None) -> bool:
             f = _cache.get(session_id)
             if not f or at is not None and f["at"] != at:
                 return False
+            stations = [st[0] for st in _stations(f)]   # before the mark: MERGE's own end settles REVIEW
             if station not in f["done"]:
                 f["done"].append(station)
-            rest = [st[0] for st in _stations(f) if st[0] not in f["done"]]
+            rest = [st for st in stations if st not in f["done"]]
             f["next"] = {"station": rest[0], "turn_id": "", "started": False} if rest else None
             _save_locked()
         return bool(rest) and _go(session_id)

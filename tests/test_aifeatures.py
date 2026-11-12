@@ -77,7 +77,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
                          "learn", "dream", "ponytail", "graph",
                          "rvtrack", "changelog", "logostyle",
                          "router", "autopick", "nextstep",
-                         "smartzone", "grillcards", "ticketruns", "ticketapprove",
+                         "smartzone", "grillcards", "ticketruns", "ticketapprove", "mergereview",
                          "translate", "explain", "design_critic", "refine"}
 
 
@@ -85,6 +85,7 @@ def test_state_carries_the_parent_of_a_sub_switch():
     """The AI tab nests a sub-switch under its parent from this field alone."""
     parents = {f["key"]: f.get("parent") for f in aifeatures.state()}
     assert parents["autopick"] == "router"
+    assert parents["mergereview"] == parents["ticketapprove"] == "ticketruns"
     assert parents["router"] is None and parents["grillcards"] is None
 
 
@@ -108,7 +109,8 @@ def test_shipped_defaults_are_off_for_anything_automatic():
                "LOGO_STYLE_AI": "1",
                "ROUTER_ENABLE": "0", "ROUTER_AUTO": "1",
                "ROUTER_NEXT": "1", "ROUTER_ZONE": "1",
-               "GRILL_CARDS": "0", "TICKET_RUNS": "0", "TICKET_APPROVE": "0"}
+               "GRILL_CARDS": "0", "TICKET_RUNS": "0", "TICKET_APPROVE": "0",
+               "MERGE_REVIEW": "1"}      # on, but it obeys TICKETS, which ships off
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"

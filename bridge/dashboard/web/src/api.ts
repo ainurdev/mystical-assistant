@@ -2075,6 +2075,8 @@ export const api = {
     req<{ ok: boolean; flow: Flow }>("/local/flow/settings", { method: "POST", body: { session: id, reset: true } }),
   flowSkipTo: (id: string, to: string) =>
     req<{ ok: boolean; flow: Flow }>("/local/flow/step", { method: "POST", body: { session: id, to } }),
+  // Skip on a REVIEW in FLOW: the step is done as the work stands, and RETRO follows.
+  skipReview: (id: string) => req<{ ok: boolean }>("/local/flow/review", { method: "POST", body: { session: id } }),
   // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than
   // this route 404s (it would have read a bare {action} as a clearing /goal).
   goalAction: (id: string, action: "done" | "keep" | "edit", objective?: string) =>

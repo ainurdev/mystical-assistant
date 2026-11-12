@@ -575,10 +575,13 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             try:
-                tset = tickets.summary_for(sid)
+                tset = tickets.flow_set(sid)
             except Exception:
                 tset = None
-            return self._json({"flow": paths.get(sid), "set": tset})
+            flow = paths.get(sid)
+            if flow:
+                flow["stations"] = paths.stations(sid)   # the steps as they stand: FLOW draws these
+            return self._json({"flow": flow, "set": tset})
         if path == "/local/tickets":
             from bridge import tickets
             return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only
@@ -1595,15 +1598,19 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "flow": paths.get(sid)})
-        if path in ("/local/flow/set", "/local/flow/done", "/local/flow/auto"):
-            # The goals MCP's SetPath / StepDone (bridge/goal_mcp.py) and the
-            # dashboard's auto switch (bridge/paths.py). Answers are text for Claude.
+        if path in ("/local/flow/set", "/local/flow/done", "/local/flow/auto", "/local/flow/review"):
+            # The goals MCP's SetPath / StepDone (bridge/goal_mcp.py), and the dashboard's
+            # auto switch (bridge/paths.py) and Skip on a REVIEW (bridge/tickets.py).
+            # Answers to Claude are text.
             from bridge import paths
-            if path == "/local/flow/auto":
+            if path in ("/local/flow/auto", "/local/flow/review"):
                 sid = str(body.get("session") or "")
                 s = store.get_session(sid)
                 if not s or s["chat_id"] != chat:
                     return self._json({"error": "not found"}, 404)
+                if path == "/local/flow/review":
+                    from bridge import tickets
+                    return self._json({"ok": tickets.skip_review(sid)})
                 paths.set_auto(sid, bool(body.get("on")))
                 return self._json({"ok": True})
             s = store.get_by_claude_session_id(str(body.get("claude_session_id") or ""))

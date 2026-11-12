@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
-  Palette, PenLine, Play, Puzzle, Route, Scissors, ShieldQuestion, SkipForward, Sparkles,
+  Palette, PenLine, Play, Puzzle, Route, Scale, Scissors, ShieldQuestion, SkipForward, Sparkles,
   ShieldCheck, Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
@@ -41,6 +41,7 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   nextstep: SkipForward,
   ticketruns: Ticket,
   ticketapprove: ShieldCheck,
+  mergereview: Scale,
   smartzone: Gauge,
   grillcards: MessagesSquare,
 };

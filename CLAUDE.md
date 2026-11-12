@@ -36,12 +36,12 @@ python3 -m pytest tests/ -q -n 6   # backend; ~2 min on 6 workers (pytest-xdist)
 npm run check                      # in bridge/dashboard/web or bridge/miniapp/web: tsc + every *.check.ts
 ```
 
-Anything red is your change, except on macOS, where clean master fails four tests:
-`test_clip_panel.py::test_clip_marks_round_trip` and
-`test_gateway_tools.py::test_drive_page_clicks_and_reports_errors` (Chrome never opens
-its debug port), and two in `test_startup.py` (no `systemctl`, no Windows side). There the suite
-also hangs on `test_device_setup.py::test_a_wall_the_hidden_user_gets_through_comes_down_and_set_up_fails_closed[8787]`
-while the live Mini App holds port 8787: `--deselect` it.
+Anything red is your change, on macOS too, with one check first: run a red test alone.
+Two time real threads and fail when the machine is busy (both pass alone):
+`test_rivendell_channel.py::test_a_question_nobody_answers_fails_the_run` and
+`test_logostyle.py::test_a_failed_call_says_why_and_keeps_what_landed`. If the suite hangs on macOS at
+`test_device_setup.py::test_a_wall_the_hidden_user_gets_through_comes_down_and_set_up_fails_closed[8787]`
+(it did twice on 2026-10-20; cause not found, and the test opens no port), `--deselect` it.
 
 `tests/conftest.py` pins the environment **before** `bridge.config` is imported,
 because config freezes every setting into module constants at import time. A

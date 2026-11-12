@@ -6964,6 +6964,7 @@ button.ss-fold:hover { color: var(--txb); }
 .ss-auto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 0; border-radius: 7px; cursor: pointer;
   font: 800 var(--t9)/1 var(--f); letter-spacing: .06em; color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
 .ss-auto.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 15%, transparent); }
+.ss-auto + .ss-auto { margin-left: 0; }   /* Skip sits against AUTO: one auto margin pushes both right */
 @media (prefers-reduced-motion: reduce) { .tn-dot, .ss-t.run .ss-n, .ss-hi.run::after { animation: none; } }
 
 /* === COUNCIL TAB ===============================================================

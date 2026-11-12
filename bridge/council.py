@@ -71,8 +71,12 @@ The loop: start -> _round -> fixing -> after_turn -> _round ...
   failed fix turn) sends them first: the same code read again scores the same.
 - Findings you side with the session on are marked dismissed and left out of
   fix prompts and advice, not only out of blocking.
+- A flow's REVIEW step starts a run by itself, in a ticket set's merge session
+  once MERGE ends (tickets.start_review), and a pass there ends that step
+  (_ended, tickets.council_passed). Nothing else differs for such a run.
 
-Not built: a chairman model, a push gate (RUN is the only start), a third
+Not built: a chairman model, a push gate (RUN and a flow's REVIEW step are the
+only starts), a third
 reviewer, live updates over SSE, the Mini App and the bot; cancelling a
 reviewer still reading when you Stop (its answer is dropped), and
 council_stopped in the live NEEDS YOU list (it is in the bell and Telegram).
@@ -788,8 +792,8 @@ def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
 def _ended(sid: str, c: dict, wake: bool = True) -> None:
     """A run passed or stopped: one notice through the house notifier (Telegram
     follows NOTIFY's choices), then the sessions waiting on this one are woken,
-    since the turn end that would have woken them led into the council.
-    Best-effort."""
+    since the turn end that would have woken them led into the council. A pass
+    in a merge session also ends its flow's REVIEW step. Best-effort."""
     rs = c.get("rounds") or []
     score = rs[-1]["score"] if rs else None
     passed = c.get("status") == "passed"
@@ -806,6 +810,12 @@ def _ended(sid: str, c: dict, wake: bool = True) -> None:
                            kind="council_stopped", sid=sid, body=c["reason"], meta={"score": score})
     except Exception as e:  # noqa: BLE001 - the verdict stands either way
         print(f"[council] notice failed: {e}", file=sys.stderr)
+    if passed:
+        try:
+            from . import tickets  # local import: tickets reaches back here (start_review)
+            tickets.council_passed(sid)     # in a merge session this ends its flow's REVIEW step
+        except Exception as e:  # noqa: BLE001
+            print(f"[council] flow step failed: {e}", file=sys.stderr)
     if not wake:
         return
     try:

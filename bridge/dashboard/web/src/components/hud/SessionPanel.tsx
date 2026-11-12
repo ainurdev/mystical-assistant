@@ -4,7 +4,7 @@ import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
-import { flowView, type Flow, type FlowSet } from "../../lib/flowview";
+import { flowView, movesElsewhere, type Flow, type FlowSet } from "../../lib/flowview";
 import { FLOW_EVENT, flowChanged } from "../../lib/useFlow";
 import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
@@ -216,8 +216,10 @@ export function SessionPanel({
   const [flowRead, setFlowRead] = useState(false);   // "no path" only once the bridge said so
   const [set, setSet] = useState<FlowSet | null>(null);
   const [meter, setMeter] = useState<Meter | null>(null);
-  // Tickets build and merge in sessions of their own: no turn here says when they move.
-  const busy = running || set?.status === "building" || set?.status === "merging";
+  const [reread, setReread] = useState(0);   // bumped to read the path again, after a Skip
+  // Tickets build and merge, and the council reviews, in sessions of their own: no turn
+  // here says when they move.
+  const busy = running || movesElsewhere(flow, set, !!ai.nextstep);
   // Read on a turn's edges, and every few seconds while one runs: a path moves
   // mid-turn (StepDone), and the window grows request by request.
   useEffect(() => {
@@ -231,7 +233,7 @@ export function SessionPanel({
     if (!busy) return () => { live = false; };
     const id = setInterval(() => { setNow(Date.now() / 1000); read(); }, 4000);
     return () => { live = false; clearInterval(id); };
-  }, [sessionId, busy, ai.router]);
+  }, [sessionId, busy, ai.router, reread]);
   // Another session's path never shows under this one while its own loads.
   useEffect(() => { setFlow(null); setSet(null); setFlowRead(false); }, [sessionId]);
   // A change from the prompt box's FLOW chip shows here at once.
@@ -501,11 +503,21 @@ export function SessionPanel({
     flowChanged(sessionId, { ...flow, auto: on, overrides: flow.overrides && { ...flow.overrides, nextstep: on } });
     api.setFlowAuto(sessionId, on).catch(() => flowChanged(sessionId, was));
   };
+  // Skip shows on a REVIEW that isn't running: one that stopped, or never started.
+  const skipReview = () => {
+    if (sessionId) api.skipReview(sessionId).then(() => setReread((n) => n + 1)).catch(() => {});
+  };
   const nextLine = path && flow && find === null && (
     <div className="ss-next" title={`${path.by === "claude" ? "Claude" : "A rule"} picked the ${flow.path === "one" ? "one-skill" : flow.path.replace(/-/g, " ")} path: ${path.why}`}>
       {nxt ? <>NEXT <b>{nxt.label.toUpperCase()}</b>
         <span className="ss-nm">{nxt.who === "you" ? "waits for you" : flow.auto ? (running ? "starts by itself after this turn" : "starts by itself") : "held: you start it"}</span></>
         : <span className="ss-nm">path complete · {path.total} {path.total === 1 ? "step" : "steps"}</span>}
+      {nxt?.key === "review" && flow.next?.station === "review" && (
+        <button type="button" className="ss-auto caps" onClick={skipReview}
+          title="go on to RETRO with the work as it stands, without the council's pass">
+          <SkipForward size={11} strokeWidth={2.2} aria-hidden /> Skip
+        </button>
+      )}
       <button type="button" className={`ss-auto${flow.auto ? " on" : ""}`} aria-pressed={flow.auto} onClick={toggle}
         title={flow.auto ? "steps start by themselves; click to hold" : "held: you start each step; click to release"}>
         {nxt?.who === "you" ? <Hand size={11} strokeWidth={2.2} aria-hidden /> : <Zap size={11} strokeWidth={2.4} aria-hidden />} AUTO
@@ -514,9 +526,9 @@ export function SessionPanel({
   );
 
   // FLOW: the path's steps, each with the time worked on it and what its turns spent.
-  // BUILD and MERGE run in sessions of their own: the ticket set's word stands in.
+  // A step with no skill (BUILD, MERGE, the REVIEW after it) runs in sessions of its own: the ticket set's word stands in.
   const stats = meter && path ? stepStats(bands(turns, rows, { stations: path.stations, at: path.at }), segs, turns, meter.turns) : null;
-  const away = path?.stations.find((s) => (s.key === "build" || s.key === "merge") && s.state !== "done")?.key;
+  const away = path?.stations.find((s) => s.skill === null && s.state !== "done")?.key;
   const flowBlock = !path || !flow ? (flowRead || !ai.router) && <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
     <>
       {head("flow", "FLOW", flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),

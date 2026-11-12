@@ -1,5 +1,19 @@
+import os
 from unittest import mock
+
 from bridge import screenshot
+
+
+def test_the_newest_chrome_is_found_whatever_the_platform_names_its_folder(tmp_path, monkeypatch):
+    """Playwright names the folder inside a build after the platform (-linux64,
+    -mac-arm64); looking for one of those names found nothing on the other."""
+    for build, inner in (("1243", "chrome-headless-shell-linux64"), ("1248", "chrome-headless-shell-mac-arm64")):
+        d = tmp_path / ".cache" / "ms-playwright" / f"chromium_headless_shell-{build}" / inner
+        d.mkdir(parents=True)
+        (d / "chrome-headless-shell").write_text("")
+    monkeypatch.setattr(screenshot, "_GLOB", screenshot._GLOB.replace(os.path.expanduser("~"), str(tmp_path)))
+    assert screenshot._installed_chrome().endswith(
+        os.path.join("chromium_headless_shell-1248", "chrome-headless-shell-mac-arm64", "chrome-headless-shell"))
 
 
 def test_chrome_cmd_includes_window_size_and_url():

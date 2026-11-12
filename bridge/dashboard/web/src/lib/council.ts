@@ -6,7 +6,8 @@ import type { CouncilBrief } from "../api";
    round being read while reviewing, else the last one read; `rounds` holds
    only the rounds that scored. Pure, so council.check.ts can pin it. */
 
-const live = (c: CouncilBrief) => c.status === "reviewing" || c.status === "fixing";
+/** A run that is still going: its reviewers are reading, or the session is fixing. */
+export const live = (c: Pick<CouncilBrief, "status">) => c.status === "reviewing" || c.status === "fixing";
 const f1 = (n: number) => n.toFixed(1);
 
 /** The rail tile: the round while a run is on, the score once it passed or stopped. */
