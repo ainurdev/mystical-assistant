@@ -1172,6 +1172,10 @@ def worktree_add(cwd: str, path: str, branch: str, start: str = "",
     else:
         args = ["worktree", "add", "--end-of-options", path, branch]
     rc, out, err = _run(cwd, *args, timeout=30)
+    if rc and create and _run(cwd, "rev-parse", "--verify", "-q", "HEAD")[0]:
+        # a repo with no commits: git only says "invalid reference: HEAD", which names no way out
+        cur = _run(cwd, "symbolic-ref", "-q", "--short", "HEAD")[1].strip() or "the default branch"
+        return False, f"this repo has no commits yet, so there is nothing to branch from. Commit once on {cur}, then try again."
     return rc == 0, (out + err).strip()
 
 

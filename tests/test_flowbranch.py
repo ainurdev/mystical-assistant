@@ -69,6 +69,16 @@ def test_default_branch_gets_feature_worktree(repo):
     assert co == os.path.join(config.BASE_PATH, ".worktrees", "proj", "feat-x")
 
 
+def test_a_repo_with_no_commits_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BASE_PATH", str(tmp_path / "base"))
+    main = tmp_path / "fresh"
+    main.mkdir()
+    _git(str(main), "init", "-q", "-b", "main")
+    (main / "app.py").write_text("work nobody has committed yet")
+    with pytest.raises(RuntimeError, match="no commits yet.*Commit once on main"):
+        flowbranch.ensure_feature_branch({"cwd": str(main)}, "x")
+
+
 def test_feature_worktree_is_reused(repo_on_feature):
     assert flowbranch.ensure_feature_branch({"cwd": repo_on_feature.wt}, "x") == ("feat/y", repo_on_feature.wt)
 
