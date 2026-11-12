@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
@@ -21,6 +21,8 @@ import { SMART_ZONE, caption, ghostFor, isDropped, isStale, shouldAutoApply, swa
 import type { FlowChip, FlowOption } from "../lib/flowview";
 import type { FlowAct } from "../lib/useFlow";
 import { Tip } from "./ui/Tip";
+import { Switch } from "./hud/SettingsModal";
+import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
@@ -76,6 +78,13 @@ const CTX_SEGMENTS = 8;
 const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 // The FLOW chip's glyph per flow (lib/flowview flowOf): the row's, and REFACTOR's before it joins the row.
 const FLOW_ICON: Record<string, LucideIcon> = { ...KIND_ICON, refactor: Blocks };
+// The FLOWS sheet's line under a flow's name, and a one-step flow's row (a2-open).
+const FLOW_ABOUT: Record<string, string> = {
+  design: "grill, then draw it, then build", build: "grill, then build: here, or as tickets",
+  refactor: "improve, then build as tickets", fix: "find the cause, fix it, then review",
+  ship: "merge, check, clean up", ask: "an answer, nothing changed",
+};
+const ONE_STEP: Record<string, string> = { ship: "ship: merge, check, clean up" };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
@@ -547,7 +556,7 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
   const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
@@ -556,7 +565,7 @@ export function Composer({
   // PRESET stays open across picks, so it takes a dialog's Esc as well as a
   // click away; the other drops close on their pick.
   useEffect(() => {
-    if (openDrop !== "preset" && openDrop !== "flow") return;
+    if (openDrop !== "preset" && openDrop !== "flow" && openDrop !== "flows") return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -874,8 +883,14 @@ export function Composer({
   const typed = auto ? swapLead(text, auto.name, null) : text;
   // The kind of work on show (COMPACT only; DEFAULT has no rail to show one). An answer to a
   // docked ask, an agent's session and a typed /command go as typed: no kind, the kinds dim.
-  const kindsOn = shelled && !onAgent && !helper && !ask?.send && !leadsSlash;
-  const { kind, how: kindHow } = kindsOn ? shownKind(kindPick, typed, { start: routeCtx?.first === true, design: !!plugins.design }) : { kind: null, how: "none" as const };
+  // FLOWS (the gear's sheet, bridge-wide): off, the row is FLOWS OFF and prompts go as typed with
+  // the session's own picks; a flow switched off leaves the row and Tab's cycle and is never guessed.
+  const flowCfg = useFlowSettings();
+  const flowsOn = flowCfg ? flowCfg.on : !!routing;
+  const flowsOff = useMemo(() => flowCfg?.flows.filter((f) => !f.on).map((f) => f.id) ?? [], [flowCfg]);
+  const kindsOn = shelled && flowsOn && !onAgent && !helper && !ask?.send && !leadsSlash;
+  const pick = kindPick && kindPick !== "plain" && flowsOff.includes(kindPick) ? null : kindPick;
+  const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff }) : { kind: null, how: "none" as const };
   const run = kind ? presetFor(kind, kindPresets, runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
@@ -967,8 +982,8 @@ export function Composer({
     if (e.key === "Tab" && starter && !e.shiftKey) setText(starter);
     else if (e.key === "Tab" && !blank) {
       const dir = e.shiftKey ? -1 : 1;
-      let n = nextKind(kind, dir);
-      if (n === "design" && !plugins.design) n = nextKind(n, dir);   // no Claude Design, no DESIGN kind
+      let n = nextKind(kind, dir, flowsOff);
+      if (n === "design" && !plugins.design) n = nextKind(n, dir, flowsOff);   // no Claude Design, no DESIGN kind
       setKindPick(n ?? "plain");
     }
     else if (e.key === "Escape" && kind) setKindPick(blank ? null : "plain");
@@ -1097,7 +1112,7 @@ export function Composer({
     }
     if (!t || disabled) return;
     // The kind on show sends its preset with the prompt, and the flow when the prompt starts one.
-    const plan = sendPlan({ kind, how: kindHow, text: t, running: runningFlow, flows: !!routing,
+    const plan = sendPlan({ kind, how: kindHow, text: t, running: runningFlow, flows: flowsOn,
                             answering: !!ask?.send, agent: onAgent, run });
     onSend(plan.text, images, noPath || undefined, plan.run, t, plan.flow && plan.by && { id: plan.flow, by: plan.by });
     setText("");
@@ -1287,7 +1302,7 @@ export function Composer({
   // starts by itself, an amber ✋ when it waits on you. Its sheet is PRESET's, hung from the
   // chip: three switches this session may set over SETTINGS (picking SETTINGS' own value
   // follows it again, as PRESET follows a profile), SKIP and JUMP TO, and a Reset.
-  const fchip = shelled && !onAgent && onFlow ? flowChip ?? null : null;
+  const fchip = shelled && flowsOn && !onAgent && onFlow ? flowChip ?? null : null;
   const [flowAt, setFlowAt] = useState(0);
   useEffect(() => { if (!fchip) setOpenDrop((d) => (d === "flow" ? "" : d)); }, [fchip]);
   const FlowGlyph = FLOW_ICON[fchip?.flow ?? ""] ?? RouteIcon;
@@ -1829,10 +1844,96 @@ export function Composer({
     : kind && <span>{kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null, designLinked: designLinked ?? null,
         mapBuiltAt: graph?.exists ? graph.built_at : null, pack, askPerm: run?.perm ?? "" })
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
+  // The gear: the FLOWS sheet, for every session (bridge/flowsettings.py). It hangs from the card's
+  // left edge as PRESET hangs from its segment, two columns so picking a flow never changes its
+  // height (a2-open). Tickets 04 to 08 of flow-gear each fill their own section of it.
+  const [sheetFlow, setSheetFlow] = useState("build");
+  const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
+  const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
+  const flowChange = (c: Parameters<typeof changeFlows>[0]) => void changeFlows(c).catch((e: Error) => setFlowsErr(e.message));
+  const [flowsErr, setFlowsErr] = useState("");
+  const gear = (
+    <>
+      <span className="fs-gsep" aria-hidden />
+      <button type="button" className="pb-kg fs-gear" aria-label="Flow settings" aria-haspopup="dialog" aria-expanded={openDrop === "flows"}
+        title="FLOWS — settings for every session" onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (openDrop !== "flows") { void refreshFlowSettings(); setFlowsErr(""); if (kind) setSheetFlow(kind); }
+          setOpenDrop((d) => (d === "flows" ? "" : "flows"));
+        }}>
+        <Settings size={13} strokeWidth={2} aria-hidden />
+      </button>
+    </>
+  );
+  const SheetGlyph = FLOW_ICON[sheetPick?.id ?? ""] ?? RouteIcon;
+  const flowsPop = openDrop === "flows" && flowCfg && sheetPick && (
+    <div className="pb-pp fs-sheet" role="dialog" aria-label="Flows" style={{ overflow: "visible" }}>
+      <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows<span>for every session</span></h4>
+      <div className="fs-top">
+        <div className="pb-pr"><b>Flows</b>
+          <div className="pb-sg" role="group" aria-label="Flows">
+            {[true, false].map((v) => (
+              <button key={String(v)} type="button" aria-pressed={flowCfg.on === v} onClick={() => flowChange({ key: "on", value: v })}>{v ? "ON" : "OFF"}</button>
+            ))}
+          </div>
+        </div>
+        {/* GUESS AUTO | BY HAND: flow-gear 07 */}
+        <label className="fs-sw"><Switch on={flowCfg.autopick} label="Auto picks" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />Auto picks</label>
+        <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
+      </div>
+      <div className="fs-body">
+        <div className="fs-col" role="listbox" aria-label="Flows">
+          {flowCfg.flows.map((f) => {
+            const Icon = FLOW_ICON[f.id] ?? RouteIcon;
+            return (
+              <div key={f.id} className="fs-row" role="option" aria-selected={f.id === sheetPick.id} data-sel={f.id === sheetPick.id ? "" : undefined}
+                data-off={f.on ? undefined : ""} tabIndex={0} onClick={() => setSheetFlow(f.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheetFlow(f.id); } }}>
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
+                </span>
+                <Icon size={13} strokeWidth={2} aria-hidden />
+                <b>{flowName(f.id)}</b>
+                <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
+                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{st.on && !st.ponytail_off ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
+                <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
+              </div>
+            );
+          })}
+          {/* NO KIND CLAUDE PICKS | AS TYPED: flow-gear 07 */}
+        </div>
+        <div className="fs-detail">
+          <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{flowName(sheetPick.id)}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
+          <div className="pb-pr"><b>Steps</b>
+            {/* switched on and off by flow-gear 04; a fixed step always runs */}
+            <div className="fs-chips">
+              {sheetPick.steps.map((st, i) => (
+                <Fragment key={st.step}>{i > 0 && <i aria-hidden>›</i>}
+                  <span className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={st.on && !st.ponytail_off ? "" : undefined}
+                    title={st.ponytail_off ? "PONYTAIL is off: this step doesn't run" : undefined}>{st.step.toUpperCase()}</span></Fragment>
+              ))}
+            </div>
+          </div>
+          {/* NEXT ⚡AUTO | HOLD: flow-gear 05 */}
+          {/* TICKETS and APPROVE BEFORE BUILD (the flows that build as tickets): flow-gear 05 */}
+          {/* Model, Mode, Effort and Trim, the flow's run defaults: flow-gear 06 */}
+        </div>
+      </div>
+      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
+        : "A change here is for every session. PRESET and the FLOW chip change one session."}
+        <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}>Reset {flowName(sheetPick.id)}</button>
+      </div>
+    </div>
+  );
   const rail = (
     <div className="pb-rail">
+      {!flowsOn ? (
+        <div className="pb-seg pb-kinds" role="group" aria-label="Kind of work">
+          <span className="fs-off">Flows off</span>{gear}
+        </div>
+      ) :
       <div className="pb-seg pb-kinds" role="group" aria-label="Kind of work" data-dim={kindsOn ? undefined : ""}>
-        {KIND_ORDER.map((id) => {
+        {KIND_ORDER.filter((id) => !flowsOff.includes(id)).map((id) => {
           const Icon = KIND_ICON[id];
           const lit = id === kind;
           const off = !kindsOn || (id === "design" && !plugins.design);   // no Claude Design, no DESIGN kind
@@ -1848,7 +1949,8 @@ export function Composer({
             </button>
           );
         })}
-      </div>
+        {gear}
+      </div>}
       <div className="pb-seg pb-facts" role="status">{facts}</div>
       <div className="pb-seg pb-preset" data-open={openDrop === "preset" ? "" : undefined}>{presetBtn}</div>
       {profileChip && <div className="pb-seg pb-use">{profileChip}</div>}
@@ -1864,7 +1966,7 @@ export function Composer({
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           <div className="pb-line">
-            {plusBtn}{flowBtn}{pfx}{popovers}{presetPop}{flowPop}
+            {plusBtn}{flowBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
             <div className="pb-body">{attachRow}{editor}</div>
             <div className="pb-keys">{actions(false)}</div>
           </div>
