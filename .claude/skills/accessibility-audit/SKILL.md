@@ -11,6 +11,7 @@ Use when checking a UI against WCAG basics — keyboard, contrast, semantics, an
 
 - Tab through the whole flow: everything reachable, focus always visible, order sane.
 - Check contrast — 4.5:1 for body text, 3:1 for large text and UI boundaries.
+- Never carry meaning by colour alone; about 8% of men of European descent have red-green colour blindness.
 - Use the native element first; a div with a click handler is not a button.
 - Label every input and icon-only control; placeholder text is not a label.
 - Announce dynamic changes with a live region, and keep motion respectful of reduced-motion.
