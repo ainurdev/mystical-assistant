@@ -104,6 +104,9 @@ export interface SessionBrief {
   helpers?: HelperConfig;
   parent_session?: string | null;
   member?: MemberInfo | null;
+  // A ticket or merge session names its super session (tickets.owners); that one carries its set's count.
+  ticket_of?: string;
+  tickets?: { done: number; total: number; status: string };
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the
@@ -756,6 +759,7 @@ export interface RivendellTask {
   session_id: string | null; // the session that ran (or runs) its request on this bridge
   stale?: boolean;           // its instance failed: the last good answer, shown dimmed
   run?: RivendellRun | null; // what this bridge knows about its run, when it ran here
+  project_dir?: string | null; // everywhere view: its project's checkout here ("/ainurhq/x"), for WORK ON IT
 }
 /** TEST LINK's outcome (POST /local/rivendell/test). ok null = re-dialing a
  *  parked token; the chip shows how that went. */
@@ -801,6 +805,7 @@ export interface RivendellTasks {
     detail: string;
   }[];
   links?: RivendellLink[];  // each connection's state, for the chip and banner
+  everywhere?: boolean;      // no project links this checkout: every project's tasks (the tab keeps yours)
 }
 /** A card's peek (bridge/rivendell.py task_detail): the task in full, read off
  *  Rivendell's /mcp, and the GitHub issue its description defers to. */
@@ -2229,11 +2234,15 @@ export const api = {
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   // `message`: a Deny's reason, typed in the box under the docked card. `noted`
-  // says the bridge passed it to the model (an older bridge drops it).
+  // says the bridge passed it to the model (an older bridge drops it). Every answer
+  // box lands here, so the bell (Notifications) drops that ask's toast now.
   respond: (
     jobId: string,
     body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string },
-  ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
+  ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }).then((r) => {
+    window.dispatchEvent(new CustomEvent("hud:answered", { detail: body.request_id }));
+    return r;
+  }),
   // Search within one chat (bridge/chat_search.in_chat): prompts and the agent's words.
   chatSearch: (session: string, q: string) =>
     req<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(

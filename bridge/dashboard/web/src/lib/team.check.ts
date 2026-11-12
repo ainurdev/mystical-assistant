@@ -7,7 +7,7 @@
 // linked Mystical shown as "last on Jan 1, 1970", and a share that never arrived
 // reading DELIVERED.
 import type { Received, Share, Teammate } from "../api.ts";
-import { byPresence, foldSent, isTeam, personTint, presence, readOnly, relationLine, seen, sentBefore, sentStatus, shareFacts, size } from "./team.ts";
+import { byPresence, foldSent, onWhat, isTeam, personTint, presence, readOnly, relationLine, seen, sentBefore, sentStatus, shareFacts, size } from "./team.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -87,3 +87,15 @@ eq(relationLine(card({ relation: "update", version: 1, new_turns: 2 }), now), { 
 eq(relationLine(card({}), now), null, "no thread you have: no line");
 eq(relationLine(card({ relation: "update", version: 3, new_turns: 4, prev: { state: "continued", at: now - 60, version: 1 } }), now)?.strong,
   "+4 turns since v1", "counted from the version you saw, not one that folded in unseen");
+
+// WHO'S ON WHAT: Teamwork ids, Rivendell's user-<id>, and the first-name fallback.
+{
+  const tk = (id: string, who: { id: string; name: string }[], status: string | null = null) =>
+    ({ id, assignees: who, implementation: status ? { id: "r", status, createdAt: "x", completedAt: null } : null }) as never as { id: string; assignees: { id: string; name: string }[]; implementation: null };
+  const list = [tk("a", [{ id: "743471", name: "Mahdi Pourismaiel" }]), tk("b", [{ id: "user-u2", name: "Payam Hedayati" }]),
+    tk("c", [{ id: "743471", name: "Mahdi Pourismaiel" }], "IN_PROGRESS"), tk("d", [{ id: "9", name: "Mahdiyar Other" }])];
+  const mahdi = onWhat({ id: "u1", name: "Mahdi" }, list);
+  eq([mahdi.task && (mahdi.task as { id: string }).id, mahdi.n], ["c", 2], "a Teamwork assignee matches by first name, and the running task is the one named");
+  eq((onWhat({ id: "u2", name: "Payam" }, list).task as { id: string } | null)?.id, "b", "a Rivendell assignee matches by user-<id>");
+  eq(onWhat({ id: "u3", name: "Erfan" }, list), { task: null, n: 0 }, "nobody's tasks: nothing named");
+}

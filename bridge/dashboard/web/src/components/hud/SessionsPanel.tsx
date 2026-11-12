@@ -3,7 +3,7 @@ import { AgentTree } from "./AgentTree";
 import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
+import { BellRing, FolderTree, Hand, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
@@ -68,6 +68,8 @@ interface Props {
   onUnfold?: () => void;
   /** The workspace on screen (lib/workspaces): each keeps its own expanded projects. */
   workspace?: string;
+  /** Ticket and merge sessions by their super session: off the list, folded under that row. */
+  ticketKids?: Map<string, SessionBrief[]>;
 }
 
 type Mode = "attention" | "projects" | "plugins" | "recent";
@@ -75,7 +77,7 @@ type Mode = "attention" | "projects" | "plugins" | "recent";
  *  presets this replaced could not express the obvious wants — a sidebar that
  *  names the project but not the branch was simply not on the menu. `agents`
  *  is no fact on the row: it is the list under it (AgentTree). */
-type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean };
+type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean; tickets: boolean };
 // "recent" is most recent: the chat you prompt goes to the top of its project
 // and the project to the top of the list. It was newest-started for a while,
 // which held rows still but sank the chat you worked in under idle ones; the
@@ -95,23 +97,24 @@ const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "branch", label: "branch", tip: "Print the branch on every row" },
   { k: "wt", label: "worktree", tip: "Mark rows working in a worktree rather than the main checkout" },
   { k: "agents", label: "agents", tip: "List a session's agents under its row" },
+  { k: "tickets", label: "tickets", tip: "List a super session's ticket sessions under its row" },
 ];
 /** PROJECTS rows sit under a header that already names the project, so that tick
  *  is not offered there — the other two tabs mix projects and need it. Agents is
  *  offered only where a list can show: with multi-agent chats on, and never in
  *  PLUGINS (its ⎇ is hidden, but a menu left open survives the tab switch). */
 const fieldsFor = (mode: Mode, multi: boolean) => FIELDS.filter((f) =>
-  !(f.k === "proj" && mode === "projects") && !(f.k === "agents" && (!multi || mode === "plugins")));
+  !(f.k === "proj" && mode === "projects") && !(f.k === "agents" && (!multi || mode === "plugins")) && !(f.k === "tickets" && mode === "plugins"));
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
  *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
  *  own stream again. Agents start off in every tab, and PLUGINS, which has no
  *  menu to tick them on in, never lists them. */
 const DETAIL_DEFAULT: Record<Mode, Detail> = {
-  attention: { proj: true, branch: true, wt: true, agents: false },
-  projects: { proj: false, branch: true, wt: true, agents: false },
-  plugins: { proj: true, branch: true, wt: true, agents: false },
-  recent: { proj: true, branch: true, wt: true, agents: false },
+  attention: { proj: true, branch: true, wt: true, agents: false, tickets: false },
+  projects: { proj: false, branch: true, wt: true, agents: false, tickets: false },
+  plugins: { proj: true, branch: true, wt: true, agents: false, tickets: false },
+  recent: { proj: true, branch: true, wt: true, agents: false, tickets: false },
 };
 
 /** Rivendell jobs wear the PLUGINS lane's purple, apart from your own projects'. */
@@ -263,9 +266,10 @@ const ATTN: { k: LaneKey; c: string; say: (n: number) => string }[] = [
 ];
 
 function SessionRow({
-  s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
+  s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach, tk,
 }: {
   s: SessionBrief;
+  tk?: { asks: number; done: number; total: number }; // a super session's tickets
   st?: SessionStatus;
   wait?: WaitLine;
   shots: number;     // its pictures you haven't opened (lib/seenshots)
@@ -477,8 +481,41 @@ function SessionRow({
               ? <><span style={{ color: age.tone === "ok" ? "var(--ok)" : "var(--err)" }}>{age.text.slice(0, 1)}</span>{age.text.slice(1)}</>
               : age.text}
           </span>
-        ) : edge}
+        ) : <>{tk && <TicketPips tk={tk} />}{edge}</>}
       </div>
+    </div>
+  );
+}
+
+/** A super session's tickets at its row's edge: how many ask you, how many are done. */
+function TicketPips({ tk }: { tk: { asks: number; done: number; total: number } }) {
+  return (
+    <span className="tk-pips" title={`${tk.done} of ${tk.total} tickets done${tk.asks ? `, ${tk.asks} asking you` : ""}`}>
+      {tk.asks > 0 && <span className="w"><Hand size={9} strokeWidth={2.4} aria-hidden />{tk.asks}</span>}
+      <span>{tk.done}/{tk.total}</span>
+    </span>
+  );
+}
+
+/** A super session's ticket sessions under its row (ROW DETAILS ▸ tickets), one line each. */
+function TicketKids({ kids, views, selectedId, onOpen }: {
+  kids: SessionBrief[]; views: (s: SessionBrief) => StateView; selectedId: string | null; onOpen: (s: SessionBrief) => void;
+}) {
+  const rows = [...kids].sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+  return (
+    <div className="tk-kids" onClick={(e) => e.stopPropagation()}>
+      {rows.map((k) => {
+        const v = views(k);
+        const m = /^#(\d+)\s+(.*)$/.exec(k.title ?? "");
+        return (
+          <button key={k.id} type="button" className="tk-kid" data-on={k.id === selectedId || undefined} onClick={() => onOpen(k)} title={`${k.title ?? ""}: ${v.t}`}>
+            <i style={{ background: v.fill ? v.c : "transparent", boxShadow: v.fill ? undefined : `inset 0 0 0 1.5px ${v.c}` }} />
+            <span className="no">{m ? `#${m[1]}` : k.origin === "ticket-merge" ? "⇢" : "·"}</span>
+            <span className="t" style={{ color: v.lane === "ask" ? "var(--warn)" : undefined }}>{m ? m[2] : k.title || "merge"}</span>
+            <span className="tm">{v.lane === "work" ? "" : ago(k.updated)}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -763,6 +800,18 @@ export function SessionsPanel(props: Props) {
   // One state resolution per session per render — lanes, dots and counts all
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
+  // A super session works while any of its tickets does, and wants you when one asks.
+  const tkOf = new Map<string, { asks: number; done: number; total: number }>();
+  for (const s of sorted) {
+    const kids = props.ticketKids?.get(s.id);
+    if (!kids?.length) continue;
+    const kv = kids.map((k) => resolve(status.get(k.id), false, flags.get(k.id)));
+    const own = views.get(s.id) ?? SV.idle;
+    const asks = kv.filter((v) => v.lane === "ask").length;
+    if (asks && own.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${asks} ticket${asks === 1 ? "" : "s"} asking you` });
+    else if (own.lane !== "ask" && own.lane !== "work" && kv.some((v) => v.lane === "work")) views.set(s.id, { ...SV.working, t: "its tickets are working" });
+    tkOf.set(s.id, { asks, done: s.tickets?.done ?? 0, total: s.tickets?.total ?? kids.length });
+  }
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
   // The open chat (a new one is empty until prompted), a pin, a draft and a
   // question waiting on you list whatever the filter says.
@@ -926,9 +975,13 @@ export function SessionsPanel(props: Props) {
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
       branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
-      onAttach={() => onSelectSession(s)}
+      onAttach={() => onSelectSession(s)} tk={tkOf.get(s.id)}
     />
     {detail.agents && <AgentTree chatId={s.id} selectedId={selectedSessionId} />}
+    {detail.tickets && props.ticketKids?.get(s.id) && (
+      <TicketKids kids={props.ticketKids.get(s.id)!} selectedId={selectedSessionId} onOpen={onSelectSession}
+                  views={(k) => resolve(status.get(k.id), done.has(k.id), flags.get(k.id))} />
+    )}
     </Fragment>
     );
   };

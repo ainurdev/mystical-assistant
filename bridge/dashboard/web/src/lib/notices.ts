@@ -93,6 +93,26 @@ export function popFor(n: Notice, o: { openSession: string | null; visible: bool
   return route.pop || sound ? { pop: route.pop, sound } : null;
 }
 
+/** A NEEDS toast's ask is still on the needs list: its subject, and its card when
+ *  the list names one (a session that asks again is a new ask). */
+export function stillWaits(n: Notice, live: Need[]): boolean {
+  return live.some((x) => x.subject === n.subject && (!x.meta.request_id || x.meta.request_id === n.meta.request_id));
+}
+
+/** The toasts once the needs list moves: a NEEDS toast goes when its ask, once
+ *  listed, no longer is — answered in the dock, on Telegram, from a banner. Never
+ *  listed, it keeps its clock: the feed can pop it a poll before the list has it,
+ *  and council_stopped and channel_held are never listed. Nothing moved: the same array. */
+export function liveToasts<T extends { n: Notice; seen: boolean }>(toasts: T[], live: Need[]): T[] {
+  let moved = false;
+  const out = toasts.flatMap((t) => {
+    if (t.n.tier !== "needs" || stillWaits(t.n, live) === t.seen) return [t];
+    moved = true;
+    return t.seen ? [] : [{ ...t, seen: true }];
+  });
+  return moved ? out : toasts;
+}
+
 export function ago(at: number, now: number): string {
   const s = Math.max(0, now - at);
   if (s < 60) return "now";

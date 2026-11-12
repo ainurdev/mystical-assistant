@@ -160,8 +160,8 @@ _PATH_TOOLS = [
             "type": "object",
             "properties": {
                 "choice": {"type": "string", "enum": ["here", "tickets"],
-                           "description": "After a grill: 'here' if the work fits this one "
-                                          "session, 'tickets' if it needs several."},
+                           "description": "After a grill: 'tickets' only when two or more parts "
+                                          "can be built at the same time, else 'here'."},
             },
         },
     },

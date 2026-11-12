@@ -1,14 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Send, Users, X } from "lucide-react";
-import type { Received, Receiving, TeamOverview, Teammate } from "../../api";
-import { initials } from "../../lib/rivendelltasks";
+import type { Received, Receiving, RivendellTask, TeamOverview, Teammate } from "../../api";
+import { api } from "../../api";
+import { initials, splitTitle } from "../../lib/rivendelltasks";
 import { hhmm, useClock12 } from "../../lib/surfaces";
-import { room } from "../../lib/room";
 import { teamFeed, type FeedItem } from "../../lib/teamfeed";
-import { KIND_LABEL, byPresence, personTint, presence, relationLine, sentBefore, shareFacts } from "../../lib/team";
+import { KIND_LABEL, byPresence, onWhat, personTint, presence, relationLine, sentBefore, shareFacts } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
 import { TabKick } from "./TabKick";
-import { SendBar } from "./SendBar";
 import { Bar } from "./MoveDock";
 
 const UI = "var(--ui-font, inherit)";
@@ -69,15 +68,19 @@ const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; to
   </div>
 );
 
-/** The TEAM tab (bridge/team.py): what teammates sent you, who has Mystical on,
- *  who's away, how far your own sends got, and SEEN: what was sent to you that you
- *  opened or continued, one quiet line each until you remove it or it expires.
- *  App owns the data (it polls, and the rail badge and the session menu read it
- *  too). SEND on a teammate sends the session you have open: `sessionTitle` is
- *  null when it isn't yours to send. */
-export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
+/** The TEAM tab (bridge/team.py): one row per teammate — on or away, the task
+ *  they're on (WHO'S ON WHAT, read off this repo's Rivendell tasks, or every
+ *  project's when no project links it), ➤ to send them the session you have
+ *  open — then what they sent you, how far your own sends got, and SEEN: what
+ *  you opened or continued, one quiet line each until you remove it or it
+ *  expires. App owns the team data (it polls, and the rail badge and the session
+ *  menu read it too); the task list is read here, once a minute while showing.
+ *  `sessionTitle` is null when the open session isn't yours to send.
+ *  Design: .mystical/design-drafts/rivendell-reimagine (T-A · WHO'S ON WHAT). */
+export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
+  project: string | null;
   sessionTitle: string | null;
   onRefresh: () => void;
   onSendTo: (t: Teammate) => void;
@@ -96,6 +99,15 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   const roster = [...(data?.roster ?? [])].sort(byPresence);
   const face = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
   const feed = data ? teamFeed(data, now) : { today: [], earlier: [] };
+  const [tasks, setTasks] = useState<RivendellTask[]>([]);
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    const read = () => api.rivendellTasks(project).then((r) => { if (alive) setTasks(r.tasks); }).catch(() => {});
+    read();
+    const t = setInterval(read, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [project]);
 
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);
@@ -235,6 +247,40 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     </div>
   );
 
+  /** A teammate: face and presence, the task they're on, ➤ sends them the open session. */
+  const person = (t: Teammate) => {
+    const w = onWhat(t, tasks);
+    const st = w.task?.implementation?.status;
+    const name = t.name.trim().split(/\s+/)[0] || t.name;
+    const send = sessionTitle ? `Send “${sessionTitle}” to ${name}` : "Open a session of yours to send it";
+    return (
+      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${mix("var(--line)", 60)}` }}
+        title={`${t.name} · ${presence(t, now, h12)}${t.device ? ` · shares ${t.device.name} (Mac)` : ""}`}>
+        <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={28} state={t.online ? "on" : "away"} />
+        <div style={{ flex: 1, minWidth: 0, fontFamily: UI }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap" }}>
+            <b style={{ fontSize: "var(--t115)", fontWeight: 700, color: "var(--txh)" }}>{name}</b>
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", fontSize: "var(--t95)", color: "var(--txl)" }}>
+              {presence(t, now, h12)}{w.n ? ` · ${w.n} task${w.n === 1 ? "" : "s"}` : ""}
+            </span>
+          </div>
+          <div style={{ marginTop: 2, fontSize: "var(--t10)", color: w.task ? "var(--txm)" : "var(--txg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {w.task ? <>
+              {w.task.key && <span style={{ fontFamily: MONO, fontSize: "var(--t85)", color: "var(--txl)", marginRight: 5 }}>{w.task.key}</span>}
+              {splitTitle(w.task.name).title}
+              {(st === "IN_PROGRESS" || st === "PENDING") && <span style={{ color: "var(--acc)" }}> · {st === "PENDING" ? "queued" : "running"}</span>}
+            </> : "no open task here"}
+          </div>
+        </div>
+        <button type="button" disabled={!sessionTitle} onClick={() => onSendTo(t)} title={send} aria-label={send} style={{
+          appearance: "none", cursor: sessionTitle ? "pointer" : "default", flex: "none", display: "grid", placeItems: "center", width: 28, height: 28,
+          borderRadius: 8, border: `1px solid ${mix("var(--acc)", sessionTitle ? 32 : 12)}`, background: "transparent",
+          color: sessionTitle ? "var(--acc)" : "var(--txg)", padding: 0,
+        }}><Send size={12} strokeWidth={2} /></button>
+      </div>
+    );
+  };
+
   const body = (): ReactNode => {
     // A dashboard newer than the running bridge: the route is missing.
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't show the team yet." />;
@@ -242,6 +288,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);
     return (
       <>
+        {!data.error && roster.length > 0 && <><Sect label="PEOPLE" right="who's on what" top={10} />{roster.map(person)}</>}
         {(data.receiving?.length ?? 0) > 0 && <><Sect label="COMING IN" right={data.receiving!.length} top={10} />{data.receiving!.map(incoming)}</>}
         {data.error && <Empty title="No roster right now" text={data.error} />}
         {!data.error && !roster.length && !feed.today.length && !feed.earlier.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
@@ -259,31 +306,10 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     );
   };
 
-  const r = room(data && !data.error ? roster : [], now, h12);
-  const first = (n: string) => n.trim().split(/\s+/)[0] || n;
-  const others = roster.filter((t) => t.id !== r.lead?.id && !t.online).slice(0, 2).map((t) => {
-    const at = t.lastSeenAt ? Date.parse(t.lastSeenAt) / 1000 : NaN;
-    return Number.isNaN(at) ? null : `${first(t.name)} ${stamp(at)}`;
-  }).filter(Boolean);
   return (
     <div className="panel gp tf" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <TabKick name="TEAM" tools={<button className="gp-ib" title="refresh" aria-label="refresh" onClick={onRefresh}><RefreshCw size={14} /></button>} />
-      {data && !data.error && roster.length > 0 && (
-        <div className="tf-pres">
-          {r.shown.map((t) => (
-            <span key={t.id} className={`tf-face${t.online ? " on" : ""}`} title={`${t.name} · ${presence(t, now, h12)}${t.device ? ` · shares ${t.device.name} (Mac)` : ""}`}>
-              <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={30} />
-            </span>
-          ))}
-          {r.more > 0 && <span className="tf-face tf-more">+{r.more}</span>}
-          <span className="tf-t">
-            <b>{r.lead ? `${first(r.lead.name)} is on now` : "Nobody is on right now"}</b>
-            <small>{others.join(" · ") || (r.lead ? "" : "A session you send now waits for them")}</small>
-          </span>
-        </div>
-      )}
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
-      {sessionTitle && roster.length > 0 && <SendBar roster={roster} sessionTitle={sessionTitle} onSend={onSendTo} />}
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>
   );

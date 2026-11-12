@@ -127,8 +127,9 @@ _ROUTE_TAIL = [
 ]
 _STEPDONE = ('When you finish a step of a path and need nothing more from the user, make StepDone the last tool '
              'call of your turn: the next step starts when the turn ends (build-here on its own feature branch) '
-             'and does its own work. After a grill, pass choice "here" if the work fits this one session, or '
-             '"tickets" if it needs several. Never call StepDone while waiting on the user.')
+             'and does its own work. After a grill, pass choice "tickets" only when the plan has two or more parts '
+             'that can be built at the same time; a chain, where each part waits on the one before, is "here". '
+             'Say which and why in one line before StepDone. Never call StepDone while waiting on the user.')
 
 
 def pack_text() -> str:

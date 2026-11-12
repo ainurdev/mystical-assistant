@@ -276,6 +276,32 @@ def sets() -> list:
         return _load_locked()
 
 
+def owners() -> "tuple[dict, dict]":
+    """Who holds which session, for the sidebar: {ticket or merge session: its super
+    session (the flow session that made the set)}, and {super session: {done, total,
+    status}} for its newest set. Ticket sessions leave the sidebar's top level and fold
+    under that row instead (decided 2026-11-12, .mystical/design-drafts/ticket-flow).
+    Read from set.json on every call: a handful of small files, never stale."""
+    of: dict = {}
+    counts: dict = {}
+    for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0):
+        if not isinstance(r.get("folder"), str):
+            continue
+        st = load(r["folder"])
+        parent = st.get("parent_session")
+        ts = st.get("tickets") if isinstance(st.get("tickets"), dict) else {}
+        if not parent or not ts:
+            continue
+        for t in ts.values():
+            if isinstance(t, dict) and t.get("session_id"):
+                of[t["session_id"]] = parent
+        if st.get("merge_session"):
+            of[st["merge_session"]] = parent
+        counts[parent] = {"done": sum(1 for t in ts.values() if isinstance(t, dict) and t.get("status") == "done"),
+                          "total": len(ts), "status": st.get("status") or ""}
+    return of, counts
+
+
 def summary_for(session_id: str):
     """The newest set whose parent session is this one, with its folder, or None."""
     for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0, reverse=True):

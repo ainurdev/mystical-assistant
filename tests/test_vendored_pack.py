@@ -5,6 +5,8 @@ stay user-only, and the licence is MIT. Run: python3 -m pytest tests/test_vendor
 import glob
 import json
 import os
+import subprocess
+import sys
 
 import bridge
 
@@ -55,3 +57,22 @@ def test_a_review_and_ask_matt_look_where_the_spec_and_tickets_were_written():
     assert "A spec file under `docs/`, `specs/`, or `.mystical/tickets/` matching the branch name or feature." in cr
     assert "one file per ticket under `.mystical/tickets/<feature-slug>/`, worked blockers-first by hand" in am
     assert ".scratch" not in cr + am
+
+
+def test_the_retro_scan_counts_a_transcripts_calls(tmp_path):
+    """One local file (README): retro's step 2 names scan.py, which reads a transcript.
+    Lines without a timestamp repeat the calls (api-request-blob) and are skipped."""
+    retro = _skill_md("retro")
+    assert "`scan.py` in this skill's folder" in open(retro).read()
+    t = tmp_path / "s.jsonl"
+    t.write_text("\n".join(json.dumps(r) for r in [
+        {"timestamp": "2026-11-12T10:00:00Z", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "a", "name": "Bash", "input": {"command": "ls"}}]}},
+        {"timestamp": "2026-11-12T10:00:02Z", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "a", "content": "no such file", "is_error": True}]}},
+        {"type": "api-request-blob", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "a", "name": "Bash", "input": {"command": "ls"}}]}},
+    ]))
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(retro), "scan.py"), str(t), "stats"],
+                         capture_output=True, text=True, check=True).stdout
+    assert "1 tool calls, 1 errors" in out and "wait=     2s" in out

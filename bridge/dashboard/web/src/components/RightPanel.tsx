@@ -314,7 +314,7 @@ export function RightPanel({
                 }`}
               >
                 <span className="rtile-ico">{t.icon}{t.busy && <span className="rail-orbit" aria-hidden />}</span>
-                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n">{t.short}</span>}
+                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n" data-long={t.short.length > 7 || undefined}>{t.short}</span>}
               </button>
             </Fragment>
           );

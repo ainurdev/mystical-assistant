@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, askChange, badge, cardFor, changeMarkdown, changesOf, chipCount, dayOf, findChanges, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, mediaUrl, needMatches, popFor, safeUrl, sameArea, sectionOf, shortWhen, stamp, whenOf } from "./notices.ts";
+import { ago, askChange, badge, cardFor, changeMarkdown, changesOf, chipCount, dayOf, findChanges, freshSince, groupBySubject, iconFor, isQuiet, leadOf, liveToasts, matches, mediaUrl, needMatches, popFor, safeUrl, sameArea, sectionOf, shortWhen, stamp, stillWaits, whenOf } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -74,6 +74,20 @@ ok(popFor(stale, { ...env, live: new Set(), now: 1000 + 3600 }) === null, "an an
 ok(popFor(stale, { ...env, live: new Set(["z"]), now: 1000 + 3600 })?.pop === true, "one that still waits pops");
 ok(popFor(stale, { ...env, live: new Set(), now: 1000 + 5 })?.pop === true, "a brand-new one pops before the needs poll lands");
 ok(popFor(n(5, "y"), { ...env, live: new Set(), now: 99999 })?.pop === true, "news is not a need: liveness doesn't hold it");
+
+// An answered ask takes its toast with it, once the needs list has listed it.
+const need = (subject: string, meta: Record<string, unknown> = {}): Need =>
+  ({ subject, kind: "question", verb: "ASKS", title: "", body: "", at: 1, session_id: subject, meta });
+const q1 = n(6, "s", { tier: "needs", kind: "question", group: "ask", meta: { request_id: "r1" } });
+const listed = liveToasts([{ n: q1, seen: false }], [need("s", { request_id: "r1" })]);
+ok(listed.length === 1 && listed[0].seen, "a listed ask keeps its toast, now seen");
+ok(liveToasts(listed, []).length === 0, "answered: off the needs list, so its toast goes");
+ok(liveToasts([{ n: q1, seen: false }], []).length === 1, "not listed yet (the needs poll lags the feed): it keeps its clock");
+ok(liveToasts(listed, [need("s", { request_id: "r2" })]).length === 0, "the session asking again is a new ask: the old toast goes");
+ok(liveToasts([{ n: n(8, "rv:p:1", { tier: "needs", kind: "rv_offer" }), seen: true }], [offer]).length === 1, "a need naming no card matches on its subject");
+const news = [{ n: n(7, "s"), seen: false }];
+ok(liveToasts(news, []) === news, "news is no ask: nothing moves, the same list back");
+ok(stillWaits(q1, [need("s", { request_id: "r1" })]) && !stillWaits(q1, [need("t")]), "an ask waits while its subject is listed");
 
 ok(safeUrl("https://github.com/o/r/pull/9") === "https://github.com/o/r/pull/9" && safeUrl("http://x.test/a") === "http://x.test/a", "http(s) links open");
 ok(safeUrl("javascript:alert(1)") === null && safeUrl(" JAVASCRIPT:x") === null && safeUrl("") === null && safeUrl(undefined) === null, "anything else never reaches window.open");
