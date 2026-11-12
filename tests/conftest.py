@@ -175,6 +175,17 @@ def _plugins_installed(monkeypatch, tmp_path):
     monkeypatch.setattr(integrations, "_cache", dict.fromkeys(("rivendell", "design"), True))
 
 
+from bridge import flowsettings  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_flow_settings(monkeypatch, tmp_path):
+    """Every test's flow settings seed afresh from the switches as that test set them
+    (the engine and the scheduler read a flow's NEXT and TICKETS, seeded once from them)."""
+    monkeypatch.setattr(flowsettings, "_file", lambda: str(tmp_path / "conftest-flow_settings.json"))
+    monkeypatch.setattr(flowsettings, "_cache", {})
+
+
 # An empty selection is not a failure. pytest counts session.testscollected AFTER
 # -k/-m deselection (_pytest/main.py:870), so a filter that matches nothing lands
 # on the same `testscollected == 0` branch as a bad path or a file with no tests

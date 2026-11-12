@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from bridge import aifeatures, config, paths, runner, store
+from bridge import aifeatures, config, flowsettings, paths, runner, store
 
 store.init()
 SID = "11111111-2222-3333-4444-555555555555"
@@ -296,7 +296,7 @@ def test_router_off_no_enqueue(fake_queue, flow_job_with_next, router_off):
 
 
 def test_nextstep_off_no_enqueue(fake_queue, flow_job_with_next, monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "router")
+    flowsettings.change({"flow": "build", "key": "next", "value": False})   # BUILD's NEXT on HOLD
     assert paths.continue_after_turn(flow_job_with_next) is False
 
 
@@ -868,6 +868,14 @@ def _steps(sid):
 
 def _switches(monkeypatch, *on):
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in on)
+    _reseed()
+
+
+def _reseed():
+    """Flow settings read afresh from the switches, as on an install that never set them."""
+    flowsettings._cache.clear()   # noqa: SLF001
+    if os.path.exists(flowsettings._file()):   # noqa: SLF001
+        os.remove(flowsettings._file())   # noqa: SLF001
 
 
 @pytest.mark.parametrize("path, before", [("build", ["grill", "spec", "tickets", "build"]),

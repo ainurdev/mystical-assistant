@@ -1403,15 +1403,18 @@ class Handler(BaseHTTPRequestHandler):
                     root = _abs_within((body.get("cwd") or "").strip()) or _abs_project(body.get("project"))
                     from bridge import paths   # the session's own overrides (the FLOW chip) win
                     sid = str(body.get("session") or "")
-                    own = (paths.get(sid) or {}).get("overrides") or {}
+                    flow = paths.get(sid) or {}
+                    own = flow.get("overrides") or {}
                     off = {k for k in route.SUBS if not own.get(k, aifeatures.enabled(k))}
+                    from bridge import flowsettings   # TICKETS as the session's flow has it, BUILD's with none
+                    ticketruns = flowsettings.tickets(paths.flow_id(flow.get("path")))
                     picked = route.pick(
                         body.get("text") or "",
                         prompts=[p for p in body.get("prompts") or [] if isinstance(p, str)],
                         last_status=body.get("last_status"), ctx_tokens=body.get("ctx_tokens"),
                         first=body.get("first") is True,
                         cmds={c["name"]: c["description"] for c in commands.available(root)},
-                        root=root, off=frozenset(off), ticketruns=aifeatures.enabled("ticketruns"),
+                        root=root, off=frozenset(off), ticketruns=ticketruns,
                         flow_next=paths.pending(sid))
                 except Exception:  # noqa: BLE001 — a body or a rule that fails is just "no route"
                     pass
