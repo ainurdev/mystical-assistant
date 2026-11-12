@@ -17,7 +17,7 @@ A question or permission a session waits on before its turn can go on. It waits 
 _Avoid_: request, prompt
 
 **Flow**:
-A kind of work and the fixed order of **Steps** a **Session** follows for it. The six in the prompt box's row (DESIGN, BUILD, REFACTOR, FIX, SHIP, ASK) are tapped by you, guessed by the box, or picked by Claude for a prompt sent with none.
+A kind of work and the fixed order of **Steps** a **Session** follows for it. The six in the prompt box's row (DESIGN, BUILD, REFACTOR, FIX, SHIP, ASK) are tapped by you, guessed by the box, or picked by Claude for a prompt sent with none. A session follows one flow at a time and can run several over its life, one after another; the one it is on until its last step is done is its active flow. Tapping another flow stops the active one where it was.
 _Avoid_: path, kind, pipeline, workflow, plan
 
 **Step**:
