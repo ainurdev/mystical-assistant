@@ -144,7 +144,7 @@ _PATH_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "enum": ["feature", "bug", "refactor", "one"]},
+                "path": {"type": "string", "enum": ["design", "build", "refactor", "fix", "one"]},
                 "why": {"type": "string", "description": "One line: why this path fits."},
                 "skill": {"type": "string", "description": "For path 'one': the skill to run."},
             },

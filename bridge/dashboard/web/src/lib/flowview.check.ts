@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/flowview.check.ts
-import { flowChip, flowView, movesElsewhere, type Flow } from "./flowview.ts";
+import { flowChip, flowLabel, flowOf, flowView, movesElsewhere, type Flow } from "./flowview.ts";
 import type { Turn } from "../chat.ts";
 
 const flow = (path: string, done: string[]): Flow => ({ path, by: "claude", why: "new feature", auto: true, at: 1, done, next: null });
@@ -63,13 +63,13 @@ console.assert(answering.stations[5].state === "now", "a running turn is still n
 console.assert(flowView({ ...flow("feature", ["grill"]), next: { station: "spec", turn_id: "t", started: false } }, []).stations[1].state === "auto", "not started: still its own kind");
 
 // The bridge's own steps (REVIEW and AUDIT while PONYTAIL is on), skipped ones, and the FLOW chip.
-const here: Flow = { ...flow("feature-here", ["grill", "build-here"]), skipped: [], overrides: {},
+const here: Flow = { ...flow("build-here", ["grill", "build-here"]), skipped: [], overrides: {},
   stations: [["grill", "grill-with-docs", "you"], ["build-here", "implement", "auto"], ["review", "ponytail-review", "auto"],
     ["retro", "retro", "auto"], ["audit", "ponytail-audit", "auto"]] };
 const hv = flowView(here, []);
 console.assert(hv.total === 5 && hv.stations.map((x) => x.key).join() === "grill,build-here,review,retro,audit", `the bridge's steps: ${hv.stations.map((x) => x.key)}`);
 const c = flowChip(here, hv, { autopick: true, smartzone: true })!;
-console.assert(c.label === "feature here" && c.next.label === "review" && c.mark === "auto" && c.step === 3 && c.total === 5, `chip: ${JSON.stringify(c)}`);
+console.assert(c.label === "BUILD" && c.flow === "build" && c.next.label === "review" && c.mark === "auto" && c.step === 3 && c.total === 5, `chip: ${JSON.stringify(c)}`);
 console.assert(c.skipTo === "retro" && c.jumps.map((j) => j.key).join() === "retro,audit", `skip and jump: ${c.skipTo} ${c.jumps.map((j) => j.key)}`);
 console.assert(c.here === 0 && c.opts.autopick.on && !c.opts.autopick.here && c.opts.nextstep.on, "nothing set here: SETTINGS' values");
 const heldChip = flowChip({ ...here, auto: false, overrides: { nextstep: false, autopick: false } }, hv, { autopick: true, smartzone: true })!;
@@ -115,3 +115,10 @@ console.assert(movesElsewhere(atReview, council("reviewing", 2)) && movesElsewhe
 console.assert(!movesElsewhere(atReview, council("stopped", 2)), "a council that stopped waits on you");
 console.assert(movesElsewhere(atReview, council("idle", 0)), "a REVIEW about to start moves it");
 console.assert(!movesElsewhere({ ...atReview, auto: false }, council("idle", 0)) && !movesElsewhere(atReview, council("idle", 0), false), "a held REVIEW starts nothing by itself");
+
+// The chip and SESSION ▸ FLOW name the flow: a here or tickets variant is its flow, an older bridge's names too.
+console.assert(["design-here", "build", "refactor", "fix", "ship", "ask"].map((p) => flowLabel({ path: p })).join() === "DESIGN,BUILD,REFACTOR,FIX,SHIP,ASK", "the six names");
+console.assert(flowLabel({ path: "feature-here" }) === "BUILD" && flowLabel({ path: "bug" }) === "FIX", "an older bridge's names");
+console.assert(flowLabel({ path: "one", skill: "implement" }) === "implement" && flowOf("one") === null, "a one-skill path names its skill");
+const fixChip = flowChip({ ...skilled, overrides: {} }, flowView(skilled, []), {})!;
+console.assert(fixChip.label === "FIX" && fixChip.flow === "fix" && fixChip.next.label === "review", `FIX · REVIEW: ${JSON.stringify(fixChip)}`);

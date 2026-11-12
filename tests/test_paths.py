@@ -80,25 +80,25 @@ def state_dir():
 
 
 def test_feature_grill_done_goes_to_spec(state_dir):
-    paths.set_path("s1", "feature", "new feature", "claude")
+    paths.set_path("s1", "build", "new feature", "claude")
     assert paths.step_done("s1", "t1") == "spec"
 
 
 def test_choice_here_switches_to_feature_here(state_dir):
-    paths.set_path("s1", "feature", "small", "claude")
+    paths.set_path("s1", "build", "small", "claude")
     assert paths.step_done("s1", "t1", choice="here") == "build-here"
     g = paths.get("s1")
-    assert g["path"] == "feature-here" and g["done"] == ["grill"]
+    assert g["path"] == "build-here" and g["done"] == ["grill"]
 
 
 def test_step_done_same_turn_twice_is_one_step(state_dir):
-    paths.set_path("s1", "bug", "crash", "rule")            # PONYTAIL is on by default: REVIEW follows
+    paths.set_path("s1", "fix", "crash", "rule")            # PONYTAIL is on by default: REVIEW follows
     assert paths.step_done("s1", "t1") == "review" and paths.step_done("s1", "t1") == "review"
     assert paths.get("s1")["done"] == ["diagnose"]
 
 
 def test_last_station_returns_none(state_dir):
-    paths.set_path("s1", "feature-here", "x", "rule")     # grill, build here, review, retro, audit
+    paths.set_path("s1", "build-here", "x", "rule")     # grill, build here, review, retro, audit
     for i in range(4):
         paths.step_done("s1", f"t{i}")
     assert paths.step_done("s1", "t9") is None
@@ -107,17 +107,17 @@ def test_last_station_returns_none(state_dir):
 
 
 def test_flows_survive_reload(state_dir):
-    paths.set_path("s1", "bug", "crash", "rule")
+    paths.set_path("s1", "fix", "crash", "rule")
     paths._cache.clear()
     g = paths.get("s1")
-    assert g["path"] == "bug" and g["auto"] is True and g["at"] > 0
+    assert g["path"] == "fix" and g["auto"] is True and g["at"] > 0
     paths.set_auto("s1", False)
     paths._cache.clear()
     assert paths.get("s1")["auto"] is False
 
 
 def test_new_path_replaces_old(state_dir):
-    paths.set_path("s1", "bug", "crash", "rule")
+    paths.set_path("s1", "fix", "crash", "rule")
     paths.step_done("s1", "t1")
     paths.set_path("s1", "refactor", "mess", "claude")
     g = paths.get("s1")
@@ -137,7 +137,7 @@ def test_unknown_path_rejected(state_dir):
 
 
 def test_typed_to_tickets_joins_feature_at_tickets():
-    assert paths.path_for_command("to-tickets") == ("feature", "tickets")
+    assert paths.path_for_command("to-tickets") == ("build", "tickets")
     assert paths.path_for_command("research") == ("one", "research")
 
 
@@ -195,8 +195,8 @@ def test_path_tools_hidden_for_rivendell_origin(router_on, rivendell_origin):
 
 
 def test_set_path_and_step_done_idempotent(server, flow_session):
-    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "feature", "why": "new"})["obj"] == \
-        {"text": "Path recorded: feature."}
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "build", "why": "new"})["obj"] == \
+        {"text": "Path recorded: build."}
     a = server.post("/local/flow/done", {"claude_session_id": "cf1"})
     b = server.post("/local/flow/done", {"claude_session_id": "cf1"})
     assert paths.get(flow_session)["next"]["station"] == "spec" and a == b
@@ -223,7 +223,7 @@ def test_a_full_skill_name_is_kept_short(state_dir):
 
 
 def test_auto_route(server, flow_session):
-    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.set_path(flow_session, "fix", "x", "claude")
     assert server.post("/local/flow/auto", {"session": flow_session, "on": False})["obj"] == {"ok": True}
     assert paths.get(flow_session)["auto"] is False
     assert server.post("/local/flow/auto", {"session": "zzz", "on": True})["code"] == 404
@@ -254,7 +254,7 @@ def _job(sid, turn="t1", **kw):
 
 @pytest.fixture
 def flow_job(state_dir, nextstep_on):
-    paths.set_path("f1", "feature", "new", "claude")
+    paths.set_path("f1", "build", "new", "claude")
     return _job("f1")
 
 
@@ -318,7 +318,7 @@ def test_interrupted_or_failed_turn_does_not_start(fake_queue, flow_job_with_nex
 
 
 def test_build_station_is_left_to_the_user(fake_queue, nextstep_on):
-    paths.set_path("f2", "feature", "x", "claude")
+    paths.set_path("f2", "build", "x", "claude")
     for t in ("a", "b", "c"):
         paths.step_done("f2", t)           # grill, spec, tickets done; build is next
     assert paths.continue_after_turn(_job("f2", "c")) is False and not fake_queue.items
@@ -329,7 +329,7 @@ def test_build_station_starts_tickets_when_on(fake_queue, state_dir, monkeypatch
     calls = []
     monkeypatch.setattr(tickets, "start_build", lambda sid: calls.append(sid) or "")
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
-    paths.set_path("f5", "feature", "x", "claude")
+    paths.set_path("f5", "build", "x", "claude")
     for t in ("a", "b", "c"):
         paths.step_done("f5", t)           # build is next
     assert paths.continue_after_turn(_job("f5", "c")) is True and calls == ["f5"] and not fake_queue.items
@@ -338,7 +338,7 @@ def test_build_station_starts_tickets_when_on(fake_queue, state_dir, monkeypatch
 
 
 def test_mark_done_marks_once_and_starts_nothing(fake_queue, state_dir):
-    paths.set_path("f6", "feature", "x", "claude")
+    paths.set_path("f6", "build", "x", "claude")
     paths.mark_done("f6", "build")
     paths.mark_done("f6", "build")
     assert paths.get("f6")["done"] == ["build"] and not fake_queue.items
@@ -360,7 +360,7 @@ def test_the_smart_zone_starts_at_150k_as_in_route(fake_queue, flow_job_with_nex
 
 
 def test_advance_from_merge_enqueues_retro(fake_queue, nextstep_on):
-    paths.set_path("f3", "feature", "x", "claude")
+    paths.set_path("f3", "build", "x", "claude")
     for t in ("a", "b", "c", "d"):
         paths.step_done("f3", t)           # through build
     assert paths.advance("f3", "merge") is True
@@ -370,7 +370,7 @@ def test_advance_from_merge_enqueues_retro(fake_queue, nextstep_on):
 def test_typed_flow_command_joins_its_path(state_dir, router_on):
     paths.on_turn_start("s9", "/mattpocock-skills:diagnosing-bugs the crash")
     f = paths.get("s9")
-    assert f["path"] == "bug" and f["by"] == "rule"
+    assert f["path"] == "fix" and f["by"] == "rule"
     paths.on_turn_start("s9", "/mattpocock-skills:retro")
     assert (paths.get("s9")["path"], paths.get("s9")["skill"]) == ("one", "retro")   # not bug's next station
     paths.on_turn_start("s8", "fix the typo")
@@ -400,10 +400,10 @@ def test_typed_tdd_is_a_one_step_path(sess, fake_queue, nextstep_on):
 
 
 def test_a_typed_command_replaces_a_stale_path(sess, fake_queue, nextstep_on):
-    paths.set_path(sess, "feature", "new", "claude")
+    paths.set_path(sess, "build", "new", "claude")
     paths.step_done(sess, "t0")                          # grill done; stuck at SPEC
     t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
-    assert paths.get(sess)["path"] == "bug" and paths.get(sess)["done"] == []
+    assert paths.get(sess)["path"] == "fix" and paths.get(sess)["done"] == []
     assert paths.step_done(sess, t) == "retro"
     assert paths.continue_after_turn(_job(sess, t)) is True
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
@@ -412,8 +412,8 @@ def test_a_typed_command_replaces_a_stale_path(sess, fake_queue, nextstep_on):
 def test_a_typed_to_spec_joins_feature_at_spec(sess, nextstep_on):
     _turn(sess, "/mattpocock-skills:to-spec")
     f = paths.get(sess)
-    assert (f["path"], f["done"]) == ("feature", ["grill"])
-    assert paths.path_for_command("to-tickets") == ("feature", "tickets")
+    assert (f["path"], f["done"]) == ("build", ["grill"])
+    assert paths.path_for_command("to-tickets") == ("build", "tickets")
     assert paths.path_for_command("improve-codebase-architecture") == ("refactor", "improve")
     assert paths.path_for_command("tdd") == paths.path_for_command("implement")[:1] + ("tdd",) == ("one", "tdd")
 
@@ -426,7 +426,7 @@ def test_a_typed_implement_starts_nothing_after_it(sess, fake_queue, nextstep_on
 
 
 def test_the_next_station_typed_keeps_the_path(sess, nextstep_on):
-    paths.set_path(sess, "feature", "new", "claude")
+    paths.set_path(sess, "build", "new", "claude")
     paths.step_done(sess, "t0")
     before = paths.get(sess)
     _turn(sess, "/mattpocock-skills:to-spec")
@@ -434,7 +434,7 @@ def test_the_next_station_typed_keeps_the_path(sess, nextstep_on):
 
 
 def test_step_done_marks_the_station_its_turn_named(sess, nextstep_on):
-    paths.set_path(sess, "feature", "new", "claude")
+    paths.set_path(sess, "build", "new", "claude")
     t = "t-spec"
     store.start_turn(sess, t, "/mattpocock-skills:to-spec", None)   # SKILL PATHS came on mid-turn: no join
     assert paths.step_done(sess, t) == "tickets"
@@ -478,7 +478,7 @@ def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nexts
                         lambda s, slug, prefix: calls.append(("ensure", slug, prefix)) or ("feat/my-feature", "/wt"))
     monkeypatch.setattr(flowbranch, "carry_and_commit",
                         lambda src, dst, files, slug, msg="", ours=None: calls.append(("carry", src, dst, files, slug)) or True)
-    paths.set_path("b1", "feature-here", "new", "claude")
+    paths.set_path("b1", "build-here", "new", "claude")
     paths.step_done("b1", "t1")
     assert paths.continue_after_turn(_job("b1")) is True
     assert calls == [("ensure", "my-feature", "feat"), ("carry", "/p", "/wt", ["/p/GLOSSARY.md"], "my-feature")]
@@ -496,7 +496,7 @@ def test_build_here_failure_enqueues_nothing_and_tells_the_user(fake_queue, next
         raise flowbranch.FlowBranchError("pop conflict")
     monkeypatch.setattr(flowbranch, "carry_and_commit", boom)
     monkeypatch.setattr(runner, "_notify", lambda chat, text, *a, **k: sent.append((chat, text)))
-    paths.set_path("b2", "feature-here", "new", "claude")
+    paths.set_path("b2", "build-here", "new", "claude")
     paths.step_done("b2", "t1")
     assert paths.continue_after_turn(_job("b2")) is False
     assert not fake_queue.items and "pop conflict" in sent[0][1] and "feat/t" in sent[0][1]
@@ -598,7 +598,7 @@ def test_every_resume_nudge_starts_with_the_resume_mark():
 
 
 def test_merge_is_done_even_while_auto_is_held(fake_queue, nextstep_on, state_dir):
-    paths.set_path("f7", "feature", "x", "claude")
+    paths.set_path("f7", "build", "x", "claude")
     for t in ("a", "b", "c", "d"):
         paths.step_done("f7", t)           # through build
     paths.set_auto("f7", False)
@@ -672,18 +672,18 @@ def _stations(sid):
 
 
 def test_review_and_audit_join_the_paths_while_ponytail_is_on(state_dir, pony_on):
-    for path, want in (("feature-here", "grill build-here review retro audit"),
-                       ("bug", "diagnose review retro"),
-                       ("feature", "grill spec tickets build merge retro audit"),
+    for path, want in (("build-here", "grill build-here review retro audit"),
+                       ("fix", "diagnose review retro"),
+                       ("build", "grill spec tickets build merge retro audit"),
                        ("refactor", "improve tickets build merge retro audit")):
         paths.set_path("s1", path, "x", "rule")
         assert " ".join(_stations("s1")) == want, path
 
 
 def test_no_review_or_audit_while_ponytail_is_off(state_dir, nextstep_on):
-    paths.set_path("s1", "feature-here", "x", "rule")
+    paths.set_path("s1", "build-here", "x", "rule")
     assert _stations("s1") == ["grill", "build-here", "retro"]
-    paths.set_path("s1", "bug", "x", "rule")
+    paths.set_path("s1", "fix", "x", "rule")
     assert paths.step_done("s1", "t1") == "retro"
 
 
@@ -693,14 +693,14 @@ def test_review_runs_as_the_ponytail_command_and_ends_by_itself(sess, fake_queue
     assert paths.continue_after_turn(_end(sess, t)) is True
     assert fake_queue.items[-1]["prompt"].startswith("/ponytail-review ")
     r = _turn(sess, fake_queue.items[-1]["prompt"])     # its turn never calls StepDone
-    assert paths.get(sess)["path"] == "bug"              # a /ponytail- command keeps the path
+    assert paths.get(sess)["path"] == "fix"              # a /ponytail- command keeps the path
     assert paths.continue_after_turn(_end(sess, r)) is True
     assert paths.get(sess)["done"] == ["diagnose", "review"]
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
 
 
 def test_a_review_that_calls_step_done_moves_once(sess, fake_queue, pony_on):
-    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    paths.set_path(sess, "fix", "x", "rule", done=["diagnose"])
     r = _turn(sess, "/ponytail-review the work on this path")
     assert paths.step_done(sess, r) == "retro"
     assert paths.continue_after_turn(_end(sess, r)) is True
@@ -708,14 +708,14 @@ def test_a_review_that_calls_step_done_moves_once(sess, fake_queue, pony_on):
 
 
 def test_a_typed_review_off_its_step_marks_nothing(sess, fake_queue, pony_on):
-    paths.set_path(sess, "feature-here", "x", "rule")          # GRILL is the step
+    paths.set_path(sess, "build-here", "x", "rule")          # GRILL is the step
     r = _turn(sess, "/ponytail-review")
     assert paths.continue_after_turn(_end(sess, r)) is False
     assert paths.get(sess)["done"] == []
 
 
 def test_audit_runs_last(sess, fake_queue, pony_on):
-    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here", "review"])
+    paths.set_path(sess, "build-here", "x", "rule", done=["grill", "build-here", "review"])
     t = _turn(sess, "/mattpocock-skills:retro")
     assert paths.step_done(sess, t) == "audit"
     paths.continue_after_turn(_end(sess, t))
@@ -736,7 +736,7 @@ def test_a_session_override_wins_over_the_switch(sess, fake_queue, monkeypatch):
 
 
 def test_reset_follows_settings_again(sess, nextstep_on):
-    paths.set_path(sess, "bug", "x", "rule")
+    paths.set_path(sess, "fix", "x", "rule")
     paths.set_option(sess, "autopick", False)
     paths.set_option(sess, "smartzone", False)
     paths.set_auto(sess, False)
@@ -748,20 +748,20 @@ def test_reset_follows_settings_again(sess, nextstep_on):
 
 
 def test_only_the_three_switches_can_be_set_here(sess, nextstep_on):
-    paths.set_path(sess, "bug", "x", "rule")
+    paths.set_path(sess, "fix", "x", "rule")
     with pytest.raises(ValueError):
         paths.set_option(sess, "ponytail", True)
 
 
 def test_overrides_outlive_a_new_path(sess, nextstep_on):
-    paths.set_path(sess, "bug", "x", "rule")
+    paths.set_path(sess, "fix", "x", "rule")
     paths.set_auto(sess, False)
-    paths.set_path(sess, "feature", "y", "claude")
+    paths.set_path(sess, "build", "y", "claude")
     assert paths.get(sess)["overrides"] == {"nextstep": False} and paths.get(sess)["auto"] is False
 
 
 def test_a_flow_held_before_overrides_stays_held(state_dir, nextstep_on):
-    old = {"path": "bug", "skill": None, "by": "rule", "why": "x", "at": 1, "done": [], "next": None, "last": None}
+    old = {"path": "fix", "skill": None, "by": "rule", "why": "x", "at": 1, "done": [], "next": None, "last": None}
     with open(paths._file(), "w") as f:   # noqa: SLF001
         json.dump({"a": dict(old, auto=True), "b": dict(old, auto=False)}, f)
     paths._cache.clear()
@@ -776,7 +776,7 @@ def test_a_smart_zone_override_skips_the_compact(fake_queue, flow_job_with_next_
 
 
 def test_skip_to_marks_the_steps_between_skipped_and_starts_the_target(sess, fake_queue, pony_on):
-    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here"])
+    paths.set_path(sess, "build-here", "x", "rule", done=["grill", "build-here"])
     assert paths.skip_to(sess, "retro") == ""
     f = paths.get(sess)
     assert f["done"] == ["grill", "build-here", "review"] and f["skipped"] == ["review"]
@@ -784,14 +784,14 @@ def test_skip_to_marks_the_steps_between_skipped_and_starts_the_target(sess, fak
 
 
 def test_skip_to_the_end_completes_the_path(sess, fake_queue, pony_on):
-    paths.set_path(sess, "feature-here", "x", "rule", done=["grill", "build-here", "review", "retro"])
+    paths.set_path(sess, "build-here", "x", "rule", done=["grill", "build-here", "review", "retro"])
     assert paths.skip_to(sess, "") == ""
     f = paths.get(sess)
     assert f["next"] is None and f["skipped"] == ["audit"] and not fake_queue.items
 
 
 def test_a_skip_while_held_waits_for_the_release(sess, fake_queue, pony_on):
-    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    paths.set_path(sess, "fix", "x", "rule", done=["diagnose"])
     paths.set_auto(sess, False)
     assert paths.skip_to(sess, "retro") == ""
     assert paths.get(sess)["next"]["station"] == "retro" and not fake_queue.items
@@ -800,7 +800,7 @@ def test_a_skip_while_held_waits_for_the_release(sess, fake_queue, pony_on):
 
 
 def test_a_skip_mid_turn_spares_the_running_step_and_waits_for_its_end(sess, fake_queue, pony_on):
-    paths.set_path(sess, "feature-here", "x", "rule", done=["grill"])
+    paths.set_path(sess, "build-here", "x", "rule", done=["grill"])
     t = _turn(sess, "/mattpocock-skills:implement the thing")      # BUILD HERE runs
     assert paths.skip_to(sess, "retro") == ""
     assert paths.get(sess)["skipped"] == ["review"] and not fake_queue.items
@@ -810,14 +810,14 @@ def test_a_skip_mid_turn_spares_the_running_step_and_waits_for_its_end(sess, fak
 
 
 def test_a_skip_to_a_done_or_unknown_step_is_refused(sess, pony_on):
-    paths.set_path(sess, "bug", "x", "rule", done=["diagnose"])
+    paths.set_path(sess, "fix", "x", "rule", done=["diagnose"])
     assert paths.skip_to(sess, "diagnose") and paths.skip_to(sess, "nope")
     assert paths.skip_to("nopath", "") and paths.get(sess)["skipped"] == []
 
 
 def test_settings_and_step_routes(server, flow_session, monkeypatch):
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ponytail"))
-    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.set_path(flow_session, "fix", "x", "claude")
     r = server.post("/local/flow/settings", {"session": flow_session, "key": "autopick", "on": False})
     assert r["code"] == 200 and r["obj"]["flow"]["overrides"] == {"autopick": False}
     assert server.post("/local/flow/settings", {"session": flow_session, "reset": True})["obj"]["flow"]["overrides"] == {}
@@ -835,7 +835,7 @@ def test_route_reads_the_session_overrides(server, flow_session, monkeypatch):
     monkeypatch.setattr(route, "pick", lambda text, **kw: seen.update(kw) or None)
     monkeypatch.setattr(commands, "available", lambda root: [])
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "autopick", "smartzone"))
-    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.set_path(flow_session, "fix", "x", "claude")
     paths.set_option(flow_session, "autopick", False)
     server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
     assert seen["off"] == frozenset({"autopick"})
@@ -851,7 +851,7 @@ def test_route_hears_the_pending_step(server, flow_session, monkeypatch):
     monkeypatch.setattr(route, "pick", lambda text, **kw: seen.update(kw) or None)
     monkeypatch.setattr(commands, "available", lambda root: [])
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ponytail"))
-    paths.set_path(flow_session, "bug", "x", "claude")
+    paths.set_path(flow_session, "fix", "x", "claude")
     paths.step_done(flow_session, "t-" + flow_session)                  # DIAGNOSE done: REVIEW waits
     server.post("/local/route", {"session": flow_session, "text": "", "prompts": []})
     assert seen["flow_next"] == ("ponytail-review", paths._PONY["review"])   # noqa: SLF001
@@ -870,7 +870,7 @@ def _switches(monkeypatch, *on):
     monkeypatch.setattr(aifeatures, "enabled", lambda key: key in on)
 
 
-@pytest.mark.parametrize("path, before", [("feature", ["grill", "spec", "tickets", "build"]),
+@pytest.mark.parametrize("path, before", [("build", ["grill", "spec", "tickets", "build"]),
                                           ("refactor", ["improve", "tickets", "build"])])
 def test_review_follows_merge_only_with_tickets_and_its_own_switch_on(state_dir, monkeypatch, path, before):
     paths.set_path("f1", path, "new", "claude")
@@ -883,8 +883,8 @@ def test_review_follows_merge_only_with_tickets_and_its_own_switch_on(state_dir,
 
 def test_the_paths_that_merge_nothing_have_no_review(state_dir, monkeypatch):
     _switches(monkeypatch, "router", "ticketruns", "mergereview")
-    paths.set_path("h", "feature-here", "new", "claude")
-    paths.set_path("b", "bug", "broken", "claude")
+    paths.set_path("h", "build-here", "new", "claude")
+    paths.set_path("b", "fix", "broken", "claude")
     assert _steps("h") == ["grill", "build-here", "retro"] and _steps("b") == ["diagnose", "retro"]
 
 
@@ -893,14 +893,14 @@ def test_merge_ending_settles_whether_review_follows(state_dir, monkeypatch):
     past MERGE from before the step, or with it off, never grows one, and one that
     reached REVIEW keeps it when the switch goes off."""
     _switches(monkeypatch, "router", "ticketruns", "mergereview")
-    paths.set_path("old", "feature", "x", "claude", done=_BUILT + ["merge"])     # MERGE ended before the step existed
+    paths.set_path("old", "build", "x", "claude", done=_BUILT + ["merge"])     # MERGE ended before the step existed
     assert _steps("old")[-2:] == ["merge", "retro"]
-    paths.set_path("new", "feature", "x", "claude", done=_BUILT)
+    paths.set_path("new", "build", "x", "claude", done=_BUILT)
     assert paths.advance("new", "merge") is False                                 # AUTO NEXT STEPS is off: nothing starts
     assert paths.get("new")["next"]["station"] == "review"
     _switches(monkeypatch, "router", "ticketruns")
     assert _steps("new")[-3:] == ["merge", "review", "retro"]                     # reached: it stays
-    paths.set_path("off", "feature", "x", "claude", done=_BUILT)
+    paths.set_path("off", "build", "x", "claude", done=_BUILT)
     paths.advance("off", "merge")
     assert paths.get("off")["next"]["station"] == "retro" and "review" not in _steps("off")
     _switches(monkeypatch, "router", "ticketruns", "mergereview")
@@ -909,7 +909,7 @@ def test_merge_ending_settles_whether_review_follows(state_dir, monkeypatch):
 
 def test_review_done_goes_on_to_retro(state_dir, fake_queue, monkeypatch):
     _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
-    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths.set_path("f1", "build", "x", "claude", done=_BUILT + ["merge"])
     paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
     assert paths.advance("f1", "review") is True
     assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:retro"]
@@ -921,7 +921,82 @@ def test_step_done_in_the_flow_session_takes_a_waiting_review_as_done(state_dir,
     """The way on when the council stopped and you accept the work as it is: tell the
     flow's session to go on, and its StepDone ends REVIEW."""
     _switches(monkeypatch, "router", "nextstep", "ticketruns", "mergereview")
-    paths.set_path("f1", "feature", "x", "claude", done=_BUILT + ["merge"])
+    paths.set_path("f1", "build", "x", "claude", done=_BUILT + ["merge"])
     paths._cache["f1"]["next"] = {"station": "review", "turn_id": "", "started": True}
     assert paths.step_done("f1", "t-go-on") == "retro"
     assert paths.get("f1")["done"][-2:] == ["merge", "review"]
+
+
+# --- the six flows (flow-gear #01) ------------------------------------------
+
+def test_the_steps_table_says_which_steps_always_run():
+    fixed = {p: [st.station for st in sts if st.fixed] for p, sts in paths.PATHS.items()}
+    assert fixed == {"design": ["design"], "design-here": ["design"],
+                     "build": ["spec", "tickets", "build", "merge"], "build-here": ["build-here"],
+                     "refactor": ["improve", "tickets", "build", "merge"], "fix": ["diagnose"],
+                     "ship": ["ship"], "ask": ["answer"]}
+    own = {st.station for sts in paths.PATHS.values() for st in sts if st.own}
+    assert own == {"build", "merge"} and set(paths.FLOWS) == {p.split("-")[0] for p in paths.PATHS}
+
+
+@pytest.mark.parametrize("choice, path, then", [(None, "design", "spec"), ("tickets", "design", "spec"),
+                                                ("here", "design-here", "build-here")])
+def test_design_goes_grill_design_build(router_on, nextstep_on, fake_queue, state_dir, choice, path, then):
+    paths.set_path("d1", "design", "a new screen", "claude")
+    assert paths.step_done("d1", "t1", choice=choice) == "design"
+    assert paths.continue_after_turn(_job("d1", "t1")) is True
+    assert fake_queue.items[-1]["prompt"] == paths.DESIGN_TEXT       # /design-first, told not to build
+    assert paths.step_done("d1", "t2") == then                       # Approve: StepDone starts the build
+    assert paths.get("d1")["path"] == path and paths.get("d1")["done"] == ["grill", "design"]
+    if then == "spec":
+        assert paths.continue_after_turn(_job("d1", "t2")) is True
+        assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:to-spec"
+
+
+def test_design_runs_grill_design_build_review_retro(state_dir):
+    paths.set_path("d1", "design-here", "x", "rule")
+    assert _stations("d1") == ["grill", "design", "build-here", "review", "retro"]
+
+
+@pytest.mark.parametrize("flow, step", [("ship", "ship"), ("ask", "answer")])
+def test_a_one_step_flow_ends_at_its_turns_clean_end(state_dir, nextstep_on, fake_queue, flow, step):
+    paths.set_path("o1", flow, "you picked it", "rule")
+    failed, stopped = _job("o1", "t1"), _job("o1", "t2")
+    failed.status, stopped.interrupted = "error", True
+    assert paths.continue_after_turn(failed) is False and paths.continue_after_turn(stopped) is False
+    assert paths.get("o1")["done"] == []                               # a stopped or failed turn leaves it open
+    paths.continue_after_turn(_job("o1", "t3"))
+    f = paths.get("o1")
+    assert f["done"] == [step] and f["next"] is None and not fake_queue.items
+
+
+def test_old_records_carry_on_under_the_new_names(state_dir):
+    old = {"skill": None, "by": "rule", "why": "x", "at": 1, "skipped": [], "last": "t1",
+           "overrides": {"nextstep": False}}
+    recs = {"a": dict(old, path="feature", done=["grill"], next={"station": "spec", "turn_id": "t1", "started": False}),
+            "b": dict(old, path="feature-here", done=["grill"], next={"station": "build-here", "turn_id": "t1"}),
+            "c": dict(old, path="bug", done=["diagnose"], next={"station": "review", "turn_id": "t1"}),
+            "d": dict(old, path="refactor", done=[], next=None)}
+    with open(paths._file(), "w") as f:   # noqa: SLF001
+        json.dump(recs, f)
+    paths._cache.clear()
+    got = {k: paths.get(k) for k in recs}
+    assert {k: g["path"] for k, g in got.items()} == {"a": "build", "b": "build-here", "c": "fix", "d": "refactor"}
+    assert all(got[k]["done"] == recs[k]["done"] and got[k]["next"] == recs[k]["next"]
+               and got[k]["overrides"] == {"nextstep": False} for k in recs)
+    assert paths.step_done("a", "t2") == "tickets"                     # and it carries on
+
+
+def test_set_path_takes_the_old_names(state_dir, server, flow_session):
+    assert paths.set_path("s1", "feature-here", "x", "rule")["path"] == "build-here"
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "bug", "why": "x"})["obj"] == \
+        {"text": "Path recorded: fix."}
+
+
+def test_set_path_and_the_routing_text_name_the_new_flows():
+    from bridge import goal_mcp
+    enum = next(t for t in goal_mcp._PATH_TOOLS if t["name"] == "SetPath")["inputSchema"]["properties"]["path"]["enum"]
+    assert enum == ["design", "build", "refactor", "fix", "one"]
+    for name in ("design", "build", "fix", "refactor"):
+        assert f"\n- {name}: " in paths.PACK_TEXT
+    assert "feature:" not in paths.PACK_TEXT and "bug:" not in paths.PACK_TEXT

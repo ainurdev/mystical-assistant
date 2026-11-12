@@ -5149,6 +5149,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
            appearance: none; cursor: pointer; border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); border-radius: 12px;
            background: transparent; color: var(--txd); font-family: var(--ui-font, inherit); font-size: var(--t10); letter-spacing: .7px; white-space: nowrap; }
 [data-fam] .pb-flow { border-color: var(--line2); border-radius: 12px; }
+.pb-flow-n { color: var(--txd); }
 .pb-flow > b { font-weight: 700; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .pb-flow > svg:last-child { color: var(--acc); }
 .pb-flow:is([data-mark="held"], [data-mark="you"]) > svg:last-child { color: var(--warn); }

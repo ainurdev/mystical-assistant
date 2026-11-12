@@ -4,7 +4,7 @@ import { api, type Meter, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
 import { useAiFeatures } from "../../lib/ai";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
-import { flowView, movesElsewhere, type Flow, type FlowSet } from "../../lib/flowview";
+import { flowLabel, flowView, movesElsewhere, type Flow, type FlowSet } from "../../lib/flowview";
 import { FLOW_EVENT, flowChanged } from "../../lib/useFlow";
 import { KIND, ZONE, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "../../lib/meter";
 import { moments, type Moment } from "../../lib/moments";
@@ -508,7 +508,7 @@ export function SessionPanel({
     if (sessionId) api.skipReview(sessionId).then(() => setReread((n) => n + 1)).catch(() => {});
   };
   const nextLine = path && flow && find === null && (
-    <div className="ss-next" title={`${path.by === "claude" ? "Claude" : "A rule"} picked the ${flow.path === "one" ? "one-skill" : flow.path.replace(/-/g, " ")} path: ${path.why}`}>
+    <div className="ss-next" title={`${path.by === "claude" ? "Claude" : "A rule"} picked the ${flowLabel(flow)} ${flow.path === "one" ? "skill" : "flow"}: ${path.why}`}>
       {nxt ? <>NEXT <b>{nxt.label.toUpperCase()}</b>
         <span className="ss-nm">{nxt.who === "you" ? "waits for you" : flow.auto ? (running ? "starts by itself after this turn" : "starts by itself") : "held: you start it"}</span></>
         : <span className="ss-nm">path complete · {path.total} {path.total === 1 ? "step" : "steps"}</span>}
@@ -531,7 +531,7 @@ export function SessionPanel({
   const away = path?.stations.find((s) => s.skill === null && s.state !== "done")?.key;
   const flowBlock = !path || !flow ? (flowRead || !ai.router) && <div className="ss-lbl">FLOW <span className="ss-tag">no path</span></div> : (
     <>
-      {head("flow", "FLOW", flow.path === "one" ? flow.skill ?? "one skill" : flow.path.replace(/-/g, " "),
+      {head("flow", "FLOW", flowLabel(flow),
         path.stations.every((s) => s.state === "done") ? "complete" : <>step <b>{path.step}</b> of {path.total}</>, null,
         `${path.by === "claude" ? "Claude" : "A rule"} picked this path: ${path.why}`)}
       {open.flow && path.why && <div className="ss-why" title={path.why}>{path.by === "claude" ? "Claude" : "A rule"} picked it: {path.why}</div>}
