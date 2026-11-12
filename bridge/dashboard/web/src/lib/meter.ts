@@ -123,12 +123,15 @@ type Span = { started: number | null; ended: number | null };
 /** Which flow each turn row ran under, as an index into `flows` (oldest first), or -1: the
  *  latest flow begun by the row's end (a flow Claude picks mid-turn owns that turn), unless
  *  it had ended before the row began. Turns before the first flow, or after one ended with
- *  none after it, are outside every flow: only TIME counts them. */
+ *  none after it, are outside every flow: only TIME counts them. The bridge keeps `at` and a
+ *  turn's length in whole seconds, so a flow begun in a turn's last second (one queued behind
+ *  it) isn't that turn's; and only the last row runs on to now, a finished one with no end
+ *  known (a teammate's turn) ends where it began. */
 export function flowOfRows(flows: { at: number; end?: number | null }[], rows: Span[], now: number): number[] {
-  return rows.map((r) => {
+  return rows.map((r, j) => {
     if (r.started == null) return -1;
-    const end = r.ended ?? now;
-    const i = flows.reduce((k, f, j) => (f.at <= end ? j : k), -1);
+    const end = Math.max(r.started, (r.ended ?? (j === rows.length - 1 ? now : r.started)) - 1);
+    const i = flows.reduce((k, f, n) => (f.at <= end ? n : k), -1);
     const over = i >= 0 ? flows[i].end : null;
     return over != null && over < r.started ? -1 : i;
   });
@@ -154,7 +157,7 @@ export function flowSpans(
   });
 }
 
-export interface TrackSeg { key: string; runs: number[]; secs: number; tokens: number }
+export interface TrackSeg { key: string; runs: number[]; secs: number }
 
 /** FLOWS' track: a segment per flow, oldest first. ASK, SHIP and each one-skill run fold
  *  into one segment, where their latest run is, its time and spend summed. */
@@ -165,7 +168,7 @@ export function trackSegs(flows: { path: string; skill?: string | null; at: numb
     const key = id === "ask" || id === "ship" ? id : f.path === "one" ? `one:${f.skill ?? ""}` : `#${f.at}`;
     groups.set(key, [...(groups.get(key) ?? []), i]);
   });
-  return [...groups].map(([key, runs]) => ({ key, runs, secs: runs.reduce((n, i) => n + spans[i].secs, 0), tokens: runs.reduce((n, i) => n + spans[i].tokens, 0) }))
+  return [...groups].map(([key, runs]) => ({ key, runs, secs: runs.reduce((n, i) => n + spans[i].secs, 0) }))
     .sort((a, b) => a.runs[a.runs.length - 1] - b.runs[b.runs.length - 1]);
 }
 

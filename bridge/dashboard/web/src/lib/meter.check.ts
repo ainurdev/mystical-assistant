@@ -68,6 +68,12 @@ const fl = [{ at: 100, end: 500 }, { at: 1000, end: null }];
 const fr = [{ started: 50, ended: 90, ids: ["z"] }, { started: 95, ended: 200, ids: ["a"] }, { started: 300, ended: 400, ids: ["b", "b2"] },
   { started: 600, ended: 700, ids: ["c"] }, { started: 990, ended: null, ids: ["d"] }];
 ok(flowOfRows(fl, fr, 1200).join() === "-1,0,0,-1,1", "a turn before any flow, or after one ended, is outside them");
+// The bridge keeps a flow's `at` and a turn's length in whole seconds: a prompt queued behind a
+// turn starts its flow in the second that turn ended (stored end 205.4, `at` 205), not inside it.
+ok(flowOfRows([{ at: 100, end: 205 }, { at: 205, end: null }], [{ started: 200.4, ended: 205.4 }, { started: 205.8, ended: null }], 300).join() === "0,1",
+  "a flow queued behind a turn doesn't take that turn");
+ok(flowOfRows([{ at: 380, end: null }], [{ started: 50, ended: null }, { started: 400, ended: 450 }], 500).join() === "-1,0",
+  "a finished turn with no end known (a teammate's) isn't running until now");
 const sp = flowSpans(fl, fr, [[95, 200, "claude"], [200, 300, "away"], [300, 400, "tools"], [400, 600, "you"], [600, 700, "claude"],
   [700, 990, "away"], [990, 1200, "helpers"]], { z: { spent: 1 }, a: { spent: 10 }, b: { spent: 20 }, b2: { spent: 5 }, c: { spent: 100 }, d: { spent: 7 } }, 1200);
 ok(sp[0].rows.join() === "1,2" && sp[0].from === 95 && sp[0].to === 600 && sp[0].secs === 205 && sp[0].tokens === 35,
@@ -78,7 +84,7 @@ ok(flowSpans([{ at: 5000, end: null }], fr, [], {}, 1200)[0].rows.length === 0, 
 // The track: a segment per flow, oldest first; ASK, SHIP and one skill fold where their latest run is.
 const tf = [{ path: "design-here", at: 11 }, { path: "ask", at: 12 }, { path: "ship", at: 13 }, { path: "ask", at: 14 }, { path: "one", skill: "tdd", at: 15 }, { path: "fix", at: 16 }];
 const ts = trackSegs(tf, [100, 10, 20, 30, 5, 50].map((secs, i) => ({ rows: [i], from: 0, to: 0, secs, tokens: i })));
-ok(ts.map((x) => x.key).join(" ") === "#11 ship ask one:tdd #16" && ts[2].runs.join() === "1,3" && ts[2].secs === 40 && ts[2].tokens === 4,
+ok(ts.map((x) => x.key).join(" ") === "#11 ship ask one:tdd #16" && ts[2].runs.join() === "1,3" && ts[2].secs === 40,
   "ASK runs fold into one segment at their latest, summed; a flow keeps its key when older ones drop");
 ok(trackWidths([0, 0], 100).join() === "48.5,48.5", "nothing timed yet: even widths");
 ok(trackWidths([30, 10], 100).join() === "63.75,33.25", "each gets its minimum, the rest by worked time");
