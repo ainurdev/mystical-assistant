@@ -7,10 +7,11 @@ import { askConfirm } from "../ui/Ask";
 
 /** A ticket set lives in the flow chat that made it, the super session: a strip docked
  *  above the prompt box (A · WAVES, picked 2026-11-12, .mystical/design-drafts/ticket-map-v2)
- *  and LIVE, its ticket sessions at work inside it (C · LIVE GRID, picked the same day,
- *  .mystical/design-drafts/ticket-flow). LIVE replaced a full-window ticket map: the user
- *  wanted the working sessions shown in the session, not a modal over the app, and the
- *  ticket sessions out of the sidebar (they fold under the super session's row there).
+ *  and TICKETS, a list of its ticket sessions in place of its chat (2026-11-13,
+ *  .mystical/design-drafts/ticket-reading). A row opens that session in the normal session
+ *  view, under a ‹ back crumb and a TicketBrief: following a ticket reads like any session.
+ *  TICKETS replaced a grid of live tiles (C · LIVE GRID), which replaced a full-window map;
+ *  ticket sessions stay out of the sidebar (they fold under the super session's row there).
  *  Every ready ticket starts at once, so a graph column (1 + its longest blocker chain) is
  *  a wave that runs together; the strip shows a dot group per wave, what waits on you and
  *  its button, and its chevron opens the graph in place, remembered per set. A ticket's
@@ -155,7 +156,7 @@ function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
   return [set, () => setGen((g) => g + 1)];
 }
 
-/** What a set says in a few words, and the buttons that act on it: the strip and LIVE share these. */
+/** What a set says in a few words, and the buttons that act on it: the strip and TICKETS share these. */
 function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, reload: () => void, onOpenSession: (id: string) => void) {
   const [note, setNoteNow] = useState("");
   const noteT = useRef(0);
@@ -221,7 +222,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
   return { set, ns, kinds, name, facts, ops, call, action, dots, first };
 }
 
-/** Switch the open super session's view (Terminal listens): the strip's Live button. */
+/** Switch the open super session's view (Terminal listens): the strip's Sessions button. */
 export const showTicketsLive = (on: boolean) => window.dispatchEvent(new CustomEvent("hud:tickets-live", { detail: on }));
 
 /** `except`: the ticket session open now, inside this set. Then only NEEDS YOU shows, without
@@ -256,7 +257,7 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
         <button className="tm-btn ghost" onClick={toggle} aria-expanded={wide} aria-label={wide ? "Fold the ticket graph" : "Show the ticket graph"} title={wide ? "Fold" : "Show the graph"}>
           {wide ? <ChevronUp size={15} aria-hidden /> : <ChevronDown size={15} aria-hidden />}
         </button>
-        <button className="tm-btn acc" onClick={() => showTicketsLive(true)} aria-label="Watch the tickets at work"><span className="tm-open-w">Live</span> <Radio size={11} aria-hidden /></button>
+        <button className="tm-btn acc" onClick={() => showTicketsLive(true)} aria-label="Show the ticket sessions"><span className="tm-open-w">Sessions</span> <Radio size={11} aria-hidden /></button>
       </div>
       {wide && (
         <>
@@ -302,6 +303,7 @@ export function TicketList({ sessionId, status, onOpenSession }: {
   };
   const order = [...ns].sort((a, b) => RANK[kinds[a]] - RANK[kinds[b]] || a.localeCompare(b));
   const mergeSid = v.set.merge_session;
+  const into = v.set.feature_branch || "the feature branch";
   return (
     <div className="tl-live" role="region" aria-label={`Tickets: ${name}`}>
       <div className="tl-bar">
@@ -316,27 +318,30 @@ export function TicketList({ sessionId, status, onOpenSession }: {
       </div>
       <div className="tl-list">
         {mergeSid && (
-          <button className={`tl-row${v.set.status === "fix" ? " k-fix" : ""}`} onClick={() => onOpenSession(mergeSid)}>
-            <span className="tl-dot" style={{ background: v.set.status === "fix" ? COLOR.fix : v.set.status === "merged" ? COLOR.done : COLOR.run }} />
-            <span className="tl-no">⇢</span>
-            <span className="tl-lt"><b>merge into {v.set.feature_branch || "the feature branch"}</b>
-              <span>{v.set.status === "merged" ? "merged" : v.set.status === "fix" ? "needs a fix" : status.get(mergeSid)?.label || "merging"}</span></span>
-            <span className="tl-go" aria-hidden>›</span>
-          </button>
+          <div className={`tl-row${v.set.status === "fix" ? " k-fix" : ""}`}>
+            <button className="tl-open" onClick={() => onOpenSession(mergeSid)} title={`Open the merge into ${into}`}>
+              <span className="tl-dot" style={{ background: v.set.status === "fix" ? COLOR.fix : v.set.status === "merged" ? COLOR.done : COLOR.run }} />
+              <span className="tl-no">⇢</span>
+              <span className="tl-lt"><b>merge into {into}</b>
+                <span>{v.set.status === "merged" ? "merged" : v.set.status === "fix" ? "needs a fix" : status.get(mergeSid)?.label || "merging"}</span></span>
+              <span className="tl-go" aria-hidden>›</span>
+            </button>
+          </div>
         )}
         {order.map((n) => {
           const t = tk[n], k = kinds[n], sid = t.session_id;
           return (
-            <button key={n} className={`tl-row k-${k}`} disabled={!sid} onClick={() => sid && onOpenSession(sid)}
-                    title={sid ? `Open #${n} ${t.title}` : `#${n} has no session yet`}>
-              <span className="tl-dot" style={k === "q" ? undefined : { background: COLOR[k], boxShadow: busy(k) ? `0 0 6px ${COLOR[k]}` : undefined }} />
-              <span className="tl-no">#{n}</span>
-              <span className="tl-lt"><b>{t.title}</b><span style={k === "ask" || k === "idle" ? { color: COLOR[k] } : undefined}>{now(n)}</span></span>
-              {busy(k) && <span className="tl-tm">{ago(status.get(sid)?.since)}</span>}
-              {k === "fix" || k === "idle"
-                ? <span className="tm-btn sm" role="button" onClick={(e) => { e.stopPropagation(); ops.retry(n); }}><RotateCcw size={10} aria-hidden /> {k === "fix" ? "Retry" : "Continue"}</span>
-                : <span className="tl-go" aria-hidden>›</span>}
-            </button>
+            <div key={n} className={`tl-row k-${k}`}>
+              <button className="tl-open" disabled={!sid} onClick={() => sid && onOpenSession(sid)}
+                      title={sid ? `Open #${n} ${t.title}` : `#${n} has no session yet`}>
+                <span className="tl-dot" style={k === "q" ? undefined : { background: COLOR[k], boxShadow: busy(k) ? `0 0 6px ${COLOR[k]}` : undefined }} />
+                <span className="tl-no">#{n}</span>
+                <span className="tl-lt"><b>{t.title}</b><span style={k === "ask" || k === "idle" ? { color: COLOR[k] } : undefined}>{now(n)}</span></span>
+                {busy(k) && <span className="tl-tm">{ago(status.get(sid)?.since)}</span>}
+                {sid && <span className="tl-go" aria-hidden>›</span>}
+              </button>
+              {(k === "fix" || k === "idle") && <button className="tm-btn sm" onClick={() => ops.retry(n)}><RotateCcw size={10} aria-hidden /> {k === "fix" ? "Retry" : "Continue"}</button>}
+            </div>
           );
         })}
       </div>

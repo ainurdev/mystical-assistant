@@ -229,7 +229,7 @@ export function Terminal({
   run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
   limit, logins, status, savers, gridMain, statusAll, superTitle,
 }: {
-  /** Every session's status: LIVE colours a super session's ticket tiles from it. */
+  /** Every session's status: TICKETS colours a super session's ticket rows from it. */
   statusAll?: Map<string, SessionStatus>;
   /** The open ticket session's super session, for its way back. */
   superTitle?: string;
@@ -344,7 +344,7 @@ export function Terminal({
     return () => window.removeEventListener("hud:open-session", toChat);
   }, []);
   // A super session (the flow that made a ticket set) opens on TICKETS while its tickets
-  // build or merge; CHAT | TICKETS switches, and the strip's Live button asks for TICKETS.
+  // build or merge; CHAT | TICKETS switches, and the strip's Sessions button asks for TICKETS.
   const tset = selected?.tickets;
   const [livePick, setLivePick] = useState<{ id: string; on: boolean } | null>(null);
   const tkLive = isChat && !grid && !!tset && !!sessionId
@@ -698,7 +698,7 @@ export function Terminal({
         {isChat && !!tset && !grid && sessionId && (
           <span className="ma-viewsw" role="group" aria-label="Chat or its tickets">
             <button type="button" aria-pressed={!tkLive} onClick={() => setLivePick({ id: sessionId, on: false })}>CHAT</button>
-            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}>TICKETS {tset.done}/{tset.total}</button>
+            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}><span className="caps">Tickets</span> {tset.done}/{tset.total}</button>
           </span>
         )}
         <ViewTabs view={view} onView={onView} />
