@@ -1382,14 +1382,18 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     # The session's own checkout (a worktree's tickets are there), as _server_cwd reads it.
                     root = _abs_within((body.get("cwd") or "").strip()) or _abs_project(body.get("project"))
-                    off = {k for k in route.SUBS if not aifeatures.enabled(k)}
+                    from bridge import paths   # the session's own overrides (the FLOW chip) win
+                    sid = str(body.get("session") or "")
+                    own = (paths.get(sid) or {}).get("overrides") or {}
+                    off = {k for k in route.SUBS if not own.get(k, aifeatures.enabled(k))}
                     picked = route.pick(
                         body.get("text") or "",
                         prompts=[p for p in body.get("prompts") or [] if isinstance(p, str)],
                         last_status=body.get("last_status"), ctx_tokens=body.get("ctx_tokens"),
                         first=body.get("first") is True,
                         cmds={c["name"]: c["description"] for c in commands.available(root)},
-                        root=root, off=frozenset(off), ticketruns=aifeatures.enabled("ticketruns"))
+                        root=root, off=frozenset(off), ticketruns=aifeatures.enabled("ticketruns"),
+                        flow_next=paths.pending(sid))
                 except Exception:  # noqa: BLE001 — a body or a rule that fails is just "no route"
                     pass
             return self._json({"route": picked})
@@ -1570,6 +1574,27 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
             return self._json({"removed": removed, "skipped": skipped})
+        if path in ("/local/flow/settings", "/local/flow/step"):
+            # The prompt box's FLOW chip: this session's overrides of three SETTINGS
+            # switches, and skipping steps (bridge/paths.py). Answers carry the flow.
+            from bridge import paths
+            sid = str(body.get("session") or "")
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat or not paths.get(sid):
+                return self._json({"error": "not found"}, 404)
+            if path == "/local/flow/step":
+                err = paths.skip_to(sid, str(body.get("to") or ""))
+                if err:
+                    return self._json({"error": err}, 400)
+            elif body.get("reset"):
+                paths.reset(sid)
+            else:
+                on = body.get("on")
+                try:
+                    paths.set_option(sid, str(body.get("key") or ""), None if on is None else bool(on))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "flow": paths.get(sid)})
         if path in ("/local/flow/set", "/local/flow/done", "/local/flow/auto"):
             # The goals MCP's SetPath / StepDone (bridge/goal_mcp.py) and the
             # dashboard's auto switch (bridge/paths.py). Answers are text for Claude.

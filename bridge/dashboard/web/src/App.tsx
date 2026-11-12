@@ -166,6 +166,8 @@ import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
+import { flowChip, flowView } from "./lib/flowview";
+import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
 
@@ -605,6 +607,11 @@ export function App() {
 
   const active = activeOf(turns);
   const running = active !== null;
+  // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
+  const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
+    `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
+  const boxChip = useMemo(() => flowChip(boxFlow, flowView(boxFlow, turns, boxSet, !!ai.ticketruns), ai),
+    [boxFlow, boxSet, turns, ai]);
   // A Rivendell job whose answer is the point (lib/jobs oneShot) shows its job
   // bar instead of the composer, until you ask about it or it already has a
   // follow-up. Asked-about sessions are remembered for this page's life only.
@@ -3653,7 +3660,8 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
+                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={boxChip?.opts.smartzone.on ?? ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
+                      flowChip={boxChip} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

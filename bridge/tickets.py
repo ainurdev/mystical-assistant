@@ -416,11 +416,20 @@ def _elsewhere(st: dict, n: str) -> str:
             + f" For where the whole set stands, run {_STATUS} {st['slug']}.")
 
 
+def _done_line() -> str:
+    """How a ticket ends. With PONYTAIL on it reviews its own diff first: a ticket path
+    has no REVIEW station, since MERGE is what joins the branches (bridge/paths.py)."""
+    if aifeatures.enabled("ponytail"):
+        return ("When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
+                "fix what it finds and commit, then call StepDone.")
+    return "When it is done and the tests pass, call StepDone."
+
+
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
     t = st["tickets"][n]
     return (f"/mattpocock-skills:implement {t['path']}\n\nThis is ticket #{n} of {st['slug']}. "
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            "When it is done and the tests pass, call StepDone." + _elsewhere(st, n)
+            + _done_line() + _elsewhere(st, n)
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
 
 
@@ -431,7 +440,7 @@ def _again(st: dict, n: str, word: str = "Try this ticket again") -> str:
     return ("No path for this message.\n\n"
             f"{word}: {t['path']}\n"
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            "When it is done and the tests pass, call StepDone." + _elsewhere(st, n))
+            + _done_line() + _elsewhere(st, n))
 
 
 def _one_step(sid: str, st: dict, n: str) -> None:

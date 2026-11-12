@@ -1299,3 +1299,15 @@ def test_a_ticket_prompt_says_where_the_whole_set_stands(make_set):
     assert f"{tickets._STATUS} x." in s.starts[0]["prompt"]
     s.finish("01")
     assert f"{tickets._STATUS} x." in s.starts[-1]["prompt"]
+
+
+def test_with_ponytail_on_a_ticket_reviews_its_diff_before_step_done(make_set, monkeypatch):
+    s = make_set({"01": None}, build=False)
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "ticketruns", "ponytail"))
+    assert s.build() == ""
+    assert (
+        "When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
+        "fix what it finds and commit, then call StepDone." in s.starts[0]["prompt"])
+    s.finish("01", commit=False)
+    tickets.retry(s.folder, "01")
+    assert "fix what it finds and commit, then call StepDone." in s.starts[-1]["prompt"]

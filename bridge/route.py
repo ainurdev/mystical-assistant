@@ -121,7 +121,11 @@ _WHY = {skill: why for skill, _, why in _RULES} | {
     "implement": "build it here, test-first",
     "grill-me": "the same interview, without touching the docs",
     "retro": "look back: what would have made this easier",
+    "ponytail-review": "the path's REVIEW: read the work it did",
+    "ponytail-audit": "the path's AUDIT: the whole repo, last",
 }
+# A turn sent as one of ponytail's two path steps (bridge/paths.py REVIEW and AUDIT).
+_PONY = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 
 
 def _pairs(*skills):
@@ -149,7 +153,7 @@ class _Step(NamedTuple):
 def _resolve(skill, cmds):
     """The command name to send for `skill`, or None when it isn't listed. compact
     is the CLI's own; everything else is the pack's, never a bare name."""
-    name = skill if skill == "compact" else _NS + skill
+    name = skill if skill == "compact" else f"ponytail:{skill}" if skill.startswith("ponytail-") else _NS + skill
     return name if name in cmds else None
 
 
@@ -282,7 +286,8 @@ def _route(step, cmds, auto=False):
 
 def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_tokens: "int | None",
          first: bool, cmds: "dict[str, str]", root: "str | None",
-         off: "frozenset[str]" = frozenset(), ticketruns: bool = False) -> "dict | None":
+         off: "frozenset[str]" = frozenset(), ticketruns: bool = False,
+         flow_next: "tuple[str, str] | None" = None) -> "dict | None":
     """The one route to offer for `text` (what is in the composer), or None.
 
     An empty `text` asks for the next step after a turn that finished. `prompts` are
@@ -290,7 +295,10 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     ended; `first` is True before the session's first turn; `cmds` maps every listed
     command name to its description; `root` is the absolute path of the session's
     checkout (the project's, or its worktree); `off` holds the sub-switches (SUBS)
-    that are turned off; `ticketruns` is the TICKETS switch.
+    that are turned off; `ticketruns` is the TICKETS switch. `flow_next` is (skill, arg) of
+    the step the session's path waits to start: it's what's offered when that step is
+    ponytail's (REVIEW, AUDIT) or the newest prompt was, since the prompts can't name a
+    step past a command that isn't Matt's.
 
     Returns {"name", "desc", "why", "auto", "arg", "fresh", "kind", "alts"}: kind is
     start | next, `arg` goes after the name, `fresh` means open it in a
@@ -304,8 +312,11 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     # No text asks for the next step. It belongs to the turn of the flow command that
     # just ended, so a typed reply since retires it, except in a grill, whose interview
     # spans typed turns.
+    newest = next((p for p in reversed(prompts) if not _COMPACT.match(p)), "")
     if t:
         step = _typed(t, last, done, cmds)
+    elif done and flow_next and (flow_next[0].startswith("ponytail-") or _PONY.match(newest)):
+        step = _Step(flow_next[0], "next", _WHY.get(flow_next[0], "the path's next step"), flow_next[1])
     elif done and last and (last[0] in _GRILLS or _boundary(prompts)):
         step = _next(last, root, ticketruns)
     else:

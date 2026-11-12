@@ -607,3 +607,34 @@ def test_the_spec_beside_the_tickets_is_no_ticket(root):
     issues = tickets(root, "01-a.md", "02-b.md", "SPEC.md")
     assert go(root, "", prompts=[TICKETS])["arg"] == f"{issues}/01-a.md"
     assert go(root, "", prompts=[flow("implement", f"{issues}/02-b.md")])["name"] == NS + "retro"
+
+
+# --- REVIEW and AUDIT (ponytail's, bridge/paths.py): the path says what's next ----------
+
+PONY = dict(CMDS, **{"ponytail:ponytail-review": "quality review", "ponytail:ponytail-audit": "quality audit"})
+
+
+def test_a_pending_review_is_offered_where_the_prompts_would_offer_retro(root):
+    r = route.pick("", prompts=[flow("implement", "x")], last_status="done", ctx_tokens=None, first=False,
+                   cmds=PONY, root=root, flow_next=("ponytail-review", "the work on this path"))
+    assert (r["name"], r["arg"], r["kind"], r["auto"]) == ("ponytail:ponytail-review", "the work on this path", "next", False)
+
+
+def test_after_a_ponytail_step_the_path_names_the_next(root):
+    prompts = [flow("implement", "x"), "/ponytail:ponytail-review the work on this path"]
+    r = route.pick("", prompts=prompts, last_status="done", ctx_tokens=None, first=False, cmds=PONY, root=root,
+                   flow_next=("retro", ""))
+    assert r["name"] == NS + "retro"
+    assert go(root, prompts=prompts, cmds=PONY) is None            # the prompts alone see no boundary there
+
+
+def test_a_pending_matt_step_is_still_the_prompts_call(root):
+    r = route.pick("", prompts=[flow("diagnosing-bugs", "x")], last_status="done", ctx_tokens=None, first=False,
+                   cmds=PONY, root=root, flow_next=("to-spec", ""))
+    assert r["name"] == NS + "retro"                                  # _next's pick, not the hint
+
+
+def test_no_ponytail_listed_no_review_offered(root):
+    r = route.pick("", prompts=[flow("implement", "x")], last_status="done", ctx_tokens=None, first=False,
+                   cmds=CMDS, root=root, flow_next=("ponytail-review", ""))
+    assert r is None
