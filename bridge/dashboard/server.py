@@ -1640,11 +1640,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"text": f"Path not recorded: {name.upper()} is switched off in FLOWS. "
                                                "Pick another path, or start nothing."})
                 try:
-                    p = paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
-                                       str(body.get("skill") or "") or None)["path"]   # an old name: its flow's
+                    f = paths.claude_path(s["id"], p, str(body.get("why") or ""), str(body.get("skill") or "") or None,
+                                          store.running_turn_id(s["id"]) or store.latest_turn_id(s["id"]) or "")
                 except ValueError as e:   # an HTTP error would reach Claude as "Could not reach the bridge"
                     return self._json({"text": f"Path not recorded: {e}."})
-                return self._json({"text": f"Path recorded: {p}."})
+                if (f["next"] or {}).get("station") == "build-here":   # BUILD with its grill off
+                    return self._json({"text": f"Path recorded: {f['path']}. End your turn now: the build "
+                                               "starts on its own branch when it ends."})
+                return self._json({"text": f"Path recorded: {f['path']}."})   # an old name: its flow's
             if not paths.get(s["id"]):
                 return self._json({"text": "No path is running in this session."})
             turn = store.running_turn_id(s["id"]) or store.latest_turn_id(s["id"]) or ""

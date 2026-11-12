@@ -131,4 +131,4 @@ def test_paths_pack_is_in_every_turn_and_byte_stable(monkeypatch):
                                       claude_session_id=sid, new_session=True))
     two = _sysprompt(runner._base_cmd("hi", 555, stream=True, interactive=True,
                                       claude_session_id=sid))
-    assert paths.PACK_TEXT in one and one == two
+    assert paths.pack_text() in one and one == two

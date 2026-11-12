@@ -39,13 +39,13 @@ def test_licence_is_mit():
 
 def test_spec_and_tickets_go_to_the_mystical_tickets_folder():
     """Two edits from upstream (README): BUILD reads what these two skills write, so the
-    skills, PACK_TEXT and bridge/tickets.py must name one place."""
+    skills, pack_text() and bridge/tickets.py must name one place."""
     tk = open(_skill_md("to-tickets")).read()
     assert "write one file per ticket under `.mystical/tickets/<feature-slug>/<NN>-<slug>.md`" in tk
     assert ".scratch" not in tk
     assert "(local files: `.mystical/tickets/<feature-slug>/SPEC.md`)" in open(_skill_md("to-spec")).read()
     from bridge import paths
-    assert ".mystical/tickets" not in paths.PACK_TEXT   # the skills name the place; the pack must not write the spec itself
+    assert ".mystical/tickets" not in paths.pack_text()   # the skills name the place; the pack must not write the spec itself
 
 
 def test_a_review_and_ask_matt_look_where_the_spec_and_tickets_were_written():
