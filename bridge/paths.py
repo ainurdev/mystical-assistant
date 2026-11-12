@@ -104,7 +104,7 @@ _PICKS = {
 # With the grill switched off (flowsettings): DESIGN starts at its design, BUILD builds here,
 # started by the bridge at the turn's end so it moves onto its own branch first (claude_path).
 _NO_GRILL = {
-    "design": "Start design-first, then call SetPath with path design; when the user approves the design, "
+    "design": "Start the design-first skill (named just design-first, not mattpocock-skills:), then call SetPath with path design; when the user approves the design, "
               "call StepDone instead of building.",
     "build": "Don't start a skill or build in this turn: call SetPath with path build and end your turn; "
              "the build starts on its own branch when the turn ends.",

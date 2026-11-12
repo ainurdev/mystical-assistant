@@ -58,7 +58,7 @@ def test_each_flow_starts_at_its_first_step_as_set():
     flowsettings.change({"flow": "design", "key": "step", "step": "grill", "value": False})
     t = paths.pack_for("c1")
     assert "grill-with-docs" not in _line(t, "build") and "SetPath" in _line(t, "build")
-    assert "design-first" in _line(t, "design") and "grill-with-docs" not in _line(t, "design")
+    assert "design-first skill (named just design-first" in _line(t, "design") and "grill-with-docs" not in _line(t, "design")
     assert "diagnosing-bugs" in _line(t, "fix")
 
 
