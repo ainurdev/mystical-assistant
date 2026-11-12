@@ -241,9 +241,11 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         raise ValueError("path 'one' needs a skill")
     with _lock:
         _load_locked()
-        own = dict((_cache.get(session_id) or {}).get("overrides") or {})   # the session's, not the path's
+        old = _cache.get(session_id) or {}
+        own = dict(old.get("overrides") or {})   # the session's, not the path's
+        # `at` names this path to its ticket set (flow_at): a path replaced in the same second must differ.
         _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "overrides": own,
-                              "at": int(time.time()), "done": list(done or []), "skipped": [],
+                              "at": max(int(time.time()), (old.get("at") or 0) + 1), "done": list(done or []), "skipped": [],
                               "next": None, "last": None}
         _save_locked()
         return dict(_cache[session_id])
@@ -430,6 +432,44 @@ def path_for_command(skill: str) -> tuple:
     if not path:
         return "one", skill
     return path, next(st.station for st in PATHS[path] if st.skill == skill)
+
+
+# --- a flow the prompt box sends ---------------------------------------------
+
+# Esc's line, and SHIP's and ASK's: PACK_TEXT tells Claude to start no path behind it.
+NO_PATH = "No path for this message.\n\n"
+BY = {"you": "you picked", "guess": "the box guessed"}
+
+
+def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
+    """Why a send can't start `flow` ("" = it can): checked where the send comes in."""
+    if not on():
+        return "flows are off: SKILL PATHS is off in SETTINGS"
+    if flow not in FLOWS:
+        return f"unknown flow {flow!r}"
+    if by not in BY:
+        return f"by must be one of {', '.join(BY)}"
+    if prompt.startswith("/"):
+        return "a prompt that starts with / goes as typed, with no flow"
+    if agent != "claude":
+        return "flows are Claude's: this session runs another agent"
+    return ""
+
+
+def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
+    """The prompt box's flow starts with this turn: recorded for the session in place of
+    any running flow, and the prompt returned with its first step's command in front
+    (SHIP and ASK: the no-path line, so Claude moves them into no other flow). The
+    flow already running keeps it: nothing recorded, nothing in front. A prompt queued
+    before SKILL PATHS went off goes as typed."""
+    if not on():
+        return prompt
+    f = get(session_id)
+    if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
+        return prompt
+    set_path(session_id, flow, f"{BY[by]} {flow.upper()}", by)
+    skill = PATHS[flow][0].skill
+    return f"/mattpocock-skills:{skill} {prompt}" if skill else NO_PATH + prompt
 
 
 # --- starting the next step ---------------------------------------------------

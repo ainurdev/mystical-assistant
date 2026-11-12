@@ -14,10 +14,12 @@ import { live } from "./council.ts";
    The REVIEW after MERGE is the council's, in the merge session: the set carries
    that council's run, and one that stopped waits on you. */
 
+/** Who started the path: a rule (a typed /command), Claude, a tap in the prompt box, or its guess. */
+export type FlowBy = "rule" | "claude" | "you" | "guess";
 /** The SETTINGS switches one session overrides from the prompt box's FLOW chip (bridge/paths.py OPTIONS). */
 export type FlowOption = "nextstep" | "autopick" | "smartzone";
 export interface Flow {
-  path: string; skill?: string | null; by: "rule" | "claude"; why: string; auto: boolean; at: number;
+  path: string; skill?: string | null; by: FlowBy; why: string; auto: boolean; at: number;
   done: string[]; next: { station: string; turn_id: string; started?: boolean } | null;
   /** Switches set in this session over SETTINGS; a bridge older than the FLOW chip sends none. */
   overrides?: Partial<Record<FlowOption, boolean>>;
@@ -36,7 +38,7 @@ export interface FlowSet {
 export type StationState = "done" | "now" | "you" | "auto" | "next";
 export interface FlowView {
   stations: { key: string; label: string; skill: string | null; who: "you" | "auto"; state: StationState; skipped?: boolean }[];
-  step: number; total: number; why: string; by: "rule" | "claude";
+  step: number; total: number; why: string; by: FlowBy;
   nowTurn?: { started: number; tools: number; activity: string };
   note?: string; // what the ticket set says: tickets done and running, merging, why it stopped, or where the review stands
 }
@@ -60,6 +62,17 @@ export function flowOf(path: string): string | null {
   const id = path.split("-")[0];
   const f = OLD[id] ?? id;
   return FLOWS.includes(f) ? f : null;
+}
+
+/** The flow the session is on until its last step is done (the row's dot), else null. */
+export function runningFlow(flow: Flow | null): string | null {
+  return flow && (flow.stations ?? []).some(([k]) => !flow.done.includes(k)) ? flowOf(flow.path) : null;
+}
+
+/** Who started the path, as SESSION ▸ FLOW says it. A start from the box already says who in
+    its why ("you picked BUILD", "the box guessed BUILD"). */
+export function startedBy(by: FlowBy, why: string): string {
+  return by === "you" || by === "guess" ? why : `${by === "claude" ? "Claude" : "A rule"} picked it: ${why}`;
 }
 
 /** What FLOW names a path: its flow's name ("BUILD"), or a one-skill path's skill. */

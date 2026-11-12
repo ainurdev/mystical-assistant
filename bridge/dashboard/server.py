@@ -2510,6 +2510,10 @@ class Handler(BaseHTTPRequestHandler):
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.
+        from bridge import paths as flows   # `paths` below is the image paths
+        flow = body.get("flow") or None
+        if flow and (why := flows.flow_refusal(str(flow), str(body.get("by") or ""), prompt, agent)):
+            return self._json({"error": why}, 400)
         held = relevance.gate(chat, project_path, session_id, prompt,
                               bool(body.get("force")))
         if held:
@@ -2522,15 +2526,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(e)}, 413)
         # Esc took an auto-applied skill out of this prompt: tell the run there is no path.
         # After the gate and the empty check, so neither sees the prefix.
-        if prompt and body.get("no_path") is True and not prompt.startswith("/"):
-            prompt = "No path for this message.\n\n" + prompt
+        if prompt and body.get("no_path") is True and not flow and not prompt.startswith("/"):
+            prompt = flows.NO_PATH + prompt
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
                                          session_id=session_id, profile_id=profile_id,
                                          origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
-                                         runtime=runtime)
+                                         runtime=runtime, flow=flow,
+                                         flow_by=body.get("by") if flow else None)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -2616,6 +2621,12 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("model"), body.get("permission_mode"), None)
                 if err:
                     return self._json({"error": err}, 400)
+            from bridge import paths as flows   # `paths` below is the image paths
+            flow = body.get("flow") or None
+            if flow and (why := flows.flow_refusal(
+                    str(flow), str(body.get("by") or ""), prompt,
+                    profiles.agent_for(store.get_session(sid)))):
+                return self._json({"error": why}, 400)
             agent = (body.get("agent") or "").strip()
             try:
                 from bridge import ladder
@@ -2638,7 +2649,7 @@ class Handler(BaseHTTPRequestHandler):
                 effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
-                agent=agent or None)
+                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None)
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)

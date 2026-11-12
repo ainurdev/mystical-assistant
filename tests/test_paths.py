@@ -1000,3 +1000,147 @@ def test_set_path_and_the_routing_text_name_the_new_flows():
     for name in ("design", "build", "fix", "refactor"):
         assert f"\n- {name}: " in paths.PACK_TEXT
     assert "feature:" not in paths.PACK_TEXT and "bug:" not in paths.PACK_TEXT
+
+
+# --- ticket 02: the flow a send names starts at its turn ----------------------
+
+def test_a_tapped_build_records_it_and_puts_the_grill_in_front(sess, router_on):
+    assert paths.start_flow(sess, "build", "you", "add a digest") == "/mattpocock-skills:grill-with-docs add a digest"
+    f = paths.get(sess)
+    assert (f["path"], f["by"], f["why"]) == ("build", "you", "you picked BUILD")
+
+
+def test_a_guess_says_the_box_guessed(sess, router_on):
+    paths.start_flow(sess, "fix", "guess", "the list jumps")
+    assert (paths.get(sess)["by"], paths.get(sess)["why"]) == ("guess", "the box guessed FIX")
+
+
+@pytest.mark.parametrize("flow, skill", [("design", "grill-with-docs"), ("refactor", "improve-codebase-architecture"),
+                                         ("fix", "diagnosing-bugs")])
+def test_each_flow_starts_with_its_first_step(sess, router_on, flow, skill):
+    assert paths.start_flow(sess, flow, "you", "x y") == f"/mattpocock-skills:{skill} x y"
+    t = _turn(sess, f"/mattpocock-skills:{skill} x y")     # the turn joins the recorded flow, not a new one
+    assert paths.get(sess)["path"] == flow and paths.get(sess)["by"] == "you"
+    assert paths.step_done(sess, t) is not None
+
+
+@pytest.mark.parametrize("flow, step", [("ship", "ship"), ("ask", "answer")])
+def test_ship_and_ask_go_behind_the_no_path_line_and_end_with_the_turn(sess, nextstep_on, fake_queue, flow, step):
+    prompt = paths.start_flow(sess, flow, "you", "merge this")
+    assert prompt == paths.NO_PATH + "merge this"
+    t = _turn(sess, prompt)
+    assert paths.get(sess)["path"] == flow
+    paths.continue_after_turn(_job(sess, t))
+    assert paths.get(sess)["done"] == [step] and not fake_queue.items
+
+
+def test_another_flow_replaces_the_running_one_the_same_keeps_it(sess, nextstep_on):
+    paths.start_flow(sess, "build", "you", "add a digest")
+    paths.step_done(sess, _turn(sess, "/mattpocock-skills:grill-with-docs add a digest"))
+    before = paths.get(sess)
+    assert paths.start_flow(sess, "build", "guess", "and the footer") == "and the footer"
+    assert paths.get(sess) == before                               # nothing recorded
+    assert paths.start_flow(sess, "fix", "you", "it crashes") == "/mattpocock-skills:diagnosing-bugs it crashes"
+    f = paths.get(sess)
+    assert (f["path"], f["done"], f["by"]) == ("fix", [], "you")
+
+
+def test_a_finished_flow_tapped_again_starts_over(sess, nextstep_on, fake_queue):
+    paths.start_flow(sess, "ask", "you", "why")
+    paths.continue_after_turn(_job(sess, _turn(sess, paths.NO_PATH + "why")))
+    assert paths.start_flow(sess, "ask", "you", "and how") == paths.NO_PATH + "and how"
+    assert paths.get(sess)["done"] == []
+
+
+def test_a_replaced_flows_ticket_set_no_longer_moves_it(sess, nextstep_on, fake_queue):
+    paths.start_flow(sess, "build", "you", "big thing")
+    at = paths.get(sess)["at"]                                     # what the set keeps as flow_at
+    paths.start_flow(sess, "fix", "you", "it crashes")             # the same second: `at` still moves
+    assert paths.get(sess)["at"] != at
+    paths.mark_done(sess, "build", at)
+    assert paths.advance(sess, "merge", at) is False and paths.get(sess)["done"] == []
+
+
+def _send(monkeypatch, body, agent="claude"):
+    """POST /local/run with the run faked: (answer, code, the run's kwargs or None)."""
+    from bridge import profiles, relevance
+    from bridge.dashboard import server as dash
+    seen, box = [], {}
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda chat, prompt, *a, **kw: seen.append(dict(kw, prompt=prompt))
+                        or SimpleNamespace(id="j", store_session_id=SID))
+    monkeypatch.setattr(relevance, "gate", lambda *a, **k: None)
+    monkeypatch.setattr(profiles, "agent_for", lambda *a, **k: agent)
+    h = dash.Handler.__new__(dash.Handler)
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
+    h._run(555, {"session_id": SID, **body})
+    return box["obj"], box["code"], (seen[0] if seen else None)
+
+
+def test_a_send_carries_its_flow_to_the_run(monkeypatch, router_on):
+    _obj, code, run = _send(monkeypatch, {"prompt": "add a digest", "flow": "build", "by": "you"})
+    assert code == 200 and (run["flow"], run["flow_by"], run["prompt"]) == ("build", "you", "add a digest")
+    _obj, _code, run = _send(monkeypatch, {"prompt": "add a digest"})
+    assert run["flow"] is None
+
+
+@pytest.mark.parametrize("body, agent, why", [
+    ({"prompt": "add it", "flow": "nope", "by": "you"}, "claude", "unknown flow"),
+    ({"prompt": "add it", "flow": "build", "by": "someone"}, "claude", "by"),
+    ({"prompt": "/compact add it", "flow": "build", "by": "you"}, "claude", "/"),
+    ({"prompt": "add it", "flow": "build", "by": "you"}, "kimi", "Claude"),
+])
+def test_the_bridge_refuses_a_flow_it_cant_take(monkeypatch, router_on, body, agent, why):
+    obj, code, run = _send(monkeypatch, body, agent)
+    assert code == 400 and why in obj["error"] and run is None
+
+
+def test_no_flow_while_skill_paths_is_off(monkeypatch, router_off):
+    obj, code, run = _send(monkeypatch, {"prompt": "add it", "flow": "build", "by": "you"})
+    assert code == 400 and "SKILL PATHS" in obj["error"] and run is None
+
+
+def test_a_queued_prompt_keeps_its_flow_until_it_runs(monkeypatch, router_on):
+    from bridge import queue_manager
+    from bridge.dashboard import server as dash
+    got, box = [], {}
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: got.append(kw) or "q1")
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {})
+    h = dash.Handler.__new__(dash.Handler)
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
+    h._queue("enqueue", 1, {"session_id": SID, "text": "add it", "flow": "fix", "by": "guess"})
+    assert (got[0]["flow"], got[0]["flow_by"]) == ("fix", "guess")
+    h._queue("enqueue", 1, {"session_id": SID, "text": "add it", "flow": "nope", "by": "guess"})
+    assert box["code"] == 400 and len(got) == 1
+    runs = []
+    monkeypatch.setattr(runner, "start_streaming_job", lambda **kw: runs.append(kw))
+    item = queue_manager.QueueItem(id="q", session_id=SID, chat_id=1, project=None, text="a", prompt="a", images=[],
+                                   model=None, effort=None, permission_mode=None, width=0, sel=[], surface="dashboard",
+                                   flow="fix", flow_by="guess")
+    queue_manager._default_run_fn(item)                           # noqa: SLF001
+    assert (runs[0]["flow"], runs[0]["flow_by"]) == ("fix", "guess")
+
+
+def test_a_queued_flow_goes_as_typed_once_skill_paths_is_off(sess, router_off):
+    assert paths.start_flow(sess, "build", "you", "add it") == "add it" and paths.get(sess) is None
+
+
+def test_a_flow_wins_over_the_no_path_flag(monkeypatch, router_on):
+    _obj, _code, run = _send(monkeypatch, {"prompt": "add it", "flow": "build", "by": "you", "no_path": True})
+    assert run["prompt"] == "add it"
+
+
+def test_a_turn_sent_with_a_flow_starts_it(state_dir, router_on, monkeypatch):
+    """The runner's half: start_streaming_job records the flow and runs the grill's command."""
+    from bridge import state, titler
+    seen = {}
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_streaming", lambda job, prompt, *a: seen.update(prompt=prompt))
+    s = store.create_session(555, "/flow-run", cwd=config.BASE_PATH)
+    job = runner.start_streaming_job(555, "add a digest", [], project=config.BASE_PATH, session_id=s["id"],
+                                     flow="build", flow_by="you")
+    state.release_run(job.store_session_id)
+    assert seen["prompt"].startswith("/mattpocock-skills:grill-with-docs add a digest")
+    assert store.turn_prompt(job.id) == "/mattpocock-skills:grill-with-docs add a digest"
+    assert (paths.get(s["id"])["path"], paths.get(s["id"])["by"]) == ("build", "you")

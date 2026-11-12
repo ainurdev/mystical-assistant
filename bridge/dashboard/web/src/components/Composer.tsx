@@ -429,7 +429,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, onFlow, multi, git, lastCheck, designLinked,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked,
   kindPresets, onSaveKindPreset,
 }: {
   /** Multi-agent chats (ComposerMulti). */
@@ -481,8 +481,10 @@ export function Composer({
   contextWindow?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
-  /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). */
-  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string) => void;
+  /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). flow: the
+   *  flow the prompt starts and who picked it; the bridge puts its first step in front. */
+  onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string,
+           flow?: { id: KindId; by: "you" | "guess" }) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -524,6 +526,8 @@ export function Composer({
   smartZone?: boolean;
   /** The session's path, for the FLOW chip beside + (lib/flowview flowChip); null: no chip. */
   flowChip?: FlowChip | null;
+  /** The flow the session is on until its last step is done (lib/flowview runningFlow): its glyph's dot. */
+  runningFlow?: string | null;
   /** The FLOW chip's switches, Reset and skips (lib/useFlow). */
   onFlow?: (act: FlowAct) => void;
   /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
@@ -810,7 +814,6 @@ export function Composer({
   // COMPACT has no auto pick and no typed-text suggestion: its kinds take the typed text.
   // The empty box's ghost stays, its caption on the rail.
   const pack = cmds.some((c) => c.name.startsWith("mattpocock-skills:"));
-  const diagnose = cmds.some((c) => c.name === "mattpocock-skills:diagnosing-bugs");
   const routeOn = !!routing && pack && !!routeCtx && !onAgent && !running && !ask?.send;
   // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
   const ctxKey = useMemo(() => (routeOn ? JSON.stringify([sessionId, routeCtx]) : ""), [routeOn, sessionId, routeCtx]);
@@ -1093,9 +1096,10 @@ export function Composer({
       return;
     }
     if (!t || disabled) return;
-    // The kind on show puts its command in front and sends its preset with the prompt.
-    const plan = sendPlan({ kind, text: t, diagnose, answering: !!ask?.send, agent: onAgent, run });
-    onSend(plan.text, images, noPath || undefined, plan.run, t);
+    // The kind on show sends its preset with the prompt, and the flow when the prompt starts one.
+    const plan = sendPlan({ kind, how: kindHow, text: t, running: runningFlow, flows: !!routing,
+                            answering: !!ask?.send, agent: onAgent, run });
+    onSend(plan.text, images, noPath || undefined, plan.run, t, plan.flow && plan.by && { id: plan.flow, by: plan.by });
     setText("");
     setImages([]);
   }
@@ -1835,6 +1839,7 @@ export function Composer({
           // The editor keeps the focus (and the caret) through a tap.
           return (
             <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
+              data-run={id === runningFlow ? "" : undefined}
               disabled={off} aria-pressed={lit && kindHow === "picked"}
               title={lit ? `${KINDS[id].name} — ${blank ? "click to go back to guessing" : "click to send as typed"}` : KINDS[id].name}
               onMouseDown={(e) => e.preventDefault()} onClick={() => setKindPick(lit ? (blank ? null : "plain") : id)}>

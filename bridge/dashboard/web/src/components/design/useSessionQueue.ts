@@ -17,6 +17,9 @@ export interface EnqueueInput {
   // Only with a kind's preset: a plain prompt runs on the session's model and mode when it starts.
   model?: string;
   permission_mode?: string;
+  // The flow this prompt starts when it runs, and who picked it (bridge/paths.py start_flow).
+  flow?: string;
+  by?: "you" | "guess";
 }
 
 /** Live view of a session's server-side prompt queue, plus the ops to mutate it.

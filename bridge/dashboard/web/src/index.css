@@ -5093,6 +5093,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* 22px, giving way beside the widest lit kind (Design AUTO), so all five stay inside the fixed 188 (the mockup's) */
 .pb-kg { flex: 0 1 22px; min-width: 0; display: grid; place-items: center; }
 .pb-kg:hover:not(:disabled) { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+/* The flow the session is on, until its last step is done (a3-running). */
+.pb-kg[data-run] { position: relative; color: color-mix(in oklab, var(--acc) 72%, var(--txb)); }
+.pb-kind[data-run] { position: relative; }
+:is(.pb-kind, .pb-kg)[data-run]::after { content: ""; position: absolute; left: 50%; bottom: -2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--acc); }
 .pb-kind { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 6px; font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
            color: color-mix(in oklab, var(--acc) 70%, var(--txb)); background: color-mix(in oklab, var(--acc) 13%, transparent); }
 .pb-kind[data-how="auto"] { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 55%, transparent); }
