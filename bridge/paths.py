@@ -87,7 +87,7 @@ PACK_TEXT = "\n".join([
     "A path's skill comes before the skills and modes this session injects: start it instead of superpowers brainstorming or systematic-debugging, and don't skip it for ponytail's smallest change or for a clarifying question (a grill asks those).",
     "If none fits (a question about how the code works, an edit spelled out exactly like a rename, a chat reply), just answer or do it, and start nothing.",
     'If the message begins "No path for this message.", start nothing.',
-    'When you finish a step of a path and need nothing more from the user, make StepDone the last tool call of your turn: the next step starts when the turn ends (build-here on its own feature branch) and does its own work. After a grill, pass choice "here" if the work fits this one session, or "tickets" if it needs several. Never call StepDone while waiting on the user.',
+    'When you finish a step of a path and need nothing more from the user, make StepDone the last tool call of your turn: the next step starts when the turn ends (build-here on its own feature branch) and does its own work. After a grill, pass choice "tickets" only when the plan has two or more parts that can be built at the same time; a chain, where each part waits on the one before, is "here". Say which and why in one line before StepDone. Never call StepDone while waiting on the user.',
 ])
 
 # claude session id -> whether its origin gets the pack, decided at its first run.
