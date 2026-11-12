@@ -28,6 +28,15 @@ export interface Flow {
   /** The path's steps as the bridge runs them: ponytail's REVIEW and AUDIT only while
       PONYTAIL is on, the council's REVIEW (no skill) only where it follows MERGE. */
   stations?: [string, string | null, "you" | "auto"][];
+  /** When its last step was done; null while it runs (a bridge older than SESSION ▸ FLOWS sends none). */
+  end?: number | null;
+}
+/** A flow the session ran before its current one (GET /local/flow `past`, oldest first). */
+export interface PastFlow extends Pick<Flow, "path" | "skill" | "by" | "why" | "at" | "done" | "skipped" | "stations"> {
+  /** When it ended: its last step done, or another flow took its place. */
+  end: number;
+  /** The step it was on when another flow took its place; null when it ran to its end. */
+  stopped: string | null;
 }
 /** The flow's ticket set, as GET /local/flow sends it (bridge/tickets.py flow_set). `review` is the
     council's run in the merge session, sent once the set is merged. */
@@ -139,6 +148,13 @@ export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null =
       activity: last && last.type === "tool" ? [last.name, last.summary].filter(Boolean).join(" · ") : "",
     } : undefined,
   };
+}
+
+/** A past flow's steps as SESSION ▸ FLOWS draws them: done (or skipped), the one it
+    stopped on, and the rest it never reached. */
+export function pastSteps(f: PastFlow): { key: string; label: string; skill: string | null; state: "done" | "stopped" | "next"; skipped: boolean }[] {
+  return (f.stations ?? []).map(([key, skill]) => ({ key, label: key.replace(/-/g, " "), skill,
+    state: f.done.includes(key) ? "done" : key === f.stopped ? "stopped" : "next", skipped: !!f.skipped?.includes(key) }));
 }
 
 /** What the prompt box's FLOW chip shows (Composer): the step that comes next, whether it

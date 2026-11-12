@@ -2,7 +2,7 @@
 //
 // The SESSION tab's drawing: the clock folds long waits, the strip's slivers
 // merge for the eye only, the window steps, the bands follow the path's steps.
-import { BREAK, bands, calm, clock, kindRows, stepLine, stepStats, timeOf, toNow } from "./meter.ts";
+import { BREAK, bands, calm, clock, flowOfRows, flowSpans, kindRows, mixLine, stepLine, stepStats, timeOf, toNow, trackSegs, trackWidths, treemap } from "./meter.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -58,3 +58,34 @@ ok(st.get("GRILL")!.secs === 50 + 50 + 100 && st.get("GRILL")!.tokens === 16 && 
   "a step sums worked time and spend over all its bands, waits left out");
 ok(st.get("BUILD HERE")!.secs === 10 + 80 && st.get("BUILD HERE")!.tokens === 7 && st.get("BUILD HERE")!.turn === "d", "its first turn is the jump");
 ok(!st.has(""), "a /compact sliver is no step");
+
+ok(clock(segs, 220, 6).marks[1].x1 - clock(segs, 220, 6).marks[1].x0 === 6, "the slim curve folds a long wait narrower");
+
+// FLOWS: a turn runs under the latest flow begun by its end (Claude's SetPath mid-turn
+// owns that turn), unless that flow had ended before it began; then each flow's span,
+// worked seconds and spend.
+const fl = [{ at: 100, end: 500 }, { at: 1000, end: null }];
+const fr = [{ started: 50, ended: 90, ids: ["z"] }, { started: 95, ended: 200, ids: ["a"] }, { started: 300, ended: 400, ids: ["b", "b2"] },
+  { started: 600, ended: 700, ids: ["c"] }, { started: 990, ended: null, ids: ["d"] }];
+ok(flowOfRows(fl, fr, 1200).join() === "-1,0,0,-1,1", "a turn before any flow, or after one ended, is outside them");
+const sp = flowSpans(fl, fr, [[95, 200, "claude"], [200, 300, "away"], [300, 400, "tools"], [400, 600, "you"], [600, 700, "claude"],
+  [700, 990, "away"], [990, 1200, "helpers"]], { z: { spent: 1 }, a: { spent: 10 }, b: { spent: 20 }, b2: { spent: 5 }, c: { spent: 100 }, d: { spent: 7 } }, 1200);
+ok(sp[0].rows.join() === "1,2" && sp[0].from === 95 && sp[0].to === 400 && sp[0].secs === 205 && sp[0].tokens === 35,
+  "a flow spans its turns: worked time inside, waits and the time outside it left out");
+ok(sp[1].to === 1200 && sp[1].secs === 210 && sp[1].tokens === 7, "the running flow runs to now");
+ok(flowSpans([{ at: 5000, end: null }], fr, [], {}, 1200)[0].rows.length === 0, "a flow with no turn yet spans nothing");
+
+// The track: a segment per flow, oldest first; ASK, SHIP and one skill fold where their latest run is.
+const ts = trackSegs([{ path: "design" }, { path: "ask" }, { path: "ship" }, { path: "ask" }, { path: "one", skill: "tdd" }, { path: "fix" }],
+  [100, 10, 20, 30, 5, 50].map((secs, i) => ({ rows: [], from: 0, to: 0, secs, tokens: i })));
+ok(ts.map((x) => x.key).join(" ") === "#0 ship ask one:tdd #5" && ts[2].runs.join() === "1,3" && ts[2].secs === 40 && ts[2].tokens === 4,
+  "ASK runs fold into one segment at their latest, summed");
+ok(trackWidths([0, 0], 100).join() === "48.5,48.5", "nothing timed yet: even widths");
+ok(trackWidths([30, 10], 100).join() === "63.75,33.25", "each gets its minimum, the rest by worked time");
+
+// ON WHAT at a glance, and its blocks.
+ok(JSON.stringify(mixLine({ startup: 40, claude: 30, files: 20, other: 10 })) ===
+  JSON.stringify([{ kind: "startup", pct: 40 }, { kind: "claude", pct: 30 }, { kind: "files", pct: 20 }]), "the top three kinds and their share; other never leads");
+ok(JSON.stringify(treemap([60, 30, 10], 100, 50)) ===
+  JSON.stringify([{ x: 0, y: 0, w: 60, h: 50 }, { x: 60, y: 0, w: 40, h: 37.5 }, { x: 60, y: 37.5, w: 40, h: 12.5 }]),
+  "each block slices off what's left, the cut turning each time");

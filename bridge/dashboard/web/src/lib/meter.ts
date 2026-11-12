@@ -11,16 +11,16 @@ export const BREAK = 20;       // px a fold takes
 export interface Mark { a: number; b: number; x0: number; x1: number; who: MeterWho; fold: boolean }
 
 /** Time to x on the hero's clock: linear, except a wait on you (or away) over
- *  FOLD, which takes BREAK px, so one night's wait doesn't flatten the day. */
-export function clock(segs: Meter["segs"], width: number): { at: (t: number) => number; marks: Mark[]; end: number } {
+ *  FOLD, which takes `brk` px, so one night's wait doesn't flatten the day. */
+export function clock(segs: Meter["segs"], width: number, brk = BREAK): { at: (t: number) => number; marks: Mark[]; end: number } {
   const folds = (s: Meter["segs"][number]) => s[1] - s[0] > FOLD && (s[2] === "you" || s[2] === "away");
-  const fixed = segs.filter(folds).length * BREAK;
+  const fixed = segs.filter(folds).length * brk;
   const lin = segs.reduce((n, s) => n + (folds(s) ? 0 : s[1] - s[0]), 0);
   const k = lin > 0 ? Math.max(0, width - fixed) / lin : 0;
   let x = 0;
   const marks = segs.map(([a, b, who]) => {
     const fold = folds([a, b, who]);
-    const m = { a, b, x0: x, x1: x + (fold ? BREAK : (b - a) * k), who, fold };
+    const m = { a, b, x0: x, x1: x + (fold ? brk : (b - a) * k), who, fold };
     x = m.x1;
     return m;
   });
@@ -97,7 +97,7 @@ export function stepStats(
     if (b.tone === "compact" || !b.label) continue;
     const to = b.to ?? Infinity;
     const s = out.get(b.label) ?? { secs: 0, tokens: 0, turn: null };
-    for (const [a, e, who] of segs) if (who !== "you" && who !== "away") s.secs += Math.max(0, Math.min(e, to) - Math.max(a, b.from));
+    s.secs += worked(segs, b.from, to);
     for (const t of turns) {
       if (t.started == null || t.started < b.from || t.started >= to) continue;
       s.tokens += spent[t.id]?.spent ?? 0;
@@ -106,6 +106,90 @@ export function stepStats(
     out.set(b.label, s);
   }
   return out;
+}
+
+/** Seconds something worked (Claude, tools, helpers) between a and b: waits on you and away left out. */
+export function worked(segs: Meter["segs"], a: number, b: number): number {
+  let s = 0;
+  for (const [x, y, who] of segs) if (who !== "you" && who !== "away") s += Math.max(0, Math.min(y, b) - Math.max(x, a));
+  return s;
+}
+
+type Span = { started: number | null; ended: number | null };
+
+/** Which flow each turn row ran under, as an index into `flows` (oldest first), or -1: the
+ *  latest flow begun by the row's end (a flow Claude picks mid-turn owns that turn), unless
+ *  it had ended before the row began. Turns before the first flow, or after one ended with
+ *  none after it, are outside every flow: only TIME counts them. */
+export function flowOfRows(flows: { at: number; end?: number | null }[], rows: Span[], now: number): number[] {
+  return rows.map((r) => {
+    if (r.started == null) return -1;
+    const end = r.ended ?? now;
+    const i = flows.reduce((k, f, j) => (f.at <= end ? j : k), -1);
+    const over = i >= 0 ? flows[i].end : null;
+    return over != null && over < r.started ? -1 : i;
+  });
+}
+
+export interface FlowSpan { rows: number[]; from: number; to: number; secs: number; tokens: number }
+
+/** Each flow's turn rows, from the first one's start to the last one's end (now while it
+ *  runs), the seconds worked in that span and what its turns spent. */
+export function flowSpans(
+  flows: { at: number; end?: number | null }[], rows: (Span & { ids: string[] })[], segs: Meter["segs"],
+  spent: Record<string, { spent: number }>, now: number,
+): FlowSpan[] {
+  const of = flowOfRows(flows, rows, now);
+  return flows.map((_, i) => {
+    const mine = of.flatMap((k, j) => (k === i ? [j] : []));
+    if (!mine.length) return { rows: [], from: 0, to: 0, secs: 0, tokens: 0 };
+    const from = rows[mine[0]].started!, to = rows[mine[mine.length - 1]].ended ?? now;
+    const tokens = mine.reduce((n, j) => n + rows[j].ids.reduce((m, id) => m + (spent[id]?.spent ?? 0), 0), 0);
+    return { rows: mine, from, to, secs: worked(segs, from, to), tokens };
+  });
+}
+
+export interface TrackSeg { key: string; runs: number[]; secs: number; tokens: number }
+
+/** FLOWS' track: a segment per flow, oldest first. ASK, SHIP and each one-skill run fold
+ *  into one segment, where their latest run is, its time and spend summed. */
+export function trackSegs(flows: { path: string; skill?: string | null }[], spans: FlowSpan[]): TrackSeg[] {
+  const groups = new Map<string, number[]>();
+  flows.forEach((f, i) => {
+    const id = f.path.split("-")[0];
+    const key = id === "ask" || id === "ship" ? id : f.path === "one" ? `one:${f.skill ?? ""}` : `#${i}`;
+    groups.set(key, [...(groups.get(key) ?? []), i]);
+  });
+  return [...groups].map(([key, runs]) => ({ key, runs, secs: runs.reduce((n, i) => n + spans[i].secs, 0), tokens: runs.reduce((n, i) => n + spans[i].tokens, 0) }))
+    .sort((a, b) => a.runs[a.runs.length - 1] - b.runs[b.runs.length - 1]);
+}
+
+/** Segment widths on a track `w` px wide, `gap` px between: each at least `min`, the rest
+ *  shared by worked time (evenly while nothing is timed). */
+export function trackWidths(secs: number[], w: number, min = 18, gap = 3): number[] {
+  const room = w - gap * Math.max(0, secs.length - 1);
+  const tot = secs.reduce((a, b) => a + b, 0), free = room - secs.length * min;
+  return secs.map((s) => (free > 0 && tot > 0 ? min + free * (s / tot) : room / secs.length));
+}
+
+/** ON WHAT at a glance: the three biggest kinds named, each with its share of the whole. */
+export function mixLine(kinds: Record<string, number>): { kind: string; pct: number }[] {
+  const tot = Object.values(kinds).reduce((a, b) => a + Math.max(0, b), 0);
+  return Object.entries(kinds).filter(([k, v]) => k !== "other" && v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([kind, v]) => ({ kind, pct: Math.round((v / tot) * 100) }));
+}
+
+/** ON WHAT's blocks, biggest first: each slices its share off what's left of the box, the
+ *  cut turning each time, and the last takes the rest. */
+export function treemap(values: number[], w: number, h: number): { x: number; y: number; w: number; h: number }[] {
+  let x = 0, y = 0, left = values.reduce((a, b) => a + b, 0);
+  return values.map((v, i) => {
+    const last = i === values.length - 1, k = left > 0 ? v / left : 0;
+    const box = i % 2 === 0 ? { x, y, w: last ? w : w * k, h } : { x, y, w, h: last ? h : h * k };
+    if (i % 2 === 0) { x += box.w; w -= box.w; } else { y += box.h; h -= box.h; }
+    left -= v;
+    return box;
+  });
 }
 
 export const KIND: Record<string, string> = {
