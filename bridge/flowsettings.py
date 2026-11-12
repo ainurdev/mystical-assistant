@@ -293,6 +293,8 @@ def _take_presets(presets) -> None:
                     raise ValueError(f"{fl}'s {k} {v!r} isn't valid")
                 r[_BROWSER[k]] = v
         runs[fl] = r
+    if "build" in runs:
+        runs.setdefault("refactor", runs["build"])   # the box had no REFACTOR: it starts as BUILD's
     with _lock:
         c = _load_locked()
         if c["presets"]:
