@@ -1984,6 +1984,8 @@ export function App() {
     // Don't wait out the 1.5s poll to retire the card — the bridge has already
     // written the resolved event by the time the POST returns.
     void refetchTurns.current();
+    // Nor its toast in the bell (Notifications): it goes now, not when its 30 s run out.
+    window.dispatchEvent(new CustomEvent("hud:answered", { detail: requestId }));
     return res ?? {};
   }
   // Tapping a suggested reply to a question the model asked in prose sends it as
