@@ -273,9 +273,8 @@ _CHIP = {"spec": "build", "tickets": "build", "merge": "build", "build-here": "b
 def _on(flow: dict, station: str) -> bool:
     """Whether the flow's STEPS chips let `station` run. Read on every call, so a chip
     switched off applies to running flows from their next step."""
-    if flow["path"] == "one":
-        return True
-    from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if flow["path"] == "one" or station == "review" and "merge" in flow["done"]:
+        return True   # REVIEW is settled when MERGE ends (_all), whatever its chip says after
     chips = flowsettings.steps(flow["path"].removesuffix("-here"))
     chip = _CHIP.get(station, station)
     if chip == "review" and not chips.get("build", True):

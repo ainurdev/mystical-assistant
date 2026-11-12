@@ -5154,7 +5154,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
            appearance: none; cursor: pointer; border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); border-radius: 12px;
            background: transparent; color: var(--txd); font-family: var(--ui-font, inherit); font-size: var(--t10); letter-spacing: .7px; white-space: nowrap; }
 [data-fam] .pb-flow { border-color: var(--line2); border-radius: 12px; }
-.pb-flow-n { color: var(--txd); }
+.pb-flow-n { font-size: var(--t9); font-weight: 700; letter-spacing: .8px; color: var(--txl); }   /* a3-running */
 .pb-flow > b { font-weight: 700; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .pb-flow > svg:last-child { color: var(--acc); }
 .pb-flow:is([data-mark="held"], [data-mark="you"]) > svg:last-child { color: var(--warn); }
@@ -5192,7 +5192,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-top > .pb-pr { flex: 0 1 260px; }
 .fs-sw { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); cursor: pointer; }
 .fs-sw .set-toggle, .fs-row .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
-.fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 236px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
+.fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 256px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
 .fs-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fs-nokind { margin-top: auto; padding-top: 10px; }
 .fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px 0 2px;

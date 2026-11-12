@@ -10,6 +10,7 @@ import {
 import { setAiFeatures, useGraphify } from "../../lib/ai";
 import { PluginsView } from "./PluginsView";
 import { FlowsSheet } from "../Composer";
+import { modelRows, type ModelOption } from "../../models";
 
 /* The extras and the skills — two kinds of card, one card grammar.
 
@@ -128,7 +129,7 @@ function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
 /** Anything that runs on its own ships off: an install should cost exactly the
  *  turns you typed until you decide otherwise. A switch applies to the next
  *  turn — nothing to restart. */
-function ExtrasGrid() {
+function ExtrasGrid({ models }: { models: ModelOption[] }) {
   const [rows, setRows] = useState<AiFeature[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // A failure belongs on the card whose switch just refused to move.
@@ -193,7 +194,7 @@ function ExtrasGrid() {
         <b>Flows</b>
         <span className="aim-hint">the prompt box's flows and their steps — the gear beside them opens the same sheet</span>
       </div>
-      <FlowsSheet inline />
+      <FlowsSheet inline models={modelRows(models)} />
     </>
   );
 }
@@ -427,8 +428,8 @@ function SkillsGrid({ project }: { project: string | null }) {
 }
 
 /** SETTINGS ▸ AI MANAGEMENT ▸ Extras. */
-export function ExtrasFold() {
-  return <ExtrasGrid />;
+export function ExtrasFold({ models }: { models: ModelOption[] }) {
+  return <ExtrasGrid models={models} />;
 }
 
 /** SETTINGS ▸ Skills. The PROJECT list and + Project act on the picked repo,
