@@ -130,6 +130,39 @@ def test_new_path_replaces_old(state_dir):
     assert g["path"] == "refactor" and g["done"] == [] and g["next"] is None
 
 
+def test_a_replaced_flow_is_kept_stopped_where_it_was(state_dir):
+    paths.set_path("s1", "fix", "crash", "rule")
+    paths.step_done("s1", "t1")                                     # DIAGNOSE done: REVIEW is next
+    at = paths.get("s1")["at"]
+    paths.set_path("s1", "refactor", "mess", "claude")
+    paths._cache.clear()                                            # kept across a restart
+    [p] = paths.past("s1")
+    assert (p["path"], p["by"], p["why"], p["at"], p["done"], p["stopped"]) == ("fix", "rule", "crash", at, ["diagnose"], "review")
+    assert p["end"] >= at and paths.get("s1")["path"] == "refactor"
+
+
+def test_a_finished_flow_keeps_when_it_ended(state_dir, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(paths.time, "time", lambda: clock[0])
+    paths.set_path("s1", "ask", "why", "you")
+    clock[0] = 1060
+    paths.step_done("s1", "t1")                                     # ASK's one step: the flow is done
+    assert paths.get("s1")["end"] == 1060
+    clock[0] = 5000
+    paths.set_path("s1", "fix", "crash", "you")
+    [p] = paths.past("s1")
+    assert (p["at"], p["end"], p["done"], p["stopped"]) == (1000, 1060, ["answer"], None)
+    assert paths.get("s1")["end"] is None
+
+
+def test_a_refused_runs_restore_takes_its_flow_back_out_of_the_past(state_dir):
+    paths.set_path("s1", "fix", "crash", "rule")
+    snap = paths.get("s1")
+    paths.set_path("s1", "one", "merge x", "rule", skill="merge")
+    paths.restore("s1", snap)
+    assert paths.get("s1")["path"] == "fix" and paths.past("s1") == []
+
+
 def test_one_path_uses_skill(state_dir):
     paths.set_path("s1", "one", "dig", "claude", skill="research")
     assert paths.step_done("s1", "t1") is None
@@ -176,6 +209,10 @@ def server(flow_session):
         def post(self, path, body):
             h._post_api(path, body)  # noqa: SLF001
             return dict(box)
+
+        def get(self, path, qs):
+            h._get_api(path, qs)  # noqa: SLF001
+            return dict(box)
     return S()
 
 
@@ -198,6 +235,13 @@ def test_path_tools_hidden_when_off(router_off, session_c1, monkeypatch):
 
 def test_path_tools_hidden_for_rivendell_origin(router_on, rivendell_origin):
     assert "SetPath" not in {t["name"] for t in _list_tools()}
+
+
+def test_get_flow_sends_the_flows_before_this_one(server, flow_session):
+    paths.set_path(flow_session, "ask", "why", "you")
+    paths.set_path(flow_session, "fix", "crash", "you")
+    r = server.get("/local/flow", {"session": [flow_session]})["obj"]
+    assert r["flow"]["path"] == "fix" and [p["path"] for p in r["past"]] == ["ask"]
 
 
 def test_set_path_and_step_done_idempotent(server, flow_session, flows_on):

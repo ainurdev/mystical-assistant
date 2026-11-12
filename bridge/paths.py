@@ -68,6 +68,11 @@ the merge session (tickets.start_review), and its pass is the step's end
 it waits on you. Whether a flow has the step is settled when its MERGE ends, so
 shipping the step, or switching it later, never puts one into a flow already past
 MERGE. stations() gives the steps as they stand, and FLOW draws those.
+
+A flow another one replaces is kept in its session's record (`past`, oldest first): who
+started it and why, when it began and ended, its steps done and skipped, and the step it
+stopped on (None: it ran to its end, which `end` records when its last step is done). SESSION
+▸ FLOWS draws every flow a session ran from these; restore() takes back the one it pushed.
 """
 
 import json
@@ -217,7 +222,9 @@ _PONY = {"review": "the work on this path: this branch's commits since it left t
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 # The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
 OPTIONS = ("nextstep", "autopick", "smartzone")
-_STORED = ("path", "skill", "by", "why", "at", "done", "skipped", "next", "overrides")
+_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides")
+# shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
+_PAST = 50
 
 _lock = threading.Lock()
 _cache: dict = {}  # session id -> flow; emptied by tests to simulate a reload
@@ -346,12 +353,27 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         _load_locked()
         old = _cache.get(session_id) or {}
         own = dict(old.get("overrides") or {})   # the session's, not the path's
+        past = (list(old.get("past") or []) + [_ended(old)])[-_PAST:] if old else []
         # `at` names this path to its ticket set (flow_at): a path replaced in the same second must differ.
         _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "overrides": own,
                               "at": max(int(time.time()), (old.get("at") or 0) + 1), "done": list(done or []), "skipped": [],
-                              "next": None, "last": None}
+                              "next": None, "last": None, "past": past}
         _save_locked()
         return dict(_cache[session_id])
+
+
+def _ended(f: dict) -> dict:
+    """A replaced flow as `past` keeps it: stopped on the step it was at, unless it had ended."""
+    return {**{k: f.get(k) for k in ("path", "skill", "by", "why", "at")}, "end": f.get("end") or int(time.time()),
+            "done": list(f["done"]), "skipped": list(f.get("skipped") or []),
+            "stopped": None if f.get("end") else _underway(f)}
+
+
+def past(session_id: str) -> list:
+    """The flows this session ran before its current one, oldest first."""
+    with _lock:
+        _load_locked()
+        return [dict(p) for p in (_cache.get(session_id) or {}).get("past") or []]
 
 
 def claude_path(session_id: str, path: str, why: str, skill: "str | None", turn_id: str) -> dict:
@@ -382,6 +404,8 @@ def restore(session_id: str, snap: "dict | None") -> None:
         f = _cache.get(session_id)
         if f:
             f.update({k: v for k, v in snap.items() if k in _STORED})
+            if (f.get("past") or [{}])[-1].get("at") == snap.get("at"):
+                f["past"] = f["past"][:-1]   # the flow set_path moved there is current again
             _save_locked()
 
 
@@ -393,7 +417,7 @@ def get(session_id: str) -> "dict | None":
         f = _cache.get(session_id)
         if not f:
             return None
-        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "next": _next(f),
+        return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "end": f.get("end"), "next": _next(f),
                 "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
@@ -522,6 +546,8 @@ def _pass(f: dict, cur: "str | None", on: list) -> list:
     end = [] if rest else [st for st in full if st not in f["done"]]
     f["done"] += end
     f["skipped"] = list(f.get("skipped") or []) + [st for st in new if st != cur and st not in on] + end
+    if not rest and not f.get("end"):
+        f["end"] = int(time.time())   # the flow ran to its end: FLOWS times it to here
     return rest
 
 
