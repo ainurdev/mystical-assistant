@@ -40,6 +40,7 @@ import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments"
 import { endedWithout, saidLayout } from "../lib/said";
 import { parseFrame } from "../lib/frame";
 import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchDivider } from "./MultiRows";
+import { PlanLine } from "./PlanLine";
 import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
@@ -669,7 +670,7 @@ function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
 }
 
 /** Multi-agent rows: each its own line in the flow, never inside a work fold. */
-const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
+const MULTI_ROW = new Set(["switch", "delegation", "merge", "plan"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
@@ -1404,6 +1405,8 @@ export const RunStream = memo(function RunStream({
           <DelegationRow key={i} name={event.name} brief={event.brief} agent={event.agent} profile={event.profile}
             write={event.write} onOpen={onOpenAgent && event.session_id ? () => onOpenAgent(event.session_id) : undefined} />
         );
+      case "plan":
+        return <PlanLine key={i} ev={event} />;
       case "merge":
         return <MergeLine key={i} name={event.name} state={event.state} />;
       case "result":

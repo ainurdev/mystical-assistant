@@ -23,6 +23,7 @@ import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments"
 import { chapterStarts, kindsByPurpose, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES, type Mark } from "../lib/dossier";
 import { parseFrame } from "../lib/multi";
 import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchLine } from "./MultiRows";
+import { PlanLine } from "./PlanLine";
 import { bashKind, testLine, testResult, type BashKind } from "../lib/bashkind";
 import { analyzeFailures } from "../lib/failures";
 import { isShowTool, lookedNotes, noteLine, proofsOf, withoutAnswered } from "../lib/pictures";
@@ -2924,6 +2925,8 @@ export const RunStream = memo(function RunStream({
           agent={event.agent} profile={event.profile} write={event.write} />;
       case "merge":
         return <MergeLine key={i} name={event.name} state={event.state} />;
+      case "plan":
+        return <PlanLine key={i} ev={event} onOpen={() => window.dispatchEvent(new CustomEvent("hud:rail", { detail: "work" }))} />;
       case "steer": {
         // A ⇄ steer is the channel delivering another agent's message, not you.
         const frame = parseFrame(event.text);

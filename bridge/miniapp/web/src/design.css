@@ -392,6 +392,21 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .pl-se .wl-ic { width: 26px; height: 26px; flex: none; }
 .wl-sub { min-height: 0; padding-top: 8px; padding-bottom: 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* The chat's plan changing, as a line in the transcript (components/PlanLine). */
+.pl-line { margin: 4px 0; padding: 6px 10px 7px; margin-left: var(--rail, 0); border-left: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 6%, transparent); border-radius: 0 6px 6px 0; font-size: var(--t105, 12px); color: var(--txm); }
+.pl-line-h { display: flex; align-items: center; gap: 7px; color: var(--acc); }
+.pl-line-h b { flex: 1; min-width: 0; font-weight: 600; color: var(--txb); }
+.pl-line-open { padding: 0; background: none; border: 0; font: inherit; color: var(--acc); text-decoration: underline; cursor: pointer; white-space: nowrap; }
+.pl-line-steps { margin: 5px 0 0; padding-left: 20px; list-style: decimal; line-height: 1.45; overflow-wrap: anywhere; }
+.pl-line-rows { list-style: none; margin: 4px 0 0; padding: 0 0 0 20px; line-height: 1.45; overflow-wrap: anywhere; }
+.pl-line-rows li[data-kind="done"] { color: var(--ok); }
+.pl-line-rows li[data-kind="done"]::before { content: "✓ "; }
+.pl-line-rows li[data-kind="started"] { color: var(--txb); }
+.pl-line-rows li[data-kind="started"]::before { content: "▸ "; color: var(--acc); }
+.pl-line-rows li[data-kind="added"]::before { content: "+ "; color: var(--acc); }
+.pl-line-rows li[data-kind="removed"], .pl-line-rows li[data-kind="skipped"] { color: var(--txd); }
+.pl-line-rows li[data-kind="removed"]::before { content: "− "; }
+.pl-line-rows li[data-kind="skipped"]::before { content: "↷ "; }
 /* The Mini App's page scrolls with 12px of padding (routes/root), which a sticky bar stops short of,
    and its --panel is see-through. Without this, cards show around the bar. */
 .wl-dock, .wl-sheet-f { bottom: -12px; background: var(--background); }

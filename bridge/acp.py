@@ -385,7 +385,7 @@ class Turn:
                                 "activeForm": e.get("content")}
                                for e in u.get("entries") or []], self.hide)
             from bridge import chatplan     # an ACP agent's plan, mirrored into the Work list
-            chatplan.from_todos(job.store_session_id, job.todos)
+            chatplan.from_todos(job.store_session_id, job.todos, job)
         elif kind == "usage_update":
             if isinstance(u.get("used"), int):
                 job.ctx_tokens = u["used"]

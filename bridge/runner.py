@@ -2309,7 +2309,7 @@ def _handle_event(job: Job, d: dict):
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
                     from bridge import chatplan   # local import: runner<->* cycle
-                    chatplan.from_todos(job.store_session_id, job.todos)
+                    chatplan.from_todos(job.store_session_id, job.todos, job)
                 elif name == "TaskUpdate" and inp.get("taskId"):
                     tid = str(inp["taskId"])
                     job.task_status[tid] = str(inp.get("status")

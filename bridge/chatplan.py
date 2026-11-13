@@ -13,6 +13,10 @@ Who owns it. The agent does: it's what the agent means to do. Your changes go to
 (channel.human_message), with what you changed, and stay pending until it next writes its plan. The one
 thing that doesn't need it is copying a step to the work list, which is yours.
 
+In the chat. A plan beside the list is easy to miss while you read the transcript, so every write that
+changes something also adds a "plan" event to the turn (changes): which steps were added, removed,
+started, finished, skipped or renamed, and how far sub-steps got. Both apps draw it as a line of its own.
+
 Kept in .mystical/plans/<chat>.json at the main checkout: per chat, it survives a restart, and it's
 readable without the store. Bridge-owned, so the MYSTICAL panel can't clear it. Stdlib only.
 """
@@ -107,6 +111,59 @@ def _match(old: list, row: dict, taken: set) -> "dict | None":
     return next((s for s in old if s["title"].lower() == title and s["id"] not in taken), None)
 
 
+MAX_CHANGES = 12
+
+
+def changes(old: list, new: list) -> list:
+    """What a write did to the plan, step by step, in the plan's order. Only what you'd notice: a
+    status, a title, a step coming or going, sub-steps done. Not a description's every word."""
+    before = {s["id"]: s for s in old}
+    out = []
+    for n, s in enumerate(new, 1):
+        o = before.get(s["id"])
+        row = {"n": n, "id": s["id"], "title": s["title"]}
+        if not o:
+            out.append({**row, "kind": "added", "status": s["status"]})
+            continue
+        if o["title"] != s["title"]:
+            out.append({**row, "kind": "renamed", "was": o["title"]})
+        if o["status"] != s["status"]:
+            kind = {"completed": "done", "in_progress": "started", "skipped": "skipped"}.get(s["status"], "reopened")
+            out.append({**row, "kind": kind})
+        subs, was = s.get("substeps") or [], o.get("substeps") or []
+        done = sum(x["status"] in ("completed", "skipped") for x in subs)
+        if subs and (done != sum(x["status"] in ("completed", "skipped") for x in was) or len(subs) != len(was)) and o["status"] == s["status"]:
+            out.append({**row, "kind": "substeps", "done": done, "of": len(subs)})
+        elif (o.get("detail") or "") != (s.get("detail") or "") and o["status"] == s["status"] and o["title"] == s["title"]:
+            out.append({**row, "kind": "edited"})
+    kept = {s["id"] for s in new}
+    out += [{"n": None, "id": s["id"], "title": s["title"], "kind": "removed"} for s in old if s["id"] not in kept]
+    return out
+
+
+def event(old: list, data: dict) -> "dict | None":
+    """The transcript's line for a write, or None when nothing a reader would notice changed."""
+    steps = data["steps"]
+    rows = changes(old, steps)
+    if not rows:
+        return None
+    first = not old
+    return {"type": "plan", "first": first, "done": sum(s["status"] in ("completed", "skipped") for s in steps), "total": len(steps),
+            "steps": [s["title"] for s in steps][:30] if first else [], "changes": [] if first else rows[:MAX_CHANGES],
+            "more": 0 if first else max(0, len(rows) - MAX_CHANGES)}
+
+
+def _tell(job, old: list, data: "dict | None") -> None:
+    if job is None or not data:
+        return
+    try:
+        ev = event(old, data)
+        if ev:
+            job.add(ev)
+    except Exception as e:  # noqa: BLE001 - the plan is saved; only its line in the chat is missing
+        print(f"[chatplan] event: {e!r}", file=sys.stderr)
+
+
 def _write(root: str, chat: str, rows: list, source: str, keep_rich: bool = False) -> "dict | None":
     """The plan becomes `rows`. Steps it names, by id or title, keep their id and times."""
     if not isinstance(rows, list):
@@ -179,19 +236,24 @@ def _root(s: dict) -> str:
     return root
 
 
-def tool(s: dict, a: dict) -> str:
-    """chat_plan, for a chat's main agent."""
+def tool(s: dict, a: dict, job=None) -> str:
+    """chat_plan, for a chat's main agent. With the turn's `job`, what changed goes in the chat too."""
     root, action = _root(s), str(a.get("action") or "read")
     if action == "read":
         return briefly(load(root, s["id"]))
+    old = load(root, s["id"])["steps"]
     if action == "set":
-        return "Plan saved. The user sees it in the Work list.\n\n" + briefly(_write(root, s["id"], a.get("steps"), "tool"))
+        data = _write(root, s["id"], a.get("steps"), "tool")
+        _tell(job, old, data)
+        return "Plan saved. The user sees it in the Work list, and its changes in the chat.\n\n" + briefly(data)
     if action == "update":
-        return "Updated.\n\n" + briefly(_update(root, s["id"], a))
+        data = _update(root, s["id"], a)
+        _tell(job, old, data)
+        return "Updated.\n\n" + briefly(data)
     raise Refused("action must be read, set or update.")
 
 
-def from_todos(session_id: "str | None", todos: list) -> None:
+def from_todos(session_id: "str | None", todos: list, job=None) -> None:
     """An agent's built-in task list, mirrored in as plain steps. Never raises into a turn."""
     try:
         from bridge import experimental, store
@@ -201,7 +263,9 @@ def from_todos(session_id: "str | None", todos: list) -> None:
         if not s or s.get("parent_session"):
             return
         rows = [{"title": t.get("content") or t.get("activeForm"), "status": t.get("status")} for t in todos if isinstance(t, dict)]
-        _write(_root(s), s["id"], rows, "todos", keep_rich=True)
+        root = _root(s)
+        old = load(root, s["id"])["steps"]
+        _tell(job, old, _write(root, s["id"], rows, "todos", keep_rich=True))
     except Exception as e:  # noqa: BLE001
         print(f"[chatplan] todos: {e!r}", file=sys.stderr)
 

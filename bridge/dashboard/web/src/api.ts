@@ -267,6 +267,8 @@ export type RunEvent =
   | { type: "switch"; from: string; to: string; turns?: number; whole?: boolean }
   | { type: "delegation"; session_id: string; name: string; brief?: string; agent?: string; profile?: string | null; write?: boolean }
   | { type: "merge"; name: string; state: string; session_id?: string }
+  // The chat's plan changed (bridge/chatplan.py, lib/planline).
+  | import("./lib/planline").PlanEv
   // What the bridge's own tools record (bridge/gateway_tools.py, bridge/rules.py).
   // A figure is the agent showing you something, with a caption: `images` are upload-dir
   // paths, served by /local/attachment. `compare` is [before, after].

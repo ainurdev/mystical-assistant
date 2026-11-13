@@ -142,3 +142,69 @@ def test_the_panel_cant_clear_plans(world):
     cp.tool(world["s"], {"action": "set", "steps": STEPS})
     with pytest.raises(ValueError):
         mystical_dir.delete(world["root"], "plans")
+
+
+class Job:
+    def __init__(self):
+        self.events = []
+
+    def add(self, ev):
+        self.events.append(ev)
+
+
+def test_a_first_plan_is_one_line_with_its_steps(world):
+    job = Job()
+    cp.tool(world["s"], {"action": "set", "steps": STEPS}, job)
+    ev = job.events[0]
+    assert ev["type"] == "plan" and ev["first"] and ev["total"] == 3 and ev["done"] == 1
+    assert ev["steps"] == ["Read the code", "Build it", "Test it"] and ev["changes"] == []
+
+
+def test_each_change_says_what_happened(world):
+    cp.tool(world["s"], {"action": "set", "steps": STEPS})
+    job = Job()
+    cp.tool(world["s"], {"action": "set", "steps": [
+        {"title": "Read the code", "status": "completed"},
+        {"id": "s2", "title": "Build the run branch", "status": "completed",
+         "substeps": [{"title": "Branch", "status": "completed"}, {"title": "Merge", "status": "completed"}]},
+        {"title": "Write docs", "status": "pending"}]}, job)
+    got = [(c["kind"], c["n"], c["title"]) for c in job.events[0]["changes"]]
+    assert ("renamed", 2, "Build the run branch") in got and ("done", 2, "Build the run branch") in got
+    assert ("added", 3, "Write docs") in got and ("removed", None, "Test it") in got
+    assert next(c for c in job.events[0]["changes"] if c["kind"] == "renamed")["was"] == "Build it"
+    assert job.events[0]["done"] == 2 and job.events[0]["total"] == 3
+
+
+def test_sub_steps_and_descriptions(world):
+    cp.tool(world["s"], {"action": "set", "steps": STEPS})
+    job = Job()
+    cp.tool(world["s"], {"action": "update", "id": "s2", "substeps": [{"title": "Branch", "status": "completed"}, {"title": "Merge", "status": "completed"}]}, job)
+    cp.tool(world["s"], {"action": "update", "id": "s3", "detail": "Run pytest"}, job)
+    cp.tool(world["s"], {"action": "update", "id": "s3", "note": "only a note"}, job)
+    kinds = [(c["kind"], c.get("done"), c.get("of")) for e in job.events for c in e["changes"]]
+    assert kinds == [("substeps", 2, 2), ("edited", None, None)], "a note alone isn't worth a line"
+
+
+def test_starting_skipping_and_reopening(world):
+    cp.tool(world["s"], {"action": "set", "steps": STEPS})
+    job = Job()
+    for status in ("in_progress", "skipped", "pending"):
+        cp.tool(world["s"], {"action": "update", "id": "s3", "status": status}, job)
+    assert [e["changes"][0]["kind"] for e in job.events] == ["started", "skipped", "reopened"]
+
+
+def test_a_long_rewrite_is_capped(world):
+    job = Job()
+    cp.tool(world["s"], {"action": "set", "steps": [{"title": f"one {i}"} for i in range(5)]})
+    cp.tool(world["s"], {"action": "set", "steps": [{"title": f"two {i}"} for i in range(20)]}, job)
+    ev = job.events[0]
+    assert len(ev["changes"]) == cp.MAX_CHANGES and ev["more"] == 25 - cp.MAX_CHANGES
+
+
+def test_a_mirrored_task_list_shows_in_the_chat_too(world):
+    job = Job()
+    cp.from_todos(world["s"]["id"], [{"content": "A", "status": "in_progress"}], job)
+    cp.from_todos(world["s"]["id"], [{"content": "A", "status": "completed"}], job)
+    assert job.events[0]["first"] and job.events[1]["changes"][0]["kind"] == "done"
+    cp.from_todos(world["s"]["id"], [{"content": "A", "status": "completed"}], job)
+    assert len(job.events) == 2, "the same list again says nothing"

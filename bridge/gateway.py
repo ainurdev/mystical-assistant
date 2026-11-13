@@ -441,7 +441,7 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name == "chat_plan":
         from bridge import chatplan
         try:
-            return _text(chatplan.tool(s, a))
+            return _text(chatplan.tool(s, a, job))
         except chatplan.Refused as e:
             return _text(str(e), error=True)
     if name == "work_run":

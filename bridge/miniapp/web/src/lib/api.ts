@@ -380,6 +380,8 @@ export type RunEvent =
   | { type: "delegation"; session_id: string; name: string; brief: string; agent: string;
       profile?: string | null; write?: boolean }
   | { type: "merge"; name: string; state: string; session_id?: string }
+  // The chat's plan changed (bridge/chatplan.py, lib/planline).
+  | import("./planline").PlanEv
   // The Mystical tools (bridge/gateway_tools.py). A picture shown to you: `images` are
   // absolute paths served by /api/attachment. A recorded test run; a Markdown file
   // presented as a card, its path relative to the project; a request for a key, and
