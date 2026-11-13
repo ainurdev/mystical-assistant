@@ -45,8 +45,11 @@ _subagents: dict = {}          # session id -> {name: {started, ended}} from Sub
 _DESTRUCTIVE = (r"git\s+reset\s+--hard|git\s+clean\s+-[a-z]*f|git\s+push\s+[^|;&]*(--force|-f\b)|"
                 r"git\s+checkout\s+--\s|git\s+branch\s+-D|git\s+rebase\b|rm\s+-[a-z]*r[a-z]*f|rm\s+-[a-z]*f[a-z]*r|"
                 r"drop\s+(table|database)|mkfs\.|dd\s+if=")
-_TEST_CMD = re.compile(r"\b(pytest|npm\s+(run\s+)?test|yarn\s+test|pnpm\s+test|vitest|jest|go\s+test|cargo\s+test|"
-                       r"phpunit|rspec|make\s+test|tsc\b|\.check\.ts)", re.I)
+# A project's own script counts as much as a runner does: `./strings.sh test`, `just test`, `bin/test`.
+_TEST_CMD = re.compile(r"\b(pytest|unittest|tox|nox|npm\s+(run\s+)?test|yarn\s+test|pnpm\s+(run\s+)?test|bun\s+test|deno\s+test|"
+                       r"vitest|jest|mocha|go\s+test|cargo\s+(test|nextest)|dotnet\s+test|swift\s+test|mix\s+test|phpunit|rspec|"
+                       r"(make|just|task|rake|gradle|mvn|\./gradlew)\s+test|tsc\b|\.check\.ts)|(^|[\s;&|(])(\.{0,2}/)?[\w./-]+"
+                       r"\.(sh|py)\s+(test|tests|check)\b|(^|[\s;&|(])(\./)?(bin|scripts?)/(test|check)\b", re.I)
 _SECRET_OUT = re.compile(r"(sk-ant-[A-Za-z0-9_.-]+|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|"
                          r"xox[abposr]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
 BOTH, CLAUDE_ONLY = ("claude", "kimi"), ("claude",)
@@ -289,14 +292,20 @@ def _on_stop(session: dict, usable) -> dict:
     edited = any(e.get("type") == "tool" and e.get("name") in _CODE_EDIT for e in events)
     if not edited and not _changed_since(session.get("work_cwd") or session.get("cwd") or "", job.started):
         return {}
+    # The whole command, as the transcript keeps only its start: a test run at the end of a long
+    # heredoc was missed, and the agent was sent back to test what it had tested.
+    commands = [c for c, _ in (getattr(job, "bash_cmds", None) or {}).values()]
     tested = any((e.get("type") == "checks") or (e.get("type") == "tool" and _TEST_CMD.search(
-        str(e.get("detail") or e.get("summary") or ""))) for e in events)
+        str(e.get("detail") or e.get("summary") or ""))) for e in events) or any(_TEST_CMD.search(c or "") for c in commands)
     if tested:
         return {}
     _stop_asked.add(job.id)
     if len(_stop_asked) > 2000:
         _stop_asked.clear()
-    why = "You changed code this turn and nothing ran the tests. Run them, or say in your reply why you didn't."
+    # The reply after this is the one shown as the turn's answer, and the one Telegram sends, so a
+    # short "they pass now" there would bury the answer just written.
+    why = ("You changed code this turn and nothing ran the tests. Run them, or say why you didn't. Then give your whole "
+           "answer again: your next reply replaces the one you just wrote as what the user reads.")
     _note(session, "test_before_done", "Stop", "", "asked to test", "")
     return {"keep_going": why}
 

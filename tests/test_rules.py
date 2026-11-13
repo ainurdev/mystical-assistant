@@ -135,6 +135,35 @@ def test_test_before_done_asks_once(tmp_path, monkeypatch):
     assert rules.evaluate(s, "Stop", {}) == {}
 
 
+def test_a_test_run_anywhere_in_a_long_command_counts(tmp_path, monkeypatch):
+    """Found in a real session: the run was the tail of a heredoc the transcript had cut short."""
+    on("test_before_done")
+    s = _s(tmp_path)
+    job = FakeJob()
+    long_cmd = "python3 - <<'EOF'\n" + "x = 1\n" * 200 + "EOF\n./strings.sh test 2>&1 | tail -5"
+    job.events += [{"type": "tool", "name": "Edit"}, {"type": "tool", "name": "Bash", "summary": long_cmd[:120], "detail": long_cmd[:400]}]
+    job.bash_cmds = {"t1": (long_cmd, None)}
+    monkeypatch.setattr(runner, "live_job", lambda sid: job)
+    assert rules.evaluate(s, "Stop", {}) == {}
+
+
+@pytest.mark.parametrize("cmd,tested", [
+    ("./strings.sh test", True), ("bash scripts/run.sh tests -q", True), ("just test", True), ("bun test", True),
+    ("python -m unittest", True), ("tox -e py312", True), ("cargo nextest run", True), ("bin/test", True), ("dotnet test", True),
+    ("cat test_calc.py", False), ("grep -n test file.py", False), ("./build.sh", False), ("git commit -m 'add tests'", False),
+])
+def test_what_counts_as_running_the_tests(cmd, tested):
+    assert bool(rules._TEST_CMD.search(cmd)) is tested
+
+
+def test_being_sent_back_asks_for_the_whole_answer(tmp_path, monkeypatch):
+    on("test_before_done")
+    job = FakeJob()
+    job.events.append({"type": "tool", "name": "Edit"})
+    monkeypatch.setattr(runner, "live_job", lambda sid: job)
+    assert "whole answer again" in rules.evaluate(_s(tmp_path), "Stop", {})["keep_going"]
+
+
 def test_compaction_asks_for_the_pack_again(tmp_path):
     from bridge import prompt_pack
     s = _s(tmp_path, "kimi")
