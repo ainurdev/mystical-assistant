@@ -329,13 +329,21 @@ export function Terminal({
   // GRID is for Mystical's own helpers; AGENTS for Claude's sub-agents (components/AgentsView). Each
   // shows only in a chat that has that kind, and a chat remembers whether you left it on AGENTS.
   const hasAgents = multiOn && !!chatId && agentRows.some((r) => r.kind !== "subagent");
-  const hasSubs = multiOn && !!sessionId && !helperChat && agentRows.some((r) => r.kind === "subagent");
+  // `asked`: the composer's "Agents view" pill opened it (hud:agents-view). The pill knows a chat has
+  // sub-agents from its own roster, so the way in doesn't wait on the sidebar's tree having loaded.
+  const [asked, setAsked] = useState<string | null>(null);
+  const hasSubs = multiOn && !!sessionId && !helperChat && (asked === sessionId || agentRows.some((r) => r.kind === "subagent"));
   const grid = isChat && hasAgents && gridFor === chatId;
   const teamKey = sessionId ? `mystical.agents-view.${sessionId}` : "";
   const [teamOn, setTeamOn] = useState(false);
   useEffect(() => { try { setTeamOn(!!teamKey && localStorage.getItem(teamKey) === "1"); } catch { setTeamOn(false); } }, [teamKey]);
   const setTeam = (on: boolean) => { setTeamOn(on); try { if (on) localStorage.setItem(teamKey, "1"); else localStorage.removeItem(teamKey); } catch { /* private mode */ } };
   const team = isChat && hasSubs && teamOn && !grid;
+  useEffect(() => {
+    const open = () => { if (!sessionId) return; setAsked(sessionId); setGridFor(null); setTeamOn(true); try { localStorage.setItem(`mystical.agents-view.${sessionId}`, "1"); } catch { /* private mode */ } };
+    window.addEventListener("hud:agents-view", open);
+    return () => window.removeEventListener("hud:agents-view", open);
+  }, [sessionId]);
   const subsWorking = agentRows.filter((r) => r.kind === "subagent" && r.status === "running").length;
   // Opening a helper or the chat from a card lands on its conversation.
   const openedFrom = useRef(sessionId);
@@ -773,7 +781,7 @@ export function Terminal({
       style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
-      {!(compact && isChat && !chrome) && island}
+      {!(compact && isChat && !chrome && !hasAgents && !hasSubs) && island}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>

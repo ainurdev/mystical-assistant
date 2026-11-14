@@ -218,6 +218,7 @@ export function AgentsView({ sessionId, top, running, onSay, onStop, onChat }: {
         {counts.failed ? <div data-warn=""><b>{counts.failed}</b>failed</div> : null}
         <div><b>{agents.length}</b>agents{team?.depth && team.depth > 1 ? `, ${team.depth} levels deep` : ""}</div>
         <span className="tm-gap" />
+        <button type="button" className="tm-btn" onClick={onChat}><ChevronLeft size={13} aria-hidden />Back to the chat</button>
         {error ? <span className="tm-err" role="alert">{/not found|404/i.test(error) ? "Press ⟳ to load the Agents view: this bridge is running older code." : error}</span> : null}
       </div>
       <div className="tm-cols">

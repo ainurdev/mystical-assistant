@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMultiOn } from "../lib/multistore";
 import { api, type AgentsInfo } from "../api";
 import type { HudSettings } from "../lib/theme";
 import { OPEN_AGENT, setRoster } from "../lib/subagents";
@@ -18,6 +19,7 @@ export function AgentsPill({
   hud?: HudSettings;
 }) {
   // false = shut; true = open on the first agent; a string = open on that agent.
+  const multiOn = useMultiOn();
   const [open, setOpen] = useState<boolean | string>(false);
   const [hov, setHov] = useState(false);
   const [data, setData] = useState<AgentsInfo | null>(null);
@@ -125,6 +127,16 @@ export function AgentsPill({
           </>
         )}
       </button>
+      {/* The way into the Agents view (components/AgentsView), wherever the header's switch is or isn't. */}
+      {multiOn && (
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("hud:agents-view"))}
+          title="Open the Agents view: who's working, what they're doing, what they said"
+          style={{ appearance: "none", cursor: "pointer", alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6,
+                   border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--acc) 8%, transparent)",
+                   color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 0.5, padding: "4px 12px", borderRadius: 999 }}>
+          Agents view ↗
+        </button>
+      )}
       {open && dataFor === sessionId && (
         <AgentsModal
           sessionId={sessionId}
