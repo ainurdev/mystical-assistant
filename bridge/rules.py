@@ -294,7 +294,7 @@ def _on_stop(session: dict, usable) -> dict:
         return {}
     # The whole command, as the transcript keeps only its start: a test run at the end of a long
     # heredoc was missed, and the agent was sent back to test what it had tested.
-    commands = [c for c, _ in (getattr(job, "bash_cmds", None) or {}).values()]
+    commands = [c for c, _ in (getattr(job, "bash_cmds", None) or {}).values()] + list(getattr(job, "sub_cmds", None) or [])
     tested = any((e.get("type") == "checks") or (e.get("type") == "tool" and _TEST_CMD.search(
         str(e.get("detail") or e.get("summary") or ""))) for e in events) or any(_TEST_CMD.search(c or "") for c in commands)
     if tested:

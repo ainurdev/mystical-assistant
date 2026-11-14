@@ -3201,6 +3201,8 @@ export function App() {
                 // behind a running turn. force skips the relevance hold: the PR
                 // is this session's own work.
                 onSendText={(text) => void send(text, [], { force: true })}
+                onSteerText={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }}
+                onStopTurn={() => void stop()}
                 onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
                 // RESOLVE IN A NEW SESSION: a fresh session in this session's own
                 // checkout (its worktree, else the project), the prompt as its first turn.
@@ -3328,7 +3330,15 @@ export function App() {
                   <DesignPane key={designBoard} board={designBoard} onClose={() => setDesignBoard(null)}
                     chrome={isLinuxApp() ? <LinuxClose /> : undefined}
                     // Into the running turn when there is one, the way the composer's SEND does.
-                    onSend={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }} />
+                    // A question waiting on you is answered by your feedback: the card goes, and the agent
+                    // reads the feedback as its answer. A steer would sit behind the card until you answered it.
+                    onSend={(text) => {
+                      const ask = active?.pending.find((p) => p.kind === "question");
+                      const steer = () => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); };
+                      if (!ask) return steer();
+                      const answers = (ask.questions ?? []).map((q, i) => ({ header: q.header, labels: [], notes: i === 0 ? text : undefined }));
+                      void respond(ask.request_id, { answers }).then((ok) => { if (ok === false) steer(); });
+                    }} />
                 </>
               ) : (
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>

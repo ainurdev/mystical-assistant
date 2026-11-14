@@ -82,6 +82,10 @@ def _finished(meta: dict, agent_id: str, marks: set[str]) -> bool:
     """A foreground agent is done when its tool_use has its tool_result. A
     background one gets that at launch ("Async agent launched"), so its mark is
     the task-notification the CLI appends when it ends (see _finished_marks)."""
+    # Any agent the CLI marked finished is: a sub-agent's own sub-agent has its tool result in its
+    # parent's file, not the main transcript, so `marks` never has it and it spun for good.
+    if meta.get("finished") is True:
+        return True
     if meta.get("requestShape") == "background":
         # The CLI writes `finished` when it ends (2.1.318 does; older ones don't, and
         # 2.1.318's notification no longer arrives as a user record, so marks miss it).

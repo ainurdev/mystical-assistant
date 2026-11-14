@@ -12,6 +12,7 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "./index.css";
 import "./multi.css";
+import "./team.css";
 import "./agenttools.css";
 import "./dataview.css";
 import "./chatread.css";

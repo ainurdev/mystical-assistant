@@ -2117,6 +2117,10 @@ export const api = {
       body: { project, ...(branch ? { branch } : {}) },
     }),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
+  /** A chat's Claude sub-agents as a team, and one up close (bridge/agent_team.py). */
+  agentTeam: (sessionId: string) => req<import("./lib/agentteam").Team>(`/local/team?session=${encodeURIComponent(sessionId)}`),
+  agentTeamOne: (sessionId: string, agentId: string) =>
+    req<import("./lib/agentteam").AgentDetail>(`/local/team/agent?session=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agentId)}`),
   /** What the composer completes from disk (bridge/complete.py). */
   completePaths: (project: string | null, prefix: string) =>
     req<{ paths: { text: string; name: string; dir: boolean }[] }>(`/local/complete/paths?project=${encodeURIComponent(project ?? "")}&prefix=${encodeURIComponent(prefix)}`),

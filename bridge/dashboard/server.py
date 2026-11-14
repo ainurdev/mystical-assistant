@@ -926,6 +926,17 @@ class Handler(BaseHTTPRequestHandler):
             if base not in refs or head not in refs:
                 return self._json({"error": "invalid ref"}, 400)
             return self._json(git.compare(abs_p, base, head, three_dot))
+        if path in ("/local/team", "/local/team/agent"):
+            # The Agents view (bridge/agent_team.py): a chat's Claude sub-agents as a tree, and one up close.
+            from bridge import agent_team
+            sid = qs.get("session", [""])[0]
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if path == "/local/team":
+                return self._json(agent_team.team(s))
+            one = agent_team.agent(s, qs.get("agent", [""])[0])
+            return self._json(one) if one else self._json({"error": "not found"}, 404)
         if path == "/local/agents":
             sid = qs.get("session", [""])[0]
             s = store.get_session(sid) if sid else None

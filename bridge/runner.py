@@ -870,6 +870,7 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        self.sub_cmds: list = []      # every shell command this turn, whole: the agent's and its sub-agents'.
         # The plan as the task tools keep it — what claude 2.1.280 -p offers
         # instead of TodoWrite: task id -> its latest status (TaskCreate's result
         # names the id, TaskUpdate moves it). The RIVENDELL card's todo bar.
@@ -2265,6 +2266,17 @@ def _handle_event(job: Job, d: dict):
         # (e.g. --session-id rejected on an older CLI) — the row must follow it.
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
+    if d.get("parent_tool_use_id") and t in ("assistant", "user"):
+        # A sub-agent's step, not this chat's agent's. Claude Code writes it to that agent's own file,
+        # which the Agents view reads (bridge/agent_team.py). Recorded here, a 100-agent turn was 7,500
+        # rows of other agents' work with nothing saying whose. Its shell commands are still noted, as
+        # a sub-agent running the tests is the tests having run (rules: Don't finish untested).
+        if t == "assistant":
+            for b in d.get("message", {}).get("content", []):
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash":
+                    job.sub_cmds.append(str((b.get("input") or {}).get("command") or "")[:20000])
+            del job.sub_cmds[:-400]
+        return
     if t == "assistant":
         if job.status == "done":
             # ponytail: claude -p emits `result` when the model ends its turn with
@@ -2306,6 +2318,9 @@ def _handle_event(job: Job, d: dict):
                 if name == "Bash":
                     cmd = inp.get("command") or ""
                     job.bash_cmds[b.get("id")] = (cmd, _trees_before(job, cmd))
+                    # bash_cmds forgets a command when its result arrives; the Stop rule reads this one.
+                    job.sub_cmds.append(cmd[:20000])
+                    del job.sub_cmds[:-400]
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
                     from bridge import chatplan   # local import: runner<->* cycle

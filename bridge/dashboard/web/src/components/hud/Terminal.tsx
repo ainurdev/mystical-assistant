@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
+import { AgentsView } from "../AgentsView";
 import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
@@ -225,7 +226,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
-  run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
+  run, onOpenRun, onDropFiles, chrome, onSendText, onSteerText, onStopTurn, onArchive, onStartHere, teamMe,
   limit, logins, gridMain,
 }: {
   /** The chat behind the open session, as the grid's main card: null with no multi-agent chats. */
@@ -291,6 +292,10 @@ export function Terminal({
   chrome?: ReactNode;
   /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
   onSendText?: (text: string) => void;
+  /** Into the running turn when there is one, else a new turn: what the Agents view's box sends. */
+  onSteerText?: (text: string) => void;
+  /** Stop the running turn (the Agents view's "Stop everything"). */
+  onStopTurn?: () => void;
   /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
   onStartHere?: (text: string) => void;
   /** The PR chip's ARCHIVE SESSION, after a merge. */
@@ -321,8 +326,17 @@ export function Terminal({
   const chatId = helperChat ?? sessionId ?? null;
   const agentRows = useTreeRows(multiOn ? chatId : null);
   const [gridFor, setGridFor] = useState<string | null>(null);
-  const hasAgents = multiOn && !!chatId && agentRows.length > 0;
+  // GRID is for Mystical's own helpers; AGENTS for Claude's sub-agents (components/AgentsView). Each
+  // shows only in a chat that has that kind, and a chat remembers whether you left it on AGENTS.
+  const hasAgents = multiOn && !!chatId && agentRows.some((r) => r.kind !== "subagent");
+  const hasSubs = multiOn && !!sessionId && !helperChat && agentRows.some((r) => r.kind === "subagent");
   const grid = isChat && hasAgents && gridFor === chatId;
+  const teamKey = sessionId ? `mystical.agents-view.${sessionId}` : "";
+  const [teamOn, setTeamOn] = useState(false);
+  useEffect(() => { try { setTeamOn(!!teamKey && localStorage.getItem(teamKey) === "1"); } catch { setTeamOn(false); } }, [teamKey]);
+  const setTeam = (on: boolean) => { setTeamOn(on); try { if (on) localStorage.setItem(teamKey, "1"); else localStorage.removeItem(teamKey); } catch { /* private mode */ } };
+  const team = isChat && hasSubs && teamOn && !grid;
+  const subsWorking = agentRows.filter((r) => r.kind === "subagent" && r.status === "running").length;
   // Opening a helper or the chat from a card lands on its conversation.
   const openedFrom = useRef(sessionId);
   useEffect(() => {
@@ -468,7 +482,7 @@ export function Terminal({
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
   const body = (
-    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || team ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
       {dropping && (
         <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>
@@ -662,10 +676,11 @@ export function Terminal({
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         {isChat && !empty && sessionId && multiOn && onJumpTo && <ChatSearch sessionId={sessionId} turns={turns} onJump={onJumpTo} />}
-        {isChat && hasAgents && (
-          <span className="ma-viewsw" role="group" aria-label="Chat or grid">
-            <button type="button" aria-pressed={!grid} onClick={() => setGridFor(null)}>CHAT</button>
-            <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>
+        {isChat && (hasAgents || hasSubs) && (
+          <span className="ma-viewsw" role="group" aria-label="Chat or agents">
+            <button type="button" aria-pressed={!grid && !team} onClick={() => { setGridFor(null); setTeam(false); }}>CHAT</button>
+            {hasSubs && <button type="button" aria-pressed={team} onClick={() => { setGridFor(null); setTeam(true); }} title="This chat's sub-agents: who's working, what they're doing, what they said">AGENTS{subsWorking ? ` ${subsWorking}` : ""}</button>}
+            {hasAgents && <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>}
           </span>
         )}
         <ViewTabs view={view} onView={onView} />
@@ -772,9 +787,14 @@ export function Terminal({
         <>
           {body}
           {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
-          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, composer: hud?.composer ?? "tabs", sendKey: hud?.sendKey ?? "enter" }}>
-            {composer}
-          </ChatChromeContext.Provider>
+          {team && sessionId && <AgentsView sessionId={sessionId} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} running={!!activeId}
+            onSay={(text) => (onSteerText ?? onSendText)?.(text)} onStop={() => onStopTurn?.()} onChat={() => setTeam(false)} />}
+          {/* The Agents view has its own box, which says what each message will do: the composer would only compete with it. */}
+          {!team && (
+            <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, composer: hud?.composer ?? "tabs", sendKey: hud?.sendKey ?? "enter" }}>
+              {composer}
+            </ChatChromeContext.Provider>
+          )}
         </>
       )}
     </div>

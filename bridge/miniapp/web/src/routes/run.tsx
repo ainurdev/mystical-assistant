@@ -411,7 +411,13 @@ function RunPage({ barKey }: { barKey: string }) {
       {experimental && designBoard ? createPortal(
         // The phone has no room for two panes: the design takes the screen, and Close is the chat.
         <div className="dg-phone">
-          <DesignPane board={designBoard} onClose={() => setDesignBoard(null)} onSend={(text) => {
+          <DesignPane board={designBoard} onClose={() => setDesignBoard(null)} onSend={async (text) => {
+            // A question waiting on you is answered by your feedback: the card goes, and the agent reads it as its answer.
+            const ask = activeTurn?.pending.find((p) => p.kind === "question");
+            if (ask) {
+              const answers = (ask.questions ?? []).map((q, i) => ({ header: q.header, labels: [], notes: i === 0 ? text : undefined }));
+              if (await respond(ask.request_id, { answers })) return "Sent as your answer to the agent's question";
+            }
             if (isRunning) {
               setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text);
               return "The agent's busy, so it's in your message box";
