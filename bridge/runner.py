@@ -870,6 +870,7 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        self.after_tool: list = []    # events to add once the tool call in flight has its result (chatplan)
         self.sub_cmds: list = []      # every shell command this turn, whole: the agent's and its sub-agents'.
         # The plan as the task tools keep it — what claude 2.1.280 -p offers
         # instead of TodoWrite: task id -> its latest status (TaskCreate's result
@@ -1136,6 +1137,7 @@ class AcpJob(Job):
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
+        self.after_tool = None       # no stream of tool results to wait on here: a plan line goes in at once
         self.acp_account = ""            # the agent account id; "" = the CLI's own login
         self.agent_session_id = None     # the agent's own session id, once it's open
         self.conn = None                 # acp.Conn
@@ -2370,6 +2372,9 @@ def _handle_event(job: Job, d: dict):
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
+                if not job.open_tools:
+                    while job.after_tool:
+                        job.add(job.after_tool.pop(0))
     elif t == "system" and d.get("subtype") == "init" and job.status == "done":
         # Another turn in the same process. On --resume the CLI first replays
         # the notice of a background task the last process left behind, a
@@ -2396,6 +2401,8 @@ def _handle_event(job: Job, d: dict):
         # An interrupted turn may report is_error; treat it as a clean stop.
         job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
         job.elapsed = int(time.time() - job.started)
+        while job.after_tool:              # a turn that ended with a tool call still open
+            job.add(job.after_tool.pop(0))
         job.add({"type": "result", "result": job.result, "cost": job.cost,
                  "elapsed": job.elapsed, "is_error": job.status == "error"})
 

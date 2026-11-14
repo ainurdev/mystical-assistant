@@ -208,3 +208,18 @@ def test_a_mirrored_task_list_shows_in_the_chat_too(world):
     assert job.events[0]["first"] and job.events[1]["changes"][0]["kind"] == "done"
     cp.from_todos(world["s"]["id"], [{"content": "A", "status": "completed"}], job)
     assert len(job.events) == 2, "the same list again says nothing"
+
+
+def test_the_plan_line_waits_for_its_tool_to_finish(world):
+    """Added mid-call, it split the call from its result, and the chat drew a block of work with no steps."""
+    class Held(Job):
+        def __init__(self):
+            super().__init__()
+            self.after_tool = []
+    job = Held()
+    cp.tool(world["s"], {"action": "set", "steps": STEPS}, job)
+    assert job.events == [] and job.after_tool[0]["type"] == "plan"
+    acp = Held()
+    acp.after_tool = None
+    cp.tool(world["s"], {"action": "update", "id": "s3", "status": "completed"}, acp)
+    assert acp.events[0]["type"] == "plan", "an agent with no tool results to wait on gets it at once"

@@ -138,3 +138,15 @@ def test_a_sub_agents_steps_stay_out_of_the_chat(monkeypatch):
     runner._handle_event(job, sub_res)
     assert job.events == [] and job.sub_cmds == ["./strings.sh test"]
     assert rules._TEST_CMD.search(job.sub_cmds[0]), "and a sub-agent's test run still counts as tested"
+
+
+def test_a_held_plan_line_goes_in_after_the_tools_result():
+    job = Job()
+    job.after_tool = [{"type": "plan"}]
+    job.open_tools = {"t1": ("mcp__mystical__chat_plan", time.time()), "t2": ("Bash", time.time())}
+    res = lambda tid: {"type": "user", "session_id": "s", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": "ok"}]}}
+    job.id = "j"
+    runner._handle_event(job, res("t1"))
+    assert [e["type"] for e in job.events] == ["tool_done"], "another call is still open"
+    runner._handle_event(job, res("t2"))
+    assert [e["type"] for e in job.events] == ["tool_done", "tool_done", "plan"]

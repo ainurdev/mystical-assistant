@@ -158,7 +158,14 @@ def _tell(job, old: list, data: "dict | None") -> None:
         return
     try:
         ev = event(old, data)
-        if ev:
+        if not ev:
+            return
+        # After the tool call that wrote the plan has its result. Added now, it sat between a call and its
+        # result, and the transcript drew what followed as a block of work with no steps in it.
+        held = getattr(job, "after_tool", None)
+        if isinstance(held, list):
+            held.append(ev)
+        else:
             job.add(ev)
     except Exception as e:  # noqa: BLE001 - the plan is saved; only its line in the chat is missing
         print(f"[chatplan] event: {e!r}", file=sys.stderr)

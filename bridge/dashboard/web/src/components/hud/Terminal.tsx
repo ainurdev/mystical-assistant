@@ -719,6 +719,8 @@ export function Terminal({
   // makes it the theme's own card: brackets and hard corners in the HUD themes,
   // a soft radius in the reading ones. The blur sits on a layer of its own so
   // it isn't the containing block for anything fixed inside the row.
+  // The header keeps the column's measure: its gutters with the transcript, none in the Agents view.
+  const isleGutter = team ? "0px" : chatPad;
   const island = (
     // `isle` / `isle-glass`: VOID re-inks both (index.css) — the border and the
     // glass are inline here, and a theme can only outrank an inline rule by name.
@@ -728,10 +730,10 @@ export function Terminal({
     <div className={compact ? "isle isle-pill" : "panel isle"} style={{
       ...(compact
         ? isChat
-          ? { position: "absolute", top: ISLE_TOP, right: `calc(${chatPad} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${chatPad} + ${ISLE_X}px))` }
+          ? { position: "absolute", top: ISLE_TOP, right: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${isleGutter} + ${ISLE_X}px))` }
           : { position: "relative", alignSelf: "flex-end", margin: `${ISLE_TOP}px ${ISLE_X}px 0` }
         : isChat
-          ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
+          ? { position: "absolute", top: ISLE_TOP, left: `calc(${isleGutter} + ${ISLE_X}px)`, right: `calc(${isleGutter} + ${ISLE_X}px)` }
           : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
       zIndex: 12, flex: "none",
       borderRadius: compact ? 999 : undefined,
@@ -778,7 +780,9 @@ export function Terminal({
       // auto-placed side columns, and would take the first track from SESSIONS.
       data-bg={hud?.chatBg ?? "none"}
       data-layout={compact ? "compact" : "default"}
-      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden",
+        // The gutters are a reading measure for the transcript. The Agents view is three panes, and takes the column.
+        paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
       {!(compact && isChat && !chrome && !hasAgents && !hasSubs) && island}
