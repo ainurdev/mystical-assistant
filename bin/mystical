@@ -54,12 +54,18 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
   ${c_b}📦${c_0} mystical ${c_c}export${c_0}    pack repos, MCPs, settings and history into one file for a new machine
   ${c_b}📥${c_0} mystical ${c_c}import${c_0} <file> [--dry-run]  replay that file on the new machine
+  ${c_b}✉${c_0}  mystical ${c_c}prompt${c_0} --cwd <dir> [--title T] [--client NAME] [--ref R] [--wait [SECONDS]] [--json] <prompt | - | @file>
+                         hand the bridge a prompt from a script: prints the run id, or with --wait the final response
+  ${c_b}🔎${c_0} mystical ${c_c}run-status${c_0} <id> [--wait [SECONDS]] [--json]  one run: state, session link, response
+  ${c_b}📋${c_0} mystical ${c_c}runs${c_0} [--client NAME] [--json]  recent runs, newest first
+  ${c_b}✋${c_0} mystical ${c_c}run-cancel${c_0} <id>  stop a run ${c_d}(exit codes: 0 done · 3 bridge down · 4 failed · 5 cancelled · 6 not over; 'mystical prompt --help')${c_0}
   ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  macOS: build + install Mystical.app · Windows (WSL): build + install Mystical.exe · Linux: add the Mystical window (linux/window.py) to the app launcher + start the tray; 'app open' opens it
 EOF
 }
 
 case "${1:-start}" in
   build|doctor|-h|--help|help|design-link|app) : ;;   # build/diagnostics/help/design-link need no .env
+  prompt|run-status|runs|run-cancel) : ;;             # they read run-api.json, which the bridge wrote
   *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
 esac
 
@@ -442,6 +448,20 @@ project_config.set_design_project(sys.argv[1], sys.argv[2])
     # loads it, because bridge.config reads BASE_PATH and BRIDGE_DB from it.
     set -a; . "$ENV_FILE"; set +a
     PYTHONPATH="$REPO" exec python3 -m bridge.move "$@"
+    ;;
+  prompt|run-status|runs|run-cancel)
+    # The run API's client (bridge/run_cli.py): other programs hand the bridge a
+    # prompt. It reads only run-api.json, which sits beside the bridge's DB.
+    # -I as the gateway relay is run: bridge/ must not be on its import path.
+    # ponytail: a BRIDGE_DB moved from the SYSTEM tab (not .env) isn't seen
+    # here; point MYSTICAL_RUN_API at <that folder>/run-api.json then.
+    if [ -z "${MYSTICAL_RUN_API:-}" ]; then
+      db="$(grep -oE '^BRIDGE_DB="?[^"]+' "$ENV_FILE" 2>/dev/null | head -n1 | sed 's/^BRIDGE_DB="\{0,1\}//' || true)"
+      db="${db/#\~/$HOME}"; db="${db//\$HOME/$HOME}"
+      if [ -n "$db" ]; then MYSTICAL_RUN_API="$(dirname "$db")/run-api.json"
+      else MYSTICAL_RUN_API="$STATE_DIR/run-api.json"; fi
+    fi
+    MYSTICAL_RUN_API="$MYSTICAL_RUN_API" exec python3 -I "$REPO/bridge/run_cli.py" "$@"
     ;;
   -h|--help|help)   usage ;;
   *)                die "unknown command: $1"$'\n'"$(usage)" ;;

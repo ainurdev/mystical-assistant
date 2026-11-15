@@ -42,7 +42,7 @@ import sys
 
 from bridge import (acp_setup, automations, config, devserver, dream, envsettings, landing, limits,
                     native_activity, notices, onboard, profiles, pubsub, queue_manager, recovery,
-                    report, rivendell, runner, selfupdate, state, store,
+                    report, rivendell, run_api, runner, selfupdate, state, store,
                     tgtopics, toolsets, tunnel, whatsnew)
 from bridge.dispatch import handle_callback, menu, on_message, on_stop
 from bridge.telegram import get_updates, set_commands, tg
@@ -190,6 +190,7 @@ def main():
             notices.watch_quiet()      # what quiet hours held, in one message as they end
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
         automations.boot()             # your timers, listeners and commands that run agents
+        run_api.boot()                 # other programs' runs: publish the address, pick up what a restart left
         whatsnew.boot()                # what the last update changed, and new notes, into the changelog
         whatsnew.watch()               # hourly look upstream: what a waiting update brings, before it's taken
         # Always reconcile: the enabled set lives per-instance in the instances

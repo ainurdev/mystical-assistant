@@ -364,6 +364,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/local/") and self.headers.get(
                     "Sec-Fetch-Site") not in (None, "same-origin", "none"):
                 return self._json({"error": "cross-site request"}, 403)
+            if path == "/local/runs" or path.startswith("/local/runs/"):
+                # Another program's runs (bridge/run_api.py): its own token on
+                # every route, reads too, and nothing else here answers to it.
+                from bridge import run_api
+                return self._json(*run_api.http("GET", path, qs, None,
+                                                self.headers.get("X-Run-Token")))
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
@@ -402,6 +408,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "bad json"}, 400)
                 out, code = gateway.hook(self.headers.get("X-Gateway-Token"), body)
                 return self._json(out, code)
+            if path == "/local/runs" or path.startswith("/local/runs/"):
+                # The run API (bridge/run_api.py), on its own token like the two
+                # above: a program holding it starts and stops its runs only.
+                from bridge import run_api
+                return self._json(*run_api.http("POST", path, {}, self._read_json(),
+                                                self.headers.get("X-Run-Token")))
             if not _tok_ok(self.headers.get("X-Dash-Token", "")):
                 return self._json({"error": "unauthorized"}, 401)
             body = self._read_json()
