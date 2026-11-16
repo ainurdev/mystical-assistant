@@ -17,3 +17,13 @@ export function promptSteps(o: { kind: string | null; how: "auto" | "picked" | "
   const f = o.cfg.flows.find((x) => x.id === id);
   return f ? f.steps.filter(runs).map((st) => st.step).join(" › ") : null;
 }
+
+/** The FLOWS sheet's line beside each step: what it does, in a few words. Keyed by the bridge's
+ *  step names (bridge/flowsettings.py STEPS); flowsteps.check.ts fails when one is missing. */
+export const STEP_DOES: Record<string, string> = {
+  grill: "asks you until the plan is clear", design: "draws mockups for you to approve",
+  build: "writes the code, here or as tickets", review: "checks the change before it lands",
+  retro: "notes what to do better next time", audit: "a deeper bug hunt on the branch",
+  improve: "finds the tangle worth fixing", diagnose: "finds the cause before the fix",
+  ship: "merges, checks, cleans up", answer: "answers, changes nothing",
+};

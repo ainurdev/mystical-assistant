@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
-import { api, type AccountInfo, type FlowChange, type FlowSetting, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
@@ -25,7 +25,7 @@ import { Switch } from "./ui/Switch";
 import { notify } from "./hud/Notifications";
 import { changeFlows, refreshFlowSettings, useFlowSettings } from "../lib/flowsettings";
 import { useAiFeatures } from "../lib/ai";
-import { promptSteps, runs } from "../lib/flowsteps";
+import { promptSteps, runs, STEP_DOES } from "../lib/flowsteps";
 import { flowRuns, saveRun } from "../lib/flowruns";
 import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
@@ -82,13 +82,12 @@ const CTX_SEGMENTS = 8;
 const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, refactor: Blocks, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 // The FLOW chip's and the FLOWS sheet's glyph per flow id (lib/flowview flowOf), looked up by plain string.
 export const FLOW_ICON: Record<string, LucideIcon> = KIND_ICON;
-// The FLOWS sheet's line under a flow's name, and a one-step flow's row (a2-open).
+// The FLOWS sheet's line beside the picked flow's name.
 const FLOW_ABOUT: Record<string, string> = {
   design: "grill, then draw it, then build", build: "grill, then build: here, or as tickets",
   refactor: "improve, then build as tickets", fix: "find the cause, fix it, then review",
   ship: "merge, check, clean up", ask: "an answer, nothing changed",
 };
-const ONE_STEP: Record<string, string> = { ship: "ship: merge, check, clean up" };
 // PRESET names a run's fields as the box does; the bridge's flow settings as they do (lib/flowruns).
 const RUN_KEY: Record<keyof KindRun, string> = { model: "model", perm: "mode", effort: "effort", ponytail: "trim" };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
@@ -442,144 +441,190 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
 
 /** The FLOWS sheet, for every session (bridge/flowsettings.py): in the gear's popover, hung from
  *  the card's left edge as PRESET hangs from its segment, and `inline` in SETTINGS ▸ AI MANAGEMENT,
- *  where SKILL PATHS was. Two columns, so picking a flow never changes its height (a2-open).
- *  Tickets 04 to 08 of flow-gear each fill their own section of it. */
+ *  where SKILL PATHS was. A · STEP LIST (design-drafts/flow-sheet, 2026-11-16): the flows on the
+ *  left, the picked one's numbered steps on the right, the global switches on a GENERAL page in
+ *  plain words. The body's height is fixed, so picking a flow or opening Runs on never resizes it. */
 type FlowChangeFn = (c: FlowChange) => void;
 
-/** The picked flow's run default for every session: PRESET's Model, Mode, Effort and Trim rows,
- *  drawn the same, with no profile marks (the default is no profile's). */
-function FlowRunRows({ f, change, models }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[] }) {
-  const [list, setList] = useState<"" | "model" | "perm">("");
+/** The picked flow's run default for every session, folded to one line ("Opus 5.5 · Bypass · Max ·
+ *  trim default"); open, PRESET's Model, Mode, Effort and Trim rows, drawn the same, with no profile
+ *  marks (the default is no profile's). */
+function FlowRunRows({ f, change, models, open, onOpen }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[];
+  open: boolean; onOpen: () => void }) {
+  const [list, setList] = useState<"" | keyof KindRun>("");
   const trim = useAiFeatures().ponytail;
   const val = flowRuns([f])[f.id];
-  const edit = (k: keyof KindRun, v: string) => change({ flow: f.id, key: RUN_KEY[k], value: v });
-  const sel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => (
-    <div className="pb-pr"><b>{label}</b>
+  const perm = val.perm ? PERMS.find((o) => o.id === val.perm)?.label ?? modeRow(val.perm).label : "Session";
+  const effort = effortRow(val.effort, null).label;
+  const pony = PONYTAILS.find((o) => o.id === val.ponytail)?.label ?? val.ponytail;
+  const sel = (k: keyof KindRun, label: string, opts: DropOption<string>[], shown: string) => (
+    <div className="fs-pick"><span className="caps">{label}</span>
       <Drop<string> label={label.toUpperCase()} className="pb-sel" value={val[k]} fallback={{ id: val[k], label: shown }} options={opts}
-        open={list === k} onToggle={() => setList((l) => (l === k ? "" : k))} onPick={(v) => { edit(k, v); setList(""); }} />
+        open={list === k} onToggle={() => setList((l) => (l === k ? "" : k))}
+        onPick={(v) => { change({ flow: f.id, key: RUN_KEY[k], value: v }); setList(""); }} />
     </div>
   );
-  const seg = (k: "effort" | "ponytail", label: string, opts: DropOption<string>[]) => (
-    <div className="pb-pr"><b>{label}</b>
-      <div className="pb-sg" role="group" aria-label={label}>
-        {opts.map((o) => <button key={o.id || "-"} type="button" aria-pressed={o.id === val[k]} onClick={() => edit(k, o.id)}>{o.label}</button>)}
+  return (
+    <div className="fs-kv" data-top=""><span className="caps">Runs on</span>
+      <div className="fs-runs-w">
+        <button type="button" className="fs-runs" aria-expanded={open} onClick={onOpen}>
+          {modelName(val.model)}<span>{[perm, effort, trim && `trim ${pony.toLowerCase()}`].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
+          <ChevronDown size={11} strokeWidth={2} aria-hidden />
+        </button>
+        {open && (
+          <div className="fs-grid">
+            {sel("model", "Model", models, modelName(val.model))}
+            {sel("perm", "Mode", PERMS, perm)}
+            {sel("effort", "Effort", EFFORTS.filter((e) => e.id), effort)}
+            {trim && sel("ponytail", "Trim", PONYTAILS, pony)}
+          </div>
+        )}
       </div>
     </div>
   );
-  const perm = PERMS.find((o) => o.id === val.perm);
-  return <>
-    {sel("model", "Model", models, modelName(val.model))}
-    {sel("perm", "Mode", PERMS, val.perm ? perm?.label ?? modeRow(val.perm).label : "Session")}
-    {seg("effort", "Effort", EFFORTS.filter((e) => e.id))}
-    {trim && seg("ponytail", "Trim", PONYTAILS)}
-  </>;
 }
+
+/** The sheet's two-way choices: one segment, its options [value, label, title?]. */
+function FlowSeg<T extends string | boolean>({ label, value, opts, set }: { label: string; value: T;
+  /** [value, label, a plain title or a Tip's content] */
+  opts: [T, ReactNode, ReactNode?][]; set: (v: T) => void }) {
+  return (
+    <div className="pb-sg" role="group" aria-label={label}>
+      {opts.map(([v, text, tip]) => {
+        const b = <button key={String(v)} type="button" className="caps" aria-pressed={value === v}
+          title={typeof tip === "string" ? tip : undefined} onClick={() => set(v)}>{text}</button>;
+        return tip && typeof tip !== "string" ? <Tip key={String(v)} text={tip} anchor="right" pin={false} width={340} className="fs-tipw">{b}</Tip> : b;
+      })}
+    </div>
+  );
+}
+
+/** Why AS TICKETS (design-drafts/flow-sheet a4-tickets-tip): hovering it says what tickets give over sub agents. */
+const WHY_TICKETS = (
+  <span className="fs-why">
+    <b className="caps">Why tickets instead of sub agents</b>
+    <ul>
+      <li><b>Their own chat.</b> Each ticket is a real session. You can open it, watch it work, and answer its questions directly.</li>
+      <li><b>Their own branch.</b> Parallel work doesn't collide, and each ticket's changes are merged on purpose.</li>
+      <li><b>A plan you can see.</b> Tickets are drawn as waves, and a ticket starts only after the tickets it depends on are done.</li>
+      <li><b>They can be retried.</b> A failed ticket can be run again without redoing the rest.</li>
+      <li><b>They last.</b> A ticket keeps its record after the turn ends. A sub agent is gone when the turn ends.</li>
+    </ul>
+    <span>Sub agents are still best for quick lookups, searches and reviews. Use tickets when two or more parts can be built at the same time.</span>
+  </span>
+);
+
+/** Why a switched-on step may still not run: PONYTAIL is off. "" when it runs as set. */
+const ponyNote = (st: FlowStep) => st.ponytail_off === true ? "PONYTAIL is off: this step doesn't run"
+  : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after tickets merge still runs)" : "";
+
 export function FlowsSheet({ initial, inline, models }: { initial?: string | null; inline?: boolean;
   /** The rows of the picked flow's Model select: Claude's, never an agent session's own. */
   models: DropOption<string>[] }) {
   const flowCfg = useFlowSettings();
-  const [sheetFlow, setSheetFlow] = useState(initial ?? "build");
+  const [sheetFlow, setSheetFlow] = useState(initial ?? "build");   // a flow id, or "general"
+  const [runsOpen, setRunsOpen] = useState(false);
   const [flowsErr, setFlowsErr] = useState("");
   useEffect(() => { if (inline) void refreshFlowSettings(); }, [inline]);   // the popover re-reads as the gear opens it
+  const general = sheetFlow === "general";
   const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
   const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
   const flowChange: FlowChangeFn = (c) => { setFlowsErr(""); void changeFlows(c).catch((e: Error) => setFlowsErr(e.message)); };
+  const pick = (id: string) => { setSheetFlow(id); setRunsOpen(false); };
   if (!flowCfg || !sheetPick) return inline ? <div className="aim-hint">Reading the flow settings…</div> : null;
   const SheetGlyph = FLOW_ICON[sheetPick.id] ?? RouteIcon;
   const pickName = flowName(sheetPick.id);
+  const sentence = (title: string, hint: string, control: ReactNode) => (
+    <div className="fs-g"><div><b>{title}</b><span>{hint}</span></div>{control}</div>
+  );
   return (
     <div className="pb-pp fs-sheet" role={inline ? "group" : "dialog"} aria-label="Flows" data-inline={inline ? "" : undefined} style={{ overflow: "visible" }}>
-      <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows<span>for every session</span></h4>
-      <div className="fs-top">
-        <div className="pb-pr"><b>Flows</b>
-          <div className="pb-sg" role="group" aria-label="Flows">
-            {[true, false].map((v) => (
-              <button key={String(v)} type="button" aria-pressed={flowCfg.on === v} onClick={() => flowChange({ key: "on", value: v })}>{v ? "ON" : "OFF"}</button>
-            ))}
-          </div>
-        </div>
-        <div className="pb-pr"><b>Guess</b>
-          <div className="pb-sg" role="group" aria-label="Guess">
-            {(["auto", "hand"] as const).map((v) => (
-              <button key={v} type="button" aria-pressed={flowCfg.guess === v} onClick={() => flowChange({ key: "guess", value: v })}
-                title={v === "auto" ? "The box guesses a flow as you type" : "Only a tap or Tab lights a flow"}>{v === "auto" ? "AUTO" : "BY HAND"}</button>
-            ))}
-          </div>
-        </div>
-        <label className="fs-sw"><Switch on={flowCfg.autopick} label="Auto picks" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />Auto picks</label>
-        <label className="fs-sw"><Switch on={flowCfg.smartzone} label="Smart zone" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />Smart zone</label>
-      </div>
+      <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows
+        <span>for every session<Switch on={flowCfg.on} label="Flows on" onClick={() => flowChange({ key: "on", value: !flowCfg.on })} /></span></h4>
       <div className="fs-body">
-        <div className="fs-col" role="group" aria-label="Flows">
+        <div className="fs-list" role="group" aria-label="Flows">
           {flowCfg.flows.map((f) => {
             const Icon = FLOW_ICON[f.id] ?? RouteIcon;
             return (
               // The name is the row's button (a row holding the switch can't be one); a click anywhere else picks it too.
-              <div key={f.id} className="fs-row" data-sel={f.id === sheetPick.id ? "" : undefined}
-                data-off={f.on ? undefined : ""} onClick={() => setSheetFlow(f.id)}>
+              <div key={f.id} className="fs-row" data-sel={!general && f.id === sheetPick.id ? "" : undefined}
+                data-off={f.on ? undefined : ""} onClick={() => pick(f.id)}>
+                <Icon size={14} strokeWidth={2} aria-hidden />
+                <button type="button" className="fs-name" aria-pressed={!general && f.id === sheetPick.id}>{flowName(f.id)}</button>
+                <small title="steps that run">{f.steps.filter(runs).length}/{f.steps.length}</small>
                 <span onClick={(e) => e.stopPropagation()}>
                   <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
                 </span>
-                <Icon size={13} strokeWidth={2} aria-hidden />
-                <button type="button" className="fs-name" aria-pressed={f.id === sheetPick.id}>{flowName(f.id)}</button>
-                <span>{f.steps.length === 1 ? ONE_STEP[f.id] ?? f.steps[0].step
-                  : f.steps.map((st, i) => <Fragment key={st.step}>{i > 0 && " › "}{runs(st) ? st.step : <s>{st.step}</s>}</Fragment>)}</span>
-                <em>{[modelName(f.run.model), f.run.effort && effortRow(f.run.effort, null).label].filter(Boolean).join(" · ")}</em>
               </div>
             );
           })}
-          <div className="pb-pr fs-nokind"><b>No kind</b>
-            <div className="pb-sg" role="group" aria-label="No kind: a prompt sent with no flow lit">
-              {(["claude", "typed"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={flowCfg.nokind === v} onClick={() => flowChange({ key: "nokind", value: v })}
-                  title={v === "claude" ? "Claude picks one of the flows that are on, or runs SHIP and ASK as the turn itself" : "Claude picks nothing: the prompt goes as typed"}>{v === "claude" ? "CLAUDE PICKS" : "AS TYPED"}</button>
-              ))}
-            </div>
+          <div className="fs-row fs-gen" data-sel={general ? "" : undefined} onClick={() => pick("general")}>
+            <Settings size={13} strokeWidth={2} aria-hidden />
+            <button type="button" className="fs-name caps" aria-pressed={general}>General</button>
+            <ChevronRight size={11} strokeWidth={2} aria-hidden />
           </div>
         </div>
-        <div className="fs-detail">
-          <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
-          <div className="pb-pr"><b>Steps</b>
-            {/* A fixed step always runs; the others switch on and off, for every session from its next step. */}
-            <div className="fs-chips" role="group" aria-label={`${pickName} steps`}>
-              {sheetPick.steps.map((st, i) => (
-                <Fragment key={st.step}>{i > 0 && <i aria-hidden>›</i>}
-                  <button type="button" className="fs-chip" data-fixed={st.fixed ? "" : undefined} data-on={runs(st) ? "" : undefined}
-                    data-pony={st.ponytail_off ? "" : undefined} aria-pressed={st.on} aria-disabled={st.fixed || undefined}
-                    aria-label={`${st.step}: ${st.fixed ? "always runs" : st.on ? "on" : "off"}${st.ponytail_off === true ? ", not running while PONYTAIL is off" : st.ponytail_off ? ", not after a here build while PONYTAIL is off" : ""}`}
-                    title={st.fixed ? `${pickName} always runs ${st.step.toUpperCase()}`
-                      : st.ponytail_off === true ? "PONYTAIL is off: this step doesn't run"
-                      : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after tickets merge still runs)" : undefined}
-                    onClick={() => { if (!st.fixed) flowChange({ flow: sheetPick.id, key: "step", step: st.step, value: !st.on }); }}>
-                    {st.step.toUpperCase()}</button></Fragment>
-              ))}
+        {general ? (
+          <div className="fs-pane">
+            <div className="fs-dh"><Settings size={13} strokeWidth={2} aria-hidden /><b className="caps">General</b><span>for all flows</span></div>
+            <div className="fs-gl">
+              {sentence("Guess the flow as I type", "off: only a tap or Tab lights one",
+                <Switch on={flowCfg.guess === "auto"} label="Guess the flow as I type" onClick={() => flowChange({ key: "guess", value: flowCfg.guess === "auto" ? "hand" : "auto" })} />)}
+              {sentence("A prompt with no flow lit", "from Telegram, or sent bare",
+                <FlowSeg label="A prompt with no flow lit" value={flowCfg.nokind} set={(v) => flowChange({ key: "nokind", value: v })} opts={[
+                  ["claude", "Claude picks", "Claude picks one of the flows that are on, or runs SHIP and ASK as the turn itself"],
+                  ["typed", "As typed", "Claude picks nothing: the prompt goes as typed"]]} />)}
+              {sentence("Put safe commands in front", "five of them, without a tap",
+                <Switch on={flowCfg.autopick} label="Put safe commands in front" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />)}
+              {sentence("Offer /compact past 150k", "and mark 150k on the meter",
+                <Switch on={flowCfg.smartzone} label="Offer /compact past 150k" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />)}
             </div>
           </div>
-          {sheetPick.steps.length > 1 && (
-            <div className="pb-pr"><b>Next</b>
-              <div className="pb-sg" role="group" aria-label={`${pickName} next`}>
-                {[true, false].map((v) => (
-                  <button key={String(v)} type="button" aria-pressed={sheetPick.next === v} onClick={() => flowChange({ flow: sheetPick.id, key: "next", value: v })}
-                    title={v ? "its steps start by themselves" : "each step waits for you"}>
-                    {v ? <><Zap size={10} strokeWidth={2.4} aria-hidden />AUTO</> : "HOLD"}</button>
+        ) : (
+          <div className="fs-pane">
+            <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
+            {!runsOpen && <>
+              {/* A fixed step always runs; the others switch on and off, for every session from its next step. */}
+              <ol className="fs-steps" aria-label={`${pickName} steps`}>
+                {sheetPick.steps.map((st, i) => (
+                  <li key={st.step} className="fs-st" data-off={runs(st) ? undefined : ""} data-pony={st.ponytail_off ? "" : undefined}
+                    title={ponyNote(st) || undefined}>
+                    <i>{i + 1}</i><b>{st.step.toUpperCase()}</b><span>{STEP_DOES[st.step] ?? ""}</span>
+                    {st.fixed
+                      ? <em title={`${pickName} always runs ${st.step.toUpperCase()}`} aria-label={`${st.step}: always runs`}><Lock size={11} strokeWidth={2.2} aria-hidden /></em>
+                      : <Switch on={st.on} label={[st.step, ponyNote(st)].filter(Boolean).join(". ")}
+                          onClick={() => flowChange({ flow: sheetPick.id, key: "step", step: st.step, value: !st.on })} />}
+                  </li>
                 ))}
-              </div>
-            </div>
-          )}
-          {sheetPick.tickets !== undefined && (
-            <div className="fs-tk">
-              <label className="fs-sw" title="approved tickets build as sessions, every ready one at once, merged at the end">
-                <Switch on={sheetPick.tickets} label={`${pickName} tickets`} onClick={() => flowChange({ flow: sheetPick.id, key: "tickets", value: !sheetPick.tickets })} />Tickets</label>
-              <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
-                <Switch on={!sheetPick.approve} label={`${pickName} auto-start`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Auto-start</label>
-            </div>
-          )}
-          <FlowRunRows f={sheetPick} change={flowChange} models={models} />
-        </div>
+              </ol>
+              {sheetPick.steps.length > 1 && (
+                <div className="fs-kv"><span className="caps">After a step</span>
+                  <FlowSeg label={`${pickName}: after a step`} value={sheetPick.next} set={(v) => flowChange({ flow: sheetPick.id, key: "next", value: v })} opts={[
+                    [true, <><Zap size={10} strokeWidth={2.4} aria-hidden />Go on</>, "the next step starts by itself"],
+                    [false, <><Hand size={10} strokeWidth={2.2} aria-hidden />Wait for me</>, "each step waits for you"]]} />
+                </div>
+              )}
+              {sheetPick.tickets !== undefined && (
+                <div className="fs-kv" data-top=""><span className="caps">Build</span>
+                  <div className="fs-build">
+                    <FlowSeg label={`${pickName}: build`} value={sheetPick.tickets} set={(v) => flowChange({ flow: sheetPick.id, key: "tickets", value: v })} opts={[
+                      [false, "Here", "builds in this session"],
+                      [true, "As tickets", WHY_TICKETS]]} />
+                    {sheetPick.tickets && (
+                      <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
+                        <Switch on={!sheetPick.approve} label={`${pickName}: start tickets without asking`}
+                          onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />start tickets without asking</label>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>}
+            <FlowRunRows f={sheetPick} change={flowChange} models={models} open={runsOpen} onOpen={() => setRunsOpen((o) => !o)} />
+          </div>
+        )}
       </div>
-      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span>
-        : "A change here is for every session. PRESET and the FLOW chip change one session."}
-        <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}>Reset {pickName}</button>
+      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span> : "Every session. PRESET changes one."}
+        {!general && <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}><RotateCcw size={10} strokeWidth={2.2} aria-hidden />Reset {pickName}</button>}
       </div>
     </div>
   );

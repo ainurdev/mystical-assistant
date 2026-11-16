@@ -4521,8 +4521,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
   font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
-/* a row loses its rule; a boxed button (UPDATE's footer, .upd-btn) keeps its whole border */
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn) {
+/* a row loses its rule; a boxed button (UPDATE's footer, .upd-btn; FLOWS' Runs on, .fs-runs) keeps its whole border */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
   border-bottom-color: transparent !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
@@ -5137,10 +5137,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-sel { min-width: 0; }
 .pb-sel > .drop-btn { flex: 1; min-width: 0; }
 .pb-sg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
-.pb-sg > button { position: relative; appearance: none; cursor: pointer; flex: 1; min-width: max-content; height: 20px; padding: 0 4px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
+.pb-sg > button, .pb-sg > .fs-tipw > button { position: relative; appearance: none; cursor: pointer; flex: 1; min-width: max-content; height: 20px; padding: 0 4px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
                   background: transparent; font: inherit; font-size: var(--t10); font-weight: 600; color: var(--txd); }
-.pb-sg > button:hover { color: var(--txh); }
-.pb-sg > button[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 22%, transparent); color: var(--txb); }
+.pb-sg > button:hover, .pb-sg > .fs-tipw > button:hover { color: var(--txh); }
+.pb-sg > button[aria-pressed="true"], .pb-sg > .fs-tipw > button[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 22%, transparent); color: var(--txb); }
 /* PRESET with no kind lit: the profile's own pick, while this session overrides it, a dot under the stop */
 .pb-sg > button[data-prof]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--txl); }
 .pb-pf { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line, var(--border)); font-size: var(--t9); line-height: 1.35; color: var(--txl); }
@@ -5187,38 +5187,81 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-kg.fs-gear[aria-expanded="true"] { background: color-mix(in oklab, var(--acc) 18%, transparent); color: var(--txb); }
 .pb-kinds[data-dim] > :is(.fs-gear, .fs-gsep) { opacity: 1; cursor: pointer; }
 .fs-off { flex: none; padding-left: 4px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
-.pb-pp.fs-sheet { left: 0; right: auto; width: min(624px, 100%); }
-.fs-top { display: flex; align-items: center; gap: 16px; }
-.fs-top > .pb-pr { flex: 0 1 260px; }
+.pb-pp.fs-sheet { left: 0; right: auto; width: min(600px, 100%); }
+.fs-sheet > h4 > span { display: inline-flex; align-items: center; gap: 4px; }
 .fs-sw { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); cursor: pointer; }
-.fs-sw .set-toggle, .fs-row .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
-.fs-body { display: grid; grid-template-columns: 322px minmax(0, 1fr); gap: 16px; height: 256px; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); }
-.fs-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.fs-nokind { margin-top: auto; padding-top: 10px; }
-.fs-row { display: grid; grid-template-columns: 26px 14px 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 30px; flex: none; padding: 0 8px;
-  border-radius: var(--f-rad-s, 0); color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
-.fs-row > .fs-name { font: inherit; font-weight: 800; letter-spacing: .8px; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
-.fs-row > span:nth-of-type(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t9); color: var(--txl); }
-.fs-row s, .fs-chip:not([data-on]):not([data-fixed]) { text-decoration: line-through; opacity: .7; }
-.fs-row > em { font-style: normal; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
-.fs-row > svg { color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
-.fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 13%, transparent); }
-.fs-row[data-off] > :not(:first-child) { opacity: .42; }
-.fs-detail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 18px; font-size: var(--t10); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
+.fs-sw .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
+/* A · STEP LIST: flows | the picked one. The fixed height keeps the card still as you pick and fold. */
+.fs-body { display: grid; grid-template-columns: 168px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 300px; margin: 0 -12px; border-top: 1px solid var(--line, var(--border)); }
+.fs-list { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 8px; border-right: 1px solid var(--line, var(--border)); }
+.fs-row { position: relative; display: flex; align-items: center; gap: 8px; height: 32px; flex: none; padding: 0 2px 0 10px; border-radius: var(--f-rad-s, 0);
+  color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
+.fs-row > svg { flex: none; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.fs-row > .fs-name { flex: 1; min-width: 0; font: inherit; font-weight: 800; letter-spacing: .8px; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.fs-row > small { font-size: var(--t8); color: var(--txl); letter-spacing: .4px; }
+/* every switch in the sheet but TicketMap's shared .fs-sw: small, hung from its right edge */
+:is(.fs-sheet > h4, .fs-row, .fs-st, .fs-g) .set-toggle { transform: scale(.66); transform-origin: right center; margin-left: -10px; }
+.fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 14%, transparent); color: var(--txb); }
+.fs-row[data-sel]::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; background: var(--acc); }
+.fs-row[data-off] > :not(span) { opacity: .42; }
+.fs-row.fs-gen { margin-top: auto; padding-right: 8px; color: var(--txd); }
+.fs-row.fs-gen > svg { color: inherit; }
+.fs-pane { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 12px 14px 10px 16px; }
+.fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 18px; flex: none; font-size: var(--t10); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
+.fs-dh > b { font-weight: inherit; }
 .fs-dh > svg { align-self: center; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .fs-dh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: .2px; font-size: var(--t9); color: var(--txl); }
-.fs-chips { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.fs-chips > i { font-style: normal; font-size: var(--t9); color: var(--txg, var(--txl)); }
-.fs-chip { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 4px; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
-  color: var(--txl); font-family: inherit; font-size: var(--t8); font-weight: 700; letter-spacing: .5px; background: none; cursor: pointer; }
-.fs-chip:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
-.fs-chip[data-pony][data-on] { border-style: dashed; }   /* PONYTAIL off: no REVIEW after a here build */
-.fs-chip[data-on] { color: var(--txh); border-color: color-mix(in srgb, var(--acc) 42%, transparent); background: color-mix(in oklab, var(--acc) 10%, transparent); }
-.fs-chip[data-fixed] { color: var(--txb); border-color: transparent; background: color-mix(in oklab, var(--acc) 26%, transparent); cursor: default; }
+.fs-steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.fs-st { position: relative; display: grid; grid-template-columns: 16px 64px minmax(0, 1fr) 28px; align-items: center; gap: 8px; height: 24px; }
+.fs-st > i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-style: normal; font-size: var(--t8); font-weight: 800;
+  color: var(--txb); background: color-mix(in oklab, var(--acc) 30%, transparent); }
+.fs-st:not(:last-child)::after { content: ""; position: absolute; left: 8px; top: 18px; height: 12px; width: 1px; background: color-mix(in oklab, var(--acc) 30%, transparent); }
+.fs-st > b { font-size: var(--t9); font-weight: 800; letter-spacing: 1px; color: var(--txh); }
+.fs-st > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t9); color: var(--txl); }
+.fs-st > em { justify-self: end; display: grid; place-items: center; width: 22px; color: var(--txl); }
+.fs-st .set-toggle { justify-self: end; }
+.fs-st[data-off] > i { background: transparent; box-shadow: inset 0 0 0 1px var(--line2, var(--border)); color: var(--txl); }
+.fs-st[data-off] > b { text-decoration: line-through; color: var(--txl); }
+.fs-st[data-off] > span { opacity: .6; }
+.fs-st[data-pony]:not([data-off]) > i { box-shadow: inset 0 0 0 1px var(--acc); background: transparent; }   /* PONYTAIL off: no REVIEW after a here build */
+.fs-kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 24px; }
+.fs-kv > span, .fs-pick > span { font-size: var(--t8); font-weight: 700; letter-spacing: 1.6px; color: var(--txl); }
+.fs-kv .pb-sg { height: 24px; }
+.fs-kv .pb-sg button, .fs-g .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: var(--t9); }
+.fs-build { display: flex; flex-direction: column; gap: 4px; }
+.fs-build .fs-sw { text-transform: none; letter-spacing: .2px; font-weight: 400; font-size: var(--t9); }
+.fs-kv[data-top] { align-items: start; }
+.fs-kv[data-top] > span { padding-top: 6px; }
+.fs-runs-w { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fs-runs { appearance: none; display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; min-width: 0; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
+  background: none; font: inherit; font-size: var(--t9); color: var(--txh); cursor: pointer; text-align: left; }
+.fs-runs > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txl); }
+.fs-runs > svg { flex: none; margin-left: auto; color: var(--txl); transition: transform .15s; }
+.fs-runs[aria-expanded="true"] { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+.fs-runs[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.fs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.fs-pick { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fs-pick .drop-btn { height: 26px; font-size: var(--t9) !important; }   /* the sheet's size, not the chips' */
+/* AS TICKETS fills its half of the segment, and its note hangs above with an arrow on it */
+.pb-sg > .fs-tipw { flex: 1 !important; display: flex !important; }
+.pb-sg > .fs-tipw > button { flex: 1; }
+.fs-tipw:has(> [role="tooltip"])::after { content: ""; position: absolute; z-index: 41; left: 50%; bottom: calc(100% + 3px); width: 7px; height: 7px; margin-left: -4px;
+  transform: rotate(45deg); background: var(--panel2); border: solid color-mix(in srgb, var(--acc) 35%, transparent); border-width: 0 1px 1px 0; }
+.fs-why { display: flex; flex-direction: column; gap: 8px; white-space: normal; }
+.fs-why > b { font-size: var(--t8); font-weight: 800; letter-spacing: 1.6px; color: var(--txh); }
+.fs-why ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fs-why li { position: relative; padding-left: 14px; }
+.fs-why li::before { content: ""; position: absolute; left: 0; top: .6em; width: 5px; height: 5px; background: var(--acc); }
+.fs-why li > b { color: var(--txb); }
+.fs-why > span { padding-top: 8px; border-top: 1px solid var(--line, var(--border)); color: var(--txl); }
+.fs-gl { display: flex; flex-direction: column; }
+.fs-g { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px solid var(--line, var(--border)); }
+.fs-g:last-child { border-bottom: 0; }
+.fs-g > div > b { display: block; font-size: var(--t10); font-weight: 600; color: var(--txh); }
+.fs-g > div > span { font-size: var(--t9); color: var(--txl); }
+.fs-g .pb-sg { height: 24px; width: 200px; }
+.fs-sheet .pb-pf > button { display: inline-flex; align-items: center; gap: 4px; }
 .fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
-.fs-detail .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }   /* NEXT: ⚡ beside AUTO */
-.fs-tk { display: flex; align-items: center; gap: 14px; height: 20px; }
 /* SETTINGS ▸ AI MANAGEMENT: the same sheet, in the page rather than hung over the prompt card */
 .pb-pp.fs-sheet[data-inline] { position: static; z-index: auto; width: 100%; max-width: 680px; box-shadow: none; animation: none; }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
