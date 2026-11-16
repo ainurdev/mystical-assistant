@@ -11,6 +11,8 @@ type Ev = { type: string; text?: string };
 const invisible = (e: Ev) =>
   e.type === "tool_done" ||
   e.type === "permission_resolved" ||
+  e.type === "background_done" ||
+  e.type === "background_set" ||
   e.type === "question_answered" ||
   (e.type === "thinking" && !e.text);
 

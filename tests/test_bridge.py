@@ -24,7 +24,7 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import config, machine, pubsub, runner, store, usage   # noqa: E402
+from bridge import config, machine, pubsub, runner, state, store, usage   # noqa: E402
 from bridge.miniapp.server import (                       # noqa: E402
     validate_init_data, normalize_model_effort)
 
@@ -1744,6 +1744,166 @@ def test_watchdog_ends_a_done_turn_held_only_by_background_shells(monkeypatch):
     time.sleep(1.5)
     assert proc.terminated and proc.killed     # SIGTERM, then SIGKILL after INTERRUPT_KILL
     assert not job.timed_out                   # ended, not hung: no error row, no resume
+
+
+def _bg_started(tid="b1", use="toolu_bg", kind="local_bash"):
+    return {"type": "system", "subtype": "task_started", "task_id": tid, "tool_use_id": use,
+            "description": "Build and test", "task_type": kind, "is_backgrounded": True}
+
+
+def test_a_background_command_gets_a_card_when_it_starts_and_when_it_ends():
+    """The CLI's task events (seen on 2.1.323) become the transcript's card: what
+    is running, then how it ended. A sub-agent's task and an agent are not this
+    chat's commands, and a monitor's per-event notice does not close its card."""
+    job = runner.Job("bg-card", 555)
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "toolu_bg", "name": "Bash",
+         "input": {"command": "make test", "run_in_background": True}}]}})
+    runner._handle_event(job, _bg_started())
+    runner._handle_event(job, {**_bg_started("a1"), "task_type": "local_agent"})
+    runner._handle_event(job, {**_bg_started("s1"), "owned_by_subagent": True})
+    assert list(job.bg_tasks) == ["b1"]
+    card = [e for e in job.events if e["type"] == "background"]
+    assert len(card) == 1 and card[0]["state"] == "running" and card[0]["id"] == "b1"
+    assert card[0]["command"] == "make test" and card[0]["text"] == "Build and test"
+    assert card[0]["kind"] == "command"
+
+    runner._handle_event(job, {"type": "system", "subtype": "task_notification",
+                               "task_id": "b1", "status": "running", "summary": "an event"})
+    assert "b1" in job.bg_tasks
+    runner._handle_event(job, {"type": "system", "subtype": "task_notification", "task_id": "b1",
+                               "status": "completed", "summary": "completed (exit code 0)"})
+    assert not job.bg_tasks
+    end = job.events[-1]
+    assert end["type"] == "background_done" and end["state"] == "completed" and end["id"] == "b1" and "exit code 0" in end["text"]
+
+
+def test_watchdog_waits_for_a_background_command_then_ends_the_turn(monkeypatch):
+    """An agent that ends its turn to wait for a background command is woken by
+    the CLI when it finishes, in the same process. The 15 s grace used to kill
+    that process and the command with it, so the agent never continued. The
+    turn now waits (BG_WAIT_CAP), reads as waiting, and is ended only once the
+    command is done and nothing else can wake it."""
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 1)       # a wait is not a hang either
+    monkeypatch.setattr(runner, "BG_SHELL_GRACE", 0.5)
+    monkeypatch.setattr(runner, "INTERRUPT_KILL", 0.2)
+    monkeypatch.setattr(runner, "_running_agents", lambda sid: 0)
+    job, proc = runner.Job("wd-wait", 555), _FakeProc()
+    job.session_id = "csid"
+    runner._handle_event(job, _bg_started())
+    runner._handle_event(job, {"type": "result", "result": "waiting", "num_turns": 2})
+    assert job.bg_waiting() and job.activity()["label"] == "waiting on 1 background command"
+    threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+    time.sleep(2.5)
+    assert not proc.terminated and not proc.killed and not job.timed_out
+    runner._handle_event(job, {"type": "system", "subtype": "task_notification",
+                               "task_id": "b1", "status": "completed", "summary": "done"})
+    time.sleep(2.0)                            # nothing left to wake it: the old grace
+    assert proc.terminated and not job.timed_out
+
+
+def test_watchdog_gives_up_on_a_background_command_at_the_cap(monkeypatch):
+    """A dev server started as a background command never ends: at the cap the
+    child goes, the card closes as expired and the turn is done, not hung."""
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 60)
+    monkeypatch.setattr(runner, "BG_WAIT_CAP", 1.0)
+    monkeypatch.setattr(runner, "INTERRUPT_KILL", 0.2)
+    monkeypatch.setattr(runner, "_running_agents", lambda sid: 0)
+    job, proc = runner.Job("wd-cap", 555), _FakeProc()
+    job.session_id = "csid"
+    runner._handle_event(job, _bg_started())
+    runner._handle_event(job, {"type": "result", "result": "started", "num_turns": 2})
+    threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+    time.sleep(2.5)
+    assert proc.terminated and not job.timed_out and not job.bg_tasks
+    last = job.events[-1]
+    assert (last["type"], last["id"], last["state"]) == ("background_done", "b1", "expired")
+
+
+def test_a_new_message_ends_the_wait_on_a_background_command(monkeypatch):
+    """The waiting child holds the session's run slot. A new prompt does not
+    queue behind it for hours: the wait ends, the slot comes free."""
+    sid = "sess-bgwait"
+
+    class _Proc(_FakeProc):
+        def terminate(self):
+            super().terminate()
+            self._returncode = -15
+            state.release_run(sid)             # what the turn's finally does once the child is gone
+
+    job, proc = runner.Job("bg-pre", 555, sid), _Proc()
+    job.proc = proc
+    runner._register(job)
+    assert state.acquire_run(sid, 555)
+    try:
+        assert not runner.end_bg_wait(sid)     # a turn at work is not a wait
+        assert not proc.terminated
+        runner._handle_event(job, _bg_started())
+        runner._handle_event(job, {"type": "result", "result": "waiting", "num_turns": 2})
+        assert runner.end_bg_wait(sid)
+        assert proc.terminated and not state.is_running(sid)
+        assert job.events[-1]["state"] == "replaced"
+    finally:
+        state.release_run(sid)
+
+
+def test_a_background_cards_stop_and_checkbox_answer_through_respond():
+    """The card's Stop asks the CLI to end that one task (stop_task), and its
+    checkbox is remembered on the task; both ride the respond route as
+    `bg:<task id>`. A task that isn't running takes neither."""
+    job = runner.Job("bg-act", 555)
+    job.proc = _FakeProc()
+    runner._handle_event(job, _bg_started())
+    assert job.respond("bg:b1", answers=[{"header": "notify", "labels": ["on"]}])
+    assert job.bg_tasks["b1"]["notify"] is True
+    assert job.events[-1] == {**job.events[-1], "type": "background_set", "id": "b1", "notify": True}
+    assert not job.proc.stdin.data              # a tick stops nothing
+    assert job.respond("bg:b1", answers=[{"header": "notify", "labels": []}])
+    assert job.bg_tasks["b1"]["notify"] is False
+    assert job.respond("bg:b1", behavior="deny")
+    sent = _last_sent(job)
+    assert sent["type"] == "control_request"
+    assert sent["request"] == {"subtype": "stop_task", "task_id": "b1"}
+    assert not job.respond("bg:nope", behavior="deny")
+
+
+def test_the_agent_sets_its_own_wait_never_past_the_cap(monkeypatch):
+    job = runner.Job("bg-cap", 555)
+    assert job.set_bg_cap(20 * 60) == 1200 and runner._bg_cap(job) == 1200
+    assert job.events[-1]["type"] == "background_set" and job.events[-1]["cap"] == 1200
+    assert job.set_bg_cap(9 * 3600) == int(runner.BG_WAIT_CAP)      # 2 hours at most
+    assert job.set_bg_cap(1) == 60
+
+
+def test_a_wait_that_runs_out_prompts_the_agent_only_when_its_card_says_so(monkeypatch):
+    """At the cap the command is stopped. With the card's checkbox ticked the
+    session is queued a turn saying so; without it nothing is sent."""
+    from bridge import queue_manager
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 60)
+    monkeypatch.setattr(runner, "BG_WAIT_CAP", 1.0)
+    monkeypatch.setattr(runner, "INTERRUPT_KILL", 0.2)
+    monkeypatch.setattr(runner, "_running_agents", lambda sid: 0)
+    queued = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: queued.append((sid, kw)))
+    for tick in (False, True):
+        job, proc = runner.Job(f"wd-notify-{tick}", 555, "sess-bg-notify"), _FakeProc()
+        job.session_id = "csid"
+        job.proc = proc
+        runner._handle_event(job, {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "toolu_bg", "name": "Bash",
+             "input": {"command": "make deploy", "run_in_background": True}}]}})
+        runner._handle_event(job, _bg_started())
+        if tick:
+            job.background("b1", notify=True)
+        runner._handle_event(job, {"type": "result", "result": "waiting", "num_turns": 2})
+        threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+        time.sleep(2.0)
+        assert proc.terminated
+        job.exited.set()                       # the turn's finally
+        time.sleep(0.5)
+        assert len(queued) == (1 if tick else 0)
+    sid, kw = queued[0]
+    assert sid == "sess-bg-notify" and "make deploy" in kw["prompt"] and "Build and test" in kw["prompt"]
 
 
 def test_watchdog_does_not_count_sleep_as_silence(monkeypatch):

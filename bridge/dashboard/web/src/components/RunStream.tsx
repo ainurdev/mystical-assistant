@@ -56,6 +56,19 @@ import {
 // them at once.
 const landedResults = new Set<string>();
 
+/** What a background command's card says: running, or how it ended. `end` is
+ *  its background_done state; none on a turn that is over means the process
+ *  went without saying (a restart, a Stop). */
+function bgLabel(kind: "command" | "monitor", end: string | undefined, ended: boolean): string {
+  const what = kind === "monitor" ? "Background monitor" : "Background command";
+  if (!end) return ended ? `${what} stopped when the turn ended` : `${what} running. The agent continues when it finishes`;
+  if (end === "completed") return `${what} finished`;
+  if (end === "failed") return `${what} failed`;
+  if (end === "replaced") return `${what} stopped by your next message`;
+  if (end === "expired") return `${what} stopped: the wait ran out`;
+  return `${what} stopped`;
+}
+
 /** Timing for an answer landing live (index.css `.res[data-land]`). The answer is
  *  complete when it arrives — stream-json hands over whole text blocks — so it is
  *  drawn whole, formatted, at its full height: nothing below it moves. Its
@@ -2438,12 +2451,20 @@ export const RunStream = memo(function RunStream({
   const qAnswered = new Map<string, AnswerSelection[]>();
   const answeredAt = new Map<string, number | undefined>();
   const toolDone = new Map<string, Done>();
+  const bgDone = new Map<string, string>();
+  const bgNotify = new Map<string, boolean>();
+  let bgCap = 7200;            // seconds the turn waits on background commands (runner.BG_WAIT_CAP)
   const secretGiven = new Map<string, boolean>();
   for (const e of events) {
     if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") { permResolved.set(e.request_id, e.behavior); answeredAt.set(e.request_id, e.at); }
     if (e.type === "question_answered") { qAnswered.set(e.request_id, e.answers); answeredAt.set(e.request_id, e.at); }
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
+    if (e.type === "background_done") bgDone.set(e.id, e.state);
+    if (e.type === "background_set") {
+      if (e.id && e.notify !== undefined) bgNotify.set(e.id, e.notify);
+      if (e.cap) bgCap = e.cap;
+    }
   }
   // A failure a later call made good reads as ordinary work everywhere below; the
   // filter's "failures" still finds it. One nothing made good is said by the receipt.
@@ -2623,7 +2644,7 @@ export const RunStream = memo(function RunStream({
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
-      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
+      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered" || t === "background_done" || t === "background_set"
           || t === "thinking" || t === "log" || t === "rule" || t === "checks" || t === "secret_answered") continue;
       return t === "question";
     }
@@ -3044,8 +3065,37 @@ export const RunStream = memo(function RunStream({
             <span>{readOnly ? "Stopped" : "Stopped — send a message to continue."}</span>
           </div>
         );
+      case "background": {
+        const end = bgDone.get(event.id);
+        const live = !end && !ended;
+        const rid = `bg:${event.id}`;
+        return (
+          <div key={i} className={`ev-bg ml-[var(--rail)] text-xs${live ? " ev-bg-live" : ""}`}>
+            <div className="flex items-center gap-1.5">
+              <Terminal size={14} className="shrink-0" aria-hidden />
+              <span>{bgLabel(event.kind, end, ended)}{event.text ? `: ${event.text}` : ""}</span>
+            </div>
+            {event.command && <code className="ev-bg-cmd">{event.command}</code>}
+            {live && onRespond && (
+              <div className="ev-bg-acts">
+                <button type="button" onClick={() => void onRespond(rid, { behavior: "deny" })}>Stop</button>
+                <label title={`The wait ends after ${Math.round(bgCap / 60)} min with nothing finishing. Ticked, the agent is told and carries on.`}>
+                  <input
+                    type="checkbox"
+                    checked={bgNotify.get(event.id) ?? false}
+                    onChange={(e) => void onRespond(rid, { answers: [{ header: "notify", labels: e.target.checked ? ["on"] : [] }] })}
+                  />
+                  <span>Prompt the agent if nothing finishes in {Math.round(bgCap / 60)} min</span>
+                </label>
+              </div>
+            )}
+          </div>
+        );
+      }
       case "divider":
         return <DividerRow key={i} text={event.text} />;
+      case "background_done":
+      case "background_set":
       case "permission_resolved":
       case "question_answered":
         return null; // shown inside the relevant card
