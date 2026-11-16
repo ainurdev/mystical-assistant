@@ -259,6 +259,34 @@ def test_step_done_without_a_path_changes_nothing(server, flow_session):
     assert r["obj"] == {"text": "No path is running in this session."} and paths.get(flow_session) is None
 
 
+def test_step_done_carries_the_feature_branchs_name(server, flow_session, flows_on, monkeypatch):
+    from bridge import goal_mcp
+    sent = []
+    monkeypatch.setenv("MYSTICAL_CLAUDE_SESSION_ID", "cf1")
+    monkeypatch.setattr(goal_mcp, "_bridge", lambda path, body, what, timeout=15: sent.append((path, body)) or "ok")
+    assert "branch" in next(t for t in _list_tools() if t["name"] == "StepDone")["inputSchema"]["properties"]
+    goal_mcp._call("StepDone", {"choice": "here", "branch": "fix/NRA-61-login-redirect"})   # noqa: SLF001
+    assert sent == [("/local/flow/done", {"choice": "here", "branch": "fix/NRA-61-login-redirect"})]
+    server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "build", "why": "new"})
+    r = server.post("/local/flow/done", {"claude_session_id": "cf1", **sent[0][1]})
+    assert r["obj"]["text"].startswith("Step done. Next: build-here")
+    assert paths.get(flow_session)["branch"] == "fix/NRA-61-login-redirect"
+
+
+def test_the_latest_branch_name_wins_and_an_unusable_one_changes_nothing(state_dir):
+    paths.set_path("s1", "build", "new", "claude")
+    paths.step_done("s1", "t1", choice="tickets", branch="feature/Globe prototype")
+    assert paths.get("s1")["branch"] == "feat/Globe-prototype"
+    paths.step_done("s1", "t1", branch="feat/globe")        # the same turn again: no step moves, the name does
+    assert paths.get("s1")["branch"] == "feat/globe" and paths.get("s1")["done"] == ["grill"]
+    paths.step_done("s1", "t2", branch="///")
+    assert paths.get("s1")["branch"] == "feat/globe"
+    paths._cache.clear()                                     # a restart: flows.json kept it
+    assert paths.get("s1")["branch"] == "feat/globe"
+    paths.set_path("s1", "fix", "crash", "claude")           # another flow in the session names its own
+    assert paths.get("s1")["branch"] is None
+
+
 def test_a_bad_path_is_told_to_claude(server, flow_session, flows_on):
     # an HTTP error reaches Claude as "Could not reach the bridge"; the reason must get through
     assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "nope", "why": "x"}) == \
@@ -711,6 +739,29 @@ def test_build_here_moves_the_session_into_its_feature_worktree(repo_session, fa
     assert _git(main, "rev-parse", "master") == master
     assert fake_queue.items[-1]["prompt"] == \
         f"/mattpocock-skills:implement Work in {cwd} on branch feat/my-feature, and commit there."
+
+
+def test_build_here_builds_on_the_branch_the_agent_named(repo_session, fake_queue, nextstep_on):
+    sid, main = repo_session
+    t = _turn(sid, "/mattpocock-skills:grill-with-docs add X")
+    _wrote(sid, t, os.path.join(main, "GLOSSARY.md"))
+    paths.step_done(sid, t, choice="here", branch="fix/NRA-61-login-redirect")
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    cwd = store.get_session(sid)["cwd"]
+    assert _git(cwd, "rev-parse", "--abbrev-ref", "HEAD") == "fix/NRA-61-login-redirect"
+    assert os.path.basename(cwd) == "fix-NRA-61-login-redirect"
+    assert _git(cwd, "log", "-1", "--format=%s") == "docs: decisions from the NRA-61-login-redirect flow"
+    assert fake_queue.items[-1]["prompt"] == \
+        f"/mattpocock-skills:implement Work in {cwd} on branch fix/NRA-61-login-redirect, and commit there."
+
+
+def test_a_title_that_began_as_a_command_names_the_work(repo_session, fake_queue, nextstep_on):
+    sid, main = repo_session
+    store.rename(sid, "Design-First Update Modal Redesign")
+    t = _turn(sid, "/mattpocock-skills:grill-with-docs add X")
+    paths.step_done(sid, t, choice="here")                   # no name given: the title, repaired
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    assert _git(store.get_session(sid)["cwd"], "rev-parse", "--abbrev-ref", "HEAD") == "feat/update-modal-redesign"
 
 
 # --- the FLOW chip: REVIEW and AUDIT steps, per-session overrides, skipping ----------

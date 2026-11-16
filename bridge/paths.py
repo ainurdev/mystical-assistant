@@ -41,7 +41,10 @@ path replaces it (on_turn_start), and its StepDone marks x's station: an old pat
 never takes over an unrelated step. The step StepDone records starts once (`next`
 `started`), at the first clean end of its turn or of a resume of it, or when AUTO is
 released. No auto step commits to the default branch: build-here, and a FIX on it,
-move the session into a worktree of its own first (flowbranch).
+move the session into a worktree of its own first (flowbranch). That branch is named by
+the agent whose StepDone hands over to the build (`branch`, kept on the flow's record,
+the latest one said): it knows what the work became, and the session's title only how it
+began.
 
 REVIEW and AUDIT are the ponytail plugin's /ponytail-review and /ponytail-audit, so they
 are stations only while the PONYTAIL switch is on (its plugin is told `off` otherwise,
@@ -134,7 +137,9 @@ _STEPDONE = ('When you finish a step of a path and need nothing more from the us
              'call of your turn: the next step starts when the turn ends (build-here on its own feature branch) '
              'and does its own work. After a grill, pass choice "tickets" only when the plan has two or more parts '
              'that can be built at the same time; a chain, where each part waits on the one before, is "here". '
-             'Say which and why in one line before StepDone. Never call StepDone while waiting on the user.')
+             'Say which and why in one line before StepDone. When the next step builds (after a grill, a design '
+             'or a ticket breakdown), pass branch too: the feature branch, named for what is being built. '
+             'Never call StepDone while waiting on the user.')
 
 
 def pack_text() -> str:
@@ -222,7 +227,7 @@ _PONY = {"review": "the work on this path: this branch's commits since it left t
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 # The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
 OPTIONS = ("nextstep", "autopick", "smartzone")
-_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides")
+_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch")
 # shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
 _PAST = 50
 
@@ -419,7 +424,7 @@ def get(session_id: str) -> "dict | None":
         if not f:
             return None
         return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "end": f.get("end"), "next": _next(f),
-                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}),
+                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}), "branch": f.get("branch"),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
 
@@ -552,18 +557,27 @@ def _pass(f: dict, cur: "str | None", on: list) -> list:
     return rest
 
 
-def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "str | None":
+def step_done(session_id: str, turn_id: str, choice: "str | None" = None,
+              branch: "str | None" = None) -> "str | None":
     """Mark the station this turn worked on done: the one its own /mattpocock-skills:x
     names when x is a station of the path (the ones before it too), else the first one
     not done. Return the next station, or None at the end. A resume nudge's turn counts
-    as the turn it resumes, so a StepDone said again there moves nothing."""
+    as the turn it resumes, so a StepDone said again there moves nothing. `branch`: the
+    feature branch the agent named for the build; the latest usable one is kept, one said
+    again in the same turn too."""
     turn_id, prompt = _carried(session_id, turn_id)
     skill = _command(prompt)
+    if branch:
+        from bridge import flowbranch   # local import, as _branch_off; it runs git, so before the lock
+        branch = "/".join(flowbranch.branch_name(branch) or ())
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
         if not f:
             return None
+        if branch:
+            f["branch"] = branch
+            _save_locked()
         if f["last"] == turn_id:
             return (f["next"] or {}).get("station")
         named = next((st for st, sk, _ in _all(f) if skill and sk == skill), None)
@@ -647,7 +661,7 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
         return f"/design-first {prompt}\n\n{DESIGN_STEP}"
     if first == "build-here":
         sess = store.get_session(session_id) or {}
-        moved = _branch_off(session_id, sess, rec, "feat", sess.get("chat_id"))
+        moved = _branch_off(session_id, sess, rec, sess.get("chat_id"), prompt)
         if not moved:   # the user was told; the build waits for them, and this turn changes nothing
             with _lock:
                 _cache[session_id]["next"] = {"station": first, "turn_id": "", "started": False}
@@ -715,7 +729,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
-        moved = _branch_off(session_id, sess, flow, "feat", chat_id if chat_id is not None else sess.get("chat_id"))
+        moved = _branch_off(session_id, sess, flow, chat_id if chat_id is not None else sess.get("chat_id"))
         if not moved:
             return False
         texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
@@ -759,13 +773,18 @@ def _go(session_id: str, chat_id=None, effort=None) -> bool:
     return False
 
 
-def _branch_off(session_id: str, sess: dict, flow: dict, prefix: str, chat_id) -> "tuple | None":
-    """(branch, checkout) the step works in: `<prefix>/<slug>` in its own worktree, the
+def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "") -> "tuple | None":
+    """(branch, checkout) the step works in: the feature branch in its own worktree, the
     flow's own files carried there and committed, and the session moved in, so the
-    step's commits land there. None when the files couldn't move: they are back where
-    they were, the user is told, and the step waits."""
+    step's commits land there. The branch is the one the flow's agent named (StepDone),
+    else feat/ and the session's title, or `title` for a session too new to have one.
+    None when the files couldn't move: they are back where they were, the user is told,
+    and the step waits."""
     from bridge import flowbranch, runner
-    slug = flowbranch.feature_slug(sess.get("title") or "")
+    # shortcut: a title says how the session began, not what is built, and it is all a StepDone
+    # with no branch, or a BUILD with its grill off, leaves; give SetPath a branch too if that bites.
+    prefix, slug = (flowbranch.branch_name(flow.get("branch"))
+                    or ("feat", flowbranch.title_slug(sess.get("title") or title)))
     branch = f"{prefix}/{slug}"
     try:
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)

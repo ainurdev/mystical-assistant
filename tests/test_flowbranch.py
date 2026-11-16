@@ -186,6 +186,41 @@ def test_slug_values():
     assert flowbranch.feature_slug("v1.2..") == "v1.2"
     assert flowbranch.feature_slug("x.lock") == "x"
     assert flowbranch.feature_slug("...") == "flow"
+    assert flowbranch.feature_slug("") == "flow"
+
+
+# --- the name: the agent's `type/short-name`, else the session's title, repaired ----
+
+def test_a_long_name_is_cut_at_a_whole_word():
+    assert flowbranch.feature_slug("Better Branch Naming Convention for Projects") == "better-branch-naming-convention-for"
+    assert flowbranch.feature_slug("a" * 50) == "a" * 40                      # one long word: cut where it must be
+
+
+@pytest.mark.parametrize("given, want", [
+    ("fix/NRA-61-login-redirect", ("fix", "NRA-61-login-redirect")),         # a task key keeps its case
+    ("Docs/branch naming rules", ("docs", "branch-naming-rules")),
+    ("feature/globe-prototype", ("feat", "globe-prototype")),                # not a Conventional Commits type
+    ("globe-prototype", ("feat", "globe-prototype")),                        # no type given
+    ("feat/ui/globe", ("feat", "ui-globe")),                                 # one level: git can't hold feat/ui and feat/ui/globe
+    ("refactor/split-the-session-store-into-readers-and-writers", ("refactor", "split-the-session-store-into-readers-and")),
+    ("feat/", None), ("", None), (None, None), ("fix/...", None),
+])
+def test_the_agents_name_is_a_type_and_a_short_name(given, want):
+    assert flowbranch.branch_name(given) == want
+    if want:
+        assert subprocess.run(["git", "check-ref-format", "--branch", "/".join(want)]).returncode == 0
+
+
+@pytest.mark.parametrize("title, want", [
+    ("/design-first update modal redesign", "update-modal-redesign"),
+    ("Design-First Update Modal Redesign", "update-modal-redesign"),         # the titler's wording of the same prompt
+    ("/mattpocock-skills:grill-with-docs better branch names", "better-branch-names"),
+    ("Run the arda project", "run-the-arda-project"),                        # no command in front: as it is
+    ("/etc/hosts is wrong", "etc-hosts-is-wrong"),                           # a path, not a command
+    ("/design-first", "flow"),
+])
+def test_a_title_loses_the_command_it_began_with(title, want):
+    assert flowbranch.title_slug(title) == want
 
 
 def test_subdir_of_main_gets_a_feature_worktree(repo):

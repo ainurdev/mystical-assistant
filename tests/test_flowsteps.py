@@ -101,6 +101,14 @@ def test_build_with_its_grill_off_builds_here_on_its_own_branch(repo_session, mo
     assert paths.get(sid)["path"] == "build-here" and paths.step_done(sid, t) == "review"
 
 
+def test_a_build_in_a_session_too_new_for_a_title_is_named_after_its_prompt(repo_session):  # noqa: F811
+    sid, _main = repo_session
+    store.rename(sid, "")                                             # its first turn hasn't named it yet
+    _off("build", "grill")
+    paths.start_flow(sid, "build", "you", "add a digest of the week")
+    assert _git(store.get_session(sid)["cwd"], "rev-parse", "--abbrev-ref", "HEAD") == "feat/add-a-digest-of-the-week"
+
+
 def test_a_build_that_cant_branch_off_changes_nothing_and_waits(sess, monkeypatch):  # noqa: F811
     monkeypatch.setattr(paths, "_branch_off", lambda *a: None)
     _off("build", "grill")

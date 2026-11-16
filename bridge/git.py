@@ -1186,6 +1186,14 @@ def slug(s: str) -> str:
     return _SLUG_RE.sub("-", (s or "").strip().strip("/")).strip("-") or "wt"
 
 
+def cut_words(s: str, cap: int) -> str:
+    """A slug cut to `cap` characters at a whole word (a "-"), or mid-word when it is one long word."""
+    if len(s) <= cap:
+        return s
+    i = s.rfind("-", 0, cap + 1)   # a "-" right at the cap means the cap ends a word
+    return s[:i] if i > 0 else s[:cap]
+
+
 def worktree_path_for(repo_root: str, branch: str, free: bool = False) -> str:
     """Where the bridge keeps `branch`'s worktree of the repo at `repo_root`:
     <BASE_PATH>/.worktrees/<repo>/<branch>, a hidden dir so the project browser

@@ -1,9 +1,17 @@
 """The feature branch a skill path builds on.
 
 No automatic step may build on the default branch. When a path reaches BUILD,
-ensure_feature_branch finds or makes `feat/<slug>` in its own worktree, and
+ensure_feature_branch finds or makes `<type>/<short-name>` in its own worktree, and
 carry_and_commit moves the flow's decisions (the grill's GLOSSARY.md and
 docs/adr/*, the spec) there and commits them.
+
+The branch is named for what is being built (GLOSSARY: Feature branch). The agent that
+hands over to BUILD names it through StepDone (branch_name), because only it knows what
+the work became: a session's title summarises its first message, so a name made from it
+says how the session began (`feat/run-the-arda-project` held a globe prototype), was cut
+mid-word, and filed every fix under feat/. The title is the fallback only (title_slug),
+for a StepDone that named none and a BUILD whose grill is off. A name that exists is
+joined, never given a -2: a flow that comes back to its feature goes on on its branch.
 
 Only the files this flow's turns wrote move (flow_files), never the whole dirty
 tree: the session's checkout may hold other sessions' half-done edits, and those
@@ -40,13 +48,50 @@ def _log(msg: str) -> None:
     print(f"[flowbranch] {msg}", file=sys.stderr)
 
 
-def feature_slug(title: str) -> str:
-    """A branch-safe slug from a session title; "flow" when nothing valid is left."""
-    s = git.slug((title or "").lower())[:40]
+# What a feature branch's name opens with: the Conventional Commits types.
+TYPES = ("feat", "fix", "refactor", "docs", "chore", "ci", "test", "perf", "build", "style", "revert")
+# How a title opens when its first prompt went out as a command: "/design-first ...", which
+# the titler words as "Design-First ...". That names how the session began, never the work.
+# shortcut: unslashed, only the commands a flow's first prompt is sent as (paths.start_flow);
+# add one here when a flow starts with another.
+_COMMAND = re.compile(r"\s*(?:/[\w:-]+(?=\s|$)\s*)?(?:(?:design-first|grill-with-docs|diagnosing-bugs|"
+                      r"improve-codebase-architecture)\b[\s:-]*)?", re.I)
+
+
+def short_name(text: str) -> str:
+    """`text` as a branch's short name: branch-safe, 40 characters at most, cut at a whole
+    word. "" when nothing valid is left."""
+    s = git.cut_words(git._SLUG_RE.sub("-", text or "").strip("-"), 40)  # noqa: SLF001
     s = re.sub(r"\.{2,}", ".", s).strip(".-/")
     s = s.removesuffix(".lock").strip(".-/")
     ok = s and git._run(".", "check-ref-format", "--branch", f"feat/{s}")[0] == 0  # noqa: SLF001
-    return s if ok else "flow"
+    return s if ok else ""
+
+
+def feature_slug(title: str) -> str:
+    """A branch-safe slug from a session title or a ticket folder's name; "flow" when
+    nothing valid is left.
+    shortcut: every title that leaves nothing (no Latin letters or digits) gets "flow", so two
+    such flows in one repo share feat/flow; add the session's id if that ever happens."""
+    return short_name((title or "").lower()) or "flow"
+
+
+def title_slug(title: str) -> str:
+    """feature_slug of a session title, less the command it began with."""
+    title = title or ""
+    return feature_slug(title[_COMMAND.match(title).end():])
+
+
+def branch_name(given: "str | None") -> "tuple[str, str] | None":
+    """(type, short name) of the feature branch an agent named as `type/short-name`, or
+    None when no usable name is left. A type outside TYPES, or none, is feat. The name
+    keeps its case, since a task's key may lead it (fix/NRA-61-login-redirect), and is one
+    level deep: git can't hold both feat/ui and feat/ui/globe."""
+    kind, sep, name = (given or "").strip().partition("/")
+    if not sep:
+        kind, name = "", kind
+    name = short_name(name)
+    return (kind.lower() if kind.lower() in TYPES else "feat", name) if name else None
 
 
 _WRITES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
