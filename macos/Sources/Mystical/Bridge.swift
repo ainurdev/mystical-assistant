@@ -19,6 +19,9 @@ final class Bridge {
     private(set) var waiting: [WaitingSession] = []
     /// Sessions mid-turn, every source — the menu bar's busy glyph.
     private(set) var working = 0
+    /// Session → the turn it runs (`Running.turns`), for the panel's HIDE. Nil
+    /// until a poll succeeds and after one fails: an empty list then is no news.
+    private(set) var turns: [String: String]?
     /// Consecutive failed polls — one blip (a restart's first second) is not "down".
     private(set) var misses = 0
     var onChange: (() -> Void)?
@@ -66,6 +69,7 @@ final class Bridge {
            let w = Running.waiting(data) {
             waiting = w
             working = Running.working(data)
+            turns = Running.turns(data)
             misses = 0
             // Back from down: re-read status (new pid, maybe a new token).
             if !wasUp || status?.answering != true { await refreshStatus(); return }
@@ -73,6 +77,7 @@ final class Bridge {
             misses += 1
             waiting = []
             working = 0
+            turns = nil
             if misses == 1 || Date().timeIntervalSince(lastStatusCheck) > 10 {
                 await refreshStatus(); return
             }

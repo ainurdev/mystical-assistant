@@ -2,10 +2,15 @@ import Foundation
 
 /// One thing waiting on you — a row in the menu bar's "Waiting on you". `id` is
 /// the session it opens: empty for a Rivendell offer, which has no session.
+/// `subject` is what it is about (the bridge's `needs[].subject`: the session,
+/// or the offer's `rv:…`) and `at` when it was raised: together they tell one
+/// need from the next, for the panel's HIDE.
 public struct WaitingSession: Equatable {
     public let id: String
+    public let subject: String
     public let title: String
     public let label: String
+    public let at: Double?
 }
 
 /// Reads `GET /local/running`. Waiting on you is the bridge's NEEDS YOU set
@@ -23,9 +28,11 @@ public enum Running {
             return needs.map { n in
                 let verb = n["verb"] as? String ?? ""
                 let title = n["title"] as? String ?? "", body = n["body"] as? String ?? ""
-                return WaitingSession(id: n["session_id"] as? String ?? "",
+                let id = n["session_id"] as? String ?? ""
+                return WaitingSession(id: id, subject: n["subject"] as? String ?? id,
                                       title: title.isEmpty ? verb : title,
-                                      label: body.isEmpty ? verb : "\(verb) · \(body)")
+                                      label: body.isEmpty ? verb : "\(verb) · \(body)",
+                                      at: n["at"] as? Double)
             }
         }
         let status = root["status"] as? [String: [String: Any]] ?? [:]
@@ -39,7 +46,7 @@ public enum Running {
         return status.compactMap { sid, st -> WaitingSession? in
             guard st["state"] as? String == "awaiting" else { return nil }
             let label = st["label"] as? String ?? "waiting on you"
-            return WaitingSession(id: sid, title: titles[sid] ?? label, label: label)
+            return WaitingSession(id: sid, subject: sid, title: titles[sid] ?? label, label: label, at: nil)
         }.sorted { ($0.title, $0.id) < ($1.title, $1.id) }
     }
 
@@ -50,5 +57,18 @@ public enum Running {
         else { return 0 }
         let status = root["status"] as? [String: [String: Any]] ?? [:]
         return status.values.filter { $0["state"] as? String == "working" }.count
+    }
+
+    /// Session → the turn it is running: the bridge's job id, fresh for every
+    /// turn it starts (a message steered into a running turn joins its job).
+    /// Only bridge sessions have one. The panel's HIDE tells turns apart with it.
+    public static func turns(_ data: Data) -> [String: String] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        var out: [String: String] = [:]
+        for job in root["jobs"] as? [[String: Any]] ?? [] {
+            if let sid = job["session_id"] as? String, let id = job["job_id"] as? String { out[sid] = id }
+        }
+        return out
     }
 }
