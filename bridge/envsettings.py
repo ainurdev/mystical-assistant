@@ -112,6 +112,14 @@ SETTINGS = (
               "anywhere below it. Empty allows any git repository under BASE PATH. "
               "Such a session gets the mode a dashboard session would: the "
               "project's default profile, else NEW SESSION MODE."},
+    {"key": "RUN_API_MODEL", "type": "str", "live": True,
+     "group": "RUNS", "label": "RUN API MODEL", "hint": "model for a run whose caller names none",
+     "placeholder": "haiku",
+     "about": "`mystical prompt --model sonnet` (or \"model\" in the request) picks "
+              "a run's model. Without one the run gets this: haiku, the lowest, "
+              "unless you change it. An alias (haiku, sonnet, opus, fable) or a "
+              "full model id. Empty means the bridge's normal default: the "
+              "project's default profile, else the CLI's own."},
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",

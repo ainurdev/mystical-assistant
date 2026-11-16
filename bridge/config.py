@@ -81,6 +81,13 @@ RUN_API_CONCURRENCY = int(os.environ.get("RUN_API_CONCURRENCY", "2"))
 # Folders such runs may start in, comma-separated, each under BASE_PATH (what is
 # below one counts). Empty = any git repository under BASE_PATH.
 RUN_API_DIRS = os.environ.get("RUN_API_DIRS", "")
+# The model aliases low to high. MINIAPP_MODELS above is in picker order, not by
+# size, and the Models API lists newest first, so "the lowest" is spelled out here.
+MODELS_LOW_TO_HIGH = ("haiku", "sonnet", "opus", "fable")
+# The model a run gets when its caller names none: the lowest by default, since
+# a program's prompt is more often a lookup than a build. Empty = the bridge's
+# normal default (the project's default profile, else the CLI's own).
+RUN_API_MODEL = os.environ.get("RUN_API_MODEL", MODELS_LOW_TO_HIGH[0]).strip()
 
 # Denominator for the context meter: how big the window a session is filling is.
 # The Models API doesn't report per-model windows, so one overridable number is

@@ -42,9 +42,23 @@ Safety, in the order a request meets it:
     parked on a limit keeps its place: it is still using a login.
   - Permission mode: exactly a dashboard-started session's. The row is created
     with the project's default profile, else NEW_SESSION_PERMISSION_MODE, and
-    the caller cannot name a mode, a model or an account.
+    the caller cannot name a mode or an account.
 
-Not built: images, a model or mode per request, continuing an earlier run's
+Model: the one thing about how a run runs that its caller may pick, because the
+caller is who knows whether its prompt is a one-line lookup or an afternoon of
+work. "model" is an alias (config.MINIAPP_MODELS) or an id the Models API
+lists; anything else is refused at submit, not found out when the child dies.
+"effort" is one of config.MINIAPP_EFFORTS. A run that names no model gets
+RUN_API_MODEL, the lowest by default (config.MODELS_LOW_TO_HIGH[0]); empty
+there means the bridge's normal default, the profile's model or the CLI's own.
+A named or default model wins over the project profile's. Both are settled at
+submit and kept on the run, so a queued run starts with what it was accepted
+with; and both are written to the session row, not only passed to the first
+turn, so a turn resumed after a crash, a limit or a restart (recovery starts it
+with the session's own model) stays on that model. Changing the model in the
+dashboard afterwards works as for any session.
+
+Not built: images, a mode per request, continuing an earlier run's
 session with a second prompt, a dashboard panel of runs (the sessions list
 already shows them). The prompt gets one line appended saying who sent it and
 that nobody may be watching, as an automation's does.
@@ -214,6 +228,40 @@ def allowed_dir(cwd) -> str:
     return real
 
 
+def _known_model(m: str) -> bool:
+    """An alias, or an id on the account's live list. While that list hasn't
+    loaded (models.py serves the aliases until it has) a full id can't be
+    checked, so a claude-* one passes, as it does for the chat pickers."""
+    from bridge import models
+
+    if m in config.MINIAPP_MODELS:
+        return True
+    ids = models.model_ids()
+    return m in ids or (m.startswith("claude-") and ids <= set(config.MINIAPP_MODELS))
+
+
+def _model_effort(body: dict) -> "tuple[str | None, str | None]":
+    """The model and effort a run starts with, or Refused. None = unset."""
+    model, effort = body.get("model"), body.get("effort")
+    if model in (None, ""):
+        model = str(getattr(config, "RUN_API_MODEL", "") or "").strip() or None
+    elif not isinstance(model, str) or not _known_model(model.strip()):
+        raise Refused(
+            f"unknown model {str(model)[:80]!r}: use one of "
+            f"{', '.join(config.MODELS_LOW_TO_HIGH)}, or a full model id"
+        )
+    else:
+        model = model.strip()
+    if effort in (None, ""):
+        effort = None
+    elif effort not in config.MINIAPP_EFFORTS:
+        raise Refused(
+            f"unknown effort {str(effort)[:80]!r}: use one of "
+            "low, medium, high, xhigh, max"
+        )
+    return model, effort
+
+
 def _cap() -> int:
     try:
         return max(1, int(getattr(config, "RUN_API_CONCURRENCY", 2)))
@@ -251,6 +299,8 @@ def public(run: dict) -> dict:
         "ref": run.get("ref") or "",
         "title": run["title"],
         "cwd": run["cwd"],
+        "model": run.get("model"),
+        "effort": run.get("effort"),
         "session_id": sid,
         "session_url": f"http://127.0.0.1:{config.DASH_PORT}/?s={sid}" if sid else None,
         "created": run["created"],
@@ -300,6 +350,7 @@ def submit(body: dict) -> dict:
     title = _one_line(body.get("title"), 60) or _one_line(
         prompt.strip().splitlines()[0], 60
     )
+    model, effort = _model_effort(body)
     run = {
         "id": uuid.uuid4().hex[:12],
         "status": "queued",
@@ -308,6 +359,8 @@ def submit(body: dict) -> dict:
         "ref": str(body.get("ref") or "")[:200],
         "title": title,
         "cwd": cwd,
+        "model": model,
+        "effort": effort,
         "prompt": prompt.strip(),
         "session_id": None,
         "created": time.time(),
@@ -431,6 +484,10 @@ def _start(run: dict) -> "str | None":
     store.rename(
         s["id"], f"{run['client']}: {run['title']}"
     )  # manual: the titler leaves it
+    # On the row too: a resumed turn runs with the session's own model.
+    for field in ("model", "effort"):
+        if run.get(field):
+            store.set_session_field(s["id"], field, run[field])
     job = runner.start_streaming_job(
         config.DASH_CHAT_ID,
         run["prompt"] + _note(run["client"]),
@@ -438,6 +495,8 @@ def _start(run: dict) -> "str | None":
         run["cwd"],
         session_id=s["id"],
         origin=origin,
+        model=run.get("model"),
+        effort=run.get("effort"),
     )
     if job is None:  # shutting down; a fresh session is never busy
         store.delete_session(s["id"])

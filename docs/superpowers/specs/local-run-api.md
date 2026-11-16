@@ -60,7 +60,7 @@ writes it at boot and keeps the token across restarts.
 
 | Route | Body or query | Answer |
 |---|---|---|
-| `POST /local/runs` | `{"cwd", "prompt", "title"?, "client"?, "ref"?}` | `202 {"run": Run}` at once |
+| `POST /local/runs` | `{"cwd", "prompt", "title"?, "client"?, "ref"?, "model"?, "effort"?}` | `202 {"run": Run}` at once |
 | `GET /local/runs/<id>` | `?wait=N` blocks up to N seconds (30 at most per request) for the run to end | `200 {"run": Run}` |
 | `GET /local/runs` | `?client=NAME&limit=N` (50 by default) | `200 {"runs": [Run]}`, newest first |
 | `POST /local/runs/<id>/cancel` | `{}` | `200 {"run": Run}`; `409` when it is already over |
@@ -72,6 +72,19 @@ may not start in (or a Host/Origin that isn't this machine's), 404 no such run, 
 `cwd` is an absolute path. `client` is 1 to 32 of `a-z 0-9 . _ -` (`api` when left out). `title` is
 cut to 60 characters and defaults to the prompt's first line. `ref` is yours: up to 200 characters,
 stored and returned untouched.
+
+`model` is an alias (`haiku`, `sonnet`, `opus`, `fable`) or a model id the account's Models API
+list holds; anything else is a 400 naming the choices. (While that list hasn't loaded, a
+`claude-...` id passes unchecked, as in the chat pickers.) `effort` is `low`, `medium`, `high`,
+`xhigh` or `max`. A run that names no model gets the setting `RUN_API_MODEL`: `haiku` by default,
+the lowest in `config.MODELS_LOW_TO_HIGH`; empty means the bridge's normal default (the project's
+default profile's model, else the CLI's own). A named or default model wins over the profile's.
+Both are settled when the run is accepted, so a queued run keeps them, and both are saved on the
+session, so a turn resumed after a crash, a limit or a restart stays on that model.
+
+A bridge still running code from before `model` existed ignores the key (it reads the keys it
+knows and no others): the run is accepted and runs on that bridge's default. Its Run then has no
+`model` key, which is how a caller can tell.
 
 ### Run
 
@@ -87,6 +100,8 @@ This is also what `--json` prints. Keys are added over time, never renamed or dr
   "ref": "batch-7",
   "title": "Job queue",
   "cwd": "/home/me/projects/atlas",
+  "model": "sonnet",
+  "effort": null,
   "session_id": "9c1e...",
   "session_url": "http://127.0.0.1:8790/?s=9c1e...",
   "created": 1794000000.0,
@@ -99,12 +114,15 @@ This is also what `--json` prints. Keys are added over time, never renamed or dr
 ```
 
 Times are Unix seconds. `session_id`, `session_url` and `started` are null while queued;
-`response` is set only when done, `error` only when failed.
+`response` is set only when done, `error` only when failed. `model` is what the run was accepted
+with (the caller's, else `RUN_API_MODEL`), null when neither names one; `effort` is null unless
+the caller sent one.
 
 ## CLI
 
 ```
-mystical prompt --cwd <dir> [--title T] [--client NAME] [--ref R] [--wait [SECONDS]] [--json] <prompt | - | @file>
+mystical prompt --cwd <dir> [--title T] [--client NAME] [--ref R] [--model M] [--effort low|medium|high]
+                [--wait [SECONDS]] [--json] <prompt | - | @file>
 mystical run-status <id> [--wait [SECONDS]] [--json]
 mystical runs [--client NAME] [--limit N] [--json]
 mystical run-cancel <id> [--json]
@@ -112,7 +130,8 @@ mystical run-cancel <id> [--json]
 
 - `prompt` prints the run id and returns. With `--wait` it blocks until the run ends and prints the
   final response on stdout; `--wait 600` gives up after 600 seconds. `-` reads the prompt from
-  stdin, `@file` from a file. Changes of state go to stderr, one line each.
+  stdin, `@file` from a file. Changes of state go to stderr, one line each. `--model sonnet` and
+  `--effort high` are sent only when given; `run-status` and `runs` show the model.
 - `--json` prints the Run (for `runs`, `{"runs": [...]}`) as one line, whatever the outcome.
 - Ending a wait (a timeout, Ctrl-C, the caller killing the command) does not stop the run.
   `run-cancel` does.
@@ -137,7 +156,7 @@ the bridge, so it needs no `.env`.
 For Atlas (`ATLAS_JOB_COMMAND`, or a call from its server):
 
 ```sh
-mystical prompt --client atlas --cwd ~/projects/atlas --title "Job queue" --wait 3600 @~/Atlas/job-prompt.md
+mystical prompt --client atlas --cwd ~/projects/atlas --title "Job queue" --model sonnet --wait 3600 @~/Atlas/job-prompt.md
 ```
 
 ## Safety
@@ -154,12 +173,13 @@ mystical prompt --client atlas --cwd ~/projects/atlas --title "Job queue" --wait
   50 at most. A run waiting for input or parked on a limit keeps its slot. Your own sessions don't
   count against it.
 - **Permission mode.** Exactly what a dashboard-started session in that project gets: its default
-  profile's mode, else `NEW_SESSION_PERMISSION_MODE`. The caller cannot name a mode, a model, an
-  account or tools, and extra keys in the body are ignored. With `bypassPermissions` there, a
+  profile's mode, else `NEW_SESSION_PERMISSION_MODE`. The caller cannot name a mode, an
+  account or tools (a model it can, above), and extra keys in the body are ignored. With `bypassPermissions` there, a
   program holding the token runs commands as you in the allowed folders: narrow `RUN_API_DIRS`, or
   give the project a stricter default profile.
 
-Both settings are on the SYSTEM tab (RUNS) and take effect without a restart.
+The three settings (`RUN_API_CONCURRENCY`, `RUN_API_DIRS`, `RUN_API_MODEL`) are on the SYSTEM
+tab (RUNS) and take effect without a restart.
 
 ## Limits and open choices
 

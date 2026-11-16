@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from bridge import config, limits, run_api, runner, state, store, waits
+from bridge import config, limits, models, run_api, runner, state, store, waits
 
 
 class Job:
@@ -44,6 +44,9 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "BASE_PATH", str(base))
     monkeypatch.setattr(config, "RUN_API_CONCURRENCY", 2)
     monkeypatch.setattr(config, "RUN_API_DIRS", "")
+    monkeypatch.setattr(config, "RUN_API_MODEL", "haiku")
+    # The account's list as the Models API gives it; no test reaches the network.
+    monkeypatch.setattr(models, "model_ids", lambda: {"claude-sonnet-5", "claude-haiku-5"})
     monkeypatch.setattr(run_api, "_dir", lambda: str(tmp_path / "state"))
     monkeypatch.setattr(run_api, "_runs", None)
     monkeypatch.setattr(run_api, "_token", None)
@@ -145,8 +148,8 @@ def test_the_session_gets_the_mode_a_dashboard_session_would(world, monkeypatch)
     monkeypatch.setattr(config, "NEW_SESSION_PERMISSION_MODE", "acceptEdits")
     run = submit(world)
     assert store.get_session(run["session_id"])["permission_mode"] == "acceptEdits"
-    # ...and the caller names no mode, model or account of its own.
-    assert not {"permission_mode", "model", "account_slot", "runtime"} & set(
+    # ...and the caller names no mode or account of its own (a model it can).
+    assert not {"permission_mode", "account_slot", "runtime"} & set(
         world["calls"][0]
     )
     run2 = run_api.submit(
@@ -218,6 +221,91 @@ def test_the_allow_list_replaces_any_repo(world, monkeypatch, tmp_path):
         with pytest.raises(run_api.Refused) as e:
             run_api.allowed_dir(bad)
         assert e.value.code == 403
+
+
+# --- the model ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("model", ["sonnet", "haiku", "opus", "fable", "claude-sonnet-5"])
+def test_a_named_model_reaches_the_runner_and_stays_on_the_run(world, model):
+    run = submit(world, model=model, effort="low")
+    assert (run["model"], run["effort"]) == (model, "low")
+    call = world["calls"][0]
+    assert (call["model"], call["effort"]) == (model, "low")
+    row = store.get_session(run["session_id"])  # a resumed turn reads the row
+    assert (row["model"], row["effort"]) == (model, "low")
+    assert run_api.listed()[0]["model"] == model
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"model": "gpt-4"},
+        {"model": "claude-nonsense"},
+        {"model": "Sonnet!"},
+        {"model": 5},
+        {"model": ["sonnet"]},
+        {"effort": "extreme"},
+        {"model": "sonnet", "effort": 3},
+    ],
+)
+def test_an_unknown_model_or_effort_is_refused_and_starts_nothing(world, extra):
+    with pytest.raises(run_api.Refused) as e:
+        submit(world, **extra)
+    assert e.value.code == 400 and "unknown" in str(e.value)
+    if "model" in extra and extra["model"] != "sonnet":
+        assert "haiku, sonnet, opus, fable" in str(e.value)
+    assert not world["calls"] and not run_api.listed()
+
+
+def test_a_full_id_passes_unchecked_only_while_the_live_list_is_missing(world, monkeypatch):
+    monkeypatch.setattr(models, "model_ids", lambda: set(config.MINIAPP_MODELS))
+    assert submit(world, model="claude-opus-9")["model"] == "claude-opus-9"
+    with pytest.raises(run_api.Refused):
+        submit(world, model="gpt-4")
+
+
+def test_a_run_that_names_no_model_gets_the_lowest(world):
+    assert config.MODELS_LOW_TO_HIGH[0] == "haiku"
+    assert set(config.MODELS_LOW_TO_HIGH) == set(config.MINIAPP_MODELS)
+    run = submit(world)
+    assert (run["model"], run["effort"]) == ("haiku", None)
+    assert world["calls"][0]["model"] == "haiku" and world["calls"][0]["effort"] is None
+    assert submit(world, repo="shop", model="")["model"] == "haiku"
+
+
+def test_the_default_model_is_a_setting_and_empty_means_the_bridges_own(world, monkeypatch):
+    monkeypatch.setattr(config, "RUN_API_MODEL", "sonnet")
+    assert submit(world)["model"] == "sonnet"
+    assert submit(world, repo="shop", model="opus")["model"] == "opus"
+    monkeypatch.setattr(config, "RUN_API_MODEL", "")
+    world["calls"].clear()
+    for j in world["jobs"].values():
+        j.end("done")
+    assert until(lambda: all(r["status"] == "done" for r in run_api.listed()))
+    run = submit(world)
+    assert run["model"] is None and world["calls"][0]["model"] is None
+    assert store.get_session(run["session_id"])["model"] is None
+
+
+def test_a_queued_run_starts_with_the_model_it_was_accepted_with(world, monkeypatch):
+    monkeypatch.setattr(config, "RUN_API_CONCURRENCY", 1)
+    first = submit(world)
+    second = submit(world, repo="shop")
+    assert status(second["id"]) == "queued" and second["model"] == "haiku"
+    monkeypatch.setattr(config, "RUN_API_MODEL", "opus")
+    job_of(world, first["id"]).end("done")
+    assert until(lambda: status(second["id"]) == "running")
+    assert world["calls"][1]["model"] == "haiku"
+
+
+def test_a_run_stored_before_models_existed_still_reads(world):
+    run = submit(world)
+    with run_api._lock:
+        r = run_api._load_locked()[run["id"]]
+        del r["model"], r["effort"]
+    got = run_api.get(run["id"])
+    assert got["model"] is None and got["effort"] is None
 
 
 # --- states ----------------------------------------------------------------------
@@ -629,6 +717,8 @@ def test_the_json_shape_scripts_rely_on(world):
         "ref",
         "title",
         "cwd",
+        "model",
+        "effort",
         "session_id",
         "session_url",
         "created",

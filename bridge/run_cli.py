@@ -46,6 +46,7 @@ EXIT = {"done": 0, "failed": 4, "cancelled": 5}
 NOT_OVER = 6
 USAGE = """usage:
   mystical prompt --cwd DIR [--title T] [--client NAME] [--ref R]
+                  [--model M] [--effort low|medium|high]
                   [--wait [SECONDS]] [--json] <prompt | - | @file>
   mystical run-status ID [--wait [SECONDS]] [--json]
   mystical runs [--client NAME] [--limit N] [--json]
@@ -54,7 +55,9 @@ USAGE = """usage:
   prompt       start a session in DIR with that prompt and print the run's id.
                `-` reads the prompt from stdin, `@file` from a file. With
                --wait, block until the run ends (or SECONDS pass) and print
-               its final response instead.
+               its final response instead. --model picks the run's model
+               (haiku, sonnet, opus, fable or a full id); without it the run
+               gets the bridge's RUN_API_MODEL.
   run-status   one run: state, session link, and the response once done
   runs         recent runs, newest first
   run-cancel   stop a run (a queued one never starts)
@@ -200,6 +203,11 @@ def _show(run: dict, as_json: bool, answer_only: bool = False) -> int:
     )
     print(f"  title    {run['title']}")
     print(f"  cwd      {run['cwd']}")
+    if run.get("model") or run.get("effort"):
+        print(
+            f"  model    {run.get('model') or 'bridge default'}"
+            + (f"  effort {run['effort']}" if run.get("effort") else "")
+        )
     if run.get("session_url"):
         print(f"  session  {run['session_url']}")
     for label, key in (
@@ -274,6 +282,8 @@ def main(argv: list) -> int:
         p.add_argument("--title", default="")
         p.add_argument("--client", default="")
         p.add_argument("--ref", default="")
+        p.add_argument("--model", default="")
+        p.add_argument("--effort", default="")
         p.add_argument("--wait", type=float, default=None)
         p.add_argument("prompt", nargs="+")
     elif cmd == "run-status":
@@ -302,17 +312,20 @@ def main(argv: list) -> int:
         if not prompt.strip():
             _err("the prompt is empty")
             return 2
-        out, code = call(
-            "POST",
-            "/local/runs",
-            {
-                "cwd": os.path.abspath(os.path.expanduser(ns.cwd)),
-                "prompt": prompt,
-                "title": ns.title,
-                "client": ns.client,
-                "ref": ns.ref,
-            },
-        )
+        body = {
+            "cwd": os.path.abspath(os.path.expanduser(ns.cwd)),
+            "prompt": prompt,
+            "title": ns.title,
+            "client": ns.client,
+            "ref": ns.ref,
+        }
+        # Sent only when asked for; the bridge checks the names. One running
+        # code from before these keys ignores them and uses its own default.
+        if ns.model.strip():
+            body["model"] = ns.model.strip()
+        if ns.effort.strip():
+            body["effort"] = ns.effort.strip()
+        out, code = call("POST", "/local/runs", body)
         if code != 202:
             return _refused(out, code)
         run = out["run"]
@@ -344,7 +357,8 @@ def main(argv: list) -> int:
         for r in out["runs"]:
             when = time.strftime("%m-%d %H:%M", time.localtime(r["created"]))
             print(
-                f"{r['id']}  {r['status']:<17}  {when}  {r['client']:<10}  {r['title']}"
+                f"{r['id']}  {r['status']:<17}  {when}  {r['client']:<10}  "
+                f"{r.get('model') or '-':<8}  {r['title']}"
             )
         return 0
 

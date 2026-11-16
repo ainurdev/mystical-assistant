@@ -109,6 +109,41 @@ def test_prompt_prints_the_run_id_and_returns(served):
     assert served["calls"][0]["prompt"].startswith("Work through the queue.")
 
 
+def test_prompt_model_and_effort_reach_the_run_and_show_in_status(served):
+    code, out, err = cli(served, "prompt", "--cwd", served["atlas"], "--model", "sonnet",
+                         "--effort", "low", "--json", "Look it up.")
+    assert code == 0, err
+    run = json.loads(out)
+    assert (run["model"], run["effort"]) == ("sonnet", "low")
+    assert (served["calls"][0]["model"], served["calls"][0]["effort"]) == ("sonnet", "low")
+    code, out, _ = cli(served, "run-status", run["id"])
+    assert "model    sonnet  effort low" in out
+    assert json.loads(cli(served, "run-status", run["id"], "--json")[1])["model"] == "sonnet"
+    code, out, _ = cli(served, "runs")
+    assert code == 0 and "sonnet" in out
+    assert json.loads(cli(served, "runs", "--json")[1])["runs"][0]["model"] == "sonnet"
+
+
+def test_prompt_without_a_model_gets_the_default_and_a_bad_one_is_refused(served):
+    code, out, err = cli(served, "prompt", "--cwd", served["atlas"], "--json", "Look it up.")
+    assert code == 0, err
+    assert json.loads(out)["model"] == "haiku" and served["calls"][0]["model"] == "haiku"
+    code, out, err = cli(served, "prompt", "--cwd", served["shop"], "--model", "gpt-4", "Hi")
+    assert code == 1 and "unknown model" in err and len(served["calls"]) == 1
+    code, out, err = cli(served, "prompt", "--cwd", served["shop"], "--effort", "extreme", "Hi")
+    assert code == 1 and "unknown effort" in err and len(served["calls"]) == 1
+
+
+def test_the_model_over_http(served):
+    tok = {"X-Run-Token": served["token"]}
+    out, code = http(served, "POST", "/local/runs",
+                     {"cwd": served["atlas"], "prompt": "x", "model": "sonnet"}, **tok)
+    assert code == 202 and out["run"]["model"] == "sonnet"
+    out, code = http(served, "POST", "/local/runs",
+                     {"cwd": served["shop"], "prompt": "x", "model": "gpt-4"}, **tok)
+    assert code == 400 and "unknown model" in out["error"]
+
+
 def test_prompt_wait_prints_the_answer_and_exits_0(served):
     def finish():
         until(lambda: run_api.listed())

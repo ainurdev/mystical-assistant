@@ -344,7 +344,10 @@ mystical run-status "$id" --json     # {"id": ..., "status": "running", "session
 
 It only starts sessions in git repositories under `BASE_PATH` (or the folders in
 `RUN_API_DIRS`), two at a time (`RUN_API_CONCURRENCY`) with the rest queued, in
-the permission mode a dashboard session there would get. The HTTP routes, the
+the permission mode a dashboard session there would get. `--model sonnet`
+(and `--effort low|medium|high`) picks the model for one run; without it a run
+gets `RUN_API_MODEL`, which is `haiku`, the lowest, unless you set another
+(empty = the bridge's normal default). The HTTP routes, the
 JSON and every exit code: [docs/superpowers/specs/local-run-api.md](docs/superpowers/specs/local-run-api.md).
 
 **On a Mac**
