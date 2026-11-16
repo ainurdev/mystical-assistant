@@ -11,10 +11,12 @@ notes anyone may have written in: text in a task must not be able to set work go
 
 Why a run branch rather than helpers' usual merge. channel.merge drops a helper's patch in the
 chat's folder uncommitted, which suits one helper and tangles many. Here each item is merged with
---no-ff into mystical/work-<id>, which has its own worktree, so `git log --first-parent` reads one
+--no-ff into the run's branch, which has its own worktree, so `git log --first-parent` reads one
 commit per item and later items start from what earlier ones did. Your branch doesn't move until
 you press Merge. It starts from your folder's last commit: uncommitted work there is yours and
-stays out of it, and the start says so. Nothing here pushes.
+stays out of it, and the start says so. Nothing here pushes. The branch is named for the day the
+run started and how many items it took (mystical/work-nov17-3-items), so two runs read apart in a
+branch list; the run's id stays its key everywhere else.
 
 The manager's shell moves. It goes into a helper's copy to run things, and that copy goes when the
 item merges, so the chat's work_cwd can't be trusted here: an item always starts from run["top"], and a run starts from _home.
@@ -178,7 +180,6 @@ def start(chat: dict, wanted: "list | None", parallel=None) -> dict:
     into = out.strip() if rc == 0 else ""
     rc, dirty, _ = _git(top, "status", "--porcelain")
     rid = uuid.uuid4().hex[:8]
-    branch, path = f"mystical/work-{rid}", os.path.join(config.BASE_PATH, ".worktrees", os.path.basename(top), f"work-{rid}")
 
     def pick(data: dict) -> list:
         if worklist.active_run(data):
@@ -187,7 +188,8 @@ def start(chat: dict, wanted: "list | None", parallel=None) -> dict:
         if not chosen:
             raise Refused("There's nothing up next to work on.")
         return chosen
-    worklist.mutate(root, pick)
+    n = len(worklist.mutate(root, pick))
+    branch, path = channel._free_copy(top, f"work-{time.strftime('%b%d').lower()}-{n}-item{'' if n == 1 else 's'}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     from bridge import git
     ok, msg = git.worktree_add(top, path, branch, head)
