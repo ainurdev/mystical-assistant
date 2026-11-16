@@ -126,7 +126,7 @@ import { useAutoClean, useBranches } from "./components/hud/useBranches";
 import { branchActivity, branchTree, landable, shownRows } from "./lib/branchrows";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
-import { arrange } from "./lib/rail";
+import { arrange, moveTo, toggleHidden } from "./lib/rail";
 import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
@@ -3055,18 +3055,44 @@ export function App() {
     const items: CtxItem[] = nativeCtx.top.length && ctxMenu.type !== "editor" ? [...nativeCtx.top, { divider: true }] : [];
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
     if (ctxMenu.type === "railtab") {
+      // The rail customised from here (/design-first rail-ctx-customize, A · IN THE
+      // MENU, 2026-11-16): this tile, a show/hide checklist of every tab, the look.
+      // Switches and the checklist keep the menu open so one visit trims the rail.
+      const id = ctxMenu.id;
       const hidden = settings.rightHidden;
+      const ids = rightTabs.map((t) => t.id);
+      const shown = railTabs.map((t) => t.id);
+      const at = shown.indexOf(id);
       // The open tab stays on the rail while it's open (railTabs), so hiding it
       // moves you to the first other tab rather than doing nothing you can see.
-      const next = railTabs.find((t) => t.id !== ctxMenu.id)?.id;
-      if (next) items.push({ icon: "⊘", label: `Hide ${ctxMenu.label}`, hint: "right-click any tile to bring it back",
-        onClick: () => patchSettings({ rightHidden: [...hidden, ctxMenu.id],
-                                       ...(ctxMenu.id === settings.rightTab && { rightTab: next as RightTab }) }) });
-      const back = rightTabs.filter((t) => hidden.includes(t.id));
-      if (back.length) items.push({ icon: "+", label: "Show a hidden tab", children: back.map((t) => ({
-        icon: "+", label: t.label, onClick: () => patchSettings({ rightHidden: hidden.filter((x) => x !== t.id) }) })) });
-      if (settings.rightOrder.length) items.push({ icon: "↺", label: "Reset the order", hint: "back to the app's",
-        onClick: () => patchSettings({ rightOrder: [] }) });
+      const flip = (tab: string) => {
+        const next = toggleHidden(ids, hidden, tab);
+        const away = next.includes(tab) && tab === settings.rightTab ? shown.find((t) => !next.includes(t)) : undefined;
+        patchSettings({ rightHidden: next, ...(away && { rightTab: away as RightTab }) });
+      };
+      const move = (to: number) => patchSettings({ rightOrder: moveTo(shown, at, to) });
+      items.push({ section: "THIS TILE" });
+      if (!hidden.includes(id) && toggleHidden(ids, hidden, id).includes(id))
+        items.push({ icon: "⊘", label: `Hide ${ctxMenu.label.split(":")[0]}`, onClick: () => flip(id) });
+      // Both moves stay and dim at the ends: a row that vanished would put the other under the pointer.
+      items.push({ icon: "↑", label: "Move up", keep: true, disabled: at <= 0, onClick: () => move(at - 1) },
+        { icon: "↓", label: "Move down", keep: true, disabled: at < 0 || at >= shown.length - 1, onClick: () => move(at + 1) });
+      items.push({ icon: "★", label: "Open here on start", keep: true, on: settings.rightStart === id,
+        onClick: () => patchSettings({ rightStart: settings.rightStart === id ? "" : id }) });
+      items.push({ divider: true }, { section: "ON THE RAIL", hint: "click to show/hide" }, {
+        checks: rightTabs.map((t) => {
+          const on = !hidden.includes(t.id);
+          return { label: t.label.split(":")[0], on, locked: on && !toggleHidden(ids, hidden, t.id).includes(t.id), onClick: () => flip(t.id) };
+        }) });
+      const sw = (icon: string, label: string, key: "railNames" | "railReadouts" | "railRules", hint?: string): CtxItem =>
+        ({ icon, label, hint, keep: true, on: settings[key], onClick: () => patchSettings({ [key]: !settings[key] }) });
+      items.push({ divider: true }, { section: "LOOK" },
+        sw("Aa", "Names under icons", "railNames"), sw("!", "Readouts", "railReadouts", "ASK ↑2"), sw("—", "Group rules", "railRules"));
+      const custom = !!(settings.rightOrder.length || hidden.length || settings.rightStart
+        || !settings.railNames || !settings.railReadouts || !settings.railRules);
+      items.push({ divider: true }, { icon: "↺", label: "Reset the rail", hint: "order, shown tabs, look", disabled: !custom,
+          onClick: () => patchSettings({ rightOrder: [], rightHidden: [], rightStart: "", railNames: true, railReadouts: true, railRules: true }) });
+      items.push({ divider: true });   // the Dashboard ▸ tail that follows isn't part of LOOK
     }
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
@@ -3304,7 +3330,8 @@ export function App() {
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, relocTargets, ai, plugins, hiddenProjects,
-      settings.rightHidden, settings.rightOrder, railKeys]);
+      settings.rightHidden, settings.rightOrder, settings.rightStart, settings.railNames, settings.railReadouts, settings.railRules,
+      settings.rightTab, railKeys]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -3740,6 +3767,7 @@ export function App() {
                   tabs={railTabs} activeId={settings.rightTab}
                   onReorder={(ids) => patchSettings({ rightOrder: ids })}
                   onResize={(w) => patchSettings({ rightW: w })}
+                  names={settings.railNames} readouts={settings.railReadouts} rules={settings.railRules}
                   open={settings.rightOpen} shown={rightShown} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}
@@ -3817,7 +3845,8 @@ export function App() {
                 weather={weather} onSetUnit={setUnit} onSetPlace={setPlace}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
-            {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
+            {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx}
+              width={ctxMenu.type === "railtab" ? 288 : undefined} />}
             {filePick && (
               <ContextMenu
                 ctx={{ x: filePick.x, y: filePick.y, type: "file", id: "", label: filePick.name }}

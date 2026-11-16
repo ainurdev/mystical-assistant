@@ -33,3 +33,17 @@ export function moveTo(ids: string[], from: number, to: number): string[] {
 export function clampRightW(px: number): number {
   return Math.round(Math.min(RIGHT_W.max, Math.max(RIGHT_W.min, px)));
 }
+
+/** The hide list with `id` flipped, for the menu's checklist. Hiding the last
+ *  shown tab is refused, as in arrange(); ids no longer in `ids` drop out. */
+export function toggleHidden(ids: string[], hidden: string[], id: string): string[] {
+  const live = hidden.filter((h) => ids.includes(h));
+  if (live.includes(id)) return live.filter((h) => h !== id);
+  return ids.filter((t) => !live.includes(t)).length > 1 ? [...live, id] : live;
+}
+
+/** The tab the rail opens on at load: the one pinned with "Open here on
+ *  start" while it still exists, else the one you left open. */
+export function startTab<T extends string>(pinned: string, last: T, ids: readonly T[]): T {
+  return ids.includes(pinned as T) ? (pinned as T) : last;
+}

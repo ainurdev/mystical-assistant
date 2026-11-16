@@ -21,7 +21,7 @@ import { toIntro, type Intro } from "./intro";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
 import { toChatBg, type ChatBg } from "./toolwidget";
-import { RIGHT_W } from "./rail";
+import { RIGHT_W, startTab } from "./rail";
 
 export type ThemeKey =
   | "aqua" | "green" | "amber" | "magenta" | "blueprint" | "void"
@@ -341,7 +341,8 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["home", "session", "files", "git", "council", "branches", "learn", "rivendell", "usage", "work"] as const;
+// docs/automations/design/views joined 2026-11-16 so "Open here on start" (and a reload) can land on them.
+export const RIGHT_TABS = ["home", "session", "files", "git", "council", "branches", "learn", "rivendell", "usage", "work", "docs", "automations", "design", "views"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";
@@ -359,6 +360,12 @@ export interface HudSettings {
   rightOrder: string[];
   rightHidden: string[];
   rightW: number;
+  // From a tile's right-click menu: the tab it opens on at load ("" = the last
+  // one open), and the rail's look: names under icons, readouts, group rules.
+  rightStart: string;
+  railNames: boolean;
+  railReadouts: boolean;
+  railRules: boolean;
   indicator: Indicator; // which working-indicator form is live
   nyan: NyanMode; // which cat, when indicator === "nyan"
   nyanSound: NyanSound; // "match" = the picked cat's own track
@@ -425,7 +432,7 @@ function urlLayout(): ChatLayout | null {
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, leftOpen: true, rightTab: "files",
-  rightOrder: [], rightHidden: [], rightW: 0,
+  rightOrder: [], rightHidden: [], rightW: 0, rightStart: "", railNames: true, railReadouts: true, railRules: true,
   indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
@@ -495,6 +502,8 @@ export function loadSettings(): HudSettings {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw) as Partial<HudSettings> & { textScale?: number };
+      const pin = TOOK[p.rightStart as string] ?? str(p.rightStart, "");
+      const rightStart = RIGHT_TABS.includes(pin as RightTab) ? pin : "";
       return {
         theme: toTheme(p.theme),
         scanlines: p.scanlines ?? true,
@@ -503,11 +512,16 @@ export function loadSettings(): HudSettings {
         rightOpen: p.rightOpen ?? true,
         leftOpen: p.leftOpen ?? true,
         // "changes" was its own tab until the GIT tab took it in (2026-10-18); then TOOK
-        rightTab: (p.rightTab as string) === "changes" ? "git" : TOOK[p.rightTab as string]
-          ?? (RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files"),
+        rightTab: startTab(rightStart,
+          (p.rightTab as string) === "changes" ? "git" : TOOK[p.rightTab as string]
+          ?? (RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files"), RIGHT_TABS),
         rightOrder: tookIn(strs(p.rightOrder)),
         rightHidden: tookIn(strs(p.rightHidden)),
         rightW: typeof p.rightW === "number" && p.rightW >= RIGHT_W.min && p.rightW <= RIGHT_W.max ? p.rightW : 0,
+        rightStart,
+        railNames: p.railNames !== false,
+        railReadouts: p.railReadouts !== false,
+        railRules: p.railRules !== false,
         indicator: toIndicator(p.indicator),
         nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
         nyanSound:

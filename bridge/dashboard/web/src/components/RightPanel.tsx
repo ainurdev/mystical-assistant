@@ -123,6 +123,9 @@ export function RightPanel({
   railHead,
   onReorder,
   onResize,
+  names = true,
+  readouts = true,
+  rules = true,
 }: {
   tabs: PanelTab[];
   activeId: string;
@@ -141,6 +144,12 @@ export function RightPanel({
   onReorder?: (ids: string[]) => void;
   /** The panel's left seam was dragged to this width; 0 = back to the layout's own (double-click). */
   onResize?: (px: number) => void;
+  /** The rail's look, from a tile's right-click menu: names under the icons
+   *  (off = a 40px tile with only a readout under its icon), the readouts
+   *  (ASK, ↑2, a badge, and the tint that comes with them), and the short rules between groups. */
+  names?: boolean;
+  readouts?: boolean;
+  rules?: boolean;
 }) {
   const current = tabs.find((t) => t.id === activeId) ?? tabs[0];
   // A key change inside a panel that is already out is one of two events, and
@@ -280,16 +289,17 @@ export function RightPanel({
         {railHead && <div className="mb-1 flex flex-col items-stretch border-b border-border pb-1">{railHead}</div>}
         {list.map((t, i) => {
           const on = open && t.id === current?.id;
-          const word = t.alert ? "!" : t.ask ? "ASK" : t.badge || null;
-          const tone = t.tone ?? (t.alert ? "err" : t.ask ? "ask" : t.badge ? (t.low ? "warn" : "acc") : undefined);
+          const word = readouts ? (t.alert ? "!" : t.ask ? "ASK" : t.badge || null) : null;
+          const tone = readouts ? t.tone ?? (t.alert ? "err" : t.ask ? "ask" : t.badge ? (t.low ? "warn" : "acc") : undefined) : undefined;
           return (
             <Fragment key={t.id}>
-              {i > 0 && t.group !== list[i - 1].group && <span className="rail-rule" aria-hidden />}
+              {rules && i > 0 && t.group !== list[i - 1].group && <span className="rail-rule" aria-hidden />}
               <button
                 data-tab={t.id}
                 data-tone={tone}
                 data-tip-side="left"
                 data-drag={order && drag.current?.id === t.id ? "" : undefined}
+                data-bare={names ? undefined : ""}
                 data-ctx-type="railtab"
                 data-ctx-id={t.id}
                 data-ctx-label={t.label}
@@ -307,14 +317,14 @@ export function RightPanel({
                 {...(i < 9 ? keyAttrs(`Alt+${i + 1}`) : {})}
                 aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 aria-current={on}
-                className={`rtile relative flex h-[50px] flex-col items-center justify-start gap-[2px] border-l-2 pt-[7px] text-[length:var(--t13)] hover:bg-accent ${
+                className={`rtile relative flex ${names ? "h-[50px]" : "h-[40px]"} flex-col items-center justify-start gap-[2px] border-l-2 pt-[7px] text-[length:var(--t13)] hover:bg-accent ${
                   on
                     ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
                     : "border-transparent text-muted-2 hover:text-primary"
                 }`}
               >
                 <span className="rtile-ico">{t.icon}{t.busy && <span className="rail-orbit" aria-hidden />}</span>
-                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n" data-long={t.short.length > 7 || undefined}>{t.short}</span>}
+                {word ? <span className="rtile-v">{word}</span> : names && <span className="rtile-n" data-long={t.short.length > 7 || undefined}>{t.short}</span>}
               </button>
             </Fragment>
           );

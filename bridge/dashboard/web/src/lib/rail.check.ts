@@ -2,7 +2,7 @@
 //
 // The right rail's arrangement: the user's order wins, unseen tabs keep their
 // app neighbour, hidden ones drop out, and the rail can never end up empty.
-import { arrange, clampRightW, moveTo } from "./rail.ts";
+import { arrange, clampRightW, moveTo, startTab, toggleHidden } from "./rail.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -29,3 +29,15 @@ ok(moveTo(["a", "b", "c", "d"], 3, 0).join("") === "dabc", "move to the top");
 ok(moveTo(["a", "b", "c"], 1, 9).join("") === "acb", "past the end clamps to the end");
 
 ok(clampRightW(100) === 230 && clampRightW(900) === 520 && clampRightW(300.6) === 301, "width clamps and rounds");
+
+// The menu's ON THE RAIL checklist: a click flips one tab, and the last one shown stays.
+const all = ["home", "files", "git"];
+ok(toggleHidden(all, [], "git").join() === "git", "a shown tab hides");
+ok(toggleHidden(all, ["git", "files"], "git").join() === "files", "a hidden tab comes back");
+ok(toggleHidden(all, ["home", "files"], "git").join() === "home,files", "the last shown tab can't hide");
+ok(toggleHidden(all, ["gone", "home"], "files").join() === "home,files", "a stale id drops out on the way");
+
+// Open here on start: a pinned tab wins over the one you left open, if it still exists.
+ok(startTab("git", "files", all) === "git", "the pinned start tab wins");
+ok(startTab("", "files", all) === "files", "no pin: the last open tab");
+ok(startTab("gone", "files", all) === "files", "a pin to a tab that's gone is ignored");

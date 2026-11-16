@@ -4594,7 +4594,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint-sunset"] .pmeta > b { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 
 /* the context menu's rows: Geist, no tracking, a rounded hover */
-[data-fam] [data-ctxmenu] { width: 232px !important; padding: 2px; }
+[data-fam] [data-ctxmenu] { width: var(--ctx-w, 232px) !important; padding: 2px; }   /* --ctx-w: a wide menu (the rail tile's checklist) */
 [data-fam] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
 [data-fam] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
 [data-fam] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
@@ -6611,6 +6611,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 @media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
 /* the session's tabs, the project's, yours: a short rule where one meets the next */
 .rail-rule { flex: none; align-self: center; width: 16px; height: 1px; margin: 5px 0; background: color-mix(in srgb, var(--txl) 34%, transparent); }
+/* Names off (a tile's right-click menu ▸ LOOK): a 40px tile, which the families that pin 50px have to let through. */
+:is([data-fam="middle-earth"], [data-fam="pebble"]) .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[data-bare] { height: 40px !important; }
 /* the foot (go live, changelog, update, ⌘K) apart from the tabs, in its own well */
 .rail-well { margin: auto 4px 0; padding: 2px 0; border-radius: var(--f-rad, 0); background: var(--side-well, color-mix(in srgb, var(--acc) 5%, transparent)); }
 /* the panel's left seam: drag to resize, double-click to reset (RightPanel startResize) */
