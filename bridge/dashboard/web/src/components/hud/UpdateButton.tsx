@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, FileDiff, GitBranch, Monitor, Server, TriangleAlert } from "lucide-react";
-import { api, type UpdateInfo } from "../../api";
+import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, FileDiff, GitBranch, Monitor, Server, Sparkles, TriangleAlert } from "lucide-react";
+import { api, type Transcript, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { Bullets, Meta } from "./ChangelogButton";
 import { Flow, type FlowNode } from "./LiveReader";
 import { watchRestart } from "../../lib/restart";
 import { popPlace } from "../../lib/prchip";
+import { openSession } from "../../lib/devicerun";
+import { finished, fixView, isLive, type FixView } from "../../lib/fixsession";
+import { wall } from "../../lib/surfaces";
 
 // The platform's own checkout, both directions: pull the commits waiting
 // upstream (then rebuild + restart the bridge), or ship the work sitting here —
@@ -19,19 +22,27 @@ import { popPlace } from "../../lib/prchip";
 // the rail's hub polls for its rows.
 export const UPDATE_POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
 
-type Feed = (texts: string[], project?: string, fresh?: boolean) => void;
+export type Feed = (texts: string[], project?: string, fresh?: boolean, onSession?: (id: string) => void) => void;
 
-/** Pull & restart, commit & push, and the FIX WITH CLAUDE escape hatch, for either look. */
+// The fixing session outlives the popover (readers remount on every open): while it
+// exists, the failure stays up and links to it instead of offering the update again.
+let held: { err: string; failed: "pull" | "build" | "ship"; session: string } | null = null;
+
+/** Pull & restart, commit & push, and the FIX WITH AI escape hatch, for either look. */
 function useUpdateActions(info: UpdateInfo | null, reload: () => Promise<void>, onFeed: Feed, onDone: () => void) {
   const [phase, setPhase] = useState<"" | "updating" | "restarting" | "shipping" | "checking">("");
-  const [err, setErr] = useState("");
-  const [failed, setFailed] = useState<"pull" | "build" | "ship">("pull");
+  const [err, setErr] = useState(held?.err ?? "");
+  const [failed, setFailed] = useState<"pull" | "build" | "ship">(held?.failed ?? "pull");
+  const [session, setSession] = useState(held?.session ?? "");
+  const fix = useFixSession(session);
 
   // Pull + rebuild happen inside this one request (tens of seconds); the bridge
   // only restarts once it answers ok.
   async function apply() {
     setPhase("updating");
     setErr("");
+    setSession("");
+    held = null;
     try {
       const r = await api.applyUpdate();
       if (!r.ok) {
@@ -59,6 +70,8 @@ function useUpdateActions(info: UpdateInfo | null, reload: () => Promise<void>, 
   async function ship() {
     setPhase("shipping");
     setErr("");
+    setSession("");
+    held = null;
     try {
       const r = await api.publishUpdate();
       if (!r.ok) {
@@ -102,9 +115,19 @@ function useUpdateActions(info: UpdateInfo | null, reload: () => Promise<void>, 
           `(${where}) refused. Work out what blocks it and fix it, then pull the ${pending} ` +
           `pending commit${pending === 1 ? "" : "s"}. Don't discard my source changes.` +
           `\n\ngit said:\n${err}`,
-    ], info?.project, true);
+    // The popover shuts before the session exists, so its id is held here, not only in state.
+    ], info?.project, true, (id) => { held = { err, failed, session: id }; setSession(id); });
     onDone();
-    setErr("");
+  }
+
+  function openFix() {
+    openSession(session);
+    onDone();
+  }
+
+  // Retry runs it again, which drops the held fix first (apply/ship clear it).
+  function retry() {
+    return failed === "ship" ? ship() : apply();
   }
 
   async function recheck() {
@@ -113,7 +136,67 @@ function useUpdateActions(info: UpdateInfo | null, reload: () => Promise<void>, 
     setPhase("");
   }
 
-  return { phase, busy: phase !== "", err, failed, apply, ship, fixWithClaude, recheck };
+  return { phase, busy: phase !== "", err, failed, session, fix, apply, ship, fixWithClaude, openFix, retry, recheck };
+}
+
+// The fixing session, live: /running every few seconds says what it does now; once it
+// goes quiet, one tailed transcript says how its last turn ended (lib/fixsession). The
+// transcript is fetched again only after the session was live again. Polling stops
+// once the fix ends; reopening the reader looks again.
+const FIX_POLL_MS = 4000;
+function useFixSession(id: string): FixView | null {
+  const [view, setView] = useState<FixView | null>(null);
+  useEffect(() => {
+    setView(null);
+    if (!id) return;
+    let on = true, t: Transcript | null = null, wasLive = true;
+    const tick = async () => {
+      try {
+        const run = await api.running();
+        const live = isLive(id, run);
+        if (!live && (wasLive || !finished(t))) t = await api.transcript(id, 0, { tail: 1 });
+        wasLive = live;
+        const v = fixView(id, run, t);
+        if (on) setView(v);
+        if (v.phase === "done" || v.phase === "failed") clearInterval(h);   // ended: nothing left to follow
+      } catch { /* next tick */ }
+    };
+    const h = setInterval(tick, FIX_POLL_MS);
+    void tick();
+    return () => { on = false; clearInterval(h); };
+  }, [id]);
+  return view;
+}
+
+const FIX_TOP: Record<FixView["phase"], string> = {
+  starting: "AI IS STARTING", running: "AI IS FIXING", ask: "AI WAITS ON YOU", done: "FIX DONE", failed: "FIX FAILED",
+};
+
+/** The session fixing it, as one row you open it from (design B · SESSION ROW). */
+function FixRow({ v, onOpen }: { v: FixView | null; onOpen: () => void }) {
+  const phase = v?.phase ?? "starting";
+  const tone = phase === "done" ? "ok" : phase === "failed" ? "bad" : phase === "ask" ? "warn" : "";
+  return (
+    <button className={`upd-fix ${tone}`} onClick={onOpen}>
+      <span className="top"><i className={`dot${phase === "running" || phase === "starting" ? " pulse" : ""}`} />
+        {FIX_TOP[phase]}{phase === "done" && v?.secs ? ` · ${wall(v.secs).toLowerCase()}` : ""}<span className="go">open ›</span></span>
+      <b>{v?.title || "Fixing the update"}</b>
+      {v?.line && <span className="l">{v.line}</span>}
+    </button>
+  );
+}
+
+/** git's error, folded to its last line once a fix is under way. */
+function ErrFold({ err, what }: { err: string; what: string }) {
+  const [open, setOpen] = useState(false);
+  const last = err.trim().split("\n").filter(Boolean).at(-1) ?? "";
+  return (
+    <div className="gl-err upd-errfold">
+      <button aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <b>{what}</b><span>{last}</span><i>{open ? "hide" : "show"} ›</i></button>
+      {open && <pre>{err}</pre>}
+    </div>
+  );
 }
 
 // Release notes you opened are read: the changelog's dot needn't keep them.
@@ -144,8 +227,15 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
   const incoming = info.behind ?? 0;
   const dirty = info.dirty ?? 0, ahead = info.ahead ?? 0;
   const coming = info.coming ?? null;
-  const bad = a.err !== "";
+  const fixing = a.err !== "" && a.session !== "";   // handed to an AI session: follow it, don't offer the update again
+  const bad = a.err !== "" && !fixing;
+  const fphase = a.fix?.phase ?? "starting";
+  const fixed = fixing && fphase === "done";
   const at = (s: FlowNode["state"]): FlowNode["state"] => (bad ? "bad" : s);
+  const fixKick = fixed ? (side === "ship" ? "FIXED" : "FIXED · READY TO GO LIVE") : fphase === "failed" ? "FIX FAILED" : side === "ship" ? "FIXING · PUSH FAILED" : "FIXING · UPDATE FAILED";
+  const fixTone = fixed ? "ok" : fphase === "failed" ? "bad" : "";
+  const fixBody = <><FixRow v={a.fix} onOpen={a.openFix} /><ErrFold err={a.err} what={a.failed === "build" ? "BUILD SAID" : "GIT SAID"} /></>;
+  const fixWait = <><button className="pri" onClick={a.openFix}>▸ Open session</button><span style={{ flex: 1 }} /><button onClick={() => void a.retry()} disabled={a.busy}>Retry now</button></>;
 
   if (side === "ship") {
     const commit = dirty > 0;
@@ -159,7 +249,7 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
           { key: "up", icon: GitBranch, name: "Upstream", tag: info.branch.toUpperCase(), tone: "var(--txl)", state: "next" },
         ]} />
         <div className="clg-t">
-          <div className={`rl-kick ${bad ? "bad" : "warn"}`}>{bad ? "PUSH FAILED" : commit ? "YOURS · NEEDS COMMIT + PUSH" : "YOURS · NEEDS PUSH"}</div>
+          <div className={`rl-kick ${fixing ? fixTone : bad ? "bad" : "warn"}`}>{fixing ? fixKick : bad ? "PUSH FAILED" : commit ? "YOURS · NEEDS COMMIT + PUSH" : "YOURS · NEEDS PUSH"}</div>
           <div className="h">
             <b>{commit ? `${plural(dirty, "change")} to ship` : `${plural(ahead, "commit")} to push`}</b>
             <span className="tm">⎇ {info.branch}</span>
@@ -172,16 +262,18 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
             {(info.outgoing ?? []).slice(0, 4).map((c) => <div key={c.sha}><b>{c.sha}</b>{c.subject}</div>)}
             {ahead > (info.outgoing ?? []).slice(0, 4).length && <div className="more">+ {plural(ahead - (info.outgoing ?? []).slice(0, 4).length, "more commit")}</div>}
           </div>
+          {fixing && fixBody}
           {bad && <div className="gl-err"><div className="h">PUSH FAILED</div><pre>{a.err}</pre></div>}
         </div>
         </div>
         <div className="rl-foot">
         <div className="clg-acts">
-          {bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with Claude</button>
+          {fixing ? fixWait
+            : bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with AI</button>
             : <button className="warn" onClick={() => void a.ship()} disabled={a.busy}>
                 <ArrowUpFromLine size={14} strokeWidth={2} />{a.phase === "shipping" ? "Committing…" : commit ? "Commit & push" : "Push"}</button>}
         </div>
-        <div className="clg-mline"><span>{commit ? "Commits with a message written from the diff, then pushes." : "Pushes the commits to the upstream."}</span></div>
+        <div className="clg-mline"><span>{fixing ? "This row follows the fixing session live." : commit ? "Commits with a message written from the diff, then pushes." : "Pushes the commits to the upstream."}</span></div>
         </div>
       </div>
     );
@@ -192,12 +284,15 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
     <div className="clg-read rl-read">
       <div className="rl-body mscroll">
       <Flow nodes={[
-        { key: "pull", icon: ArrowDownToLine, name: plural(incoming, "commit"), tag: "PULL", tone: "var(--ok)", state: at(pullState) },
+        fixing
+          ? { key: "pull", icon: Sparkles, name: fixed ? "ready" : "AI", tag: fixed ? "FIXED" : "FIXING", tone: fixed ? "var(--ok)" : "var(--acc)",
+              state: fphase === "failed" ? "bad" : fixed ? "ok" : "now" }
+          : { key: "pull", icon: ArrowDownToLine, name: plural(incoming, "commit"), tag: "PULL", tone: "var(--ok)", state: at(pullState) },
         { key: "dashboard", icon: Monitor, name: "Dashboard", tag: "REBUILD", tone: "var(--acc)", state: bad ? undefined : pullState },
         { key: "bridge", icon: Server, name: "Bridge", tag: "RESTART", tone: "var(--warn)", state: a.phase === "restarting" ? "now" : undefined },
       ]} />
       <div className="clg-t">
-        <div className={`rl-kick ${bad ? "bad" : "ok"}`}>{bad ? "UPDATE FAILED" : a.phase === "restarting" ? "RESTARTING" : `COMING · ${incoming} COMMIT${incoming === 1 ? "" : "S"}`}</div>
+        <div className={`rl-kick ${fixing ? fixTone : bad ? "bad" : "ok"}`}>{fixing ? fixKick : bad ? "UPDATE FAILED" : a.phase === "restarting" ? "RESTARTING" : `COMING · ${incoming} COMMIT${incoming === 1 ? "" : "S"}`}</div>
         <div className="h">
           <b>{coming ? coming.title : `${plural(incoming, "new commit")} upstream`}</b>
           {!coming && <span className="tm">⎇ {info.branch}</span>}
@@ -214,17 +309,24 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
         {commitsOpen && <div className="gl-cm rl-cm ok">{(info.commits ?? []).map((c) => <div key={c.sha}><b>{c.sha}</b>{c.subject}</div>)}</div>}
         {dirty > 0 && <div className="gl-turns rl-dirty"><TriangleAlert size={13} strokeWidth={1.8} />
           <span>Your {plural(dirty, "uncommitted file")} block{dirty === 1 ? "s" : ""} the pull. Ship yours first, then update.</span></div>}
+        {fixing && fixBody}
         {bad && <div className="gl-err"><div className="h">UPDATE FAILED</div><pre>{a.err}</pre></div>}
       </div>
       </div>
       <div className="rl-foot">
       <div className="clg-acts">
-        {bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with Claude</button>
+        {fixed ? <><button className="ok" onClick={() => void a.apply()}>
+              <ArrowDownToLine size={14} strokeWidth={2} />Rebuild &amp; restart</button>
+              <span style={{ flex: 1 }} /><button onClick={a.openFix}>Open session</button></>
+          : fixing ? fixWait
+          : bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with AI</button>
           : <button className="ok" onClick={() => void a.apply()} disabled={a.busy}>
               <ArrowDownToLine size={14} strokeWidth={2} />{a.phase === "updating" ? "Updating…" : a.phase === "restarting" ? "Restarting…" : "Pull & restart"}</button>}
         {dirty > 0 && !bad && !a.busy && <button onClick={onShip}>Ship yours first</button>}
       </div>
-      <div className="clg-mline"><span>Pulls, rebuilds the dashboard and restarts the bridge. Running turns pick up where they were.</span></div>
+      <div className="clg-mline"><span>{fixed ? "Rebuilds the dashboard and restarts the bridge."
+        : fixing ? "The pull waits for the fix; this row follows the session live."
+        : "Pulls, rebuilds the dashboard and restarts the bridge. Running turns pick up where they were."}</span></div>
       </div>
     </div>
   );
@@ -241,7 +343,7 @@ export function UpdateButton({ onFeed }: { onFeed: Feed }) {
   async function load() {
     try { setInfo(await api.update()); } catch { /* ignore */ }
   }
-  const { phase, busy, err, failed, apply, ship, fixWithClaude, recheck } = useUpdateActions(info, load, onFeed, () => setOpen(false));
+  const { phase, busy, err, failed, session, fix, apply, ship, fixWithClaude, openFix, retry, recheck } = useUpdateActions(info, load, onFeed, () => setOpen(false));
 
   useEffect(() => {
     void load();
@@ -416,7 +518,10 @@ export function UpdateButton({ onFeed }: { onFeed: Feed }) {
                 <span>A fast-forward pull refuses on a dirty tree — commit &amp; push first.</span>
               </div>
             )}
-            {err && (
+            {err && session && (
+              <div className="upd-fixwrap"><FixRow v={fix} onOpen={openFix} /><ErrFold err={err} what={failed === "build" ? "BUILD SAID" : "GIT SAID"} /></div>
+            )}
+            {err && !session && (
               <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: "color-mix(in srgb, var(--err) 7%, transparent)", padding: "9px 11px" }}>
                 <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--err)", marginBottom: 6 }}>{failed === "ship" ? "PUSH FAILED" : "UPDATE FAILED"}</div>
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txm)", whiteSpace: "pre-wrap", maxHeight: 150, overflowY: "auto" }}>{err}</div>
@@ -424,12 +529,12 @@ export function UpdateButton({ onFeed }: { onFeed: Feed }) {
             )}
           </div>
           <div style={{ display: "flex", gap: 9, padding: "0 18px 16px" }}>
-            <button className="upd-btn" onClick={() => setOpen(false)} disabled={busy} {...hp("cancel")}
-              style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>{incoming > 0 ? "LATER" : "CANCEL"}</button>
+            <button className="upd-btn" onClick={session ? () => void retry() : () => setOpen(false)} disabled={busy} {...hp("cancel")}
+              style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>{session ? "RETRY" : incoming > 0 ? "LATER" : "CANCEL"}</button>
             {err ? (
-              <button className="upd-btn" onClick={fixWithClaude} {...hp("fix")}
+              <button className="upd-btn" onClick={session && fix?.phase === "done" && failed !== "ship" ? () => void apply() : session ? openFix : fixWithClaude} {...hp("fix")}
                 style={{ flex: 1.4, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "fix" ? "color-mix(in srgb, var(--acc) 28%, transparent)" : "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10 }}>
-                ▸ FIX WITH CLAUDE</button>
+                {session && fix?.phase === "done" && failed !== "ship" ? "REBUILD & RESTART" : session ? "▸ OPEN SESSION" : "▸ FIX WITH AI"}</button>
             ) : (
               <>
                 {local > 0 && (

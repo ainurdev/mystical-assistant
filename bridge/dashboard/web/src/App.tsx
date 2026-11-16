@@ -2026,10 +2026,10 @@ export function App() {
   // own checkout, not in a worktree of it or a conversation already under way.
   // No project (suggestions, a bridge outside BASE_PATH) = inject into the
   // current composer, as before.
-  function feed(texts: string[], project?: string, fresh?: boolean) {
+  function feed(texts: string[], project?: string, fresh?: boolean, onSession?: (id: string) => void) {
     const text = texts.join("\n");
     if (project && (fresh || project !== sessionProject)) {
-      void startIn(project, text);
+      void startIn(project, text, { onSession });
       return;
     }
     setInject((p) => ({ text, nonce: p.nonce + 1 }));
@@ -2054,13 +2054,14 @@ export function App() {
 
   async function startIn(
     project: string, prompt: string,
-    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string; kind?: HeldPrompt["kind"] },
+    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string; kind?: HeldPrompt["kind"]; onSession?: (id: string) => void },
   ): Promise<boolean> {
     openBlank(project);
     try {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id, true);
+      opts?.onSession?.(session.id);
       toChat();
       // Its profile's picks, else this browser's: what its composer shows once
       // it opens, not the picks of the session it was started from.

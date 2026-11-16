@@ -8,7 +8,7 @@ import {
 import { api, type LiveInfo, type Notice, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { DONE, LiveReader } from "./LiveReader";
-import { UPDATE_POLL_MS, UpdateReader } from "./UpdateButton";
+import { UPDATE_POLL_MS, UpdateReader, type Feed } from "./UpdateButton";
 import { watchRestart } from "../../lib/restart";
 import { popFor } from "../../lib/golive";
 import { popPlace } from "../../lib/prchip";
@@ -168,7 +168,7 @@ function Stage({ c, playing, onEnded, onZoom }: { c: Change; playing: boolean; o
   );
 }
 
-export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
+export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
   const [rows, setRows] = useState<Notice[] | null>(null);
   const [project, setProject] = useState("");                                 // where Ask Claude starts ("" = it can't)
   const [open, setOpen] = useState(false);

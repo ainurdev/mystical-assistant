@@ -121,7 +121,7 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
   }
 
   // The build broke: hand it to Claude in a new session in the bridge's own checkout,
-  // the way UPDATE's FIX WITH CLAUDE does.
+  // the way UPDATE's FIX WITH AI does.
   function fix(err: { name: string; output: string }) {
     onFeed([
       `Going live failed: the ${err.name} build in \`${info.path || "the mystical-assistant repo"}\` broke, so ` +
@@ -229,7 +229,7 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
           <button onClick={() => void drop()} disabled={going}>Cancel the wait</button>
         </>}
         {view === "failed" && err && <>
-          <button className="pri" onClick={() => fix(err)}>▸ Fix with Claude</button>
+          <button className="pri" onClick={() => fix(err)}>▸ Fix with AI</button>
           <button onClick={() => void drop()}>Dismiss</button>
         </>}
       </div>
