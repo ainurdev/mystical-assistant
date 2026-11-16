@@ -5,8 +5,9 @@ import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { SessionBrief, SessionStatus } from "../../api";
+import type { NewProjectBody, NewProjectNote, SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
+import { NewProjectForm } from "./NewProjectForm";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import type { ProjectTint } from "../../lib/surfaces";
 import { dayLabel, isJob, JOB_LABEL, jobGroup, jobLabel, JOBS_REL, jobTarget } from "../../lib/jobs";
@@ -60,7 +61,7 @@ interface Props {
   /** Start a typed session: the form's fields, already composed into a prompt. */
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
   /** Scaffold a repo and open its first session on the given prompt. */
-  onCreateProject: (name: string, prompt: string) => void;
+  onCreateProject: (body: NewProjectBody) => Promise<NewProjectNote[] | null>;
   /** Folded to the rail: one tile per project you are working in. */
   folded?: boolean;
   onUnfold?: () => void;
@@ -582,8 +583,6 @@ export function SessionsPanel(props: Props) {
   const [nsAt, setNsAt] = useState<string | null>(null);
   // New-project form — the PROJECTS mode's counterpart to NEW SESSION.
   const [npOpen, setNpOpen] = useState(false);
-  const [npName, setNpName] = useState("");
-  const [npPrompt, setNpPrompt] = useState("");
 
   // Browser state — mode + project order remembered across reloads.
   const plugins = useIntegrations();
@@ -952,53 +951,8 @@ export function SessionsPanel(props: Props) {
     setDragRel(null); setOverRel(null);
   }
 
-  // The new-project form: a repo name and the first thing to build in it, in the
-  // info tint — a project is not a session. NEW SESSION's popover opens it.
-  const npForm = (
-    <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--info)", flex: "none" }} />
-        <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--info-hi)" }}>NEW PROJECT</span>
-        <span style={{ flex: 1 }} />
-        <button
-          onClick={() => setNpOpen(false)} title="close" aria-label="close"
-          onMouseEnter={() => setHov("npclose")} onMouseLeave={() => setHov("")}
-          style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
-                   display: "grid", placeItems: "center", border: 0,
-                   background: hov === "npclose" ? "color-mix(in srgb, var(--info) 14%, transparent)" : "transparent",
-                   color: hov === "npclose" ? "var(--info-b)" : "var(--txd)", transition: "background .15s ease, color .15s ease" }}
-        >
-          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-      <input
-        value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="project-name"
-        style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", padding: "6px 9px" }} />
-      <textarea
-        value={npPrompt} onChange={(e) => setNpPrompt(e.target.value)} placeholder="starting prompt — what should Claude build first?"
-        style={{ width: "100%", boxSizing: "border-box", minHeight: 60, resize: "vertical", marginTop: 8, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1.5, padding: "8px 9px" }} />
-      <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-        <button
-          onClick={() => {
-            const name = npName.trim(), prompt = npPrompt.trim();
-            if (!name || !prompt) return;
-            onCreateProject(name, prompt);
-            setNpName(""); setNpPrompt(""); setNpOpen(false);
-          }}
-          disabled={!npName.trim() || !npPrompt.trim()}
-          onMouseEnter={() => setHov("npgo")} onMouseLeave={() => setHov("")}
-          style={{ flex: 1, appearance: "none", cursor: npName.trim() && npPrompt.trim() ? "pointer" : "not-allowed", opacity: npName.trim() && npPrompt.trim() ? 1 : 0.45, border: "1px solid var(--info)", background: hov === "npgo" ? "color-mix(in srgb, var(--info) 26%, transparent)" : "color-mix(in srgb, var(--info) 16%, transparent)", color: "var(--info-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-        ><span style={{ color: "var(--info)" }}>▸</span>CREATE & START</button>
-        <button
-          onClick={() => setNpOpen(false)}
-          onMouseEnter={() => setHov("npcancel")} onMouseLeave={() => setHov("")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "npcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "9px 12px" }}
-        >CANCEL</button>
-      </div>
-    </div>
-  );
+  // NEW SESSION's popover opens it.
+  const npForm = <NewProjectForm onCreate={onCreateProject} onClose={() => setNpOpen(false)} />;
 
   // The PLUGINS tab exists while Rivendell is installed, and `mode` can't be
   // "plugins" otherwise, so the pill never stands on a tab that isn't rendered.

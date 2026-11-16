@@ -26,6 +26,8 @@ import {
   type ShareKind,
   type TeamOverview,
   type InstallStep,
+  type NewProjectBody,
+  type NewProjectNote,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -2118,15 +2120,23 @@ export function App() {
     } catch (e) { setBoot(null); setLoadingSession(false); notify("error", (e as Error).message); }
   }
 
-  async function createProject(name: string, prompt: string) {
+  /** NEW PROJECT. Resolves to the notices that wait for a yes (nothing was
+   *  done), or null once the project is open; rejects with the bridge's reason,
+   *  which the form shows beside the field that caused it. */
+  async function createProject(body: NewProjectBody): Promise<NewProjectNote[] | null> {
+    const r = await api.createProject(body);
+    if (r.confirm) return r.confirm;
+    if (!r.project) return null;
     try {
-      const r = await api.createProject(name, prompt);
+      void refreshProjects();
       await selectProject(r.project.rel);
       await loadSessions();
       if (r.session && r.job_id) markWorking(r.session.id);
       if (r.session) openSession(r.session.id);
       toChat();
+      for (const n of r.notes ?? []) notify("info", n);
     } catch (e) { notify("error", (e as Error).message); }
+    return null;
   }
 
   function openFromHistory(s: EnrichedSession) {
@@ -3156,7 +3166,7 @@ export function App() {
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
-                  onCreateProject={(name, prompt) => void createProject(name, prompt)}
+                  onCreateProject={createProject}
                 />
               </div>
 

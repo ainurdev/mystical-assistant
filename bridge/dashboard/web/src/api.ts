@@ -19,6 +19,18 @@ export interface Project {
   rel: string;
   name: string;
 }
+/** What NEW PROJECT makes: a fresh repo, a folder you name, a clone, or a chat with no code. */
+export type NewProjectKind = "new" | "folder" | "clone" | "chat";
+export interface NewProjectBody {
+  kind: NewProjectKind;
+  name?: string;      // new: the repo's folder; chat: its name
+  path?: string;      // folder: the folder; clone: where the clone goes
+  url?: string;       // clone
+  prompt: string;
+  confirmed: boolean; // the notices were shown and accepted
+}
+/** Something the bridge won't do without a yes: git init in your folder, or working outside the projects folder. */
+export interface NewProjectNote { kind: "init" | "outside"; text: string }
 // Why a session is out of the active list. null = still active.
 export type Lifecycle = "done" | "abandoned" | "backlog";
 // An objective the session keeps working on. The model owns the verdict (it calls
@@ -380,6 +392,8 @@ export interface ProjectsListing {
   remotes?: Record<string, string>; // rel -> owner/repo of origin, absent if not GitHub
   marks?: Record<string, ProjectMark>; // rel -> its mark; absent on a bridge older than marks
   self?: string; // the bridge's own checkout, when it sits under BASE_PATH
+  roots?: string[]; // folders outside BASE_PATH you allowed (bridge/roots.py); absent on an older bridge
+  chats?: string; // the rel chat projects live under
 }
 
 /** What a project's tile shows and the colour it wears (bridge/projectmarks.py).
@@ -2374,11 +2388,15 @@ export const api = {
       "/local/github/pr",
       { method: "POST", body: { project, head, base, title, body } },
     ).then(pushed(project, head)),
-  createProject: (name: string, prompt: string) =>
-    req<{ project: Project; session: SessionBrief; job_id: string | null }>(
+  /** NEW PROJECT (bridge/newproject.py). `confirm` back means nothing was done:
+   *  show the notices and send again with `confirmed`. */
+  createProject: (body: NewProjectBody) =>
+    req<{ project?: Project; session?: SessionBrief; job_id?: string | null; notes?: string[]; confirm?: NewProjectNote[]; path?: string }>(
       "/local/projects/create",
-      { method: "POST", body: { name, prompt } },
+      { method: "POST", body },
     ),
+  /** Stop allowing a folder outside the projects folder. Nothing on disk changes. */
+  removeRoot: (project: string) => req<{ ok: boolean; roots: string[] }>("/local/roots/remove", { method: "POST", body: { project } }),
   // --- prompt queue (per session) ---
   queue: (sessionId: string) =>
     req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),

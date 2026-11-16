@@ -34,7 +34,8 @@ Safety, in the order a request meets it:
     the server address in <state dir>/run-api.json (mode 600), which is all the
     CLI reads. The token is kept across restarts, so a client waiting through a
     bridge reload carries on.
-  - Directories: a run's cwd must be inside BASE_PATH, where every surface can
+  - Directories: a run's cwd must be inside BASE_PATH (or a folder outside it you
+    allowed, bridge/roots.py), where every surface can
     show it, and inside a git checkout there (the repos the project browser
     knows). With RUN_API_DIRS set, only those folders and what is under them.
   - A cap: RUN_API_CONCURRENCY runs at once (default 2); the rest wait their
@@ -200,8 +201,9 @@ def _roots() -> list:
 
 def _in_checkout(real: str) -> bool:
     """Inside a git checkout under BASE_PATH (a `.git` file counts: a worktree)."""
+    from bridge import browser
     p = real
-    while p != config.BASE_PATH and p.startswith(config.BASE_PATH + os.sep):
+    while p != config.BASE_PATH and browser.within_base(p):
         if os.path.exists(os.path.join(p, ".git")):
             return True
         p = os.path.dirname(p)
@@ -215,7 +217,8 @@ def allowed_dir(cwd) -> str:
     real = os.path.realpath(os.path.expanduser(cwd.strip()))
     if not os.path.isdir(real):
         raise Refused(f"cwd is not a folder: {real}")
-    inside = real.startswith(config.BASE_PATH + os.sep)
+    from bridge import browser
+    inside = real != config.BASE_PATH and browser.within_base(real)
     roots = _roots()
     if roots:
         ok = inside and any(real == r or real.startswith(r + os.sep) for r in roots)

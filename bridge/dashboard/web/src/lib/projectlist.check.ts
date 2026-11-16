@@ -1,6 +1,7 @@
 // Run: node bridge/dashboard/web/src/lib/projectlist.check.ts
 import { filterRows, folders, matches, parentOf, span } from "./projectlist.ts";
 
+console.assert(parentOf("/.mystical-chats/general-chat") === "chats" && parentOf("/../../.config/nvim") === "outside the projects folder", "parentOf: chats and allowed folders");
 console.assert(parentOf("/ainurhq/efas/app") === "ainurhq/efas" && parentOf("/aligned") === "" && parentOf("rivendell:jobs") === "", "parentOf");
 
 const rows = [

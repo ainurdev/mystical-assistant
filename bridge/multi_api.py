@@ -50,7 +50,8 @@ def image_root(chat_id: int, session: "str | None", project: "str | None") -> "s
         return None
     d = os.path.realpath(os.path.join(config.BASE_PATH, rel))
     base = os.path.realpath(config.BASE_PATH)
-    return chat_images.root_of(d) if d.startswith(base + os.sep) else None
+    from bridge import browser
+    return chat_images.root_of(d) if d != base and browser.within_base(d) else None
 
 
 def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
