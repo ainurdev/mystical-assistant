@@ -11,7 +11,8 @@ import Foundation
 /// waits, so the row you hid never brings the panel back: not when its session
 /// starts another turn, and not when a restarted bridge lists it again (offers
 /// go missing until Rivendell reconnects). A need is its subject and when it
-/// was raised: a session asking again raises a new one.
+/// was raised: a session asking again raises a new one. An offer is its subject
+/// alone: the restarted bridge stamps it with when it heard of it again.
 ///
 /// A session is quiet for the rest of the turn it was shown in, however many
 /// cards it asks, and stops being quiet once that turn is over (nothing of it
@@ -24,6 +25,9 @@ import Foundation
 ///
 /// shortcut: a restart resumes a cut turn as a new job, so that turn's next ask
 /// counts as new; key on a turn id that survives restarts if that pops it often.
+/// shortcut: a message steered into a turn that waits on a background command
+/// runs in that same job, so its asks stay quiet up to the bridge's BG_WAIT_CAP
+/// (2 h); a per-turn id from the bridge would end that too.
 public struct PanelHide: Equatable {
     /// Needs shown (`need(_:)`), kept until the hide ends: a need never repeats.
     let needs: Set<String>
@@ -60,7 +64,7 @@ public struct PanelHide: Equatable {
         return PanelHide(needs: needs.union(listed.map(Self.need)), quiet: quiet)
     }
 
-    private static func need(_ w: WaitingSession) -> String { "\(w.subject)@\(w.at ?? 0)" }
+    private static func need(_ w: WaitingSession) -> String { w.id.isEmpty ? w.subject : "\(w.subject)@\(w.at ?? 0)" }
 
     /// Remembered across restarts, like the panel's place on screen. Holding
     /// nothing is still a hide: what you hid has gone, nothing new has come.

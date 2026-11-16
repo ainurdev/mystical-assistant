@@ -279,10 +279,11 @@ private func row(_ subject: String, at: Double = 1) -> WaitingSession {
 }
 
 @Test func anOfferStaysHiddenThroughABridgeRestart() throws {
-    // A restarted bridge answers before Rivendell reconnects: its offers go missing a while.
+    // A restarted bridge answers before Rivendell reconnects: its offers go missing a while,
+    // then come back stamped with when it heard of them again (rivendell.py _catch_up).
     var hide = PanelHide([row("rv:i1:r1")], turns: [:])
     hide = try #require(hide.after([], turns: [:], dashboardInFront: false))
-    #expect(hide.after([row("rv:i1:r1")], turns: [:], dashboardInFront: false) != nil)
+    #expect(hide.after([row("rv:i1:r1", at: 2)], turns: [:], dashboardInFront: false) != nil)
 }
 
 @Test func whatTheDashboardShowedCountsAsSeen() throws {
