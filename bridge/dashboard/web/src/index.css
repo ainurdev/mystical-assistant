@@ -4528,7 +4528,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
   border-bottom-color: transparent !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
+/* UPDATE's footer buttons (.upd-btn) hover from their own state and its Show the commits (.upd-fold) is a link: neither takes the row's wash */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act, .upd-btn, .upd-fold):hover {
   background: var(--ac-08) !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [role="dialog"]:not(.agm)) [style*="acc) 10%"] { background: var(--f-you) !important; }
