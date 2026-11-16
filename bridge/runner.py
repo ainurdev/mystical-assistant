@@ -96,10 +96,10 @@ _LOG_NOTE = (
     "To run this project (dev server, `npm run dev`, anything long-lived the "
     "human will look at), use the Run tool — not Bash. The bridge owns what Run "
     "starts, so it outlives the turn and the human can follow its port and logs "
-    "in the dashboard; a background Bash process is invisible to them. Here a "
-    "background Bash command is also ended about 15 seconds after your final "
-    "answer, and you are not re-invoked when it exits: when you need its result, "
-    "wait for it in the foreground before you answer. The dev server's "
+    "in the dashboard; a background Bash process is invisible to them. A "
+    "background Bash command or monitor still running when you answer keeps "
+    "this chat waiting: you are woken when it finishes, and it is stopped after "
+    "2 hours with nothing finishing. The dev server's "
     f"output is also logged to {devserver.DEV_LOG_REL} in the project root — "
     "read that file (e.g. tail it) to inspect dev-server logs.\n\n"
     + _MYSTICAL_NOTE)
@@ -981,6 +981,14 @@ class Job:
         # it starts ("accepted") or goes idle without starting ("declined").
         self.native_resume = False
         self.resume_state: str | None = None
+        # Background commands and monitors the CLI says are still running, by its
+        # task id (_note_background). A turn that ends with one open is waiting
+        # for it: _watchdog keeps the child, which wakes the model when it ends.
+        # `bg` above is the same tasks as the pill shows them, agents included;
+        # this is the set the turn waits on, with what each card needs.
+        self.bg_tasks: dict[str, dict] = {}
+        self.bg_cmds: dict[str, str] = {}      # tool_use id -> command, till its task starts
+        self.bg_cap: float | None = None       # the agent's own wait limit (set_bg_cap); None = BG_WAIT_CAP
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -1069,7 +1077,15 @@ class Job:
 
     def respond(self, request_id: str, *, behavior: str = "allow",
                 message: str | None = None, answers: list | None = None) -> bool:
-        """Answer a pending can_use_tool request. Returns False if unknown."""
+        """Answer a pending can_use_tool request. Returns False if unknown.
+
+        A background command's card answers through here too, as `bg:<task id>`
+        (the route and both clients already carry a respond): deny stops the
+        command, an answer headed `notify` ticks its checkbox."""
+        if request_id.startswith("bg:"):
+            pick = next((a for a in answers or [] if isinstance(a, dict) and a.get("header") == "notify"), None)
+            return self.background(request_id[3:], stop=behavior == "deny" and pick is None,
+                                   notify=None if pick is None else "on" in (pick.get("labels") or []))
         with self._lock:
             entry = next((p for p in self.pending if p["request_id"] == request_id), None)
             if entry is None:
@@ -1194,6 +1210,37 @@ class Job:
                            elapsed=self.elapsed, session_id=self.session_id)
             return out
 
+    def background(self, task_id: str, *, stop: bool = False, notify: "bool | None" = None) -> bool:
+        """What the card of a background command can do. `stop` asks the CLI to
+        end that one task (the stop_task control request, CLI 2.1.323): its
+        task_notification then closes the card, and the model is not woken for
+        it. `notify` is the card's checkbox: prompt the agent if the wait on
+        this command runs out (_watchdog, BG_WAIT_CAP). False for a task that
+        is not running, or a child that can no longer be told."""
+        task = self.bg_tasks.get(task_id)
+        if task is None or self.exited.is_set():
+            return False
+        if notify is not None:
+            task["notify"] = bool(notify)
+            self.add({"type": "background_set", "id": task_id, "notify": bool(notify)})
+        if stop:
+            return self._write_stdin({"type": "control_request", "request_id": uuid.uuid4().hex,
+                                      "request": {"subtype": "stop_task", "task_id": task_id}})
+        return True
+
+    def set_bg_cap(self, seconds: float) -> int:
+        """The agent's own limit on how long this turn waits, in silence, on its
+        background commands: a minute at least, never past BG_WAIT_CAP."""
+        self.bg_cap = float(max(60, min(int(seconds), int(BG_WAIT_CAP))))
+        self.add({"type": "background_set", "cap": int(self.bg_cap)})
+        return int(self.bg_cap)
+
+    def bg_waiting(self) -> bool:
+        """The turn said its piece and its child lives on for a background
+        command or monitor: it wakes when one ends, or a new message ends the
+        wait (end_bg_wait)."""
+        return self.status != "running" and bool(self.bg_tasks) and not self.exited.is_set()
+
     def activity(self) -> dict:
         """A short 'what is it doing right now' label for the jobs monitor:
         awaiting input, the latest tool call, or thinking — plus a tool count."""
@@ -1210,6 +1257,10 @@ class Job:
             kind = "question" if "question" in kinds else "permission"
             label = "awaiting your answer" if kind == "question" else "awaiting your approval"
             return {"state": "awaiting", "kind": kind, "label": label, "tools": tools}
+        if self.bg_waiting():
+            n = len(self.bg_tasks)
+            return {"state": "background", "tools": tools,
+                    "label": f"waiting on {n} background command{'s' if n > 1 else ''}"}
         if last_tool is not None:
             name = last_tool.get("name", "")
             summary = last_tool.get("summary", "")
@@ -1362,8 +1413,11 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
     session is prompted with this.
     """
     with _jobs_lock:
-        job = next((j for j in _jobs.values()
-                    if j.store_session_id == session_id and j.status == "running"), None)
+        # A turn waiting on background commands keeps its stdin open (see
+        # _run_streaming): the message starts a follow-up turn in that process
+        # and the commands keep running.
+        job = next((j for j in _jobs.values() if j.store_session_id == session_id
+                    and (j.status == "running" or j.bg_waiting())), None)
     if isinstance(job, AcpJob) and experimental.enabled():
         if not acp.soft_steer(job, chat_images.note(text, job.cwd) + _with_images(text, image_paths)):
             return False
@@ -1490,7 +1544,7 @@ def running_jobs(chat_id: int) -> list[dict]:
     from machine.list_running()."""
     with _jobs_lock:
         jobs = [j for j in _jobs.values()
-                if j.chat_id == chat_id and j.status == "running"]
+                if j.chat_id == chat_id and (j.status == "running" or j.bg_waiting())]
     out = []
     for j in jobs:
         sid = j.store_session_id
@@ -2529,6 +2583,118 @@ def _note_resume(job: "Job", d: dict) -> None:
         _resume_declined(job)
 
 
+_BG_CMD_MAX = 2000
+
+
+def _note_background(job: Job, d: dict) -> None:
+    """Keep job.bg_tasks in step with the CLI's own task events, and put a card
+    in the transcript for each background command or monitor: one event when it
+    starts (what it is), one when it ends (how). Seen on CLI 2.1.323: a
+    `run_in_background` Bash emits task_started (task_type local_bash) before
+    its tool result, and task_notification (status completed) when it exits; a
+    foreground command emits neither.
+
+    Agents and workflows are left out: they report into their own files and
+    _watchdog already waits for them through _running_agents. So is a task a
+    sub-agent owns, which ends with its agent."""
+    tid = str(d.get("task_id") or "")
+    if not tid:
+        return
+    if d.get("subtype") == "task_started":
+        kind = str(d.get("task_type") or "")
+        if d.get("owned_by_subagent") or "agent" in kind or "workflow" in kind:
+            return
+        use = d.get("tool_use_id")
+        cmd = job.bg_cmds.pop(use, None) or (job.bash_cmds.get(use) or ("",))[0]
+        task = {"kind": "monitor" if "monitor" in kind else "command",
+                "text": str(d.get("description") or "")[:300], "command": cmd[:_BG_CMD_MAX]}
+        job.bg_tasks[tid] = task
+        job.add({"type": "background", "id": tid, "state": "running", **task})
+        return
+    status = str(d.get("status") or "")
+    # A monitor notifies on every event it sees; only an ending closes its card.
+    if status in ("", "running", "pending") or job.bg_tasks.pop(tid, None) is None:
+        return
+    job.add({"type": "background_done", "id": tid, "state": status,
+             "text": str(d.get("summary") or "")[:300]})
+
+
+def _drop_background(job: Job, state_: str) -> list:
+    """Close the cards of the background tasks a dying child takes with it.
+    Returns the tasks that were open."""
+    gone = []
+    for tid in list(job.bg_tasks):
+        gone.append(job.bg_tasks.pop(tid))
+        job.add({"type": "background_done", "id": tid, "state": state_, "text": ""})
+    return gone
+
+
+def _bg_cap(job: Job) -> float:
+    return min(job.bg_cap or BG_WAIT_CAP, BG_WAIT_CAP)
+
+
+def _bg_expired_prompt(job: Job, tasks: list) -> None:
+    """The wait ran out on commands whose card had "prompt the agent" ticked:
+    queue the session a turn that says so, once this one has let go of its run
+    slot. Without it an agent that ended its turn to wait is never told its
+    command was stopped. Best-effort, on its own thread: the watchdog must
+    still get to kill the child."""
+    asked = [t for t in tasks if t.get("notify")]
+    sid = job.store_session_id
+    if not asked or not sid:
+        return
+    mins = max(1, round(_bg_cap(job) / 60))
+    lines = "\n".join(f"- {t.get('text') or 'background command'}: `{(t.get('command') or '')[:400]}`"
+                      for t in asked)
+    text = (f"Mystical stopped what you were waiting on: nothing had finished after {mins} min "
+            f"of waiting, which is this chat's limit.\n{lines}\n"
+            "Read its output file for what it got to, then carry on. If it needs longer, run it "
+            "again in shorter steps or raise the limit with background_wait (2 hours at most).")
+
+    def go():
+        try:
+            job.exited.wait(30)
+            from bridge import queue_manager   # local import: runner<->queue cycle
+            sess = store.get_session(sid) or {}
+            queue_manager.enqueue(sid, text=text, prompt=text, images=[], model=None, effort=None,
+                                  permission_mode=None, width=None, sel=[], surface="background",
+                                  chat_id=job.chat_id, project=sess.get("project") or "")
+        except Exception as e:  # noqa: BLE001 - a wake-up is never worth a crash
+            print(f"[runner] background wake-up dropped: {e}", file=sys.stderr)
+
+    threading.Thread(target=go, daemon=True).start()
+
+
+def end_bg_wait(session_id: str) -> bool:
+    """End a session's wait on background commands so a new turn can start: its
+    finished turn's child is still up (and holds the run slot) only to be woken
+    by them. The commands die with it; the next process is told so by the CLI
+    on --resume. True if a wait was ended and the slot came free.
+
+    Waits on the slot, not job.exited: the turn's finally frees the slot and
+    then calls into the prompt queue, whose lock the caller may be holding."""
+    job = _latest_jobs().get(session_id)
+    proc = job.proc if job else None
+    if job is None or proc is None or not job.bg_waiting():
+        return False
+    _drop_background(job, "replaced")
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    deadline = time.monotonic() + INTERRUPT_KILL + 5.0
+    killed = False
+    while state.is_running(session_id) and time.monotonic() < deadline:
+        if not killed and time.monotonic() > deadline - 5.0 and proc.poll() is None:
+            killed = True
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        time.sleep(0.05)
+    return not state.is_running(session_id)
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
     if job.resume_state == "waiting":
@@ -2596,6 +2762,8 @@ def _handle_event(job: Job, d: dict):
                 if name == "Bash":
                     cmd = inp.get("command") or ""
                     job.bash_cmds[b.get("id")] = (cmd, _trees_before(job, cmd))
+                    if inp.get("run_in_background"):
+                        job.bg_cmds[b.get("id")] = cmd
                     # bash_cmds forgets a command when its result arrives; the Stop rule reads this one.
                     job.sub_cmds.append(cmd[:20000])
                     del job.sub_cmds[:-400]
@@ -2611,6 +2779,8 @@ def _handle_event(job: Job, d: dict):
                     job.clip_meta[b.get("id")] = _clip_meta(job, inp)
                 elif name == "Read" and isinstance(inp.get("file_path"), str):
                     job.read_paths[b.get("id")] = inp["file_path"]
+                elif name == "Monitor":
+                    job.bg_cmds[b.get("id")] = str(inp.get("command") or "")
                 job.open_tools[b.get("id")] = (name, time.time())
                 ev = {"type": "tool", "name": name, "id": b.get("id"),
                       "summary": _summarize_tool(name, inp)}
@@ -2659,6 +2829,8 @@ def _handle_event(job: Job, d: dict):
         # no-op whose result ("", num_turns 0) beats our prompt (CLI 2.1.302).
         # Left done, _watchdog's shell grace killed the child mid-thinking.
         job.status, job.elapsed = "running", None
+    elif t == "system" and d.get("subtype") in ("task_started", "task_notification"):
+        _note_background(job, d)
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
     elif t == "system" and d.get("subtype") == "session_state_changed":
@@ -2959,12 +3131,22 @@ def _prune_uploads():
 
 
 # After the turn's result the claude child lives on only for background work
-# (_run_env lifts the CLI's wait ceiling). An agent or workflow reports back
-# into the same process and the model carries on (the assistant branch flips
-# the job to running), so a turn waits for those. A background shell or
-# monitor can be a dev server that never ends: once no agent is working and
-# the child has been quiet this long, the turn is over.
+# (_run_env lifts the CLI's wait ceiling). An agent, workflow, background
+# command or monitor reports back into the same process and the model carries
+# on (the assistant branch flips the job to running), so a turn waits for
+# those. With none of them open (job.bg_tasks, _running_agents) and the child
+# quiet this long, the turn is over.
 BG_SHELL_GRACE = 15.0
+# How long a finished turn waits, in silence, on its background commands and
+# monitors: the CLI's own ceiling for one background command. It used to be
+# BG_SHELL_GRACE for these too (a background dev server pinned its session as
+# RUNNING), and every agent that ended its turn to wait for a build or a
+# watcher was never woken: the kill took the command with it (apex,
+# 2026-11-17, `mystical run-status --wait` stopped 15 s after the result). A
+# dev server belongs in the Run tool; one started here holds the session as
+# waiting until this cap, its card's Stop, or a turn started over it
+# (end_bg_wait). The agent can ask for less (Job.set_bg_cap), never more.
+BG_WAIT_CAP = 2 * 3600.0
 
 
 def _watchdog(job: Job, proc) -> None:
@@ -2972,11 +3154,14 @@ def _watchdog(job: Job, proc) -> None:
     hang timeout (config.RUN_TIMEOUT unless the run set its own) while nothing
     waits on the user. A busy turn runs for as long as it takes — this is a
     hang detector, not a work cap (the cost brake is the auto-resume cap, see
-    _maybe_auto_resume). And end a finished turn whose child only background
-    shells keep alive (BG_SHELL_GRACE): the CLI takes them down and exits, and
-    the turn closes on the result it already has. What went down is noted in
-    job.bg_ended: nothing wakes a session that was waiting on one, so the turn's
-    end tells it (bridge/carry_on.py).
+    _maybe_auto_resume). And end a finished turn whose child is still up with
+    nothing left to wake it (BG_SHELL_GRACE), or whose background commands
+    have kept it waiting past BG_WAIT_CAP: the CLI takes them down and exits,
+    and the turn closes on the result it already has. A command the grace took
+    down (one the CLI lists in job.bg that the wait never held the turn for) is
+    noted in job.bg_ended, and the turn's end tells the session
+    (bridge/carry_on.py). At the cap the command's own card decides that
+    (_bg_expired_prompt), so the two never both prompt.
 
     proc is the claude child, or an agent turn's acp.Conn (its poll() never
     reaps; its kill() sweeps the group). It stands down once the turn has
@@ -2994,16 +3179,21 @@ def _watchdog(job: Job, proc) -> None:
             if job.pending or job.interrupted:
                 continue                # waiting on the user, or stopping: not a hang
         quiet = time.monotonic() - quiet_since
+        waiting = bool(job.bg_tasks) and job.status != "running"
         if (job.status != "running" and not (job.runtime or "").startswith("acp:")
-                and quiet >= BG_SHELL_GRACE
+                and quiet >= (_bg_cap(job) if waiting else BG_SHELL_GRACE)
                 and not (job.session_id and _running_agents(job.session_id))):
-            job.bg_ended = [b["desc"] or "one with no description"
-                            for b in job.bg.values() if b["type"] != "agent"]
+            if not waiting:
+                job.bg_ended = [b["desc"] or "one with no description"
+                                for b in job.bg.values() if b["type"] != "agent"]
+            _bg_expired_prompt(job, _drop_background(job, "expired"))
             proc.terminate()
             job.exited.wait(INTERRUPT_KILL)
             if proc.poll() is None:
                 proc.kill()
             return
+        if waiting:
+            continue                    # a wait, not a hang: BG_WAIT_CAP is its limit
         if quiet >= limit:
             job.timed_out = True
             proc.kill()
@@ -3255,7 +3445,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # A lone one is ended by _watchdog's shell grace instead.
             answered = answered or (t == "result" and bool(d.get("num_turns") or d.get("result")))
             if answered and (t == "result" or d.get("subtype") == "session_state_changed") \
-                    and not job.bg and job.cli_state in (None, "idle"):
+                    and not job.bg and not job.bg_tasks and job.cli_state in (None, "idle"):
                 # Turn over: close stdin so the stream-json process exits (it
                 # otherwise stays alive awaiting more input). Only once the CLI
                 # is idle with no background task out: one that reports wakes
@@ -3263,6 +3453,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 # and the woken turn asks over stdin -- closed, its
                 # AskUserQuestion failed with "Stream closed" (CLI 2.1.319). A
                 # CLI without state events (cli_state None) ends on its result.
+                # The open stdin is also how a background command's card stops
+                # it (Job.background) and how a message reaches this process
+                # without ending it (steer). A wait nothing wakes is ended by
+                # _watchdog.
                 job.close_stdin()
         proc.wait()
 
@@ -3522,6 +3716,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     session = _resolve_session(chat_id, project_dir, session_id=session_id,
                                permission_mode=permission_mode, origin=origin,
                                profile_id=profile_id)
+    end_bg_wait(session["id"])      # a turn waiting on background commands gives way
     if not state.acquire_run(session["id"], chat_id):
         return None
     try:

@@ -29,6 +29,12 @@ carry-on's own turn that loses a command again is left alone. Only in a session
 you talk to (_YOURS): bridge/tickets.py carries a ticket or merge session on
 itself and counts, and a Rivendell job, an automation or a helper has handed its
 result on by the time its turn ends.
+
+Since 2026-11-17 this is the net, not the rule: the watchdog keeps a finished
+turn waiting on a background command the CLI reports (runner.BG_WAIT_CAP) and
+the CLI wakes the session itself. job.bg_ended holds only a command that wait
+never held the turn for, which still goes down at BG_SHELL_GRACE. A wait that
+runs out is the command card's to tell (runner._bg_expired_prompt).
 """
 
 import json
@@ -40,9 +46,9 @@ _TEXT = ("[mystical] MCP loaded: {names}. Carry on with what you were doing; "
          "those tools are available now.")
 # "No path for this message.": an order from the bridge, not a bug for the paths pack to route.
 _LOST = ("No path for this message.\n\n[mystical] Your turn ended while a background command was "
-         "still running, and the bridge ended it with the turn: {names}. Nothing wakes you when a "
-         "background command exits. If you still owe its result, run it again, wait for it in the "
-         "foreground, then report. If you owe nothing, say so in one line.")
+         "still running, and the bridge ended it with the turn: {names}. If you still owe its result, "
+         "run it again, wait for it in the foreground, then report. If you owe nothing, say so in "
+         "one line.")
 
 
 def _key(sid: str) -> str:

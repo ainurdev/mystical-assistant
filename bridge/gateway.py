@@ -230,6 +230,14 @@ def _rivendell_on(s: dict) -> bool:
         return False
 
 
+BG_WAIT = _t("background_wait", "How long this chat waits for your background work. When you end your turn with a "
+             "background command or monitor still running, Mystical keeps the chat waiting and wakes you when it "
+             "finishes, as long as it stays silent for no more than 2 hours; past that it is stopped. Call this to "
+             "set a shorter limit for this turn, like 20 minutes for a build that should take 5. It can't go past "
+             "2 hours: for longer work, check on it in steps.",
+             {"minutes": {"type": "number", "description": "The limit, in minutes of silence. 1 to 120."}}, ["minutes"])
+
+
 def _agent_of(s: dict) -> str:
     return profiles.effective(s)["agent"]
 
@@ -243,6 +251,8 @@ def tools_for(s: dict) -> list:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
     if not s.get("parent_session"):
         out += [WORK_LIST, WORK_RUN, CHAT_PLAN]
+    if caps["system_prompt"]:              # Claude: the only runtime with background tasks to wait on
+        out += [BG_WAIT]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
         out += [ASK, RUN]
         if not s.get("parent_session"):
@@ -438,6 +448,15 @@ def _call(s: dict, name: str, a: dict) -> dict:
             return _text(worklist.tool(s, a))
         except worklist.Refused as e:
             return _text(str(e), error=True)
+    if name == "background_wait":
+        try:
+            mins = float(a.get("minutes"))
+        except (TypeError, ValueError):
+            return _text("minutes must be a number from 1 to 120.", error=True)
+        if job is None or not hasattr(job, "set_bg_cap"):
+            return _text("No turn is running here to set it for.", error=True)
+        got = job.set_bg_cap(mins * 60)
+        return _text(f"This turn now waits up to {got // 60} min of silence on background work.")
     if name == "chat_plan":
         from bridge import chatplan
         try:

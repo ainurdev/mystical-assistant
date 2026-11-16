@@ -37,7 +37,7 @@ export type Seg = { kind: SegKind; idx: number[]; start: number };
  *  anything that asks you something. Each of these breaks the work around it,
  *  the way a paragraph breaks a run of chips. `error` and `stopped` are here
  *  because they end the turn and must never hide inside a fold. */
-const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped"]);
+const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped", "background"]);
 
 /** Events that render a row when they land in a steps fold. `tool_done`,
  *  `permission_resolved` and a textless `thinking` inside a run draw nothing,

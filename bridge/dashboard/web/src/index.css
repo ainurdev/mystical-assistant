@@ -3788,6 +3788,22 @@ input {
 }
 .ev-stop { color: var(--txd); }
 .ev-stop > svg { color: var(--txl); }
+/* A background command the agent left running: what it is, then how it ended. */
+.ev-bg { color: var(--txd); }
+.ev-bg > div > svg { color: var(--txl); }
+.ev-bg-live > div > svg { color: var(--acc); }
+.ev-bg-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0 20px; }
+.ev-bg-acts > button {
+  padding: 2px 10px; border: 1px solid color-mix(in oklab, var(--err) 45%, transparent); border-radius: 3px;
+  color: var(--err-hi); background: transparent; font: inherit; cursor: pointer;
+}
+.ev-bg-acts > button:hover { background: color-mix(in oklab, var(--err) 16%, transparent); }
+.ev-bg-acts > label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.ev-bg-acts input { accent-color: var(--acc); }
+.ev-bg-cmd {
+  display: block; margin: 4px 0 0 20px; font-family: var(--mono); font-size: 11px; color: var(--txl);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden;
+}
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a

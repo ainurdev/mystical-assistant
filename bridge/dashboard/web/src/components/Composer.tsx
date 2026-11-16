@@ -715,7 +715,7 @@ export function Composer({
   /** While it waits, the box answers it: its text and its button belong to the ask. */
   ask?: AskMode | null;
   /** Background tasks the answered turn left running (status `background`): a
-   *  prompt queues behind them, and STOP ends them. 0 for anything else. */
+   *  steer keeps them running, and STOP ends them. 0 for anything else. */
   bg?: number;
   /** Re-read the logins' meters, any older than `fresh` s (the PROFILE menu). */
   onAccounts?: (fresh: number) => Promise<unknown>;
@@ -1911,7 +1911,7 @@ export function Composer({
         else setText("");
       }}
       placeholder={ask?.placeholder ?? (disabled ? "working…" : starter ? `${starter} · Tab writes it` : running
-        ? bg ? `queue a prompt — it goes in once the ${bg === 1 ? "background task finishes" : `${bg} background tasks finish`}…`
+        ? bg ? `Steer keeps the ${bg === 1 ? "background task" : `${bg} background tasks`} running; a queued prompt can end ${bg === 1 ? "it" : "them"}…`
           : "queue a prompt — runs after the current turn…"
         : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
     />

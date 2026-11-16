@@ -45,8 +45,9 @@ which tickets wait for it: it starts nothing by itself. retry() runs it again in
 session (`retry`, a status an older cap left in set.json, still starts first). A
 turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you,
 and retry() carries that one on too, as it does a merge whose turn ended the same way.
-Nobody watches a ticket session, though, and a turn that ends to wait on a background
-command never wakes (the command dies with the turn): a turn that ends done without
+Nobody watches a ticket session, though, and until 2026-11-17 a turn that ended to wait
+on a background command never woke (the command died with the turn; the watchdog now
+waits for it, runner.BG_WAIT_CAP): a turn that ends done without
 StepDone gets a carry-on, at most NUDGES per run, before the slot is left waiting.
 The merge session gets the same, and once the carry-ons are spent a `tickets` notice
 on that session says it waits on you. Both prompts say to test in the foreground:
@@ -471,7 +472,7 @@ def decline(folder: str) -> str:
     return ""
 
 
-_FOREGROUND =" Run tests in the foreground: a background command dies when your turn ends."
+_FOREGROUND =" Run tests in the foreground."
 
 
 def _elsewhere(st: dict, n: str) -> str:
@@ -974,9 +975,9 @@ def _repos(st: dict, branch: str) -> list:
 
 
 NUDGES = 2   # carry-ons per ticket or merge run before its session is left waiting on you
-_NUDGE = ("[mystical] Your turn ended without StepDone. A background command dies when a turn ends, "
-          "so anything you were waiting for did not finish: run it again in the foreground, finish the "
-          "{} and call StepDone. If you really need the user, say what in one line and stop.")
+_NUDGE = ("[mystical] Your turn ended without StepDone. Anything you were still waiting for is no "
+          "longer running: run it again in the foreground, finish the {} and call StepDone. If you "
+          "really need the user, say what in one line and stop.")
 
 
 def _nudge(own: dict, sid: str, what: str, chat_id=None) -> None:

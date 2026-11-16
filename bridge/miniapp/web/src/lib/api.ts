@@ -369,6 +369,15 @@ export type RunEvent =
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
   | { type: "stopped" }
+  // A background command or monitor the agent left running (runner._note_background):
+  // one event when it starts, and background_done when it ends. `state` there is the
+  // CLI's status (completed, failed, killed, stopped) or ours: replaced (your next
+  // message ended the wait), expired (the wait hit its cap).
+  | { type: "background"; id: string; state: "running"; kind: "command" | "monitor"; text: string; command: string }
+  | { type: "background_done"; id: string; state: string; text: string }
+  // The card's checkbox (id + notify: prompt the agent if the wait runs out), or the
+  // agent's own limit on the wait, in seconds (cap, no id).
+  | { type: "background_set"; id?: string; notify?: boolean; cap?: number }
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }

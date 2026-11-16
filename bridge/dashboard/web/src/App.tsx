@@ -2685,8 +2685,9 @@ export function App() {
   const openStatus = sessionId ? statusMap.get(sessionId) : undefined;
   const limitLive = useMemo(() => (sessionId && openStatus?.state === "parked" && openStatus.kind === "limit"
     ? { session: sessionId, status: openStatus } : null), [sessionId, openStatus]);
-  // The open session answered with tasks still running in its process: a prompt
-  // queues behind them, and a steer can't land (stdin closed with the answer).
+  // The open session answered with tasks still running in its process. A steer
+  // lands there as a follow-up turn and they keep running (runner.steer takes a
+  // turn waiting on background commands); STOP ends them.
   const openBg = openStatus?.state === "background" ? openStatus.bg?.length ?? 0 : 0;
   const waitAction = async (action: "resume" | "cancel") => {
     if (!sessionId) return;
@@ -3706,15 +3707,14 @@ export function App() {
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
                       designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
                       // An agent turn can't be steered unless the bridge says this one can
-                      // (caps.steer, Settings ▸ Experimental), nor one that has answered while
-                      // background tasks run: SEND queues instead.
-                      onSteer={!steerable || openBg ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
+                      // (caps.steer, Settings ▸ Experimental): SEND queues instead.
+                      onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
-                      onSteerQueued={!steerable || openBg ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
+                      onSteerQueued={!steerable ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
                       project={sessionProject}
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}

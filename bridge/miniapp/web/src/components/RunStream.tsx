@@ -66,6 +66,19 @@ import { hostOf, mcpParts, toolAccent, toolKind, cmdKind, type CmdKind } from ".
 const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)`;
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
+/** What a background command's card says: running, or how it ended. `end` is
+ *  its background_done state; none on a turn that is over means the process
+ *  went without saying (a restart, a Stop). */
+function bgLabel(kind: "command" | "monitor", end: string | undefined, ended: boolean): string {
+  const what = kind === "monitor" ? "Background monitor" : "Background command";
+  if (!end) return ended ? `${what} stopped when the turn ended` : `${what} running. The agent continues when it finishes`;
+  if (end === "completed") return `${what} finished`;
+  if (end === "failed") return `${what} failed`;
+  if (end === "replaced") return `${what} stopped by your next message`;
+  if (end === "expired") return `${what} stopped: the wait ran out`;
+  return `${what} stopped`;
+}
+
 /** The directory takes the truncation, the filename never gets cut — on a phone
  *  a middle-truncated path is the difference between useful and noise. */
 function FilePath({ path }: { path: string }) {
@@ -1128,11 +1141,19 @@ export const RunStream = memo(function RunStream({
   };
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
+  const bgDone = new Map<string, string>();
+  const bgNotify = new Map<string, boolean>();
+  let bgCap = 7200;            // seconds the turn waits on background commands (runner.BG_WAIT_CAP)
   const secretGiven = new Map<string, boolean>();
   const toolDone = new Map<string, Done>();
   for (const e of events) {
     if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") permResolved.set(e.request_id, e.behavior);
+    if (e.type === "background_done") bgDone.set(e.id, e.state);
+    if (e.type === "background_set") {
+      if (e.id && e.notify !== undefined) bgNotify.set(e.id, e.notify);
+      if (e.cap) bgCap = e.cap;
+    }
     if (e.type === "question_answered") qAnswered.set(e.request_id, e.answers);
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
   }
@@ -1223,7 +1244,7 @@ export const RunStream = memo(function RunStream({
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
-      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
+      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered" || t === "background_done" || t === "background_set"
           || t === "secret_answered" || t === "thinking" || t === "log") continue;
       return t === "question" || t === "secret_request";
     }
@@ -1523,6 +1544,49 @@ export const RunStream = memo(function RunStream({
             <span>Stopped — send a message to continue.</span>
           </div>
         );
+      case "background": {
+        const end = bgDone.get(event.id);
+        const live = !end && !ended;
+        const rid = `bg:${event.id}`;
+        return (
+          <div key={i} className="text-xs text-[var(--tg-hint)]">
+            <div className="flex items-center gap-1.5">
+              <Terminal
+                size={14}
+                className={`shrink-0 ${live ? "text-[var(--brand)]" : "text-[var(--brand-soft)]"}`}
+                aria-hidden
+              />
+              <span>{bgLabel(event.kind, end, ended)}{event.text ? `: ${event.text}` : ""}</span>
+            </div>
+            {event.command && (
+              <code className="mt-1 ml-5 block max-h-[4.5em] overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] opacity-80">
+                {event.command}
+              </code>
+            )}
+            {live && onRespond && (
+              <div className="mt-2 ml-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <button
+                  type="button"
+                  className="rounded border border-[var(--destructive)] px-3 py-1 text-[var(--destructive)]"
+                  onClick={() => void onRespond(rid, { behavior: "deny" })}
+                >
+                  Stop
+                </button>
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={bgNotify.get(event.id) ?? false}
+                    onChange={(e) => void onRespond(rid, { answers: [{ header: "notify", labels: e.target.checked ? ["on"] : [] }] })}
+                  />
+                  <span>Prompt the agent if nothing finishes in {Math.round(bgCap / 60)} min</span>
+                </label>
+              </div>
+            )}
+          </div>
+        );
+      }
+      case "background_done":
+      case "background_set":
       case "permission_resolved":
       case "question_answered":
         return null; // shown inside the relevant card

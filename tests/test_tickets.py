@@ -592,7 +592,7 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
                            "tk/x-02, tk/x-03, tk/x-01\nResolve any clash so both tickets' work survives, run the "
                            "project's full test suite, fix what breaks, and commit. Then call StepDone. "
-                           "Run tests in the foreground: a background command dies when your turn ends.")
+                           "Run tests in the foreground.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
     assert (s.state["status"], s.state["merge_session"]) == ("merging", m["sid"])
