@@ -18,6 +18,10 @@ Rules the scheduler and the merge follow, decided in the spec:
   from the first blocker's branch with the rest merged in.
 - Nothing merges while building. One merge session handles the whole pass at the end.
 - Tickets live in the session's checkout, not the feature worktree.
+- Names: the set builds on the flow's feature branch, the one its agent named (StepDone),
+  else feat/<the ticket folder>. A ticket's branch is tk/<the ticket folder>/<NN>-<its
+  file's name>, as tk/telegram-widgets/07-usage-bars: under tk/ and never under the feature
+  branch, because git can't hold feat/x and feat/x/07 at once.
 
 Blocked-by parsing: `#2`, `02`, `2`, `#02` are all ticket 02; anything else must equal
 another ticket's title (trimmed, case-insensitive). "None..." or empty is no blockers.
@@ -395,7 +399,9 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         at = old.get("flow_at", flow.get("at"))
         since = at or 0
         st = {"slug": slug, "parent_session": flow_session_id, "flow": fl, "flow_at": at, "checkout": co,
-              "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
+              "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": "",
+              # the branch the flow's agent named, kept here: an approval or a rebuild can come after the session moved on
+              "named": (flow.get("branch") if flow.get("at") == at else None) or old.get("named") or ""}
         try:
             tks = parse_dir(folder)
             order(tks)
@@ -410,7 +416,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {e}")
             return str(e)
         st["tickets"] = {t.n: {"status": "queued", "title": t.title, "path": t.path,
-                               "blocked_by": list(t.blocked_by), "branch": f"tk/{slug}-{t.n}",
+                               "blocked_by": list(t.blocked_by), "branch": _ticket_branch(slug, t),
                                "builds_in": list(t.repos),
                                "worktree": "", "session_id": "", "base": ""} for t in tks}
         if wait:
@@ -431,11 +437,19 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
     return ""
 
 
+def _ticket_branch(slug: str, t: Ticket) -> str:
+    """tk/<the set>/<NN>-<the ticket file's name>; the number alone when the name leaves nothing."""
+    name = flowbranch.short_name(_FILE.sub("", os.path.splitext(os.path.basename(t.path))[0], count=1).lower())
+    return f"tk/{slug}/{t.n}" + (f"-{name}" if name else "")
+
+
 def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
-    """The feature branch and what the flow wrote so far carried onto it."""
-    st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, st["slug"])
+    """The feature branch, the one the flow's agent named else feat/<the ticket folder>,
+    and what the flow wrote so far carried onto it."""
+    kind, name = flowbranch.branch_name(st.get("named")) or ("feat", st["slug"])
+    st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, name, kind)
     flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
-                                flowbranch.flow_files(flow_session_id, since), st["slug"],
+                                flowbranch.flow_files(flow_session_id, since), name,
                                 ours=flowbranch.added_lines(flow_session_id, since))
 
 

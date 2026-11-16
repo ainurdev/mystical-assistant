@@ -175,8 +175,8 @@ whether as tickets or as "BUILD here":
   sessions' edits, and never commits to the default branch. *My call.*
 
 **Ticket sessions.**
-- One worktree per ticket, on branch `tk/<feature-slug>-<NN>`, at the usual worktree root
-  (`~/Projects/.worktrees/<repo>/tk-<slug>-<NN>`, via `git.worktree_add`).
+- One worktree per ticket, on branch `tk/<feature-slug>/<NN>-<ticket-file-name>`, at the usual worktree root
+  (`~/Projects/.worktrees/<repo>/tk-<slug>-<NN>-<ticket-file-name>`, via `git.worktree_add`).
 - Base: no blockers means the feature branch's head. One blocker means its branch, once it's done.
   **Several blockers** means the first blocker's branch with the others merged in (`--no-ff`) when the worktree is
   made. A clash there becomes the ticket session's first job, and its prompt says so. *My call.*
