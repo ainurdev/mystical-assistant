@@ -37,7 +37,7 @@ import re
 import subprocess
 import sys
 
-from bridge import git, store, transcript_jsonl
+from bridge import git, store, taskcheck, transcript_jsonl
 
 
 class FlowBranchError(Exception):
@@ -53,7 +53,8 @@ TYPES = ("feat", "fix", "refactor", "docs", "chore", "ci", "test", "perf", "buil
 # How a title opens when its first prompt went out as a command: "/design-first ...", which
 # the titler words as "Design-First ...". That names how the session began, never the work.
 # shortcut: unslashed, only the commands a flow's first prompt is sent as (paths.start_flow);
-# add one here when a flow starts with another.
+# add one here when a flow starts with another. A title about a command ("/status shows stale
+# sessions") loses that word as well; keep a slashed word that isn't a skill's if that reads wrong.
 _COMMAND = re.compile(r"\s*(?:/[\w:-]+(?=\s|$)\s*)?(?:(?:design-first|grill-with-docs|diagnosing-bugs|"
                       r"improve-codebase-architecture)\b[\s:-]*)?", re.I)
 
@@ -84,13 +85,14 @@ def title_slug(title: str) -> str:
 
 def branch_name(given: "str | None") -> "tuple[str, str] | None":
     """(type, short name) of the feature branch an agent named as `type/short-name`, or
-    None when no usable name is left. A type outside TYPES, or none, is feat. The name
-    keeps its case, since a task's key may lead it (fix/NRA-61-login-redirect), and is one
-    level deep: git can't hold both feat/ui and feat/ui/globe."""
+    None when no usable name is left. A type outside TYPES, or none, is feat. The name is
+    lower case but for a task's key, which stays as written (fix/NRA-61-login-redirect),
+    and is one level deep: git can't hold both feat/ui and feat/ui/globe."""
     kind, sep, name = (given or "").strip().partition("/")
     if not sep:
         kind, name = "", kind
-    name = short_name(name)
+    parts = re.split(f"({taskcheck.key_re().pattern})", name)   # the keys are the odd ones
+    name = short_name("".join(p if i % 2 else p.lower() for i, p in enumerate(parts)))
     return (kind.lower() if kind.lower() in TYPES else "feat", name) if name else None
 
 
@@ -213,7 +215,9 @@ def flow_files(session_id: str, since: int) -> list[str]:
 
 def ensure_feature_branch(session: dict, slug: str, prefix: str = "feat") -> tuple[str, str]:
     """(branch, checkout) BUILD works in. A linked worktree already on a non-default
-    branch is used as is; otherwise `<prefix>/<slug>` gets its own worktree."""
+    branch is used as is; otherwise `<prefix>/<slug>` gets its own worktree. A branch of
+    that name is joined, one that differs only by case too (a Mac's disk holds one of the
+    two); a prefix the repo has as a branch gives way to feat (git can't hold docs and docs/x)."""
     co = _checkout(session)
     main = git.main_checkout(co)
     default = git.default_branch(main)
@@ -223,13 +227,16 @@ def ensure_feature_branch(session: dict, slug: str, prefix: str = "feat") -> tup
         cur = git._run(co, "symbolic-ref", "-q", "--short", "HEAD")[1].strip()  # noqa: SLF001
         if cur and cur != default:
             return cur, co
-    branch = f"{prefix}/{slug}"
+    have = git.branches(main)
+    branch = f"{'feat' if prefix in have else prefix}/{slug}"
+    if branch not in have:
+        branch = next((b for b in have if b.lower() == branch.lower()), branch)
     for w in git.worktrees(main):
         if w["branch"] == branch:
             return branch, w["path"]
     wt = git.worktree_path_for(main, branch, free=True)
     os.makedirs(os.path.dirname(wt), exist_ok=True)
-    exists = branch in git.branches(main)
+    exists = branch in have
     ok, out = git.worktree_add(main, wt, branch, start="" if exists else "HEAD", create=not exists)
     if not ok:
         raise RuntimeError(f"feature worktree failed: {out}")

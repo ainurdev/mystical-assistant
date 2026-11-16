@@ -409,7 +409,7 @@ def test_a_copy_is_named_after_its_helper_and_a_taken_name_gets_a_number(tmp_pat
     monkeypatch.setattr(config, "BASE_PATH", str(tmp_path))
     chat = store.create_session(CHAT, "/p", cwd=str(repo))
     one, _ = channel._make_copy(chat, str(repo), "Ink Outline")
-    two, _ = channel._make_copy(chat, str(repo), "Ink Outline")       # another chat's helper of that name
+    two, _ = channel._make_copy(chat, str(repo), "Ink Outline")       # another session's helper of that name
     odd, _ = channel._make_copy(chat, str(repo), "?!")                # nothing a branch can hold: an id
     assert (one["branch"], os.path.basename(one["path"])) == ("mystical/helper-ink-outline", "helper-ink-outline")
     assert (two["branch"], os.path.basename(two["path"])) == ("mystical/helper-ink-outline-2", "helper-ink-outline-2")

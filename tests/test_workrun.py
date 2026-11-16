@@ -183,7 +183,9 @@ def test_a_second_run_that_day_gets_a_number(world):
     assert first["branch"].endswith("-1-item")
     call(world, action="finish", summary="Nothing to do.")             # finished, not merged: its branch stays
     wl.add(world["root"], [{"title": "y"}])
-    assert wr.start(chat(world), ["w2"])["branch"] == first["branch"] + "-2"
+    second = wr.start(chat(world), ["w2"])["branch"]
+    day = first["branch"].split("-")[1]                                # midnight between them: another day, nothing to number
+    assert second == first["branch"] + "-2" or day not in second
 
 
 def test_uncommitted_work_stays_out_and_is_mentioned(world):

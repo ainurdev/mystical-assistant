@@ -93,6 +93,17 @@ def test_existing_feature_branch_worktree_is_found_again(repo):
     assert flowbranch.ensure_feature_branch({"cwd": repo.main}, "x") == first
 
 
+def test_a_name_that_differs_only_by_case_is_the_branch_that_exists(repo):
+    first = flowbranch.ensure_feature_branch({"cwd": repo.main}, "NRA-61-login", "fix")
+    assert flowbranch.ensure_feature_branch({"cwd": repo.main}, "nra-61-login", "fix") == first   # a Mac's disk holds one
+
+
+def test_a_type_the_repo_has_as_a_branch_goes_under_feat(repo):
+    _git(repo.main, "branch", "docs")                        # git can't hold docs and docs/naming-rules
+    branch, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "naming-rules", "docs")
+    assert branch == "feat/naming-rules" and repo.branch_of(co) == "feat/naming-rules"
+
+
 def test_env_is_copied(repo):
     repo.write(".env")
     _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
@@ -197,8 +208,9 @@ def test_a_long_name_is_cut_at_a_whole_word():
 
 
 @pytest.mark.parametrize("given, want", [
-    ("fix/NRA-61-login-redirect", ("fix", "NRA-61-login-redirect")),         # a task key keeps its case
-    ("Docs/branch naming rules", ("docs", "branch-naming-rules")),
+    ("fix/NRA-61-Login-Redirect", ("fix", "NRA-61-login-redirect")),         # lower case, but a task's key as written
+    ("fix/nra-61-login-redirect", ("fix", "nra-61-login-redirect")),         # a repo may write its keys small
+    ("Docs/Branch naming rules", ("docs", "branch-naming-rules")),
     ("feature/globe-prototype", ("feat", "globe-prototype")),                # not a Conventional Commits type
     ("globe-prototype", ("feat", "globe-prototype")),                        # no type given
     ("feat/ui/globe", ("feat", "ui-globe")),                                 # one level: git can't hold feat/ui and feat/ui/globe

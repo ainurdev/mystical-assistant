@@ -29,7 +29,7 @@ The reviewers that read the work a **Session** would push, score it and list wha
 _Avoid_: panel, jury, review loop
 
 **Feature branch**:
-The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**, never after the session's title; when a task covers the work, the task's key leads the name.
+The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**; when a task covers the work, the task's key leads the name. The session's title names it only when the agent gave no name.
 _Avoid_: flow branch, session branch
 
 **Ticket**:

@@ -274,9 +274,9 @@ def _link_deps(top: str, path: str) -> list:
     return links
 
 
-def _free_copy(top: str, name: str) -> "tuple[str, str]":
+def _copy_place(top: str, name: str) -> "tuple[str, str]":
     """(branch, worktree path) for a copy Mystical makes of the repo at `top`: mystical/<name>, with
-    -2, -3, ... while that branch or folder is taken (another chat's helper of the same name, an
+    -2, -3, ... while that branch or folder is taken (another session's helper of the same name, an
     earlier run that day).
     shortcut: two copies named alike in the same instant would both get the name, and the second isn't
     made and says so; lock around this and the worktree add if that ever shows up."""
@@ -301,7 +301,7 @@ def _make_copy(chat: dict, cwd: str, name: str, start_at: "str | None" = None) -
         base = base.strip()
         if rc != 0:
             return None, f"Couldn't read this repository's state: {err.strip()[:200]}"
-    branch, path = _free_copy(top, f"helper-{flowbranch.short_name(name.lower()) or uuid.uuid4().hex[:8]}")
+    branch, path = _copy_place(top, f"helper-{flowbranch.short_name(name.lower()) or uuid.uuid4().hex[:8]}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     ok, msg = git.worktree_add(top, path, branch, base)
     if not ok:

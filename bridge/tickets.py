@@ -401,7 +401,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         st = {"slug": slug, "parent_session": flow_session_id, "flow": fl, "flow_at": at, "checkout": co,
               "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": "",
               # the branch the flow's agent named, kept here: an approval or a rebuild can come after the session moved on
-              "named": (flow.get("branch") if flow.get("at") == at else None) or old.get("named") or ""}
+              "wanted_branch": (flow.get("branch") if flow.get("at") == at else None) or old.get("wanted_branch") or ""}
         try:
             tks = parse_dir(folder)
             order(tks)
@@ -446,8 +446,8 @@ def _ticket_branch(slug: str, t: Ticket) -> str:
 def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
     """The feature branch, the one the flow's agent named else feat/<the ticket folder>,
     and what the flow wrote so far carried onto it."""
-    kind, name = flowbranch.branch_name(st.get("named")) or ("feat", st["slug"])
-    st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, name, kind)
+    prefix, name = flowbranch.branch_name(st.get("wanted_branch")) or ("feat", st["slug"])
+    st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, name, prefix)
     flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
                                 flowbranch.flow_files(flow_session_id, since), name,
                                 ours=flowbranch.added_lines(flow_session_id, since))

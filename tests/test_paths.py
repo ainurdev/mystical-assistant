@@ -276,7 +276,7 @@ def test_step_done_carries_the_feature_branchs_name(server, flow_session, flows_
 def test_the_latest_branch_name_wins_and_an_unusable_one_changes_nothing(state_dir):
     paths.set_path("s1", "build", "new", "claude")
     paths.step_done("s1", "t1", choice="tickets", branch="feature/Globe prototype")
-    assert paths.get("s1")["branch"] == "feat/Globe-prototype"
+    assert paths.get("s1")["branch"] == "feat/globe-prototype"
     paths.step_done("s1", "t1", branch="feat/globe")        # the same turn again: no step moves, the name does
     assert paths.get("s1")["branch"] == "feat/globe" and paths.get("s1")["done"] == ["grill"]
     paths.step_done("s1", "t2", branch="///")

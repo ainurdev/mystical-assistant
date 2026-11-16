@@ -1402,6 +1402,8 @@ def continue_plan(share_id: str, into: "str | None" = None, project: "str | None
                for p in _session_pictures(rec)[:_ATTACH - 1]]
     # Named after their feature branch (feat/globe-prototype gives from-erfan/globe-prototype), which says
     # what the code is; off one (the default branch, a detached HEAD), after the session's title.
+    # shortcut: a feature branch is taken to be one with a slash, so a teammate on a slashless one gets the
+    # title and one on release/2.1 gets 2-1; compare with the repo's default branch if that reads wrong.
     theirs = (meta.get("branch") or "").partition("/")[2]
     branch = f"from-{first}/{_slug(theirs or rec['title'], 40)}" if code else None
     if branch:

@@ -69,7 +69,7 @@ item worktrees    w1      /
                     w2 ─┘             ← later items start from the run branch
 ```
 
-- **The run branch** is `mystical/work-<id>`, from your folder's last commit, with its own
+- **The run branch** is `mystical/work-<mon><day>-<n>-items`, from your folder's last commit, with its own
   worktree. Uncommitted work in your folder isn't in it, and the start says so.
 - **Each item** gets a helper in its own worktree, from the run branch as it stands then. Later
   items see earlier work.

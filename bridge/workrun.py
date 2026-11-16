@@ -189,7 +189,7 @@ def start(chat: dict, wanted: "list | None", parallel=None) -> dict:
             raise Refused("There's nothing up next to work on.")
         return chosen
     n = len(worklist.mutate(root, pick))
-    branch, path = channel._free_copy(top, f"work-{time.strftime('%b%d').lower()}-{n}-item{'' if n == 1 else 's'}")
+    branch, path = channel._copy_place(top, f"work-{time.strftime('%b%d').lower()}-{n}-item{'' if n == 1 else 's'}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     from bridge import git
     ok, msg = git.worktree_add(top, path, branch, head)

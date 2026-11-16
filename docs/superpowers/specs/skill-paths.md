@@ -166,7 +166,8 @@ or a blocker that doesn't exist, stops the set with a notice naming the problem,
 **Feature branch (both BUILD routes).** No automatic step ever builds on the default branch. When BUILD starts,
 whether as tickets or as "BUILD here":
 - If the flow session is already on a feature branch in a worktree, that branch is the feature branch.
-- If it is on the default branch, Mystical creates `feat/<feature-slug>` from its HEAD in a new worktree.
+- If it is on the default branch, Mystical creates the feature branch from its HEAD in a new worktree: the
+  `type/short-name` the agent named through StepDone, else `feat/` and the session's title.
   "BUILD here" then sends `/implement` naming that worktree as where to work, so the session moves there (as
   `work_cwd` already tracks).
 - What the path wrote before BUILD (the grill's `GLOSSARY.md` / `docs/adr/*`, the spec) is uncommitted. Mystical
@@ -302,7 +303,7 @@ mocks are in OSGILIATH (dark). Every hero must be checked in a light theme (PEBB
 7. ASK MATT and SETUP NUDGE are removed.
 8. `triage` and `wayfinder` are never started by Claude or by an automatic step; they run only when the user takes them.
 9. Esc on a rule's pick sends "No path for this message." with the prompt.
-10. No automatic step builds on the default branch. Both BUILD routes go through a `feat/<slug>` worktree, and
+10. No automatic step builds on the default branch. Both BUILD routes go through a feature branch's worktree, and
     Mystical commits only the flow's own uncommitted files there first.
 11. With TICKETS off, a path stops after the ticket files are written.
 
