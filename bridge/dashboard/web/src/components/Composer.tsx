@@ -562,7 +562,7 @@ function FlowDetail({ f, change, models, runsOpen, onRuns, flat }: { f: FlowSett
           {f.steps.map((st, i) => (
             <li key={st.step} className="fs-st" data-off={runs(st) ? undefined : ""} data-pony={st.ponytail_off ? "" : undefined}
               title={ponyNote(st) || undefined}>
-              <i>{i + 1}</i><b>{st.step}</b><span>{STEP_DOES[st.step] ?? ""}</span>
+              <i>{i + 1}</i><b className="caps">{titleCase(st.step)}</b><span>{STEP_DOES[st.step] ?? ""}</span>
               {st.fixed
                 ? <em title={`${name} always runs ${st.step.toUpperCase()}`} aria-label={`${st.step}: always runs`}><Lock size={11} strokeWidth={2.2} aria-hidden /></em>
                 : <Switch on={st.on} label={[st.step, ponyNote(st)].filter(Boolean).join(". ")}
@@ -628,7 +628,7 @@ export function FlowsSheet({ initial, models }: { initial?: string | null;
           })}
           <div className="fs-row fs-gen" data-sel={general ? "" : undefined} onClick={() => pick("general")}>
             <Settings size={13} strokeWidth={2} aria-hidden />
-            <button type="button" className="fs-name" aria-pressed={general}>GENERAL</button>
+            <button type="button" className="fs-name caps" aria-pressed={general}>General</button>
             <ChevronRight size={11} strokeWidth={2} aria-hidden />
           </div>
         </div>
@@ -693,7 +693,6 @@ export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
     </div>
   );
 }
-
 
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,

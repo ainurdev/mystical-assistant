@@ -3732,8 +3732,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <AimFold id="flows" title="Flows" secs={["FLOWS"]} openSec={openSec}
         count={flowCfg ? `${flowCfg.flows.filter((f) => f.on).length} of ${flowCfg.flows.length} on` : null}
         hint="the steps a prompt follows once a flow is lit in the prompt box"
-        right={flowCfg && <label className="aim-hint aim-flowson">for every session
-          <Switch on={flowCfg.on} label="Flows on" onClick={() => void changeFlows({ key: "on", value: !flowCfg.on }).catch((e: Error) => notify("error", e.message))} /></label>}>
+        right={flowCfg && <span className="aim-hint aim-flowson">for every session
+          <Switch on={flowCfg.on} label="Flows on" onClick={() => void changeFlows({ key: "on", value: !flowCfg.on }).catch((e: Error) => notify("error", e.message))} /></span>}>
         <FlowsSettings models={modelRows(models)} />
       </AimFold>
       <SaversFold openSec={openSec} />

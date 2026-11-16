@@ -87,7 +87,7 @@ function Toggle({ on, busy, onClick, label }: { on: boolean; busy?: boolean; onC
 
 // ---- the extras --------------------------------------------------------------
 
-/** SKILL PATHS and its six switches: set in the FLOWS sheet now, shown below the grid in their place. */
+/** SKILL PATHS and its six switches: set in the FLOWS sheet and SETTINGS' own Flows fold now, so not extras' cards. */
 export const FLOW_SWITCHES = new Set(["router", "autopick", "nextstep", "ticketruns", "ticketapprove", "mergereview", "smartzone"]);
 
 function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
