@@ -8859,3 +8859,44 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .gl-nx .gl-c::before { left: -25px; }
 .gl-nx .gp-btn.pri:not(:disabled) { background: var(--acc); color: var(--acc-on); border-color: var(--acc); box-shadow: 0 6px 16px -8px var(--acc); }
 .gl-h.fold { cursor: pointer; } .gl-h.fold:hover > b { color: var(--acc); }
+
+/* The rail's one release button (ChangelogButton): GO LIVE / UPDATE / SHIP pinned in the changelog list. */
+.gl-pill.ok { background: var(--ok); }
+.gl-dot.warn { background: var(--warn); }
+.rl-pips { position: absolute; left: 50%; bottom: 3px; display: flex; gap: 3px; transform: translateX(-50%); pointer-events: none; }
+.rl-pips i { width: 4px; height: 4px; border-radius: 50%; }
+.clg-row.sys .ic { color: var(--t); background: color-mix(in oklab, var(--t) 14%, transparent); }
+.clg-row.sys .tm { color: var(--t); }
+.clg-row.sys b { color: var(--txb); }
+.clg-row.sys.on { box-shadow: inset 2px 0 0 var(--t); }
+.clg-row.sys.on .ic { color: var(--panel); background: var(--t); }
+.rl-rule { margin: 4px 14px; border-top: 1px dashed var(--line, var(--border)); }
+.clg-chip.bad b { color: var(--err); }
+.rl-flow { display: flex; align-items: center; justify-content: center; padding: 34px 14px 12px;
+  background: linear-gradient(160deg, color-mix(in oklab, var(--acc) 9%, var(--panel2, var(--panel))), var(--panel3, var(--panel))); }
+.rl-step { display: flex; align-items: flex-start; min-width: 0; }
+.rl-wire { flex: none; width: 26px; height: 2px; margin-top: 28px; border-radius: 2px; background: color-mix(in oklab, var(--txl) 30%, transparent); }
+.rl-wire.lit { background: linear-gradient(90deg, var(--ok), var(--t)); }
+.rl-n { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 76px; min-width: 0; text-align: center; }
+.rl-n .o { width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 4px; border-radius: 16px; color: var(--t);
+  background: color-mix(in oklab, var(--t) 14%, var(--panel)); transition: box-shadow .3s, background .3s; }
+.rl-n b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t11)/1.2 var(--ui-font); color: var(--txb); }
+.rl-n small { font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .14em; color: var(--t); }
+.rl-n.next .o { background: transparent; border: 1px dashed var(--line, var(--border)); }
+.rl-n.next b { color: var(--txd); }
+.rl-n.now .o { box-shadow: 0 0 0 1px var(--t), 0 0 18px color-mix(in oklab, var(--t) 45%, transparent); }
+.rl-n.ok .o { color: var(--ok); background: color-mix(in oklab, var(--ok) 16%, var(--panel)); }
+.rl-n.bad .o { color: var(--err); background: color-mix(in oklab, var(--err) 16%, var(--panel)); }
+.rl-cm { margin: 8px 0 0; }
+.rl-cm.warn { border-left-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.rl-cm.warn b { color: var(--warn); }
+.rl-cm.ok b { color: var(--ok); }
+.rl-file { display: flex; gap: 7px; }
+.rl-file span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.rl-file i { flex: none; font-style: normal; } .rl-file i.ok { color: var(--ok); } .rl-file i.bad { color: var(--err); }
+.rl-warn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: 500 var(--t105) var(--ui-font); color: var(--warn); }
+.rl-dirty { color: var(--warn); }
+.clg-acts button.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 10%, transparent); }
+.clg-acts button.warn:hover { background: color-mix(in oklab, var(--warn) 20%, transparent); }
+.clg-acts button:disabled { opacity: .6; cursor: wait; }
+.clg-t .gl-steps, .clg-t .gl-err, .clg-t .gl-wl, .clg-t .rl-dirty { margin-top: 10px; }

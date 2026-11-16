@@ -109,10 +109,7 @@ import { inField, nextNeed, pressed, SHORTCUTS, typing } from "./lib/shortcuts";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
 import { HomePanel, HomeSky } from "./components/hud/HomePanel";
 import { skyFor } from "./lib/home";
-import { PaletteButton } from "./components/hud/PaletteButton";
-import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
-import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { RivendellTab, type RvLens } from "./components/hud/RivendellTab";
@@ -3746,12 +3743,7 @@ export function App() {
                   open={settings.rightOpen} shown={rightShown} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}
-                  railFoot={<>
-                    <LiveButton onFeed={feed} />
-                    <ChangelogButton onFeed={feed} />
-                    <UpdateButton onFeed={feed} variant="rail" />
-                    <PaletteButton onPalette={() => setPaletteOpen(true)} />
-                  </>}
+                  railFoot={<ChangelogButton onFeed={feed} />}
                 />
               </div>
               )}

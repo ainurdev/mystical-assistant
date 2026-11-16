@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowDownToLine, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Clapperboard, Copy, Download, Eye, Flame, Gauge, GitBranch, History,
-  Image, Layers, MapPin, Maximize2, Palette, PanelLeft, Pause, Play, ScrollText, Search, Send, Sparkles, Trees,
+  ArrowDownToLine, ArrowRight, ArrowUpFromLine, ArrowUpRight, ChevronLeft, ChevronRight, Clapperboard, Clock, Copy, Download, Eye, Flame, Gauge, GitBranch, History,
+  Image, Layers, MapPin, Maximize2, Palette, PanelLeft, Pause, Play, RefreshCw, Search, Send, Sparkles, Trees,
   Users, X, type LucideIcon,
 } from "lucide-react";
-import { api, type Notice } from "../../api";
+import { api, type LiveInfo, type Notice, type UpdateInfo } from "../../api";
+import { notify } from "./Notifications";
+import { DONE, LiveReader } from "./LiveReader";
+import { UPDATE_POLL_MS, UpdateReader } from "./UpdateButton";
+import { watchRestart } from "../../lib/restart";
+import { popFor } from "../../lib/golive";
 import { popPlace } from "../../lib/prchip";
 import { ago, askChange, changeMarkdown, changesOf, findChanges, iconFor, mediaUrl, PLACES, safeUrl, sameArea, shortWhen, whenOf,
   type Change, type FeatIcon } from "../../lib/notices";
 import { ImageLightbox } from "../ImageLightbox";
 
-// The right rail's changelog, over UPDATE: what changed in Mystical, one change at a time
+// The right rail's one release button: the changelog, with GO LIVE, UPDATE and SHIP pinned
+// at the top of its list when there's something to do (docs/superpowers/specs/release-hub.md).
+// Picking one of those reads it like any change, with its steps drawn on the stage and its
+// buttons (LiveReader, UpdateReader); the rail icon's badge is the most urgent of them.
+// The changelog itself: what changed in Mystical, one change at a time
 // (docs/superpowers/specs/changelog-v4.md). Each update bridge/whatsnew.py writes at a boot
 // is a headline and a few bullets; here each bullet is its own change, flat and newest first,
 // with no update batches and no days: the list on the left, the picked change on the right.
@@ -20,12 +29,19 @@ import { ImageLightbox } from "../ImageLightbox";
 // lit and Open ›; the rest, its icon. The stage keeps its size for every change, so stepping
 // never moves the box. ↑ ↓ step, ⌕ finds, ▶ NEW walks the new ones, the same-area stepper
 // walks one area's changes, Ask Claude starts a session in this checkout on one change.
-// An update waiting upstream (whatsnew preview) leads the list as COMING, and Update now hands it to UPDATE (hud:update).
+// An update waiting upstream (whatsnew preview) leads the changes as COMING, and Update now picks the UPDATE row.
 // When one lands, the bell's poll hands it here (hud:changelog-pop) and it pops out of this
-// icon with its first picture; its click, or an OS banner's (hud:changelog), opens it.
-// A dot while any is unread; closing marks what it showed read. Self-contained (polls, owns
-// its popover) like UpdateButton.
+// icon with its first picture; its click, or an OS banner's (hud:changelog), opens it. A waiting
+// update pops the same way (hud:update-pop; hud:update opens its row), and so does a commit
+// that isn't live yet. A dot while any change is unread; closing marks what it showed read.
+// Self-contained (polls, owns its popover), so the rail stays a dumb list.
 const POLL_MS = 60_000; // rows land at a boot; a fresh one comes by event, not by this
+const LIVE_MS = 30_000;  // git only, no network: a merge lights GO LIVE within the half minute
+const QUEUED_MS = 4_000; // while a wait is on, so its restart is met by the boot screen
+const SEEN = "golive-seen"; // the newest not-live commit time it has popped for or seen
+type Sys = "live" | "update" | "ship";
+const SYS: Sys[] = ["live", "update", "ship"];
+const isSys = (k: string | null): k is Sys => SYS.includes(k as Sys);
 const STEP_MS = 5_000;  // ▶ NEW: how long a change without a clip stays
 
 const ICON: Record<FeatIcon, LucideIcon> = { send: Send, panel: PanelLeft, gauge: Gauge, layers: Layers, flame: Flame,
@@ -164,6 +180,11 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const [hov, setHov] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);                     // a picture full size (ImageLightbox)
   const [playing, setPlaying] = useState(false);                             // ▶ NEW walking the new changes
+  const [live, setLive] = useState<LiveInfo | null>(null);                   // GO LIVE: what's on disk but not running
+  const [upd, setUpd] = useState<UpdateInfo | null>(null);                   // UPDATE / SHIP: this checkout vs its upstream
+  const [busy, setBusy] = useState(false);                                   // a reader's job is mid-flight: no closing, no switching
+  const [livePop, setLivePop] = useState<{ subject: string; fresh: number; restart: boolean; total: number } | null>(null);
+  const [updFresh, setUpdFresh] = useState<Notice | null>(null);             // a waiting update, popped out of the icon
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -173,28 +194,75 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
 
   // A bridge older than this page has no /local/changelog: no rows, so no button.
   const load = () => api.changelog().then((r) => { setRows(r.notices); setProject(r.project ?? ""); }, () => { /* next poll */ });
-  // An id is a row's (an OS banner's, the popup's): open on that row's first change.
-  const openOn = (id: number | null) => {
-    setFresh(null); setPick(id === null ? null : String(id)); setQ(null); setPlaying(false);
-    setOpen(true); void load();
+  const queuedRef = useRef(false);
+  async function loadLive() {
+    try {
+      setLive(await api.live());
+    } catch {
+      // A wait's restart is underway: meet it with the boot screen, which reloads into the new build.
+      if (queuedRef.current) { queuedRef.current = false; void watchRestart("GO LIVE"); }
+    }
+  }
+  async function loadUpd() {
+    try { setUpd(await api.update()); } catch { /* next poll */ }
+  }
+  // An id is a row's (an OS banner's, the popup's): open on that row's first change; a Sys key, on that row.
+  const openOn = (id: number | Sys | null) => {
+    setFresh(null); setLivePop(null); setUpdFresh(null);
+    setPick(id === null ? null : String(id)); setQ(null); setPlaying(false);
+    setOpen(true); void load(); void loadLive(); void loadUpd();
   };
   useEffect(() => {
-    void load();
+    void load(); void loadUpd();
     const id = setInterval(load, POLL_MS);
+    const uid = setInterval(loadUpd, UPDATE_POLL_MS);
     const show = (e: Event) => { const id = (e as CustomEvent<unknown>).detail; openOn(typeof id === "number" ? id : null); };
     const landed = (e: Event) => { setFresh((e as CustomEvent<Notice>).detail); setPicGone(false); void load(); };
+    const updShow = () => openOn("update");
+    const updLanded = (e: Event) => { setUpdFresh((e as CustomEvent<Notice>).detail); void loadUpd(); };
     window.addEventListener("hud:changelog", show);
     window.addEventListener("hud:changelog-pop", landed);
+    window.addEventListener("hud:update", updShow);
+    window.addEventListener("hud:update-pop", updLanded);
+    // What a rebuild-only reload went live with: said once the new page is up.
+    const done = sessionStorage.getItem(DONE);
+    if (done) { sessionStorage.removeItem(DONE); notify("info", done); }
     return () => {
-      clearInterval(id);
+      clearInterval(id); clearInterval(uid);
       window.removeEventListener("hud:changelog", show);
       window.removeEventListener("hud:changelog-pop", landed);
+      window.removeEventListener("hud:update", updShow);
+      window.removeEventListener("hud:update-pop", updLanded);
     };
   }, []);
 
+  const queued = !!live?.queued;
+  useEffect(() => { queuedRef.current = queued; }, [queued]);
+  useEffect(() => {
+    void loadLive();
+    const id = setInterval(loadLive, queued ? QUEUED_MS : LIVE_MS);
+    const focus = () => void loadLive();
+    window.addEventListener("focus", focus);
+    return () => { clearInterval(id); window.removeEventListener("focus", focus); };
+  }, [queued]);
+
+  // A commit that isn't live and is newer than any it has seen pops out of the icon, once.
+  // The first look only takes note: what was behind already isn't news.
+  useEffect(() => {
+    if (!live?.parts.length) return;
+    const newest = Math.max(...live.parts.flatMap((p) => p.commits.map((c) => c.at)), 0);
+    if (!newest) return;
+    const seen = Number(localStorage.getItem(SEEN) || 0);
+    if (newest > seen) localStorage.setItem(SEEN, String(newest));
+    if (!seen || open) return;
+    const p = popFor(live.parts, seen);
+    if (p) setLivePop({ subject: p.newest.subject, fresh: p.fresh, total: live.commits,
+                        restart: live.parts.some((x) => x.act === "restart") });
+  }, [live]);
+
   const close = () => {
     // fresh too: one that landed while this was open was read here, it doesn't pop on the way out
-    setOpen(false); setPick(null); setQ(null); setFresh(null); setCopied("");
+    setOpen(false); setPick(null); setQ(null); setFresh(null); setLivePop(null); setUpdFresh(null); setCopied("");
     setZoom(null); setPlaying(false);
     const ids = (rows ?? []).filter((r) => !r.read).map((r) => r.id);
     if (ids.length) void api.noticesRead(ids).then(load, () => { /* next poll */ });
@@ -204,14 +272,15 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   // clip viewer shuts on pointerdown, and by bubbling time this effect has re-run with zoom gone.
   // ↑ ↓ step. Any key stops ▶ NEW, but its own Enter/Space
   // (that click toggles it, and must see it playing).
+  // A job mid-flight (a build, a pull, a push) holds it open, the way UPDATE's popover did.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (!zoom && !btnRef.current?.contains(t) && !popRef.current?.contains(t)) close();
+      if (!zoom && !busy && !btnRef.current?.contains(t) && !popRef.current?.contains(t)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (zoom) return;
+      if (zoom || busy) return;
       if (!((e.key === "Enter" || e.key === " ") && (e.target as Element | null)?.closest?.(".clg-new"))) setPlaying(false);
       if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else close(); return; }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
@@ -219,7 +288,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey); };
-  }, [open, rows, q, zoom]);
+  }, [open, rows, q, zoom, busy]);
   // the picked row stays in view as ↑ ↓ (or ▶ NEW) move it
   useEffect(() => { listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: "nearest" }); }, [pick, q]);
   // ▶ NEW: a change holds STEP_MS, a clip until it ends (its Stage calls next), at most 15 s
@@ -229,20 +298,31 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     return () => clearTimeout(t);
   }, [playing, pick]);
 
-  if (!rows) return null;
-  const unread = rows.filter((r) => !r.read).length;
+  if (!rows && !live?.repo && !upd?.repo) return null;
+  const rws = rows ?? [];
+  const unread = rws.filter((r) => !r.read).length;
   const now = new Date();
-  const next = rows.find((r) => r.kind === "coming");
-  const all = changesOf(next ? [next, ...rows.filter((r) => r !== next)] : rows);
+  const next = rws.find((r) => r.kind === "coming");
+  const all = changesOf(next ? [next, ...rws.filter((r) => r !== next)] : rws);
   const list = findChanges(all, q ?? "");
   const byRow = pick !== null && !pick.includes(".") ? list.find((c) => String(c.row.id) === pick) : undefined;
   const cur = byRow ?? list.find((c) => c.id === pick) ?? list[0];
   const isNew = (c: Change) => !c.row.read && c.row.kind !== "coming";
   const unseen = all.filter(isNew);
+  // GO LIVE / UPDATE / SHIP: pinned over the changes while there's something to do (or it's being read).
+  const liveOn = !!live?.repo && (live.parts.length > 0 || !!live.queued || !!live.error);
+  const incoming = upd?.repo ? upd.behind ?? 0 : 0;
+  const local = upd?.repo ? (upd.dirty ?? 0) + (upd.ahead ?? 0) : 0;
+  const pinned = SYS.filter((k) => (k === "live" ? !!live?.repo : !!upd?.repo)
+    && (pick === k || (k === "live" ? liveOn : k === "update" ? incoming > 0 : local > 0)));
+  // Opened plainly, it reads the most urgent job; a change only once you pick one (or find).
+  const sys: Sys | null = isSys(pick) ? (pinned.includes(pick) ? pick : null) : pick === null && !q ? pinned[0] ?? null : null;
+  const keys = [...pinned, ...list.map((c) => c.id)];
   holdRef.current = cur?.media?.clip ? STEP_MS * 3 : STEP_MS;
   stepRef.current = (d) => {
-    const nx = list[Math.max(0, Math.min(list.length - 1, list.indexOf(cur) + d))];
-    if (nx) setPick(nx.id);
+    if (busy) return;
+    const nx = keys[Math.max(0, Math.min(keys.length - 1, keys.indexOf(sys ?? cur?.id ?? "") + d))];
+    if (nx) setPick(nx);
   };
   // the next new change after this one; none, and ▶ NEW stops
   nextRef.current = () => {
@@ -252,7 +332,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const play = () => {
     if (playing) { setPlaying(false); return; }
     setQ(null);
-    if (!cur || !isNew(cur)) setPick(unseen[0].id);
+    if (sys || !cur || !isNew(cur)) setPick(unseen[0].id);
     setPlaying(true);
   };
   const copy = async (c: Change) => {
@@ -266,7 +346,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const pop = rect && place && { top: "auto", ...place, height: Math.min(488, place.maxHeight), maxHeight: undefined,
                                  right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - W - 8)) };
   // The popup sits left of the rail, its notch (index.css) on the icon's middle.
-  const out = fresh && !open && rect && { right: window.innerWidth - rect.left + 10, bottom: Math.max(8, window.innerHeight - rect.bottom - 4) };
+  const out = (fresh || updFresh || livePop) && !open && rect && { right: window.innerWidth - rect.left + 10, bottom: Math.max(8, window.innerHeight - rect.bottom - 4) };
   const pics = fresh ? changesOf([fresh]).filter((c) => c.media?.still) : [];
   const theme = document.querySelector("[data-theme]") ?? document.body;
   const qq = q ?? "";
@@ -274,8 +354,8 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const item = (c: Change) => {
     const Ic = iconOf(c);
     return (
-      <button key={c.id} data-on={c === cur ? 1 : undefined} onClick={() => { setPlaying(false); setPick(c.id); }}
-        className={`clg-row${c === cur ? " on" : ""}${isNew(c) ? " new" : ""}${c.row.kind === "coming" ? " next" : ""}`}>
+      <button key={c.id} data-on={!sys && c === cur ? 1 : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(c.id); }}
+        className={`clg-row${!sys && c === cur ? " on" : ""}${isNew(c) ? " new" : ""}${c.row.kind === "coming" ? " next" : ""}`}>
         <span className="ic"><Ic size={13} strokeWidth={1.8} aria-hidden /></span>
         <span className="w">
           <b><span className="a">{marked(c.area, qq)}</span>{c.media && (c.media.clip ? <Clapperboard size={11} strokeWidth={1.8} aria-label="a clip" />
@@ -306,7 +386,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
         </div>
         <div className="clg-acts">
           {r.kind === "coming" ? (
-            <button className="ok" onClick={() => { close(); window.dispatchEvent(new CustomEvent("hud:update")); }}>
+            <button className="ok" onClick={() => { setPlaying(false); setPick("update"); }}>
               <ArrowDownToLine size={12} strokeWidth={1.8} />Update now</button>
           ) : <>
             {c.place && <button className="pri" title={`Open ${PLACES[c.place]}`} onClick={() => { close(); goTo(c.place!); }}>
@@ -335,20 +415,92 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     );
   };
 
+  const SYS_ROW: Record<Sys, { icon: LucideIcon; tone: string; name: string; text: string; tm: string }> = {
+    live: { icon: RefreshCw, tone: live?.error ? "var(--err)" : "var(--acc)", name: "Go live",
+            text: live?.error ? `${live.error.name} didn't build` : live?.queued ? "waits on the running turns"
+              : live?.commits ? `${live.commits} commit${live.commits === 1 ? "" : "s"} on disk, not running` : "edits on disk, not running",
+            tm: live?.error ? "!" : live?.queued ? "wait" : live?.commits ? String(live.commits) : "" },
+    update: { icon: ArrowDownToLine, tone: "var(--ok)", name: "Update",
+              text: upd?.coming?.title ?? `${incoming} new commit${incoming === 1 ? "" : "s"} upstream`, tm: `↓${incoming}` },
+    ship: { icon: ArrowUpFromLine, tone: "var(--warn)", name: "Ship yours",
+            text: [upd?.dirty ? `${upd.dirty} file${upd.dirty === 1 ? "" : "s"}` : "", upd?.ahead ? `${upd.ahead} commit${upd.ahead === 1 ? "" : "s"} unpushed` : ""].filter(Boolean).join(", "),
+            tm: `↑${local}` },
+  };
+  const sysItem = (k: Sys) => {
+    const r = SYS_ROW[k];
+    return (
+      <button key={k} data-on={sys === k ? 1 : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(k); }}
+        className={`clg-row sys${sys === k ? " on" : ""}`} style={{ ["--t" as string]: r.tone }}>
+        <span className="ic"><r.icon size={13} strokeWidth={1.8} aria-hidden /></span>
+        <span className="w"><b><span className="a">{r.name}</span></b><span className="x">{r.text}</span></span>
+        <span className="tm">{r.tm}</span>
+      </button>
+    );
+  };
+  const sysReader = (k: Sys) => k === "live"
+    ? <LiveReader info={live!} reload={loadLive} onFeed={onFeed} onBusy={setBusy} onClose={close} />
+    : <UpdateReader key={k} info={upd!} side={k === "update" ? "pull" : "ship"} reload={loadUpd} onFeed={onFeed} onBusy={setBusy} onClose={close} />;
+
+  // The icon's one badge is the most urgent thing; pips under it say which kinds wait, once two do.
+  const going = busy || (!!live?.queued && (!!live.queued.restarting || !live.queued.turns.length));
+  const badge = going ? null
+    : live?.error ? <span className="gl-pill bad">!</span>
+    : live?.queued ? <span className="gl-pill q"><Clock size={10} strokeWidth={2.2} /></span>
+    : liveOn ? (live!.commits ? <span className="gl-pill">{live!.commits > 99 ? "99+" : live!.commits}</span> : <span className="gl-dot" />)
+    : incoming ? <span className="gl-pill ok">{incoming > 99 ? "99+" : incoming}</span>
+    : local ? <span className="gl-dot warn" />
+    : unread ? <span className="gl-dot" /> : null;
+  const pips = [liveOn && "var(--acc)", incoming > 0 && "var(--ok)", local > 0 && "var(--warn)"].filter(Boolean) as string[];
+  const waiting = liveOn || incoming > 0 || local > 0;
+  const btnTitle = [
+    live?.error ? `Go live — ${live.error.name} didn't build` : live?.queued ? "Goes live when the running turns end"
+      : liveOn ? `Go live — ${live!.commits || "changes"} on disk not running` : "",
+    incoming ? `Update — ${incoming} new upstream` : "",
+    local ? `Ship — ${local} of yours` : "",
+    unread ? `Changelog — ${unread} new` : "",
+  ].filter(Boolean).join(" · ") || "Changelog — what changed in Mystical";
+  const callout = (icon: ReactNode, verb: string, when: string, title: string, body: string, foot: string, go: string, onGo: () => void, onX: () => void, cls = "") => (
+    <div className={`clg-co ${cls}`} style={out || undefined} role="status" onClick={onGo}>
+      <div className="in">
+        <div className="clg-co-h">{icon}<span className="v">{verb}</span><span className="w">{when}</span></div>
+        <div className="clg-co-t">{title}</div>
+        <div className="clg-co-b">{body}</div>
+        <div className="clg-co-f"><span>{foot}</span><span style={{ flex: 1 }} /><span className="go">{go}</span></div>
+        <span className="bar" onAnimationEnd={(e) => { if (e.animationName === "clg-bar") onX(); }} />
+      </div>
+      <button className="x" title="dismiss" aria-label="dismiss" onClick={(e) => { e.stopPropagation(); onX(); }}>×</button>
+    </div>
+  );
+
   return (
     <>
       <button
         ref={btnRef}
         onClick={() => (open ? close() : openOn(null))}
-        title={unread ? `Changelog — ${unread} new` : "Changelog — what changed in Mystical"}
-        aria-label="Changelog"
+        title={btnTitle}
+        aria-label="Changelog, go live and update"
+        aria-expanded={open}
         onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
         className={`relative flex h-[38px] items-center justify-center border-l-2 border-transparent hover:bg-accent${out ? " clg-lit" : ""}`}
-        style={{ appearance: "none", cursor: "pointer", color: open || hov || out ? "var(--acc)" : "var(--muted-2)" }}
+        style={{ appearance: "none", cursor: "pointer", color: live?.error ? "var(--err)" : open || hov || out || waiting ? "var(--acc)" : "var(--muted-2)" }}
       >
-        <ScrollText size={18} strokeWidth={1.8} aria-hidden />
-        {unread > 0 && <span className="absolute right-[5px] top-[4px] h-[8px] w-[8px] rounded-full" style={{ background: "var(--acc)" }} />}
+        {going ? <RefreshCw size={18} strokeWidth={1.8} aria-hidden className="gl-ic gl-spin" /> : (
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="gl-ic" aria-hidden>
+            <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="currentColor" stroke="none" />
+          </svg>)}
+        {badge}
+        {pips.length > 1 && <span className="rl-pips">{pips.map((c) => <i key={c} style={{ background: c }} />)}</span>}
       </button>
+
+      {!fresh && updFresh && out && createPortal(callout(
+        <ArrowDownToLine size={13} strokeWidth={1.8} className="clg-ic" />, updFresh.verb, ago(updFresh.at, now.getTime() / 1000),
+        updFresh.title, updFresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · "),
+        `${Number(updFresh.meta.commits) || 0} commit${updFresh.meta.commits === 1 ? "" : "s"}`, "See what's coming ›",
+        () => openOn("update"), () => setUpdFresh(null)), theme)}
+      {!fresh && !updFresh && livePop && out && createPortal(callout(
+        <RefreshCw size={13} strokeWidth={1.8} className="clg-ic" />, "NOT LIVE YET", "just now",
+        `A change on disk needs a ${livePop.restart ? "restart" : "rebuild"}`, livePop.subject,
+        `${livePop.fresh} new · ${livePop.total} not live`, "Go live ›", () => openOn("live"), () => setLivePop(null), "gl-co"), theme)}
 
       {/* What just landed, out of the icon: 8 s like the bell's news (the bar's
           animation is the clock, so a hover that pauses it holds the popup). */}
@@ -404,7 +556,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
               </label>
             )}
           </div>
-          {!rows.length ? (
+          {!rws.length && !pinned.length ? (
             <div className="ntf-list">
               <div className="ntf-empty">
                 <div className="o">no updates yet — i am as you first summoned me.</div>
@@ -414,18 +566,20 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
           ) : (
             <div className="clg-split" onPointerEnter={() => setPlaying(false)}>
               <div className="clg-list mscroll" ref={listRef}>
+                {pinned.map(sysItem)}
+                {pinned.length > 0 && list.length > 0 && <div className="rl-rule" />}
                 {list.map(item)}
                 {!list.length && <div className="clg-none">Nothing about “{qq.trim()}” in the last {all.length} changes.</div>}
               </div>
-              {cur ? reader(cur) : <div className="clg-read" />}
+              {sys ? sysReader(sys) : cur ? reader(cur) : <div className="clg-read" />}
             </div>
           )}
-          {list.length > 1 && cur && (
+          {keys.length > 1 && (sys || cur) && (
             <div className="ntf-foot">
               <span className="clg-pos">↑ ↓
-                <button title="Newer" aria-label="Newer" disabled={list.indexOf(cur) <= 0} onClick={() => stepRef.current(-1)}><ChevronLeft size={13} strokeWidth={2} /></button>
-                <span><b>{list.indexOf(cur) + 1}</b> of {list.length}</span>
-                <button title="Older" aria-label="Older" disabled={list.indexOf(cur) >= list.length - 1} onClick={() => stepRef.current(1)}><ChevronRight size={13} strokeWidth={2} /></button>
+                <button title="Newer" aria-label="Newer" disabled={busy || keys.indexOf(sys ?? cur?.id ?? "") <= 0} onClick={() => stepRef.current(-1)}><ChevronLeft size={13} strokeWidth={2} /></button>
+                <span><b>{keys.indexOf(sys ?? cur?.id ?? "") + 1}</b> of {keys.length}</span>
+                <button title="Older" aria-label="Older" disabled={busy || keys.indexOf(sys ?? cur?.id ?? "") >= keys.length - 1} onClick={() => stepRef.current(1)}><ChevronRight size={13} strokeWidth={2} /></button>
               </span>
             </div>
           )}
