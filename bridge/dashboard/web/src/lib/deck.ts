@@ -25,19 +25,3 @@ export function deck<T extends Parameters<typeof groupTasks>[0][number] & { id: 
   return [...all.filter((t) => !skip(t)), ...all.filter(skip)];
 }
 
-/** Markdown as plain words, cut at a word with "…" past `n` characters. */
-export function excerpt(md: string, n = 160): string {
-  const s = md
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/^\s{0,3}(?:#{1,6}|[-*+>]|\d+\.)\s+/gm, "")
-    .replace(/[*_`~]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (s.length <= n) return s;
-  const cut = s.slice(0, n);
-  const sp = cut.lastIndexOf(" ");
-  return `${(sp > 0 ? cut.slice(0, sp) : cut).replace(/[\s,.;:–-]+$/, "")}…`;
-}
