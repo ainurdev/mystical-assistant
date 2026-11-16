@@ -2888,7 +2888,7 @@ export function App() {
       badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
       render: () => (
         <RivendellTab lens={rvLens} onLens={setRvLens} teamNew={teamNew}
-          tasks={<RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
+          tasks={<RivendellTasks project={sessionProject} sessions={sessions} onOpenSession={(id) => { openSession(id); toChat(); }}
             onWorkOn={(text, dir) => { const p = dir || sessionProject; if (p) { void newSession(p, text); toChat(); } }} />}
           team={<TeamPanel data={team} fail={teamFail} project={sessionProject}
             sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}

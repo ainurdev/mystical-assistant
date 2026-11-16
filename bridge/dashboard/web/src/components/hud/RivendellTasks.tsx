@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, ListTodo, Play, RefreshCw, SquarePen } from "lucide-react";
 import type {
-  RivendellLink, RivendellTask, RivendellTaskDetail, RivendellTasks as TasksAnswer, RivendellTodolist,
+  RivendellLink, RivendellTask, RivendellTaskDetail, RivendellTasks as TasksAnswer, RivendellTodolist, SessionBrief,
 } from "../../api";
 import { api } from "../../api";
 import { openSettings } from "../../lib/opensettings";
 import { RivendellIcon } from "../../lib/rivendellicon";
 import {
-  cardState, closeCode, dueLabel, groupTasks, initials, linkChip, nextUp, resultBits, sentryPrompt, since,
-  splitTitle, testText, workPrompt, type CardTone, type LinkTone,
+  cardState, closeCode, dueLabel, groupTasks, inProgress, initials, linkChip, nextUp, resultBits, sentryPrompt, since,
+  splitTitle, taskSession, testText, workPrompt, type CardTone, type LinkTone,
 } from "../../lib/rivendelltasks";
 import { hhmm } from "../../lib/surfaces";
 import { Markdown } from "../Markdown";
-import { deck, excerpt, liveSkips } from "../../lib/deck";
-import { RunMini, TaskDeck } from "./TaskDeck";
+import { deck, liveSkips } from "../../lib/deck";
 import { TabKick } from "./TabKick";
 
 const POLL_MS = 10_000;
@@ -26,6 +25,10 @@ const TONE: Record<CardTone, string> = {
 const LINK_TONE: Record<LinkTone, string> = {
   ok: "var(--ok)", warn: "var(--warn)", err: "var(--err)", off: "var(--txd)",
 };
+// A task's project, by its order on the tab (everywhere view): theme tokens only.
+const PROJECT_TONE = ["var(--purple-h)", "var(--ok)", "var(--acc)", "var(--warn)", "var(--txm)"];
+// Rivendell's priority, as the row's small mark.
+const PRIORITY_TONE: Record<string, string> = { high: "var(--err)", medium: "var(--warn)" };
 // A checks word's colour, by its glyph (lib/rivendelltasks resultBits).
 const CHECK_TONE: Record<string, string> = { "✓": "var(--ok)", "✕": "var(--err)", "◷": "var(--warn)" };
 
@@ -50,9 +53,11 @@ const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-
 
 /** RIVENDELL — the open Rivendell tasks for the open session's repo, led by
  *  what needs you: NEEDS YOU (a run held on a question, answered right here; a
- *  failed run, RETRY; a finished run with a PR to check), then the NEXT UP card
- *  (the deck: todolist order, skips), RUNNING, and the board always open as
- *  30px rows — YOURS, TEAM, DONE, LATER (the team's "deferred" marker, folded).
+ *  failed run, RETRY), then MOVING (In progress on the board, running, or
+ *  finished with a PR, each with the session working it), then UP NEXT, your
+ *  queue numbered in deck order (todolist order, skips) whose #1 stands open
+ *  with its actions, then TEAM, DONE, LATER (the team's "deferred" marker,
+ *  folded) as 30px rows. Flat: no fills, a rule only beside what asks you.
  *  A row opens in place into its card — the task's spec, read off Rivendell
  *  (and the GitHub issue its description defers to) — with the two ways to
  *  start it: IMPLEMENT, Rivendell's own unattended "Implement using AI"
@@ -64,9 +69,12 @@ const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-
  *  dims the cards to what was last known. Polls while showing — request states
  *  change with no dashboard event to announce it. Design:
  *  docs/superpowers/specs/rivendell-tasks-tab.md, rivendell-channel.md, then
- *  .mystical/design-drafts/rivendell-reimagine/ (A · INBOX). */
-export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
+ *  .mystical/design-drafts/rivendell-reimagine/ (A · INBOX), then
+ *  rivendell-tab-v3/a-flat.html (A · IN FLIGHT, flat). */
+export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
   project: string | null;
+  /** the dashboard's sessions, to find the one working each MOVING task */
+  sessions: SessionBrief[];
   onOpenSession: (id: string) => void;
   /** A new session, `text` left in its composer (not sent): in `dir` (the
    *  task's own checkout, everywhere view) or else this project. */
@@ -90,6 +98,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
   const [todo, setTodo] = useState<RivendellTodolist | null>(null);
   const [todoTick, setTodoTick] = useState(0);
   const [laterOpen, setLaterOpen] = useState(() => localStorage.getItem(LATER_KEY) !== "closed");
+  const [teamOpen, setTeamOpen] = useState(false);   // TEAM starts folded: the tab is about yours
   const [stored, setStored] = useState(() => readSkips(project));
   const cards = useRef(new Map<string, HTMLDivElement>());
   const every = useRef(false);
@@ -244,21 +253,28 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
     : t);
   const g = groupTasks(tasks);
+  // MOVING: running, finished with a PR to check (one without is just DONE), or In progress on the board.
+  const review = g.done.filter((t) => resultBits(t.run?.result)?.pr);
+  const boardMoving = [...g.mine, ...g.team].filter((t) => inProgress(t.column));
+  const moving = [...g.running, ...review, ...boardMoving];
   const nextIds = nextUp(todo, new Set(tasks.map((t) => t.id)), 50).flatMap((i) => i.tasks);
   const nextSig = nextIds.join(",");
   const skips = liveSkips(stored, nextSig, now.getTime());
-  const line = deck([...g.mine, ...g.team], nextIds, skips, now.getTime());
-  const top = line[0] ?? null;
-  const topKey = top ? key(top) : "";
-  const topPeeked = !!peeks[topKey];
-  // The top card's spec excerpt: fetched once per task (again after ⟳), never awaited.
-  useEffect(() => { if (top && !topPeeked) void fetchPeek(top); }, [topKey, topPeeked]); // eslint-disable-line react-hooks/exhaustive-deps
+  const line = deck([...g.mine, ...g.team].filter((t) => !boardMoving.includes(t)), nextIds, skips, now.getTime());
+  // UP NEXT is yours; in a linked repo the team's open tasks follow under TEAM.
+  const queue = yours ? line : line.filter((t) => t.mine);
+  const top = queue[0] ?? null;
+  const projectNames = [...new Set(tasks.map((t) => t.projectName))];
+  const dot = (t: RivendellTask) => yours && (
+    <span title={t.projectName} style={{ width: 7, height: 7, borderRadius: 2, flex: "none", display: "inline-block",
+      background: PROJECT_TONE[projectNames.indexOf(t.projectName) % PROJECT_TONE.length] }} />
+  );
   const c = linkChip(links[0], now);
 
   return (
-    <div className="panel" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <TabKick name={yours ? "YOURS · EVERYWHERE" : names || "RIVENDELL"}
-        chip={links.length > 0 && <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, padding: "0 6px", border: "1px solid currentColor", borderRadius: 8, whiteSpace: "nowrap", color: LINK_TONE[c.tone] }}>{c.label}</span>}
+        chip={links.length > 0 && !yours && <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, padding: "0 6px", border: "1px solid currentColor", borderRadius: 8, whiteSpace: "nowrap", color: LINK_TONE[c.tone] }}>{c.label}</span>}
         tools={<>
           {!yours && projects[0]?.url && (
             <button className="gp-ib" title="Open the project in Rivendell" aria-label="Open the project in Rivendell"
@@ -295,25 +311,21 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     if (!projects.length && !yours) return <>{paused}<Empty title="No Rivendell project links this repo" text={<>Nothing in Rivendell links <code style={{ color: "var(--purple-h)" }}>{data.slug}</code>. Link it to a project there and its tasks show up here.</>} /></>;
     const here = (project ?? "").split("/").pop() || "This repo";
     const note = yours && (
-      <div style={{ margin: "2px 12px 4px", padding: "6px 9px", borderRadius: 8, background: "var(--panel2)", fontSize: "var(--t95)", lineHeight: 1.45, color: "var(--txl)" }}>
-        <b style={{ color: "var(--txm)" }}>{here}</b> has no Rivendell project, so here is what's yours across the ones that do. Starting a task opens a session in its repo.
+      <div style={{ margin: "2px 12px 4px", fontSize: "var(--t95)", lineHeight: 1.45, color: "var(--txl)" }}>
+        <b style={{ color: "var(--txm)" }}>{here}</b> isn't on a board. Starting a task opens its own repo.
       </div>
     );
     if (!tasks.length) return <>{paused}{note}<Empty icon={<ListTodo size={26} strokeWidth={1.3} />} title={yours ? "Nothing is yours" : "No open tasks"}
       text={yours ? "No open task in any Rivendell project is assigned to you." : `Every task of ${names} is done.`} /></>;
     const last = data.tasks.some((t) => t.stale) ? " · LAST KNOWN" : "";
-    const showCol = new Set(data.tasks.map((t) => t.column).filter(Boolean)).size > 1;
     const targets = [...new Set(g.later.map((t) => splitTitle(t.name).later))];
     const laterLabel = targets.length === 1 && targets[0] !== "later" ? `LATER · ${targets[0]!.toUpperCase()}` : "LATER";
-    const card = (later: boolean, row = false) => (t: RivendellTask) => cardView(t, later, showCol, row);
     // Todolist items that name no open task but a Sentry issue: FIX IT, as before.
     const sentry = nextUp(todo, new Set(tasks.map((t) => t.id))).filter((i) => !i.tasks.length && i.sentry);
-    // Asks, failed runs, finished runs with a PR to check; a run that ended without one is just DONE.
-    const review = g.done.filter((t) => resultBits(t.run?.result)?.pr);
-    const needs = [...g.needs, ...g.failed, ...review];
+    const needs = [...g.needs, ...g.failed];
     const quiet = g.done.filter((t) => !review.includes(t));
-    const rest = (l: RivendellTask[]) => l.filter((t) => t !== top);   // the NEXT card isn't listed twice
-    const byProject = yours ? [...new Set(rest([...g.mine, ...g.team]).map((t) => t.projectName))] : [];    return (
+    const team = yours ? [] : line.filter((t) => !t.mine);
+    return (
       <>
         {paused}
         {data.errors.filter((e) => e.error !== "token_rejected").map((e) => (
@@ -321,66 +333,76 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
         ))}
         {note}
         {needs.length > 0 && <Section label="◆ NEEDS YOU" n={needs.length} color="var(--warn)" />}
-        {needs.map(card(false))}
-        {top && deckView(top, line.length)}
-        {g.running.length > 0 && <div className="dk-sec"><span>RUNNING{last}</span><span>{g.running.length}</span></div>}
-        {g.running.map(runView)}
+        {needs.map((t) => cardView(t))}
+        {moving.length > 0 && <Section label={`● Moving${last}`} n={moving.length} />}
+        {moving.map(movingView)}
+        {(queue.length > 0 || sentry.length > 0) && <Section label={`▶ Up next${last}`} n={queue.length} />}
+        {queue.map((t, i) => cardView(t, { row: true, num: i + 1 }))}
         {sentry.map((i) => (
           <div key={i.id} className="dk-then" style={{ cursor: "default" }}>
             <span title={i.title}>{i.title}</span>
             <Btn tone="ghost" onClick={() => onWorkOn(sentryPrompt(i.title, i.sentry!))} title={`Work on ${i.sentry!.label ?? "the Sentry issue"} in a new session`}>FIX IT</Btn>
           </div>
         ))}
-        {yours ? byProject.map((name) => {
-          const of = rest([...g.mine, ...g.team]).filter((t) => t.projectName === name);
-          return <div key={name}><Section label={`${name}${last}`} n={of.length} />{of.map(card(false, true))}</div>;
-        }) : <>
-          {rest(g.mine).length > 0 && <Section label={`YOURS${last}`} n={rest(g.mine).length} />}
-          {rest(g.mine).map(card(false, true))}
-          {rest(g.team).length > 0 && <Section label={`TEAM${last}`} n={rest(g.team).length} />}
-          {rest(g.team).map(card(false, true))}
-        </>}
+        {team.length > 0 && <Section label={`TEAM${last}`} n={team.length} onClick={() => setTeamOpen(!teamOpen)} chev={teamOpen ? "▾" : "▸"} />}
+        {teamOpen && team.map((t) => cardView(t, { row: true }))}
         {quiet.length > 0 && <Section label={`DONE${last}`} n={quiet.length} />}
-        {quiet.map(card(false, true))}
+        {quiet.map((t) => cardView(t, { row: true }))}
         {g.later.length > 0 && (
           <Section label={laterLabel} n={g.later.length} onClick={() => setLater(!laterOpen)} chev={laterOpen ? "▾" : "▸"} />
         )}
-        {laterOpen && g.later.map(card(true, true))}
+        {laterOpen && g.later.map((t) => cardView(t, { row: true, later: true }))}
       </>
     );
   }
 
-  /** The top card: the next task, its excerpt once the spec has arrived, IMPLEMENT's confirm in place. */
-  function deckView(t: RivendellTask, n: number): ReactNode {
-    const p = peeks[key(t)];
-    const d = p?.state === "ok" ? p.d : null;
-    const st = cardState({ implementation: t.implementation, session_id: t.session_id }, now);
-    const go = st.action === "implement" ? "Implement" : st.action === "again" ? "Run again" : st.action === "retry" ? "Retry" : null;
-    const href = t.url ?? t.htmlUrl;
+  /** A MOVING task: its state, its title, and the session working it (open ›),
+   *  or WORK ON IT when no session here carries it. */
+  function movingView(t: RivendellTask): ReactNode {
+    const req = t.implementation;
+    const todos = req?.status === "IN_PROGRESS" ? t.run?.live?.todos ?? null : null;
+    const pr = req?.status === "COMPLETED" ? resultBits(t.run?.result)?.pr ?? null : null;
+    const s = taskSession(t, sessions);
+    const [state, tone] = req?.status === "PENDING" ? ["Queued", "var(--acc)"]
+      : req?.status === "IN_PROGRESS" ? [todos ? `Running · step ${todos.done} of ${todos.total}` : "Running", "var(--acc)"]
+      : pr ? [`↑ ${pr.label}${pr.checks ? ` · ${pr.checks}` : ""}`, "var(--ok)"]
+      : ["In progress", "var(--acc)"];
+    const { code, title } = splitTitle(t.name);
+    const link = { appearance: "none", cursor: "pointer", background: "none", border: 0, padding: 0, fontFamily: "inherit", fontSize: "var(--t95)", fontWeight: 700, color: "var(--acc)", flex: "none" } as const;
     return (
-      <TaskDeck task={t} n={n} text={d ? excerpt(d.spec?.body || d.description || "") : ""} go={go} frozen={!!t.stale}
-        onGo={() => arm(t)} onWork={() => void workOn(t)} onSkip={() => skip(t)}
-        onLink={href ? () => window.open(href, "_blank", "noopener") : null}>
-        {armed === key(t) && armedView(t, busy.has(t.id))}
-        {errs[t.id] && <div style={{ fontSize: "var(--t9)", color: "var(--err)" }}>{errs[t.id]}</div>}
-      </TaskDeck>
+      <div key={key(t)} style={{ margin: "0 12px", padding: "4px 0 12px", opacity: t.stale ? 0.55 : 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "var(--t85)", color: "var(--txl)" }}>
+          {dot(t)}<span style={{ fontFamily: "var(--mono)" }}>{code || t.key}</span>
+          <span className="caps" style={{ marginLeft: "auto", fontSize: "var(--t8)", letterSpacing: 1, color: tone }}>{state}</span>
+        </div>
+        <div title={t.name} style={{ marginTop: 4, fontSize: "var(--t11)", lineHeight: 1.4, color: "var(--txh)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{title}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, fontSize: "var(--t95)", color: "var(--txm)", minWidth: 0 }}>
+          <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", flex: "none", ...(s ? { background: pr ? "var(--ok)" : req ? "var(--acc)" : "var(--txm)" } : { border: "1.5px solid var(--txl)" }) }} />
+          {s ? (
+            <button type="button" onClick={() => onOpenSession(s.id)} title="Open the session" style={{ ...link, flex: 1, minWidth: 0, textAlign: "left", fontWeight: 400, color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {s.title || "Untitled session"}
+            </button>
+          ) : <span style={{ flex: 1, color: "var(--txl)" }}>No session on it here</span>}
+          {todos && (
+            <span aria-hidden style={{ display: "inline-flex", gap: 2, flex: "none" }}>
+              {Array.from({ length: Math.min(todos.total, 12) }, (_, i) => (
+                <span key={i} style={{ width: 9, height: 3, borderRadius: 1, background: i < todos.done ? "var(--acc)" : mix("var(--acc)", 22) }} />
+              ))}
+            </span>
+          )}
+          {pr ? <a href={pr.url} target="_blank" rel="noopener" style={{ ...link, textDecoration: "none" }}>Review PR ↗</a>
+            : s ? <button type="button" style={link} onClick={() => onOpenSession(s.id)} aria-label="Open the session">›</button>
+            : <button type="button" style={link} onClick={() => void workOn(t)} title="A new session, with this task in its composer">Work on it ›</button>}
+        </div>
+      </div>
     );
   }
 
-  /** A running task as a mini card: step pips, its live line, Open ›. */
-  function runView(t: RivendellTask): ReactNode {
-    const st = cardState({ implementation: t.implementation, session_id: t.session_id }, now);
-    const live = t.implementation?.status === "IN_PROGRESS" ? t.run?.live ?? null : null;
-    const todos = live?.todos ?? null;
-    const foot = [t.key, todos && `step ${todos.done} of ${todos.total}`, st.line].filter(Boolean).join(" · ");
-    return (
-      <RunMini key={key(t)} title={splitTitle(t.name).title} pips={todos} live={live?.line ?? null} foot={foot}
-        onOpen={st.action === "open" && t.session_id ? () => onOpenSession(t.session_id!) : null} />
-    );
-  }
-
-  /** A task: a full card (NEEDS YOU), or `asRow`, one 30px line on the board that opens into the card. */
-  function cardView(t: RivendellTask, later: boolean, showCol: boolean, asRow = false) {
+  /** A task: a full card (NEEDS YOU), or a `row`, one 30px line that opens into
+   *  the card. UP NEXT numbers its rows (`num`); #1 stands open with its actions. */
+  function cardView(t: RivendellTask, o: { row?: boolean; num?: number; later?: boolean } = {}) {
+    const { row: asRow = false, num, later = false } = o;
+    const first = num === 1;
     const id = key(t);
     const req = t.implementation;
     const st = cardState({ implementation: req, session_id: t.session_id }, now);
@@ -389,8 +411,8 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const frozen = !!t.stale;                 // last known: nothing new may start from it
     const on = hov === id;
     const isOpen = open === id;
-    const isArmed = armed === id && !(top && id === key(top));   // the deck shows the top task's confirm
-    const folded = asRow && !isOpen;
+    const isArmed = armed === id;
+    const folded = asRow && !isOpen && !first;
     const ask = t.run?.ask ?? null;
     const live = req?.status === "IN_PROGRESS" && !ask ? t.run?.live ?? null : null;
     const res = req?.status === "COMPLETED" || req?.status === "FAILED" ? resultBits(t.run?.result) : null;
@@ -410,13 +432,14 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
           ))}
         </span>
       ),
-      showCol && t.column && <span key="c" style={{ color: "var(--txd)" }}>{t.column}</span>,
       due && <span key="d" style={{ color: due.tone === "late" ? "var(--err)" : due.tone === "soon" ? "var(--warn)" : undefined }}>{due.text}</span>,
     ].filter(Boolean);
     const action = (label: ReactNode, run: () => void, tone: "primary" | "ghost" | "err" | "warn", off = false) =>
       <Btn tone={tone} off={working || off} onClick={run}>{working ? "…" : label}</Btn>;
     const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8, minHeight: 25 } as const;
-    const tone = ask ? "var(--warn)" : "var(--acc)";
+    const n = num != null && <span style={{ width: 14, flex: "none", textAlign: "right", fontFamily: "var(--mono)", fontSize: "var(--t85)", color: first ? "var(--acc)" : "var(--txg)" }}>{num}</span>;
+    const pri = PRIORITY_TONE[t.priority ?? ""];
+    const needsYou = !asRow && (!!ask || req?.status === "FAILED");
     return (
       <div
         key={id}
@@ -424,28 +447,36 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
         onClick={() => toggle(t)}
         onMouseEnter={() => setHov(id)} onMouseLeave={() => setHov("")}
         style={{
-          margin: folded ? "0 8px 1px" : "0 8px 6px", padding: folded ? "0 8px 0 10px" : "8px 8px 9px 10px", cursor: "pointer",
-          minHeight: folded ? 30 : undefined, display: folded ? "flex" : undefined, alignItems: "center", borderRadius: folded ? 8 : undefined,
-          border: `1px solid ${folded ? (on ? mix("var(--acc)", 22) : "transparent") : mix(tone, ask ? 50 : isOpen ? 55 : on ? 30 : 12)}`,
-          background: ask ? mix("var(--warn)", 4) : isOpen ? mix("var(--acc)", 6) : folded ? (on ? mix("var(--acc)", 6) : "transparent") : "color-mix(in srgb, var(--panel2) 70%, transparent)",
-          opacity: frozen || (later && !isOpen) ? 0.55 : 1, transition: "border-color .13s ease, background .13s ease",
+          // Flat: no fills, no frames; only what asks you keeps a rule beside it.
+          margin: needsYou ? "0 12px 8px" : "0 12px", padding: folded ? 0 : needsYou ? "6px 0 10px 10px" : "6px 0 10px", cursor: "pointer",
+          minHeight: folded ? 30 : undefined, display: folded ? "flex" : undefined, alignItems: "center",
+          borderLeft: needsYou ? `2px solid ${ask ? "var(--warn)" : "var(--err)"}` : undefined,
+          opacity: frozen || (later && !isOpen) ? 0.55 : 1,
           animation: "mfadeup .35s ease both",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {folded ? (
-              <div style={{ fontSize: "var(--t105)", lineHeight: 1.45, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {(code || t.key) && <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txl)", marginRight: 7 }}>{code || t.key}</span>}{title}
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "var(--t105)", lineHeight: 1.45, color: on ? "var(--txb)" : "var(--txh)" }}>
+                {n}{dot(t)}
+                {(code || t.key) && <span style={{ flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txl)" }}>{code || t.key}</span>}
+                <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+                {due && due.tone && !on && <span style={{ flex: "none", fontSize: "var(--t9)", color: due.tone === "late" ? "var(--err)" : "var(--warn)" }}>{due.text}</span>}
+                {pri && !on && <span title={`${t.priority} priority`} style={{ width: 3, height: 13, borderRadius: 2, flex: "none", background: pri }} />}
               </div>
             ) : (
               <>
-                {code && <div style={{ fontFamily: "var(--mono)", fontSize: "var(--t85)", lineHeight: 1, color: "var(--txl)", marginBottom: 5 }}>{code}</div>}
+                {(code || t.key || n) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "var(--mono)", fontSize: "var(--t85)", lineHeight: 1, color: "var(--txl)", marginBottom: 5 }}>
+                    {n}{dot(t)}{code || t.key}
+                  </div>
+                )}
                 <div style={{ fontSize: "var(--t115)", lineHeight: 1.45, color: isOpen ? "var(--txb)" : "var(--txh)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{title}</div>
               </>
             )}
           </div>
-          {idle && !(later && folded) && !(folded && !on) && !isArmed && !frozen && !isOpen && (
+          {idle && !(later && folded) && !(folded && !on) && !isArmed && !frozen && !isOpen && !first && (
             // The ▶'s 22px is all the title ever gives up: under the pointer the
             // labelled button grows leftwards over the title's tail, so the
             // title never re-wraps on hover.
@@ -453,7 +484,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
               <span style={{ position: "absolute", top: 0, right: 0 }}>
                 {on ? (
                   <Btn tone="primary" onClick={() => arm(t)} title="Implement it with AI — asks first"
-                    style={{ height: 22, padding: "0 8px", background: "color-mix(in srgb, var(--acc) 16%, var(--panel2))" }}>
+                    style={{ height: 22, padding: "0 8px", background: "var(--panel)" }}>
                     <Play size={9} strokeWidth={2.4} />IMPLEMENT
                   </Btn>
                 ) : (
@@ -468,13 +499,20 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
             {meta.flatMap((el, i) => (i ? [<span key={`s${i}`}>·</span>, el] : [el]))}
           </div>
         )}
+        {first && !isOpen && !isArmed && (
+          <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 9, cursor: "default" }}>
+            {idle && !frozen && <Btn tone="primary" onClick={() => arm(t)} title="Implement it with AI — asks first"><Play size={9} strokeWidth={2.4} />Implement</Btn>}
+            <Btn tone="ghost" onClick={() => void workOn(t)} title="A new session, with this task in its composer"><SquarePen size={10} strokeWidth={2.2} />Work on it</Btn>
+            {queue.length > 1 && <Btn tone="ghost" onClick={() => skip(t)} title="Next task; this one comes back after a day">Skip ›</Btn>}
+          </div>
+        )}
         {isOpen && peekView(t, idle, frozen, href, isArmed)}
         {ask && (
-          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 9, padding: "2px 0 2px 10px", borderLeft: "2px solid var(--warn)", cursor: "default" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 9, cursor: "default" }}>
             <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--warn)" }}>
               ◆ ASKS{asked ? ` · ${asked === "now" ? "just now" : `${asked} ago`}` : ""}
             </div>
-            <div style={{ marginTop: 5, fontSize: "var(--t105)", lineHeight: 1.5, color: "var(--txh)" }}>{ask.question}</div>
+            <div style={{ marginTop: 5, fontSize: "var(--t105)", lineHeight: 1.5, color: "var(--txm)", fontStyle: "italic" }}>{ask.question}</div>
             {ask.simple && ask.options.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                 {ask.options.map((o, i) => <span key={o}>{action(o, () => void answer(t, o), i === 0 ? "warn" : "ghost")}</span>)}
@@ -483,7 +521,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
           </div>
         )}
         {live && (
-          <div style={{ marginTop: 8, padding: "6px 8px", background: mix("var(--acc)", 6), fontSize: "var(--t9)" }}>
+          <div style={{ marginTop: 8, fontSize: "var(--t9)" }}>
             <div title={live.line} style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>› {live.line}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5, color: "var(--txl)", letterSpacing: 1 }}>
               {live.todos && (
@@ -584,7 +622,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
   function armedView(t: RivendellTask, working: boolean) {
     const go = () => void implement(t);
     return (
-      <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 9, padding: "8px 9px 9px", cursor: "default", border: `1px solid ${mix("var(--acc)", 38)}`, background: mix("var(--acc)", 6) }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 9, cursor: "default" }}>
         <div style={{ fontSize: "var(--t85)", letterSpacing: 1.2, lineHeight: 1.5, color: "var(--txm)" }}>
           <span style={{ color: "var(--txb)" }}>RUNS ON ITS OWN</span> · NO PERMISSION PROMPTS · PUSHES A BRANCH · OPENS A PR · POSTS THE RESULT TO THE TASK
         </div>
@@ -628,9 +666,10 @@ function Btn({ tone, off = false, onClick, title, style: extra, children }: {
     appearance: "none", cursor: off ? "default" : "pointer", fontFamily: "inherit",
     fontSize: "var(--t9)", letterSpacing: 1, padding: "5px 9px", whiteSpace: "nowrap", flex: "none",
     display: "inline-flex", alignItems: "center", gap: 5, opacity: off ? 0.5 : 1,
-    border: `1px solid ${tone === "solid" ? c : mix(c, strong ? 45 : tone === "err" ? 40 : 22)}`,
-    background: strong ? mix(c, tone === "solid" ? 22 : 12) : "transparent",
-    color: tone === "primary" || tone === "solid" ? "var(--txb)" : tone === "ghost" ? "var(--txm)" : c,
+    // Flat: no fills; only a card's main action (and RETRY) wears an outline.
+    border: `1px solid ${tone === "ghost" ? "transparent" : tone === "solid" ? c : mix(c, strong ? 70 : 45)}`,
+    background: "transparent",
+    color: tone === "solid" ? "var(--txb)" : tone === "ghost" ? "var(--txm)" : c,
     ...extra,
   };
   return <button disabled={off} title={title} style={style} onClick={(e) => { e.stopPropagation(); onClick(); }}>{children}</button>;
@@ -642,7 +681,7 @@ function IconBtn({ title, onClick, children }: { title: string; onClick: () => v
     <button title={title} aria-label={title} onClick={(e) => { e.stopPropagation(); onClick(); }} style={{
       appearance: "none", cursor: "pointer", flex: "none", width: 22, height: 22, padding: 0,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
-      background: "transparent", color: "var(--txm)", border: `1px solid ${mix("var(--acc)", 26)}`,
+      background: "transparent", color: "var(--txm)", border: 0,
     }}>{children}</button>
   );
 }
@@ -685,7 +724,7 @@ function Section({ label, n, color, onClick, chev }: { label: string; n: number;
       display: "flex", gap: 8, padding: "10px 12px 6px", fontSize: "var(--t9)", letterSpacing: 1.8,
       color: color ?? "var(--txl)", cursor: onClick ? "pointer" : "default", userSelect: onClick ? "none" : undefined,
     }}>
-      <span>{label}</span><span style={{ color: "var(--txg)" }}>{n}</span>
+      <span className="caps">{label}</span><span style={{ color: "var(--txg)" }}>{n}</span>
       {chev && <span style={{ marginLeft: "auto", color: "var(--txm)" }}>{chev}</span>}
     </div>
   );

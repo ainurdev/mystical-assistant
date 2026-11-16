@@ -184,3 +184,21 @@ export function testText(t: RivendellTest | null | undefined): string {
   if (t.ok === null) return `↻ ${t.detail}`;
   return t.ok ? `✓ round trip ${t.rtt_ms} ms` : `✕ ${t.detail}`;
 }
+
+/** MOVING: the board has the task In progress (or Doing), by its column's name.
+ *  shortcut: guesses from the name, so "WIP" or "In review" columns miss; read the
+ *  column's kind from Rivendell once /plugin/tasks sends it. */
+export const inProgress = (column: string | null) => /progress|doing/i.test(column ?? "");
+
+/** The session working a task: the one its run ran in, else a live session whose
+ *  branch carries the task's key as a whole word (RIV-64, not RIV-640). Archived
+ *  sessions don't count. */
+export function taskSession<S extends { id: string; branch?: string; archived: number }>(
+  t: { key: string | null; session_id: string | null }, sessions: S[],
+): S | null {
+  const own = t.session_id ? sessions.find((s) => s.id === t.session_id && !s.archived) : undefined;
+  if (own) return own;
+  if (!t.key) return null;
+  const k = new RegExp(`(^|[^a-z0-9])${t.key.replace(/[^a-z0-9]/gi, "\\$&")}($|[^0-9])`, "i");
+  return sessions.find((s) => !s.archived && k.test(s.branch ?? "")) ?? null;
+}
