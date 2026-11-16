@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, FileDiff, GitBranch, Monitor, Server } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, FileDiff, GitBranch, Monitor, Server, TriangleAlert } from "lucide-react";
 import { api, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { Bullets, Meta } from "./ChangelogButton";
@@ -127,13 +127,14 @@ function useReadComing(info: UpdateInfo | null, shown: boolean) {
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** UPDATE (side "pull") or SHIP (side "ship"), read in the changelog like any change. */
-export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose }: {
+export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onShip }: {
   info: UpdateInfo;
   side: "pull" | "ship";
   reload: () => Promise<void>;
   onFeed: Feed;
   onBusy: (busy: boolean) => void;
   onClose: () => void;
+  onShip: () => void;   // UPDATE's "Ship yours first": reads the SHIP row
 }) {
   const a = useUpdateActions(info, reload, onFeed, onClose);
   const [commitsOpen, setCommitsOpen] = useState(false);
@@ -149,17 +150,18 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose }: {
   if (side === "ship") {
     const commit = dirty > 0;
     return (
-      <div className="clg-read mscroll">
-        <Flow chip={bad ? "PUSH FAILED" : commit ? "NEEDS COMMIT + PUSH" : "NEEDS PUSH"} bad={bad} nodes={[
+      <div className="clg-read rl-read">
+        <div className="rl-body mscroll">
+        <Flow nodes={[
           ...([] as FlowNode[]),
           ...(commit ? [{ key: "files", icon: FileDiff, name: plural(dirty, "file"), tag: "COMMIT", tone: "var(--warn)", state: at(a.phase === "shipping" ? "now" : undefined) }] : []),
           { key: "push", icon: ArrowUpFromLine, name: commit ? "Push" : plural(ahead, "commit"), tag: "PUSH", tone: "var(--warn)", state: at(a.phase === "shipping" && !commit ? "now" : undefined) },
           { key: "up", icon: GitBranch, name: "Upstream", tag: info.branch.toUpperCase(), tone: "var(--txl)", state: "next" },
         ]} />
         <div className="clg-t">
+          <div className={`rl-kick ${bad ? "bad" : "warn"}`}>{bad ? "PUSH FAILED" : commit ? "YOURS · NEEDS COMMIT + PUSH" : "YOURS · NEEDS PUSH"}</div>
           <div className="h">
             <b>{commit ? `${plural(dirty, "change")} to ship` : `${plural(ahead, "commit")} to push`}</b>
-            <span className="clg-tag warn">YOURS</span>
             <span className="tm">⎇ {info.branch}</span>
           </div>
           <div className="gl-cm rl-cm warn">
@@ -172,28 +174,32 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose }: {
           </div>
           {bad && <div className="gl-err"><div className="h">PUSH FAILED</div><pre>{a.err}</pre></div>}
         </div>
+        </div>
+        <div className="rl-foot">
         <div className="clg-acts">
           {bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with Claude</button>
             : <button className="warn" onClick={() => void a.ship()} disabled={a.busy}>
-                <ArrowUpFromLine size={12} strokeWidth={1.8} />{a.phase === "shipping" ? "Committing…" : commit ? "Commit & push" : "Push"}</button>}
+                <ArrowUpFromLine size={14} strokeWidth={2} />{a.phase === "shipping" ? "Committing…" : commit ? "Commit & push" : "Push"}</button>}
         </div>
         <div className="clg-mline"><span>{commit ? "Commits with a message written from the diff, then pushes." : "Pushes the commits to the upstream."}</span></div>
+        </div>
       </div>
     );
   }
 
   const pullState: FlowNode["state"] = a.phase === "updating" ? "now" : a.phase === "restarting" ? "ok" : undefined;
   return (
-    <div className="clg-read mscroll">
-      <Flow chip={bad ? "UPDATE FAILED" : a.phase === "restarting" ? "RESTARTING" : "NEEDS PULL + RESTART"} bad={bad} nodes={[
+    <div className="clg-read rl-read">
+      <div className="rl-body mscroll">
+      <Flow nodes={[
         { key: "pull", icon: ArrowDownToLine, name: plural(incoming, "commit"), tag: "PULL", tone: "var(--ok)", state: at(pullState) },
         { key: "dashboard", icon: Monitor, name: "Dashboard", tag: "REBUILD", tone: "var(--acc)", state: bad ? undefined : pullState },
         { key: "bridge", icon: Server, name: "Bridge", tag: "RESTART", tone: "var(--warn)", state: a.phase === "restarting" ? "now" : undefined },
       ]} />
       <div className="clg-t">
+        <div className={`rl-kick ${bad ? "bad" : "ok"}`}>{bad ? "UPDATE FAILED" : a.phase === "restarting" ? "RESTARTING" : `COMING · ${incoming} COMMIT${incoming === 1 ? "" : "S"}`}</div>
         <div className="h">
           <b>{coming ? coming.title : `${plural(incoming, "new commit")} upstream`}</b>
-          <span className="clg-tag ok">COMING</span>
           {!coming && <span className="tm">⎇ {info.branch}</span>}
         </div>
         {coming && <div className="upd-pv"><Bullets body={coming.body} /></div>}
@@ -206,15 +212,20 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose }: {
           </button>
         </div>
         {commitsOpen && <div className="gl-cm rl-cm ok">{(info.commits ?? []).map((c) => <div key={c.sha}><b>{c.sha}</b>{c.subject}</div>)}</div>}
-        {dirty > 0 && <div className="gl-turns rl-dirty"><span>⚠</span><span>A fast-forward pull refuses on a dirty tree — ship yours first.</span></div>}
+        {dirty > 0 && <div className="gl-turns rl-dirty"><TriangleAlert size={13} strokeWidth={1.8} />
+          <span>Your {plural(dirty, "uncommitted file")} block{dirty === 1 ? "s" : ""} the pull. Ship yours first, then update.</span></div>}
         {bad && <div className="gl-err"><div className="h">UPDATE FAILED</div><pre>{a.err}</pre></div>}
       </div>
+      </div>
+      <div className="rl-foot">
       <div className="clg-acts">
         {bad ? <button className="pri" onClick={a.fixWithClaude}>▸ Fix with Claude</button>
           : <button className="ok" onClick={() => void a.apply()} disabled={a.busy}>
-              <ArrowDownToLine size={12} strokeWidth={1.8} />{a.phase === "updating" ? "Updating…" : a.phase === "restarting" ? "Restarting…" : "Pull & restart"}</button>}
+              <ArrowDownToLine size={14} strokeWidth={2} />{a.phase === "updating" ? "Updating…" : a.phase === "restarting" ? "Restarting…" : "Pull & restart"}</button>}
+        {dirty > 0 && !bad && !a.busy && <button onClick={onShip}>Ship yours first</button>}
       </div>
       <div className="clg-mline"><span>Pulls, rebuilds the dashboard and restarts the bridge. Running turns pick up where they were.</span></div>
+      </div>
     </div>
   );
 }

@@ -6300,8 +6300,8 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-row b .a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clg-row b svg { flex: none; color: var(--txl); }
 /* two lines for every row, a line with nothing to say included: rows never differ in height */
-.clg-row .x { display: block; height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t105)/1.4 var(--ui-font); color: var(--txl); }
-.clg-row .tm { font: 500 var(--t95)/1.5 var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-row .x { display: block; height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t105)/1.4 var(--ui-font); color: var(--txf); }
+.clg-row .tm { display: block; flex: none; container-type: normal; font: 500 var(--t95)/1.5 var(--mono); color: var(--txf); white-space: nowrap; }  /* team.css's .tm (a size container) zeroed this column's width */
 .clg-row.new b, .clg-row.on b { color: var(--txb); }
 .clg-row.new::before { content: ""; position: absolute; left: 4px; top: 17px; width: 5px; height: 5px; border-radius: 50%; background: var(--acc); }
 .clg-row.next .tm { color: var(--ok); }
@@ -6344,7 +6344,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .clg-clipbar .tag { font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .14em; color: rgb(255 255 255 / .72); }
 .clg-t .h { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .clg-t .h b { font: 600 var(--t15)/1.25 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
-.clg-t .tm { margin-left: auto; font: 500 var(--t10)/1 var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-t .tm { margin-left: auto; font: 500 var(--t10)/1 var(--mono); color: var(--txf); white-space: nowrap; }
 .clg-t .x { margin-top: 3px; font: 400 var(--t125)/1.45 var(--ui-font); color: var(--tx); overflow-wrap: anywhere; }
 .clg-tag { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: calc(var(--f-rad-s, 0px) * .6);
   font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, transparent); }
@@ -6386,27 +6386,33 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; }
 .clg-co::after { content: ""; position: absolute; right: -6px; bottom: 18px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--panel);
   border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); }
-.clg-co .in { position: relative; overflow: hidden; padding: 11px 30px 12px 13px; border-radius: var(--f-rad, 0); }
+.clg-co .in { position: relative; overflow: hidden; padding: 11px 36px 12px 13px; border-radius: var(--f-rad, 0); }
 .clg-co-h { display: flex; align-items: center; gap: 7px; min-width: 0; }
 /* its first picture, edge to edge over the words */
-.clg-co-pic { position: relative; margin: -11px -30px 10px -13px; aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--line, var(--border)); }
+.clg-co-pic { position: relative; margin: -11px -36px 10px -13px; aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--line, var(--border)); }
 .clg-co-pic img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top; }
 .clg-co-pic .n { position: absolute; left: 10px; bottom: 8px; padding: 4px 7px; border-radius: 99px; background: rgb(8 9 12 / .72);
   font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .12em; color: #fff; }
 .clg-co .clg-ic { flex: none; color: var(--ok); }
 .clg-co .v { flex: none; font: 600 var(--t9) var(--ui-font); letter-spacing: .12em; color: var(--ok); }
-.clg-co .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-co .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txf); }
 .clg-co-t { margin-top: 5px; font: 500 var(--t13)/1.35 var(--ui-font); color: var(--txb); }
 .clg-co-b { margin-top: 5px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
-.clg-co-f { margin-top: 10px; display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
-.clg-co-f .go { font: 500 var(--t11) var(--ui-font); color: var(--acc); }
-.clg-co .x { position: absolute; top: 7px; right: 8px; appearance: none; cursor: pointer; padding: 2px 4px; border: 0; background: transparent;
-  font: 400 15px/1 var(--ui-font); color: var(--txl); }
+.clg-co-f { margin-top: 12px; display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txf); }
+.clg-co-f button { appearance: none; cursor: pointer; height: 30px; padding: 0 11px; border-radius: var(--f-rad-s, 0); border: 1px solid var(--line2, var(--border-bright));
+  background: transparent; font: 500 var(--t115) var(--ui-font); color: var(--tx); white-space: nowrap; }
+.clg-co-f button:hover { color: var(--txb); background: var(--ac-06); }
+.clg-co-f button.go { --k: var(--ok); color: var(--acc-on); background: var(--k); border-color: var(--k); }
+.clg-co-f button.go:hover { background: color-mix(in oklab, var(--k) 85%, white); }
+.gl-co .clg-co-f button.go { --k: var(--acc); }
+.clg-co button:focus-visible, .rl-foot button:focus-visible, .clg-row:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.clg-co .x { position: absolute; top: 2px; right: 2px; width: 32px; height: 32px; display: grid; place-items: center; appearance: none; cursor: pointer; padding: 0; border-radius: var(--f-rad-s, 0); border: 0; background: transparent;
+  color: var(--txf); }
 .clg-co .x:hover { color: var(--txb); }
-/* its clock: 8 s like the bell's news; the bar's animationend dismisses it, so a hover that pauses the bar holds it */
+/* news only (a change landed): 8 s like the bell's; the bar's animationend dismisses it, so hover or focus holds it */
 .clg-co .bar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--ok); opacity: .55; transform-origin: left; animation: clg-bar 8s linear both; }
-.clg-co:hover .bar { animation-play-state: paused; }
+.clg-co:is(:hover, :focus-within) .bar { animation-play-state: paused; }
 @keyframes clg-bar { to { transform: scaleX(0); } }
 /* the rail icon while its popup is out */
 .clg-lit::before { content: ""; position: absolute; inset: 4px 7px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--acc) 14%, transparent);
@@ -6425,7 +6431,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .upd-fold:hover { color: var(--acc); }
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
-@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > :is(.clg-stage, .clg-t) { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > :is(.clg-stage, .clg-t), .rl-body > :is(.clg-stage, .clg-t) { animation: none; } }
 /* the rail's ⟳ over the changelog (LiveButton): what's on disk but not running. The card
    is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
 @keyframes gl-spin { to { transform: rotate(360deg); } }
@@ -8878,15 +8884,18 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .clg-row.sys b { color: var(--txb); }
 .clg-row.sys.on { box-shadow: inset 2px 0 0 var(--t); }
 .clg-row.sys.on .ic { color: var(--panel); background: var(--t); }
-.rl-rule { margin: 4px 14px; border-top: 1px dashed var(--line, var(--border)); }
-.clg-chip.bad b { color: var(--err); }
-.rl-flow { display: flex; align-items: center; justify-content: center; padding: 34px 14px 12px;
+.rl-sec { padding: 9px 12px 5px; font: 700 var(--t8)/1 var(--ui-font); letter-spacing: .18em; color: var(--txd); }
+.rl-sec.rule { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line, var(--border)); }
+.clg-row.sys { align-items: center; padding-right: 12px; }
+.clg-row.sys .tm:not(:empty) { padding: 1px 6px; border-radius: 99px; background: color-mix(in oklab, var(--t) 14%, transparent); }
+.clg-pop:focus { outline: none; }
+.rl-flow { aspect-ratio: auto; display: flex; align-items: center; justify-content: center; padding: 12px 10px 10px;
   background: linear-gradient(160deg, color-mix(in oklab, var(--acc) 9%, var(--panel2, var(--panel))), var(--panel3, var(--panel))); }
 .rl-step { display: flex; align-items: flex-start; min-width: 0; }
-.rl-wire { flex: none; width: 26px; height: 2px; margin-top: 28px; border-radius: 2px; background: color-mix(in oklab, var(--txl) 30%, transparent); }
+.rl-wire { flex: none; width: 22px; height: 2px; margin-top: 17px; border-radius: 2px; background: color-mix(in oklab, var(--txl) 30%, transparent); }
 .rl-wire.lit { background: linear-gradient(90deg, var(--ok), var(--t)); }
-.rl-n { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 76px; min-width: 0; text-align: center; }
-.rl-n .o { width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 4px; border-radius: 16px; color: var(--t);
+.rl-n { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 82px; min-width: 0; text-align: center; }
+.rl-n .o { width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 2px; border-radius: 10px; color: var(--t);
   background: color-mix(in oklab, var(--t) 14%, var(--panel)); transition: box-shadow .3s, background .3s; }
 .rl-n b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--t11)/1.2 var(--ui-font); color: var(--txb); }
 .rl-n small { font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .14em; color: var(--t); }
@@ -8902,9 +8911,27 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .rl-file { display: flex; gap: 7px; }
 .rl-file span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .rl-file i { flex: none; font-style: normal; } .rl-file i.ok { color: var(--ok); } .rl-file i.bad { color: var(--err); }
-.rl-warn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: 500 var(--t105) var(--ui-font); color: var(--warn); }
 .rl-dirty { color: var(--warn); }
 .clg-acts button.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 10%, transparent); }
 .clg-acts button.warn:hover { background: color-mix(in oklab, var(--warn) 20%, transparent); }
 .clg-acts button:disabled { opacity: .6; cursor: wait; }
 .clg-t .gl-steps, .clg-t .gl-err, .clg-t .gl-wl, .clg-t .rl-dirty { margin-top: 10px; }
+
+/* The release readers (LiveReader, UpdateReader): a kicker over the title, the body scrolls,
+   and the action bar is pinned at the foot so the main button never scrolls out of view. */
+.rl-read { overflow: hidden; padding: 0; gap: 0; }
+.rl-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px 16px;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 14px), transparent); mask-image: linear-gradient(#000 calc(100% - 14px), transparent); }
+.rl-body > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out both; }
+.rl-kick { margin-bottom: 5px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .16em; color: var(--acc); }
+.rl-kick.ok { color: var(--ok); } .rl-kick.warn { color: var(--warn); } .rl-kick.bad { color: var(--err); }
+.rl-sha { margin-top: 4px; font: 500 var(--t10)/1.3 var(--mono); color: var(--txf); overflow-wrap: anywhere; }
+.rl-dirty > svg { flex: none; margin-top: 2px; }
+.rl-foot { flex: none; display: flex; flex-direction: column; gap: 7px; padding: 10px 14px 12px; border-top: 1px solid var(--line, var(--border));
+  background: var(--panel2, var(--panel)); }
+.rl-foot .clg-mline { margin: 0; padding: 0; border: 0; color: var(--txf); }
+.rl-foot .clg-acts { gap: 8px; }
+.rl-foot .clg-acts button { height: 36px; padding: 0 14px; font-size: var(--t12); }
+.rl-foot .clg-acts button.pri { --k: var(--acc); } .rl-foot .clg-acts button.ok { --k: var(--ok); } .rl-foot .clg-acts button.warn { --k: var(--warn); }
+.rl-foot .clg-acts button:is(.pri, .ok, .warn) { color: var(--acc-on); background: var(--k); border-color: var(--k); box-shadow: 0 6px 16px -8px var(--k); }
+.rl-foot .clg-acts button:is(.pri, .ok, .warn):hover:not(:disabled) { background: color-mix(in oklab, var(--k) 85%, white); }

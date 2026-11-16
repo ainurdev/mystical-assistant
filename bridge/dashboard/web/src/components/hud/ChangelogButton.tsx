@@ -282,13 +282,15 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     const onKey = (e: KeyboardEvent) => {
       if (zoom || busy) return;
       if (!((e.key === "Enter" || e.key === " ") && (e.target as Element | null)?.closest?.(".clg-new"))) setPlaying(false);
-      if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else close(); return; }
+      if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else { close(); btnRef.current?.focus(); } return; }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey); };
   }, [open, rows, q, zoom, busy]);
+  // Opening moves focus into the dialog (not onto a button: Enter mustn't restart anything by accident).
+  useEffect(() => { if (open) requestAnimationFrame(() => popRef.current?.focus({ preventScroll: true })); }, [open]);
   // the picked row stays in view as ↑ ↓ (or ▶ NEW) move it
   useEffect(() => { listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: "nearest" }); }, [pick, q]);
   // ▶ NEW: a change holds STEP_MS, a clip until it ends (its Stage calls next), at most 15 s
@@ -354,7 +356,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const item = (c: Change) => {
     const Ic = iconOf(c);
     return (
-      <button key={c.id} data-on={!sys && c === cur ? 1 : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(c.id); }}
+      <button key={c.id} data-on={!sys && c === cur ? 1 : undefined} aria-current={!sys && c === cur ? "true" : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(c.id); }}
         className={`clg-row${!sys && c === cur ? " on" : ""}${isNew(c) ? " new" : ""}${c.row.kind === "coming" ? " next" : ""}`}>
         <span className="ic"><Ic size={13} strokeWidth={1.8} aria-hidden /></span>
         <span className="w">
@@ -429,7 +431,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const sysItem = (k: Sys) => {
     const r = SYS_ROW[k];
     return (
-      <button key={k} data-on={sys === k ? 1 : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(k); }}
+      <button key={k} data-on={sys === k ? 1 : undefined} aria-current={sys === k ? "true" : undefined} onClick={() => { if (busy) return; setPlaying(false); setPick(k); }}
         className={`clg-row sys${sys === k ? " on" : ""}`} style={{ ["--t" as string]: r.tone }}>
         <span className="ic"><r.icon size={13} strokeWidth={1.8} aria-hidden /></span>
         <span className="w"><b><span className="a">{r.name}</span></b><span className="x">{r.text}</span></span>
@@ -439,7 +441,8 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   };
   const sysReader = (k: Sys) => k === "live"
     ? <LiveReader info={live!} reload={loadLive} onFeed={onFeed} onBusy={setBusy} onClose={close} />
-    : <UpdateReader key={k} info={upd!} side={k === "update" ? "pull" : "ship"} reload={loadUpd} onFeed={onFeed} onBusy={setBusy} onClose={close} />;
+    : <UpdateReader key={k} info={upd!} side={k === "update" ? "pull" : "ship"} reload={loadUpd} onFeed={onFeed} onBusy={setBusy} onClose={close}
+        onShip={() => setPick("ship")} />;
 
   // The icon's one badge is the most urgent thing; pips under it say which kinds wait, once two do.
   const going = busy || (!!live?.queued && (!!live.queued.restarting || !live.queued.turns.length));
@@ -459,16 +462,27 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     local ? `Ship — ${local} of yours` : "",
     unread ? `Changelog — ${unread} new` : "",
   ].filter(Boolean).join(" · ") || "Changelog — what changed in Mystical";
+  // A pop-out's way in is a real button (Later beside it); the card's own click is a mouse shortcut.
+  // These wait for an answer; only the news pop-out below (a change landed) times out, with its bar.
+  const coFoot = (foot: string, go: string, onGo: () => void, onX: () => void) => (
+    <div className="clg-co-f">
+      <button className="go" onClick={(e) => { e.stopPropagation(); onGo(); }}>{go}</button>
+      <button onClick={(e) => { e.stopPropagation(); onX(); }}>Later</button>
+      <span style={{ flex: 1 }} /><span>{foot}</span>
+    </div>
+  );
+  const coX = (onX: () => void) => (
+    <button className="x" title="Dismiss" aria-label="Dismiss" onClick={(e) => { e.stopPropagation(); onX(); }}><X size={15} strokeWidth={1.8} /></button>
+  );
   const callout = (icon: ReactNode, verb: string, when: string, title: string, body: string, foot: string, go: string, onGo: () => void, onX: () => void, cls = "") => (
-    <div className={`clg-co ${cls}`} style={out || undefined} role="status" onClick={onGo}>
+    <div className={`clg-co ${cls}`} style={out || undefined} onClick={onGo}>
       <div className="in">
         <div className="clg-co-h">{icon}<span className="v">{verb}</span><span className="w">{when}</span></div>
-        <div className="clg-co-t">{title}</div>
+        <div className="clg-co-t" role="status">{title}</div>
         <div className="clg-co-b">{body}</div>
-        <div className="clg-co-f"><span>{foot}</span><span style={{ flex: 1 }} /><span className="go">{go}</span></div>
-        <span className="bar" onAnimationEnd={(e) => { if (e.animationName === "clg-bar") onX(); }} />
+        {coFoot(foot, go, onGo, onX)}
       </div>
-      <button className="x" title="dismiss" aria-label="dismiss" onClick={(e) => { e.stopPropagation(); onX(); }}>×</button>
+      {coX(onX)}
     </div>
   );
 
@@ -495,17 +509,17 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
       {!fresh && updFresh && out && createPortal(callout(
         <ArrowDownToLine size={13} strokeWidth={1.8} className="clg-ic" />, updFresh.verb, ago(updFresh.at, now.getTime() / 1000),
         updFresh.title, updFresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · "),
-        `${Number(updFresh.meta.commits) || 0} commit${updFresh.meta.commits === 1 ? "" : "s"}`, "See what's coming ›",
+        `${Number(updFresh.meta.commits) || 0} commit${updFresh.meta.commits === 1 ? "" : "s"}`, "See what's coming",
         () => openOn("update"), () => setUpdFresh(null)), theme)}
       {!fresh && !updFresh && livePop && out && createPortal(callout(
         <RefreshCw size={13} strokeWidth={1.8} className="clg-ic" />, "NOT LIVE YET", "just now",
         `A change on disk needs a ${livePop.restart ? "restart" : "rebuild"}`, livePop.subject,
-        `${livePop.fresh} new · ${livePop.total} not live`, "Go live ›", () => openOn("live"), () => setLivePop(null), "gl-co"), theme)}
+        `${livePop.fresh} new · ${livePop.total} not live`, "Go live", () => openOn("live"), () => setLivePop(null), "gl-co"), theme)}
 
       {/* What just landed, out of the icon: 8 s like the bell's news (the bar's
           animation is the clock, so a hover that pauses it holds the popup). */}
       {fresh && out && createPortal(
-        <div key={fresh.id} className="clg-co" style={out} role="status" onClick={() => openOn(fresh.id)}>
+        <div key={fresh.id} className="clg-co" style={out} onClick={() => openOn(fresh.id)}>
           <div className="in">
             {pics.length > 0 && !picGone && (
               <div className="clg-co-pic"><img src={mediaUrl(pics[0].media!.still!)} alt="" onError={() => setPicGone(true)} />
@@ -518,16 +532,12 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
               <span className="v">{fresh.verb}</span>
               <span className="w">{ago(fresh.at, now.getTime() / 1000)}</span>
             </div>
-            <div className="clg-co-t">{fresh.title}</div>
+            <div className="clg-co-t" role="status">{fresh.title}</div>
             <div className="clg-co-b">{fresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · ")}</div>
-            <div className="clg-co-f">
-              <span>{`${fresh.meta.commits ?? 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}</span>
-              <span style={{ flex: 1 }} />
-              <span className="go">See what changed ›</span>
-            </div>
+            {coFoot(`${fresh.meta.commits ?? 0} commit${fresh.meta.commits === 1 ? "" : "s"}`, "See what changed", () => openOn(fresh.id), () => setFresh(null))}
             <span className="bar" onAnimationEnd={(e) => { if (e.animationName === "clg-bar") setFresh(null); }} />
           </div>
-          <button className="x" title="dismiss" aria-label="dismiss" onClick={(e) => { e.stopPropagation(); setFresh(null); }}>×</button>
+          {coX(() => setFresh(null))}
         </div>,
         theme,
       )}
@@ -536,9 +546,9 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
           escapes the rail's animated ancestors; the bell's frame (.ntf-pop). */}
       {pop && createPortal(
         // hidden, not shut, under a picture open full size: the lightbox shares its z-index
-        <div ref={popRef} className="ntf-pop clg-pop" style={{ position: "fixed", zIndex: 96, width: W, ...pop, visibility: zoom ? "hidden" : undefined }}>
+        <div ref={popRef} className="ntf-pop clg-pop" role="dialog" aria-label={pinned.length ? "Updates and changelog" : "Changelog"} tabIndex={-1} style={{ position: "fixed", zIndex: 96, width: W, ...pop, visibility: zoom ? "hidden" : undefined }}>
           <div className="ntf-head">
-            <span className="t">CHANGELOG</span>
+            <span className="t">{pinned.length ? "UPDATES" : "CHANGELOG"}</span>
             {unseen.length > 0 && (
               <button className={`clg-new${playing ? " on" : ""}`} onClick={play}
                 title={playing ? "Stop" : `Walk through the ${unseen.length} new change${unseen.length === 1 ? "" : "s"}`}>
@@ -566,8 +576,9 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
           ) : (
             <div className="clg-split" onPointerEnter={() => setPlaying(false)}>
               <div className="clg-list mscroll" ref={listRef}>
+                {pinned.length > 0 && <div className="rl-sec">WAITING ON YOU</div>}
                 {pinned.map(sysItem)}
-                {pinned.length > 0 && list.length > 0 && <div className="rl-rule" />}
+                {pinned.length > 0 && list.length > 0 && <div className="rl-sec rule">WHAT CHANGED</div>}
                 {list.map(item)}
                 {!list.length && <div className="clg-none">Nothing about “{qq.trim()}” in the last {all.length} changes.</div>}
               </div>
