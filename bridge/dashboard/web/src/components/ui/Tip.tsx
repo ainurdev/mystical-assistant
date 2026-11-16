@@ -10,10 +10,10 @@ import { Keys } from "./Keys";
 const DELAY = 400;
 
 // `keys`: the control's shortcut, drawn as keycaps after the text (a control's data-key).
-function Bubble({ text, keys, inner }: { text: string; keys?: string; inner?: React.Ref<HTMLSpanElement> }) {
+function Bubble({ text, keys, inner, width = 300 }: { text: ReactNode; keys?: string; inner?: React.Ref<HTMLSpanElement>; width?: number }) {
   return (
     <span ref={inner} style={{ display: keys ? "flex" : "block", alignItems: "center", gap: 12,
-                   width: "max-content", maxWidth: 300, whiteSpace: "pre-line",
+                   width: "max-content", maxWidth: width, whiteSpace: "pre-line",
                    border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
                    background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
                    boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
@@ -26,8 +26,9 @@ function Bubble({ text, keys, inner }: { text: string; keys?: string; inner?: Re
 // Explicit wrapper — for triggers that exist only to explain something (the ⓘ
 // buttons), where the tip is the point and click should pin it open.
 // ponytail: one absolutely-positioned span, no floating-ui, no portal.
-export function Tip({ text, anchor = "center", pin = true, children }: {
-  text: string;
+export function Tip({ text, anchor = "center", pin = true, width, children }: {
+  text: ReactNode; // a string, or a short note with its own markup (the Tickets switch's)
+  width?: number; // the box's max width; 300 unless a note needs more
   anchor?: "center" | "right"; // "right" for the last cluster — a centred box would hang off the edge
   pin?: boolean; // off when the trigger does something of its own — the click closes the tip instead
   children: ReactNode;
@@ -53,7 +54,7 @@ export function Tip({ text, anchor = "center", pin = true, children }: {
         <span role="tooltip"
           style={{ position: "absolute", bottom: "100%", paddingBottom: 7, zIndex: 40, pointerEvents: "none",
                    ...(anchor === "right" ? { right: 0 } : { left: "50%", transform: "translateX(-50%)" }) }}>
-          <Bubble text={text} />
+          <Bubble text={text} width={width} />
         </span>
       )}
     </span>

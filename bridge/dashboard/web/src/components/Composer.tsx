@@ -568,8 +568,10 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
           )}
           {sheetPick.tickets !== undefined && (
             <div className="fs-tk">
-              <label className="fs-sw" title="approved tickets build as sessions, every ready one at once, merged at the end">
-                <Switch on={sheetPick.tickets} label={`${pickName} tickets`} onClick={() => flowChange({ flow: sheetPick.id, key: "tickets", value: !sheetPick.tickets })} />Tickets</label>
+              <Tip text={TICKETS_WHY} pin={false} width={340}>
+                <label className="fs-sw">
+                  <Switch on={sheetPick.tickets} label={`${pickName} tickets`} onClick={() => flowChange({ flow: sheetPick.id, key: "tickets", value: !sheetPick.tickets })} />Tickets</label>
+              </Tip>
               <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
                 <Switch on={!sheetPick.approve} label={`${pickName} auto-start`} onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />Auto-start</label>
             </div>
@@ -584,6 +586,19 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
     </div>
   );
 }
+
+// The Tickets switch's hover note: what a ticket gives you that a sub agent doesn't (design: flow-sheet a4-tickets-tip).
+const TICKETS_WHY = (
+  <span className="fs-why">
+    <b className="fs-why-h">Why tickets instead of sub agents</b>
+    <span className="fs-why-l"><b>Their own chat.</b> Each ticket is a real session. You can open it, watch it work, and answer its questions directly.</span>
+    <span className="fs-why-l"><b>Their own branch.</b> Parallel work doesn't collide, and each ticket's changes are merged on purpose.</span>
+    <span className="fs-why-l"><b>A plan you can see.</b> Tickets are drawn as waves, and a ticket starts only after the tickets it depends on are done.</span>
+    <span className="fs-why-l"><b>They can be retried.</b> A failed ticket can be run again without redoing the rest.</span>
+    <span className="fs-why-l"><b>They last.</b> A ticket keeps its record after the turn ends. A sub agent is gone when the turn ends.</span>
+    <span className="fs-why-f">Sub agents are still best for quick lookups, searches and reviews. Use tickets when two or more parts can be built at the same time.</span>
+  </span>
+);
 
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,

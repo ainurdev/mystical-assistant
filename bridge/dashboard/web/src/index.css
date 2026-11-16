@@ -5219,6 +5219,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
 .fs-detail .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }   /* NEXT: ⚡ beside AUTO */
 .fs-tk { display: flex; align-items: center; gap: 14px; height: 20px; }
+.fs-why { display: flex; flex-direction: column; gap: 5px; white-space: normal; text-transform: none; letter-spacing: .2px; font-weight: 400; }
+.fs-why b { color: var(--txb); font-weight: 700; }
+.fs-why .fs-why-h { margin-bottom: 2px; font-size: var(--t8); letter-spacing: 1.6px; text-transform: uppercase; color: var(--txh); }
+.fs-why-l { position: relative; padding-left: 12px; }
+.fs-why-l::before { content: ""; position: absolute; left: 0; top: .62em; width: 4px; height: 4px; background: var(--acc); }
+.fs-why-f { margin-top: 4px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--acc) 20%, transparent); color: var(--txl); }
 /* SETTINGS ▸ AI MANAGEMENT: the same sheet, in the page rather than hung over the prompt card */
 .pb-pp.fs-sheet[data-inline] { position: static; z-index: auto; width: 100%; max-width: 680px; box-shadow: none; animation: none; }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
