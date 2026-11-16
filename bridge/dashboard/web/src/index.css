@@ -4518,14 +4518,15 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
+/* the buttons inside are menu rows. Not the Updates popover's (.clg-pop): it is a dialog for the keyboard, and its buttons keep their own styles */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
   font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
 /* a row loses its rule; a boxed button (UPDATE's footer, .upd-btn; FLOWS' Runs on, .fs-runs) keeps its whole border */
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
   border-bottom-color: transparent !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
   background: var(--ac-08) !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [role="dialog"]:not(.agm)) [style*="acc) 10%"] { background: var(--f-you) !important; }
