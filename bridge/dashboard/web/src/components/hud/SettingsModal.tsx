@@ -96,8 +96,9 @@ import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
 import { TONES, chime, push, pushGranted, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
-import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
-import { latestPerFamily } from "../../models";
+import { EFFORTS, FlowsSettings, PERMS, PONYTAILS } from "../Composer";
+import { changeFlows, useFlowSettings } from "../../lib/flowsettings";
+import { latestPerFamily, modelRows } from "../../models";
 import { UpdateButton } from "./UpdateButton";
 import { restartBridge } from "../../lib/restart";
 import { takeSettingsFocus } from "../../lib/opensettings";
@@ -266,6 +267,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
+  { tab: "aimgmt", sec: "FLOWS", terms: "flows flow steps grill design build refactor fix ship ask review retro audit tickets guess compact wait go on" },
   { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens concise replies subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
   { tab: "aimgmt", sec: "COUNCIL", terms: "council review reviewers codex claude bar score pass rounds stop early origin push code-review" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
@@ -3455,6 +3457,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
     auth: mcp.servers.filter((x) => !x.ok && x.status.trim().startsWith("!")).length,
     bad: mcp.servers.filter((x) => !x.ok && !x.status.trim().startsWith("!")).length,
   };
+  const flowCfg = useFlowSettings();
   const extrasAll = Object.keys(aiFeatures).filter((k) => !FLOW_SWITCHES.has(k)).length;   // the FLOWS sheet's aren't extras' rows
   const extrasOn = Object.entries(aiFeatures).filter(([k, on]) => on && !FLOW_SWITCHES.has(k)).length;
   // Council's Codex "Sign in": opens the Accounts fold on its AGENTS list.
@@ -3720,10 +3723,18 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         </>}>
         {accountsBody}
       </AimFold>
-      <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS", "FLOWS"]} openSec={openSec}
+      <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS"]} openSec={openSec}
         count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
-        hint="model calls the bridge makes on top of your turns, and the flows your prompts follow">
-        <ExtrasFold models={models} />
+        hint="model calls the bridge makes on top of your turns">
+        <ExtrasFold />
+      </AimFold>
+      {/* design-drafts/flow-settings: Flows is its own fold, its master switch in the head */}
+      <AimFold id="flows" title="Flows" secs={["FLOWS"]} openSec={openSec}
+        count={flowCfg ? `${flowCfg.flows.filter((f) => f.on).length} of ${flowCfg.flows.length} on` : null}
+        hint="the steps a prompt follows once a flow is lit in the prompt box"
+        right={flowCfg && <label className="aim-hint aim-flowson">for every session
+          <Switch on={flowCfg.on} label="Flows on" onClick={() => void changeFlows({ key: "on", value: !flowCfg.on }).catch((e: Error) => notify("error", e.message))} /></label>}>
+        <FlowsSettings models={modelRows(models)} />
       </AimFold>
       <SaversFold openSec={openSec} />
       <CouncilFold openSec={openSec} projects={projects} onSignIn={() => {

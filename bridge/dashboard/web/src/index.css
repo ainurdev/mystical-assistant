@@ -5203,61 +5203,64 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-kg.fs-gear[aria-expanded="true"] { background: color-mix(in oklab, var(--acc) 18%, transparent); color: var(--txb); }
 .pb-kinds[data-dim] > :is(.fs-gear, .fs-gsep) { opacity: 1; cursor: pointer; }
 .fs-off { flex: none; padding-left: 4px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
-.pb-pp.fs-sheet { left: 0; right: auto; width: min(600px, 100%); }
+.pb-pp.fs-sheet { left: 0; right: auto; width: min(660px, 100%); }
 .fs-sheet > h4 > span { display: inline-flex; align-items: center; gap: 4px; }
 .fs-sw { display: inline-flex; align-items: center; gap: 7px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); cursor: pointer; }
 .fs-sw .set-toggle { transform: scale(.66); transform-origin: left center; margin-right: -10px; }
 /* A · STEP LIST: flows | the picked one. The fixed height keeps the card still as you pick and fold. */
-.fs-body { display: grid; grid-template-columns: 168px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 300px; margin: 0 -12px; border-top: 1px solid var(--line, var(--border)); }
+.fs-body { display: grid; grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 340px; margin: 0 -12px; border-top: 1px solid var(--line, var(--border)); }
 .fs-list { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 8px; border-right: 1px solid var(--line, var(--border)); }
-.fs-row { position: relative; display: flex; align-items: center; gap: 8px; height: 32px; flex: none; padding: 0 2px 0 10px; border-radius: var(--f-rad-s, 0);
-  color: var(--txh); font-size: var(--t10); cursor: pointer; outline-offset: -1px; }
+.fs-row { position: relative; display: flex; align-items: center; gap: 8px; height: 36px; flex: none; padding: 0 2px 0 10px; border-radius: var(--f-rad-s, 0);
+  color: var(--txh); font-size: var(--t12); cursor: pointer; outline-offset: -1px; }
 .fs-row > svg { flex: none; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
 .fs-row > .fs-name { flex: 1; min-width: 0; font: inherit; font-weight: 800; letter-spacing: .8px; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
-.fs-row > small { font-size: var(--t8); color: var(--txl); letter-spacing: .4px; }
+.fs-row > small { font-size: var(--t9); color: var(--txl); letter-spacing: .4px; font-variant-numeric: tabular-nums; }
 /* every switch in the sheet but TicketMap's shared .fs-sw: small, hung from its right edge */
 :is(.fs-sheet > h4, .fs-row, .fs-st, .fs-g) .set-toggle { transform: scale(.66); transform-origin: right center; margin-left: -10px; }
 .fs-row[data-sel] { background: color-mix(in oklab, var(--acc) 14%, transparent); color: var(--txb); }
 .fs-row[data-sel]::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; background: var(--acc); }
 .fs-row[data-off] > :not(span) { opacity: .42; }
-.fs-row.fs-gen { margin-top: auto; padding-right: 8px; color: var(--txd); }
+.fs-row.fs-gen { margin: auto -8px -8px; height: 40px; padding: 0 16px 0 18px; border-radius: 0; border-top: 1px solid var(--line, var(--border)); color: var(--txd); }
 .fs-row.fs-gen > svg { color: inherit; }
-.fs-pane { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 12px 14px 10px 16px; }
-.fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 18px; flex: none; font-size: var(--t10); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
+.fs-pane { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; padding: 14px 16px 12px 18px; }
+.fs-dh { display: flex; align-items: baseline; gap: 7px; min-width: 0; height: 20px; flex: none; font-size: var(--t12); font-weight: 800; letter-spacing: .8px; color: var(--txb); }
 .fs-dh > b { font-weight: inherit; }
 .fs-dh > svg { align-self: center; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
-.fs-dh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: .2px; font-size: var(--t9); color: var(--txl); }
+.fs-dh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: .2px; font-size: var(--t11); color: var(--txl); }
 .fs-steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-.fs-st { position: relative; display: grid; grid-template-columns: 16px 64px minmax(0, 1fr) 28px; align-items: center; gap: 8px; height: 24px; }
-.fs-st > i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-style: normal; font-size: var(--t8); font-weight: 800;
+.fs-st { position: relative; display: grid; grid-template-columns: 20px 76px minmax(0, 1fr) 30px; align-items: center; gap: 10px; height: 30px; }
+.fs-st > i { position: relative; z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-style: normal; font-size: var(--t9); font-weight: 800;
   color: var(--txb); background: color-mix(in oklab, var(--acc) 30%, transparent); }
-.fs-st:not(:last-child)::after { content: ""; position: absolute; left: 8px; top: 18px; height: 12px; width: 1px; background: color-mix(in oklab, var(--acc) 30%, transparent); }
-.fs-st > b { font-size: var(--t9); font-weight: 800; letter-spacing: 1px; color: var(--txh); }
-.fs-st > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t9); color: var(--txl); }
+.fs-st:not(:last-child)::after { content: ""; position: absolute; left: 10px; top: 24px; height: 12px; width: 1px; background: color-mix(in oklab, var(--acc) 30%, transparent); }
+.fs-st > b { font-size: var(--t11); font-weight: 800; letter-spacing: 1px; color: var(--txh); text-transform: uppercase; }
+.fs-st > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t12); color: var(--txd); }
 .fs-st > em { justify-self: end; display: grid; place-items: center; width: 22px; color: var(--txl); }
 .fs-st .set-toggle { justify-self: end; }
 .fs-st[data-off] > i { background: transparent; box-shadow: inset 0 0 0 1px var(--line2, var(--border)); color: var(--txl); }
 .fs-st[data-off] > b { text-decoration: line-through; color: var(--txl); }
 .fs-st[data-off] > span { opacity: .6; }
 .fs-st[data-pony]:not([data-off]) > i { box-shadow: inset 0 0 0 1px var(--acc); background: transparent; }   /* PONYTAIL off: no REVIEW after a here build */
-.fs-kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 24px; }
-.fs-kv > span, .fs-pick > span { font-size: var(--t8); font-weight: 700; letter-spacing: 1.6px; color: var(--txl); }
-.fs-kv .pb-sg { height: 24px; }
-.fs-kv .pb-sg button, .fs-g .pb-sg > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: var(--t9); }
-.fs-build { display: flex; flex-direction: column; gap: 4px; }
-.fs-build .fs-sw { text-transform: none; letter-spacing: .2px; font-weight: 400; font-size: var(--t9); }
+.fs-kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 28px; }
+.fs-kv > span { font-size: var(--t11); font-weight: 700; letter-spacing: 1px; color: var(--txl); }
+.fs-pick > span { font-size: var(--t8); font-weight: 700; letter-spacing: 1.6px; color: var(--txl); }
+/* a two-way pick is as wide as its words, its buttons one width */
+:is(.fs-kv, .fs-g) .pb-sg { width: max-content; height: 28px; }
+:is(.fs-kv, .fs-g) .pb-sg button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 22px; min-width: 84px; padding: 0 12px; font-size: var(--t11); white-space: nowrap; }
+:is(.fs-kv, .fs-g) .pb-sg button > svg { flex: none; }
+.fs-build { display: flex; align-items: center; gap: 14px; }
+.fs-build .fs-sw { text-transform: none; letter-spacing: .2px; font-weight: 400; font-size: var(--t11); color: var(--txd); }
 .fs-kv[data-top] { align-items: start; }
 .fs-kv[data-top] > span { padding-top: 6px; }
 .fs-runs-w { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.fs-runs { appearance: none; display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; min-width: 0; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
-  background: none; font: inherit; font-size: var(--t9); color: var(--txh); cursor: pointer; text-align: left; }
+.fs-runs { appearance: none; display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; min-width: 0; border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0);
+  background: none; font: inherit; font-size: var(--t11); color: var(--txh); cursor: pointer; text-align: left; }
 .fs-runs > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txl); }
 .fs-runs > svg { flex: none; margin-left: auto; color: var(--txl); transition: transform .15s; }
 .fs-runs[aria-expanded="true"] { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
 .fs-runs[aria-expanded="true"] > svg { transform: rotate(180deg); }
 .fs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
 .fs-pick { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.fs-pick .drop-btn { height: 26px; font-size: var(--t9) !important; }   /* the sheet's size, not the chips' */
+.fs-pick .drop-btn { height: 28px; font-size: var(--t10) !important; }   /* the sheet's size, not the chips' */
 /* AS TICKETS fills its half of the segment, and its note hangs above with an arrow on it */
 .pb-sg > .fs-tipw { flex: 1 !important; display: flex !important; }
 .pb-sg > .fs-tipw > button { flex: 1; }
@@ -5271,15 +5274,49 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-why li > b { color: var(--txb); }
 .fs-why > span { padding-top: 8px; border-top: 1px solid var(--line, var(--border)); color: var(--txl); }
 .fs-gl { display: flex; flex-direction: column; }
-.fs-g { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px solid var(--line, var(--border)); }
+.fs-g { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 50px; border-bottom: 1px solid var(--line, var(--border)); }
 .fs-g:last-child { border-bottom: 0; }
-.fs-g > div > b { display: block; font-size: var(--t10); font-weight: 600; color: var(--txh); }
-.fs-g > div > span { font-size: var(--t9); color: var(--txl); }
-.fs-g .pb-sg { height: 24px; width: 200px; }
+.fs-g > div > b { display: block; font-size: var(--t12); font-weight: 600; color: var(--txh); }
+.fs-g > div > span { font-size: var(--t11); color: var(--txl); }
 .fs-sheet .pb-pf > button { display: inline-flex; align-items: center; gap: 4px; }
 .fs-sheet .pb-pf [data-tone="err"] { color: var(--err); }
-/* SETTINGS ▸ AI MANAGEMENT: the same sheet, in the page rather than hung over the prompt card */
-.pb-pp.fs-sheet[data-inline] { position: static; z-index: auto; width: 100%; max-width: 680px; box-shadow: none; animation: none; }
+/* SETTINGS ▸ AI MANAGEMENT ▸ Flows (Composer FlowsSettings, design-drafts/flow-settings a1): the
+   sheet's parts at the page's scale. Flow cards | the picked one, one height whichever is picked. */
+.aim-flowson { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.fss-body { display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: 412px; gap: 10px; margin-top: 10px; }
+.fss-list { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fss-fr { display: flex; align-items: center; gap: 10px; flex: 1; min-height: 0; padding: 0 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); cursor: pointer; transition: border-color .15s, background .15s; }
+.fss-fr > button { appearance: none; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 0; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.fss-fr > button > b { font: 600 13px var(--f); color: var(--txb); }
+.fss-fr > button > small { font-size: 11.5px; color: var(--txl); }
+.fss-fr[data-sel] { border-color: color-mix(in oklab, var(--acc) 55%, var(--l)); background: color-mix(in oklab, var(--acc) 9%, var(--panel)); }
+.fss-fr[data-sel] .aim-xic { background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); }
+.fss-fr[data-off] > :is(button, .aim-xic) { opacity: .5; }
+.fss-det { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; padding: 16px 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); }
+.fss-dh { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.fss-dh > b { font: 600 15px var(--f); color: var(--txh); }
+.fss-dh > .aim-xbtn { margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 5px; }
+.fss .fs-steps { flex: none; }
+.fss .fs-st { grid-template-columns: 22px 96px minmax(0, 1fr) 44px; gap: 12px; height: 38px; border-bottom: 1px solid var(--l); }
+.fss .fs-st::after { display: none; }
+.fss .fs-st > i { width: 22px; height: 22px; font: 600 11px var(--mono); background: var(--panel3); color: var(--txd); }
+.fss .fs-st > b { font: 500 13px var(--f); letter-spacing: 0; text-transform: capitalize; color: var(--txb); }
+.fss .fs-st > span { font-size: 12.5px; color: var(--txd); }
+.fss .fs-st .set-toggle { transform: none; margin: 0; }
+.fss .fs-st > em { width: 34px; }
+.fss .fs-st[data-off] > b { text-decoration: none; opacity: .45; }
+.fss .fs-st[data-off] > :is(i, span) { opacity: .45; box-shadow: none; }
+.fss .fs-kv { grid-template-columns: 110px minmax(0, 1fr); min-height: 34px; }
+.fss .fs-steps + .fs-kv { margin-top: auto; }
+.fss .fs-kv > span { font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--txd); }
+.fss .aim-vfield.row > .pb-sg { flex: none; flex-direction: row; width: max-content; }
+.fss :is(.fs-kv, .aim-vfield) .pb-sg { height: 32px; padding: 3px; border-radius: 9px; border-color: var(--l); background: var(--panel3); }
+.fss :is(.fs-kv, .aim-vfield) .pb-sg button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 84px; padding: 0 12px; white-space: nowrap; height: 26px; border-radius: 6px; font: 12px var(--f); letter-spacing: 0; text-transform: none; color: var(--txd); }
+.fss :is(.fs-kv, .aim-vfield) .pb-sg button[aria-pressed="true"] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--l2); }
+.fss .fs-build .fs-sw { font-size: 12px; }
+.fss .fs-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fss .fs-pick > span { display: none; }
+.fss .fs-pick .drop-btn { height: 32px; font-size: 12.5px !important; }
 /* the rail folds by the box's width (prompt-kinds Ruling 11; the composer's content box is the
    card's width). Under 700px the preset keeps its glyph and model and usage its ring and %; under
    480px the kinds are glyphs (the lit one keeps its ink, AUTO goes), the facts go, the preset is
