@@ -22,20 +22,19 @@ type Run = { steps: Step[]; err?: { name: string; output: string } };
 export const PART_ICON: Record<LivePart["key"], LucideIcon> = { dashboard: Monitor, miniapp: Smartphone, bridge: Server };
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-/** A reader's stage for a job: its parts in a row, each lit by its state. The changelog's
- *  picture box, drawn — so Go live / Update / Ship read like any change. */
+/** A reader's stage for a job: its parts in a thin strip, each lit by its state, so
+ *  Go live / Update / Ship read like any change without pushing their buttons down. */
 export type FlowNode = { key: string; icon: LucideIcon; name: string; tag: string; tone: string; state?: Step["state"] | "next" };
-export function Flow({ chip, nodes, bad }: { chip: string; nodes: FlowNode[]; bad?: boolean }) {
+export function Flow({ nodes }: { nodes: FlowNode[] }) {
   return (
     <div className="clg-stage rl-flow">
-      <span className={`clg-chip${bad ? " bad" : ""}`}><b>{chip}</b></span>
       {nodes.map((n, i) => {
         const Ic = n.state === "ok" ? Check : n.state === "bad" ? X : n.icon;
         return (
           <div key={n.key} className="rl-step">
             {i > 0 && <i className={`rl-wire${n.state === "ok" || n.state === "now" ? " lit" : ""}`} style={{ ["--t" as string]: n.tone }} />}
             <div className={`rl-n ${n.state ?? ""}`} style={{ ["--t" as string]: n.tone }}>
-              <span className="o">{n.state === "now" ? <LoaderCircle size={22} strokeWidth={1.8} className="gl-spin" /> : <Ic size={22} strokeWidth={1.8} />}</span>
+              <span className="o">{n.state === "now" ? <LoaderCircle size={16} strokeWidth={1.8} className="gl-spin" /> : <Ic size={16} strokeWidth={1.8} />}</span>
               <b>{n.name}</b>
               <small>{n.tag}</small>
             </div>
@@ -154,7 +153,8 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
   if (restart || parts.some((p) => p.key === "dashboard"))
     nodes.push({ key: "reload", icon: RefreshCw, name: "Reload", tag: "THIS PAGE", tone: "var(--txl)", state: "next" });
   const chip = view === "failed" ? "DIDN'T GO LIVE" : view === "going" ? "GOING LIVE"
-    : view === "queued" ? `WAITS ON ${plural(info.queued?.turns.length ?? 0, "TURN")}` : `NEEDS ${verb(parts)}`;
+    : view === "queued" ? `WAITS ON ${plural(info.queued?.turns.length ?? 0, "TURN")}`
+    : `NOT LIVE${info.commits ? ` · ${info.commits} COMMIT${info.commits === 1 ? "" : "S"}` : ""}`;   // the strip already says what it needs
 
   const builds = parts.filter((p) => p.act === "rebuild").map((p) => `the ${p.name === "Dashboard" ? "dashboard" : p.name}`).join(" and ");
   const how = restart ? `${builds ? `Builds ${builds}, restarts` : "Restarts"} the bridge, then reloads this page.`
@@ -183,14 +183,13 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
   const tail = (out: string) => out.trim().split("\n").slice(-12).join("\n");
 
   return (
-    <div className="clg-read mscroll">
-      <Flow chip={chip} nodes={nodes} bad={view === "failed"} />
+    <div className="clg-read rl-read">
+      <div className="rl-body mscroll">
+      <Flow nodes={nodes} />
       <div className="clg-t">
-        <div className="h">
-          <b>{title}</b>
-          {view === "peek" && <span className="clg-tag">LIVE</span>}
-          <span className="tm">{info.running && info.disk && info.running !== info.disk ? `${info.running} → ${info.disk}` : `⎇ ${info.branch ?? ""}`}</span>
-        </div>
+        <div className={`rl-kick${view === "failed" ? " bad" : ""}`}>{chip}</div>
+        <div className="h"><b>{title}</b></div>
+        <div className="rl-sha">{info.running && info.disk && info.running !== info.disk ? `running ${info.running} → on disk ${info.disk}` : `⎇ ${info.branch ?? ""}`}</div>
         {view === "peek" && <div className="gl-cm rl-cm">
           {commits.slice(0, 4).map((c) => <div key={c.sha}><b>{c.sha}</b>{c.subject}</div>)}
           {commits.length > 4 && <div className="more">+ {plural(commits.length - 4, "more commit")}</div>}
@@ -198,6 +197,8 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
           {parts.filter((p) => p.unknown).map((p) => <div key={p.key} className="more">{p.name}: {p.act === "restart" ? "a restart records what it runs" : "rebuilding it records what it's built from"}</div>)}
           {!commits.length && !dirty && !parts.some((p) => p.unknown) && <div className="more">{plural(Math.max(0, ...parts.map((p) => p.files)), "file")} changed</div>}
         </div>}
+        {view === "peek" && waitable && <div className="gl-turns rl-dirty"><TriangleAlert size={13} strokeWidth={1.8} />
+          <span>{plural(turns.length, "turn")} running. Going live now stops {turns.length === 1 ? "it" : "them"}; {turns.length === 1 ? "it resumes" : "they resume"} after the restart.</span></div>}
         {(view === "going" || (view === "failed" && run)) && run && <div className="gl-steps">{run.steps.map(stepRow)}</div>}
         {view === "queued" && info.queued && <>
           <div className="x">{!going
@@ -214,24 +215,26 @@ export function LiveReader({ info, reload, onFeed, onBusy, onClose }: {
           <div className="gl-calm">Nothing restarted. This page and the bridge still run the code they had.</div>
         </>}
       </div>
+      </div>
+      <div className="rl-foot">
       <div className="clg-acts">
         {view === "peek" && <>
+          <button className="pri" onClick={() => void goLive()}><RefreshCw size={14} strokeWidth={2} />{waitable ? "Go live now" : cap(verb(parts))}</button>
           {waitable && <button onClick={() => void wait()}>After {plural(turns.length, "turn")}</button>}
-          <button className="pri" onClick={() => void goLive()}><RefreshCw size={12} strokeWidth={1.8} />{waitable ? "Go live now" : cap(verb(parts))}</button>
-          {waitable && <span className="rl-warn"><TriangleAlert size={12} strokeWidth={1.8} />{plural(turns.length, "turn")} resume after</span>}
         </>}
         {view === "going" && <button className="pri" disabled>
           <LoaderCircle size={12} strokeWidth={1.8} className="gl-spin" />{run?.steps.some((s) => s.act === "restart" && s.state === "now") ? "Restarting…" : "Building…"}</button>}
         {view === "queued" && <>
-          <button onClick={() => void drop()} disabled={going}>Cancel the wait</button>
           <button className="pri" onClick={() => void goLive()} disabled={going}>{going ? "Going live…" : "Go live now"}</button>
+          <button onClick={() => void drop()} disabled={going}>Cancel the wait</button>
         </>}
         {view === "failed" && err && <>
-          <button onClick={() => void drop()}>Dismiss</button>
           <button className="pri" onClick={() => fix(err)}>▸ Fix with Claude</button>
+          <button onClick={() => void drop()}>Dismiss</button>
         </>}
       </div>
       <div className="clg-mline"><span>{view === "going" && restart ? "The boot screen covers the few seconds it's down." : how}</span></div>
+      </div>
     </div>
   );
 }
