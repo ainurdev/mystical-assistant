@@ -597,6 +597,15 @@ def test_each_continue_with_code_gets_a_branch_of_its_own(riv):
     assert team.continue_plan(third)["branch"] == branch + "-3"
 
 
+def test_their_code_lands_on_a_branch_named_after_their_feature_branch(riv):
+    _checkout("/ainurhq/atlas", "ainurhq/atlas")
+    theirs = _session_share(riv, {"repo": "ainurhq/atlas", "code": True, "branch": "fix/NRA-61-Login redirect"})
+    assert team.continue_plan(theirs)["branch"] == "from-erfan/nra-61-login-redirect"
+    for no_feature in ("main", "1383914"):                     # the default branch, a detached HEAD: the title
+        share = _session_share(riv, {"repo": "ainurhq/atlas", "code": True, "branch": no_feature})
+        assert team.continue_plan(share)["branch"] == "from-erfan/done-tasks-still-show-due-alerts"
+
+
 def test_continue_attaches_each_picture_once(riv):
     """A picture that was a turn's attachment is also linked into that turn's folder."""
     doc = {"v": 1, "title": "t", "turns": [{"prompt": "p", "attachments": ["pic-1.png"],
