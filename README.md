@@ -318,11 +318,37 @@ mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)
 mystical export     pack this machine up for a new one (one file)
 mystical import F   replay that file on the new machine (--dry-run to preview)
+mystical prompt --cwd DIR "..."   hand it a prompt from a script; prints a run id (--wait: the final response)
+mystical run-status ID   where that run stands (--json, --wait)
+mystical runs       recent runs (--client NAME, --json)
+mystical run-cancel ID   stop one
 mystical app        macOS: build + install Mystical.app into ~/Applications
 mystical app        Windows (WSL): build + install Mystical.exe into %LOCALAPPDATA%\Programs\Mystical
 mystical app open   open it (macOS, Windows)
 mystical app        Linux: start the tray icon now (it also comes up at login)
 ```
+
+**From another program**
+
+Anything on this machine can hand the bridge a prompt and get the answer back.
+The run is a normal session in the dashboard (titled `atlas: ...` below), so you
+can watch it, answer its questions or take it over, and it gets the same usage
+limit handling and account fallback as your own.
+
+```sh
+mystical prompt --client atlas --cwd ~/projects/atlas --wait 3600 @job-prompt.md
+# stdout: the session's final reply · exit 0 done, 4 failed, 5 cancelled, 6 still going
+id=$(mystical prompt --cwd ~/projects/atlas "Summarise yesterday's commits")
+mystical run-status "$id" --json     # {"id": ..., "status": "running", "session_url": ..., "response": null, ...}
+```
+
+It only starts sessions in git repositories under `BASE_PATH` (or the folders in
+`RUN_API_DIRS`), two at a time (`RUN_API_CONCURRENCY`) with the rest queued, in
+the permission mode a dashboard session there would get. `--model sonnet`
+(and `--effort low|medium|high`) picks the model for one run; without it a run
+gets `RUN_API_MODEL`, which is `haiku`, the lowest, unless you set another
+(empty = the bridge's normal default). The HTTP routes, the
+JSON and every exit code: [docs/superpowers/specs/local-run-api.md](docs/superpowers/specs/local-run-api.md).
 
 **On a Mac**
 

@@ -135,6 +135,7 @@ import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
 import { WorkPanel } from "./components/WorkPanel";
 import { workCall, workGet } from "./lib/readapi";
+import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { CouncilPanel } from "./components/hud/CouncilPanel";
@@ -2736,6 +2737,12 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [multiOn, sessionId]);
 
+  // The chat's code-like words, for the composer to complete. Only on a new turn or a finished one:
+  // a streamed chunk doesn't change what's worth offering.
+  const turnsDone = turns.filter((t) => t.status !== "running").length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const chatWords = useMemo(() => codeWords(turns), [sessionId, turns.length, turnsDone]);
+
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
   // HOME's sky follows the hour; the cap holds its top while HOME is open.
   const [almanacAsk, setAlmanacAsk] = useState(0); // HOME's big clock bumps it: the cap's Almanac opens
@@ -3565,6 +3572,8 @@ export function App() {
                 // behind a running turn. force skips the relevance hold: the PR
                 // is this session's own work.
                 onSendText={(text) => void send(text, [], { force: true })}
+                onSteerText={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }}
+                onStopTurn={() => void stop()}
                 onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
                 // RESOLVE IN A NEW SESSION: a fresh session in this session's own
                 // checkout (its worktree, else the project), the prompt as its first turn.
@@ -3619,6 +3628,7 @@ export function App() {
                     <>
                     {sessionId && <TicketMapCard key={sessionId} sessionId={selected?.ticket_of ?? sessionId} except={selected?.ticket_of ? sessionId : undefined} status={statusMap} onOpenSession={(id) => openSession(id)} />}
                     <Composer
+                      words={chatWords}
                       pills={
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.
@@ -3709,7 +3719,15 @@ export function App() {
                   <DesignPane key={designBoard} board={designBoard} onClose={() => setDesignBoard(null)}
                     chrome={isLinuxApp() ? <LinuxClose /> : undefined}
                     // Into the running turn when there is one, the way the composer's SEND does.
-                    onSend={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }} />
+                    // A question waiting on you is answered by your feedback: the card goes, and the agent
+                    // reads the feedback as its answer. A steer would sit behind the card until you answered it.
+                    onSend={(text) => {
+                      const ask = active?.pending.find((p) => p.kind === "question");
+                      const steer = () => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); };
+                      if (!ask) return steer();
+                      const answers = (ask.questions ?? []).map((q, i) => ({ header: q.header, labels: [], notes: i === 0 ? text : undefined }));
+                      void respond(ask.request_id, { answers }).then((ok) => { if (ok === false) steer(); });
+                    }} />
                 </>
               ) : (
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0,

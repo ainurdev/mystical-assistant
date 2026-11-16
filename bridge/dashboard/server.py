@@ -392,6 +392,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/local/") and self.headers.get(
                     "Sec-Fetch-Site") not in (None, "same-origin", "none"):
                 return self._json({"error": "cross-site request"}, 403)
+            if path == "/local/runs" or path.startswith("/local/runs/"):
+                # Another program's runs (bridge/run_api.py): its own token on
+                # every route, reads too, and nothing else here answers to it.
+                from bridge import run_api
+                return self._json(*run_api.http("GET", path, qs, None,
+                                                self.headers.get("X-Run-Token")))
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
@@ -430,6 +436,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "bad json"}, 400)
                 out, code = gateway.hook(self.headers.get("X-Gateway-Token"), body)
                 return self._json(out, code)
+            if path == "/local/runs" or path.startswith("/local/runs/"):
+                # The run API (bridge/run_api.py), on its own token like the two
+                # above: a program holding it starts and stops its runs only.
+                from bridge import run_api
+                return self._json(*run_api.http("POST", path, {}, self._read_json(),
+                                                self.headers.get("X-Run-Token")))
             if not _tok_ok(self.headers.get("X-Dash-Token", "")):
                 return self._json({"error": "unauthorized"}, 401)
             body = self._read_json()
@@ -806,6 +818,13 @@ class Handler(BaseHTTPRequestHandler):
             # working-tree diff: target the selected branch's worktree
             cwd = _worktree_cwd(project, (qs.get("branch", [""])[0] or "").strip())
             return self._json({"path": fpath, "diff": git.diff(cwd, fpath)})
+        if path in ("/local/complete/paths", "/local/complete/symbols"):
+            # The composer's completions from disk (bridge/complete.py): this dashboard only.
+            from bridge import complete
+            cwd = _worktree_cwd(qs.get("project", [None])[0], (qs.get("branch", [""])[0] or "").strip())
+            if path.endswith("/symbols"):
+                return self._json({"symbols": complete.symbols(cwd) if cwd else []})
+            return self._json({"paths": complete.paths(cwd or os.path.expanduser("~"), qs.get("prefix", [""])[0])})
         if path == "/local/files/tree":
             # EDITOR tab: the whole working tree of the selected branch/worktree
             cwd = _worktree_cwd(qs.get("project", [None])[0],
@@ -1046,6 +1065,17 @@ class Handler(BaseHTTPRequestHandler):
             if base not in refs or head not in refs:
                 return self._json({"error": "invalid ref"}, 400)
             return self._json(git.compare(abs_p, base, head, three_dot))
+        if path in ("/local/team", "/local/team/agent"):
+            # The Agents view (bridge/agent_team.py): a chat's Claude sub-agents as a tree, and one up close.
+            from bridge import agent_team
+            sid = qs.get("session", [""])[0]
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if path == "/local/team":
+                return self._json(agent_team.team(s))
+            one = agent_team.agent(s, qs.get("agent", [""])[0])
+            return self._json(one) if one else self._json({"error": "not found"}, 404)
         if path == "/local/agents":
             sid = qs.get("session", [""])[0]
             s = store.get_session(sid) if sid else None

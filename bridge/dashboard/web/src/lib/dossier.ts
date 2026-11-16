@@ -36,6 +36,8 @@ export const TOP_TYPES: ReadonlySet<string> = new Set([
   // Multi-agent chats: a provider switch, a helper started, a merge. Each says
   // something happened to the chat, so none hides in the work around it.
   "switch", "delegation", "merge",
+  // The chat's plan changing: easy to miss beside the list, so it's a line of its own here.
+  "plan",
 ]);
 
 /** Cut segments into zones: every `isTop` segment is its own zone, and each

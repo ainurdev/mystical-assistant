@@ -56,7 +56,7 @@ SHOW = (
     "show_data instead: it draws a live chart, sheet with progress bars, kanban board, flowchart or timeline in the chat. For UI "
     "you design, read design_context, then call show_design: the user sees it live and can comment on it. If the "
     "request is open, show three rough directions first and ask which way to go. A project may have generated docs: read_docs (find_tools) "
-    "lists them. The project's work list is in the user's sidebar: read or change it with work_list when they ask. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap. If you think a feature is complex "
+    "lists them. The project's work list is in the user's sidebar: read or change it with work_list when they ask. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap. For work in several steps, keep your plan with chat_plan and mark steps as you go: the user sees it. If you think a feature is complex "
     "enough to warrant a review loop, ask the user with offer_review as your last step: they get a button after your "
     "answer. If it isn't, or it's reasonably tested and just needs a check, go ahead normally.")
 

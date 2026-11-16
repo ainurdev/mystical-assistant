@@ -296,6 +296,8 @@ export type RunEvent =
   | { type: "switch"; from: string; to: string; turns?: number; whole?: boolean }
   | { type: "delegation"; session_id: string; name: string; brief?: string; agent?: string; profile?: string | null; write?: boolean }
   | { type: "merge"; name: string; state: string; session_id?: string }
+  // The chat's plan changed (bridge/chatplan.py, lib/planline).
+  | import("./lib/planline").PlanEv
   // What the bridge's own tools record (bridge/gateway_tools.py, bridge/rules.py).
   // A figure is the agent showing you something, with a caption: `images` are upload-dir
   // paths, served by /local/attachment. `compare` is [before, after].
@@ -2403,6 +2405,15 @@ export const api = {
       `/local/git/incoming?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
+  /** A chat's Claude sub-agents as a team, and one up close (bridge/agent_team.py). */
+  agentTeam: (sessionId: string) => req<import("./lib/agentteam").Team>(`/local/team?session=${encodeURIComponent(sessionId)}`),
+  agentTeamOne: (sessionId: string, agentId: string) =>
+    req<import("./lib/agentteam").AgentDetail>(`/local/team/agent?session=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agentId)}`),
+  /** What the composer completes from disk (bridge/complete.py). */
+  completePaths: (project: string | null, prefix: string) =>
+    req<{ paths: { text: string; name: string; dir: boolean }[] }>(`/local/complete/paths?project=${encodeURIComponent(project ?? "")}&prefix=${encodeURIComponent(prefix)}`),
+  completeSymbols: (project: string) =>
+    req<{ symbols: { name: string; file: string }[] }>(`/local/complete/symbols?project=${encodeURIComponent(project)}`),
   filesTree: (project: string, branch?: string) =>
     req<{ files: string[]; ignored?: string[]; root?: string }>(
       `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,

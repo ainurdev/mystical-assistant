@@ -241,7 +241,9 @@ _EXPERIMENTAL_NOTE = (
     "work on it together, start its dev server and call show_design with pages [{name, url}]: they can point at the real app.\n\n"
     "A project may have generated docs: read_docs (find_tools) lists them, and where they disagree with the code, trust the code.\n\n"
     "The project's work list is in the user's right sidebar: read or change it with work_list from the mystical MCP server when "
-    "they ask, filling it from whatever they name. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap.\n\n"
+    "they ask, filling it from whatever they name. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap. "
+    "For work in several steps, keep your plan with chat_plan: set it before you start and mark steps as you go. The user sees it "
+    "beside the work list and may change it, which reaches you as a message.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
     "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
     "tested and just needs a check, go ahead normally.")
@@ -941,6 +943,8 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        self.after_tool: list = []    # events to add once the tool call in flight has its result (chatplan)
+        self.sub_cmds: list = []      # every shell command this turn, whole: the agent's and its sub-agents'.
         # The plan as the task tools keep it — what claude 2.1.280 -p offers
         # instead of TodoWrite: task id -> its latest status (TaskCreate's result
         # names the id, TaskUpdate moves it). The RIVENDELL card's todo bar.
@@ -1229,6 +1233,7 @@ class AcpJob(Job):
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
+        self.after_tool = None       # no stream of tool results to wait on here: a plan line goes in at once
         self.acp_account = ""            # the agent account id; "" = the CLI's own login
         self.agent_session_id = None     # the agent's own session id, once it's open
         self.conn = None                 # acp.Conn
@@ -2538,6 +2543,17 @@ def _handle_event(job: Job, d: dict):
         # (e.g. --session-id rejected on an older CLI) — the row must follow it.
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
+    if d.get("parent_tool_use_id") and t in ("assistant", "user"):
+        # A sub-agent's step, not this chat's agent's. Claude Code writes it to that agent's own file,
+        # which the Agents view reads (bridge/agent_team.py). Recorded here, a 100-agent turn was 7,500
+        # rows of other agents' work with nothing saying whose. Its shell commands are still noted, as
+        # a sub-agent running the tests is the tests having run (rules: Don't finish untested).
+        if t == "assistant":
+            for b in d.get("message", {}).get("content", []):
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash":
+                    job.sub_cmds.append(str((b.get("input") or {}).get("command") or "")[:20000])
+            del job.sub_cmds[:-400]
+        return
     if t == "assistant":
         if job.status == "done":
             # ponytail: claude -p emits `result` when the model ends its turn with
@@ -2580,8 +2596,13 @@ def _handle_event(job: Job, d: dict):
                 if name == "Bash":
                     cmd = inp.get("command") or ""
                     job.bash_cmds[b.get("id")] = (cmd, _trees_before(job, cmd))
+                    # bash_cmds forgets a command when its result arrives; the Stop rule reads this one.
+                    job.sub_cmds.append(cmd[:20000])
+                    del job.sub_cmds[:-400]
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
+                    from bridge import chatplan   # local import: runner<->* cycle
+                    chatplan.from_todos(job.store_session_id, job.todos, job)
                 elif name == "TaskUpdate" and inp.get("taskId"):
                     tid = str(inp["taskId"])
                     job.task_status[tid] = str(inp.get("status")
@@ -2629,6 +2650,9 @@ def _handle_event(job: Job, d: dict):
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
+                if not job.open_tools:
+                    while job.after_tool:
+                        job.add(job.after_tool.pop(0))
     elif t == "system" and d.get("subtype") == "init" and job.status == "done":
         # Another turn in the same process. On --resume the CLI first replays
         # the notice of a background task the last process left behind, a
@@ -2686,6 +2710,8 @@ def _handle_event(job: Job, d: dict):
         job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
         job.answered_at = job.answered_at or time.time()
         job.elapsed = int(time.time() - job.started)
+        while job.after_tool:              # a turn that ended with a tool call still open
+            job.add(job.after_tool.pop(0))
         job.add({"type": "result", "result": job.result, "cost": job.cost,
                  "elapsed": job.elapsed, "is_error": job.status == "error"})
 

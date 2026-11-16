@@ -43,6 +43,17 @@ Each message is a one-shot in plan mode, with the conversation kept on the item 
 It isn't a chat, so it adds nothing to yours and can run while yours is busy. A tracker's text can
 reach it, so it can read and nothing else.
 
+## This chat's plan
+
+Beside the project's list, the open chat's plan: the steps its agent set itself, as a timeline with
+times, the agent's note on each, Markdown descriptions and sub-steps. Agents write it with `chat_plan`;
+a Claude chat's built-in task list and an ACP agent's plan updates are mirrored in as plain steps, and
+never over a plan written with the tool.
+
+The agent owns its plan, so changing a step, asking about it, doing it sooner, skipping it or changing
+the whole plan reaches it as a message from you, pending until it next writes the plan. Copying a step
+to the work list is yours alone. Kept per chat in `.mystical/plans/` (`bridge/chatplan.py`).
+
 ## A run
 
 Only you start one: the sidebar's Run, `/work run` in the composer, or `/work run` on Telegram.

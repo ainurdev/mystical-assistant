@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
 import { TicketBrief, TicketList } from "./TicketMap";
+import { AgentsView } from "../AgentsView";
 import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
@@ -226,7 +227,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
-  run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
+  run, onOpenRun, onDropFiles, chrome, onSendText, onSteerText, onStopTurn, onArchive, onStartHere, teamMe,
   limit, logins, status, savers, gridMain, statusAll, superTitle,
 }: {
   /** Every session's status: TICKETS colours a super session's ticket rows from it. */
@@ -296,6 +297,10 @@ export function Terminal({
   chrome?: ReactNode;
   /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
   onSendText?: (text: string) => void;
+  /** Into the running turn when there is one, else a new turn: what the Agents view's box sends. */
+  onSteerText?: (text: string) => void;
+  /** Stop the running turn (the Agents view's "Stop everything"). */
+  onStopTurn?: () => void;
   /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
   onStartHere?: (text: string) => void;
   /** The PR chip's ARCHIVE SESSION, after a merge. */
@@ -330,8 +335,26 @@ export function Terminal({
   const chatId = helperChat ?? sessionId ?? null;
   const agentRows = useTreeRows(multiOn ? chatId : null);
   const [gridFor, setGridFor] = useState<string | null>(null);
-  const hasAgents = multiOn && !!chatId && agentRows.length > 0;
+  // GRID is for Mystical's own helpers; AGENTS for Claude's sub-agents (components/AgentsView). Each
+  // shows only in a chat that has that kind, and a chat remembers whether you left it on AGENTS.
+  const hasAgents = multiOn && !!chatId && agentRows.some((r) => r.kind !== "subagent");
+  // `asked`: the composer's "Agents view" pill opened it (hud:agents-view). The pill knows a chat has
+  // sub-agents from its own roster, so the way in doesn't wait on the sidebar's tree having loaded.
+  const [asked, setAsked] = useState<string | null>(null);
+  const hasSubs = multiOn && !!sessionId && !helperChat && (asked === sessionId || agentRows.some((r) => r.kind === "subagent"));
   const grid = isChat && hasAgents && gridFor === chatId;
+  const teamKey = sessionId ? `mystical.agents-view.${sessionId}` : "";
+  const [teamOn, setTeamOn] = useState(false);
+  useEffect(() => { try { setTeamOn(!!teamKey && localStorage.getItem(teamKey) === "1"); } catch { setTeamOn(false); } }, [teamKey]);
+  // TICKETS (a super session) takes the transcript's place too: a CHAT or AGENTS pick ends a TICKETS one.
+  const setTeam = (on: boolean) => { setTeamOn(on); if (sessionId) setLivePick({ id: sessionId, on: false }); try { if (on) localStorage.setItem(teamKey, "1"); else localStorage.removeItem(teamKey); } catch { /* private mode */ } };
+  const team = isChat && hasSubs && teamOn && !grid;
+  useEffect(() => {
+    const open = () => { if (!sessionId) return; setAsked(sessionId); setGridFor(null); setTeamOn(true); try { localStorage.setItem(`mystical.agents-view.${sessionId}`, "1"); } catch { /* private mode */ } };
+    window.addEventListener("hud:agents-view", open);
+    return () => window.removeEventListener("hud:agents-view", open);
+  }, [sessionId]);
+  const subsWorking = agentRows.filter((r) => r.kind === "subagent" && r.status === "running").length;
   // Opening a helper or the chat from a card lands on its conversation.
   const openedFrom = useRef(sessionId);
   useEffect(() => {
@@ -347,10 +370,10 @@ export function Terminal({
   // build or merge; CHAT | TICKETS switches, and the strip's Sessions button asks for TICKETS.
   const tset = selected?.tickets;
   const [livePick, setLivePick] = useState<{ id: string; on: boolean } | null>(null);
-  const tkLive = isChat && !grid && !!tset && !!sessionId
+  const tkLive = isChat && !grid && !team && !!tset && !!sessionId
     && (livePick?.id === sessionId ? livePick.on : tset.status === "building" || tset.status === "merging");
   useEffect(() => {
-    const on = (e: Event) => { if (sessionId) setLivePick({ id: sessionId, on: !!(e as CustomEvent).detail }); };
+    const on = (e: Event) => { if (sessionId) { setTeam(false); setLivePick({ id: sessionId, on: !!(e as CustomEvent).detail }); } };
     window.addEventListener("hud:tickets-live", on);
     return () => window.removeEventListener("hud:tickets-live", on);
   }, [sessionId]);
@@ -488,7 +511,7 @@ export function Terminal({
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
   const body = (
-    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || tkLive ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || tkLive || team ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
       {dropping && (
         <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>
@@ -689,16 +712,17 @@ export function Terminal({
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         {isChat && !empty && sessionId && multiOn && onJumpTo && <ChatSearch sessionId={sessionId} turns={turns} onJump={onJumpTo} />}
-        {isChat && hasAgents && (
-          <span className="ma-viewsw" role="group" aria-label="Chat or grid">
-            <button type="button" aria-pressed={!grid} onClick={() => setGridFor(null)}>CHAT</button>
-            <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>
+        {isChat && (hasAgents || hasSubs) && (
+          <span className="ma-viewsw" role="group" aria-label="Chat or agents">
+            <button type="button" aria-pressed={!grid && !team && !tkLive} onClick={() => { setGridFor(null); setTeam(false); }}>CHAT</button>
+            {hasSubs && <button type="button" aria-pressed={team} onClick={() => { setGridFor(null); setTeam(true); }} title="This chat's sub-agents: who's working, what they're doing, what they said">AGENTS{subsWorking ? ` ${subsWorking}` : ""}</button>}
+            {hasAgents && <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>}
           </span>
         )}
         {isChat && !!tset && !grid && sessionId && (
           <span className="ma-viewsw" role="group" aria-label="Chat or its tickets">
-            <button type="button" aria-pressed={!tkLive} onClick={() => setLivePick({ id: sessionId, on: false })}>CHAT</button>
-            <button type="button" aria-pressed={tkLive} onClick={() => setLivePick({ id: sessionId, on: true })}><span className="caps">Tickets</span> {tset.done}/{tset.total}</button>
+            <button type="button" aria-pressed={!tkLive && !team} onClick={() => setTeam(false)}>CHAT</button>
+            <button type="button" aria-pressed={tkLive} onClick={() => { setTeam(false); setLivePick({ id: sessionId, on: true }); }}><span className="caps">Tickets</span> {tset.done}/{tset.total}</button>
           </span>
         )}
         <ViewTabs view={view} onView={onView} />
@@ -729,6 +753,8 @@ export function Terminal({
   // makes it the theme's own card: brackets and hard corners in the HUD themes,
   // a soft radius in the reading ones. The blur sits on a layer of its own so
   // it isn't the containing block for anything fixed inside the row.
+  // The header keeps the column's measure: its gutters with the transcript, none in the Agents view.
+  const isleGutter = team ? "0px" : chatPad;
   const island = (
     // `isle` / `isle-glass`: VOID re-inks both (index.css) — the border and the
     // glass are inline here, and a theme can only outrank an inline rule by name.
@@ -738,10 +764,10 @@ export function Terminal({
     <div className={compact ? "isle isle-pill" : "panel isle"} style={{
       ...(compact
         ? isChat
-          ? { position: "absolute", top: ISLE_TOP, right: `calc(${chatPad} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${chatPad} + ${ISLE_X}px))` }
+          ? { position: "absolute", top: ISLE_TOP, right: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${isleGutter} + ${ISLE_X}px))` }
           : { position: "relative", alignSelf: "flex-end", margin: `${ISLE_TOP}px ${ISLE_X}px 0` }
         : isChat
-          ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
+          ? { position: "absolute", top: ISLE_TOP, left: `calc(${isleGutter} + ${ISLE_X}px)`, right: `calc(${isleGutter} + ${ISLE_X}px)` }
           : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
       zIndex: 12, flex: "none",
       borderRadius: compact ? 999 : undefined,
@@ -789,10 +815,12 @@ export function Terminal({
       data-bg={hud?.chatBg ?? "none"}
       data-layout={compact ? "compact" : "default"}
       data-tklive={tkLive || undefined}
-      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden",
+        // The gutters are a reading measure for the transcript. The Agents view is three panes, and takes the column.
+        paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
-      {!(compact && isChat && !chrome) && island}
+      {!(compact && isChat && !chrome && !hasAgents && !hasSubs) && island}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
@@ -807,9 +835,14 @@ export function Terminal({
           {body}
           {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
           {tkLive && sessionId && <TicketList key={sessionId} sessionId={sessionId} status={statusAll ?? new Map()} onOpenSession={openAgentSession} />}
-          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
-            {composer}
-          </ChatChromeContext.Provider>
+          {team && sessionId && <AgentsView sessionId={sessionId} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} running={!!activeId}
+            onSay={(text) => (onSteerText ?? onSendText)?.(text)} onStop={() => onStopTurn?.()} onChat={() => setTeam(false)} />}
+          {/* The Agents view has its own box, which says what each message will do: the composer would only compete with it. */}
+          {!team && (
+            <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
+              {composer}
+            </ChatChromeContext.Provider>
+          )}
         </>
       )}
     </div>

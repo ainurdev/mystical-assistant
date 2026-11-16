@@ -99,6 +99,27 @@ SETTINGS = (
               "200k model like Haiku. A session pinned to an auto-compact token count "
               "counts up to that instead. Display only — it doesn't change what any "
               "model actually accepts."},
+    {"key": "RUN_API_CONCURRENCY", "type": "int", "live": True, "min": 1, "max": 16,
+     "group": "RUNS", "label": "RUN API SLOTS", "hint": "runs other programs may have live at once",
+     "about": "Programs on this machine start sessions with `mystical prompt` (the "
+              "run API). This many run at the same time and the rest wait their "
+              "turn, oldest first. A run waiting on your answer or parked on a "
+              "usage limit keeps its slot."},
+    {"key": "RUN_API_DIRS", "type": "str", "live": True,
+     "group": "RUNS", "label": "RUN API FOLDERS", "hint": "where the run API may start a session",
+     "placeholder": "~/projects/atlas, ~/projects/reports",
+     "about": "Comma-separated folders under BASE PATH; a run may start in one or "
+              "anywhere below it. Empty allows any git repository under BASE PATH. "
+              "Such a session gets the mode a dashboard session would: the "
+              "project's default profile, else NEW SESSION MODE."},
+    {"key": "RUN_API_MODEL", "type": "str", "live": True,
+     "group": "RUNS", "label": "RUN API MODEL", "hint": "model for a run whose caller names none",
+     "placeholder": "haiku",
+     "about": "`mystical prompt --model sonnet` (or \"model\" in the request) picks "
+              "a run's model. Without one the run gets this: haiku, the lowest, "
+              "unless you change it. An alias (haiku, sonnet, opus, fable) or a "
+              "full model id. Empty means the bridge's normal default: the "
+              "project's default profile, else the CLI's own."},
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",

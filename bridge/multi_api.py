@@ -141,7 +141,8 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
             return _OFF
         from bridge import workrun
         root, chat = _work_root(chat_id, _one(qs, "session"), _one(qs, "project"))
-        return ({**worklist.view(root, chat), **workrun.run_view(root)}, 200) if root else ({"error": "No project here."}, 404)
+        from bridge import chatplan
+        return ({**worklist.view(root, chat), **workrun.run_view(root), "plan": chatplan.view(root, chat)}, 200) if root else ({"error": "No project here."}, 404)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -258,6 +259,9 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         if path.startswith("worklist/run/"):
             from bridge import workrun
             return workrun.api(path, body, root, store.get_session(chat) if chat else None)
+        if path.startswith("worklist/plan/"):
+            from bridge import chatplan
+            return chatplan.api(path, body, root, store.get_session(chat) if chat else None)
         if path.startswith("worklist/refine/"):
             from bridge import workrefine, workrun
             out, status = workrefine.api(path, body, root, chat, chat_id)

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Blocks, Brain, Bug, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
@@ -589,8 +589,10 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
+  /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
+  words?: string[];
   /** Multi-agent chats (ComposerMulti). */
   multi?: ComposerMulti | null;
   disabled: boolean;
@@ -816,6 +818,17 @@ export function Composer({
       .catch(() => { if (live) setTree([]); });
     return () => { live = false; };
   }, [project]);
+
+  // Names the project's code defines, for completing as you type (bridge/complete.py). Once per
+  // project: the bridge caches them until the repo's index changes.
+  const [symbols, setSymbols] = useState<{ name: string; file: string }[]>([]);
+  useEffect(() => {
+    if (!project) { setSymbols([]); return; }
+    let live = true;
+    void api.completeSymbols(project).then((r) => { if (live) setSymbols(r.symbols); }).catch(() => { if (live) setSymbols([]); });
+    return () => { live = false; };
+  }, [project]);
+  const diskPaths = useCallback((prefix: string) => api.completePaths(project ?? null, prefix).then((r) => r.paths), [project]);
 
   const [caret, setCaret] = useState(0);
   const [mentionPick, setMentionPick] = useState(0);
@@ -1828,6 +1841,10 @@ export function Composer({
       imageSession={sessionId}
       imageProject={project}
       commands={noList ? [] : cmds}
+      words={words}
+      files={tree}
+      symbols={symbols}
+      diskPaths={diskPaths}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       ghost={ghost}
