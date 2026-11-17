@@ -2,8 +2,13 @@
 
 import os
 
-from bridge import config, state
+from bridge import config, roots, state
 from bridge.telegram import send
+
+# Chat-only projects live here, under BASE_PATH: hidden, so the scan below and
+# every folder picker pass it by (bridge/newproject.py says why it isn't
+# `.mystical`).
+CHATS_DIR = ".mystical-chats"
 
 
 def list_dirs(path: str) -> list[str]:
@@ -35,6 +40,13 @@ def list_projects(max_depth: int = 3) -> list[str]:
                 scan(p, depth + 1)
 
     scan(config.BASE_PATH, 1)
+    # The two kinds of project the scan can't find: a folder outside BASE_PATH
+    # you allowed (bridge/roots.py), and a chat folder, which is hidden and no
+    # repo (bridge/newproject.py). Both are listed because you made them, so
+    # neither needs a `.git` to count.
+    out += [rel(r) for r in roots.listing() if os.path.isdir(r)]
+    chats = os.path.join(config.BASE_PATH, CHATS_DIR)
+    out += [rel(os.path.join(chats, n)) for n in list_dirs(chats)]
     return out
 
 
@@ -53,7 +65,7 @@ def project_exists(rel_path: str) -> bool:
     if within_base(p) and os.path.isdir(p):
         return p != config.BASE_PATH
     out = os.path.expanduser(rel_path or "")
-    return (os.path.isabs(out) and not within_base(out) and os.path.isdir(out)
+    return (os.path.isabs(out) and not _under_base(out) and os.path.isdir(out)
             and os.path.realpath(out) != os.path.realpath(os.path.expanduser("~")))
 
 
@@ -68,9 +80,15 @@ def gone(rel_path: str) -> bool:
     return within_base(os.path.realpath(os.path.join(config.BASE_PATH, r.lstrip("/")))) and not project_exists(r)
 
 
-def within_base(path: str) -> bool:
+def _under_base(path: str) -> bool:
     real = os.path.realpath(path)
     return real == config.BASE_PATH or real.startswith(config.BASE_PATH + os.sep)
+
+
+def within_base(path: str) -> bool:
+    """Somewhere Mystical may work: under BASE_PATH, or under a folder outside
+    it that you allowed from NEW PROJECT (bridge/roots.py)."""
+    return _under_base(path) or roots.allowed(os.path.realpath(path))
 
 
 def rel(path: str) -> str:

@@ -1,10 +1,17 @@
 /* SETTINGS ▸ Projects (ProjectsSettings): which projects the list shows, and
    under which folder. Pure, so projectlist.check.ts can pin it. */
 
+export const CHATS = "chats";
+export const OUTSIDE = "outside the projects folder";
+
 /** Owning folder of a repo path: "ainurhq/efas/app" → "ainurhq/efas",
  *  "aligned" → "" (top level). */
 export function parentOf(rel: string): string {
   const clean = rel.replace(/^\/+|\/+$/g, "");
+  // The two kinds of project that aren't a repo under the projects folder
+  // (bridge/newproject.py): their keys are paths nobody should have to read.
+  if (clean.startsWith(".mystical-chats/")) return CHATS;
+  if (clean.startsWith("../")) return OUTSIDE;
   const i = clean.lastIndexOf("/");
   return i < 0 ? "" : clean.slice(0, i);
 }

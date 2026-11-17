@@ -94,7 +94,8 @@ def project_dir(project: str) -> str:
     """The folder of a project, from its name in the list."""
     real = os.path.realpath(os.path.join(config.BASE_PATH, str(project or "").lstrip("/")))
     base = os.path.realpath(config.BASE_PATH)
-    if not str(project or "").strip("/") or not real.startswith(base + os.sep) or not os.path.isdir(real):
+    from bridge import browser
+    if not str(project or "").strip("/") or real == base or not browser.within_base(real) or not os.path.isdir(real):
         raise Refused("Pick a project.")
     return real
 
@@ -102,8 +103,8 @@ def project_dir(project: str) -> str:
 def _inside(path: str, cwd: str) -> str:
     """A path the owner named, resolved against the project and kept to the projects folder."""
     real = os.path.realpath(os.path.expanduser(path) if os.path.isabs(os.path.expanduser(path)) else os.path.join(cwd, path))
-    base = os.path.realpath(config.BASE_PATH)
-    if real != base and not real.startswith(base + os.sep):
+    from bridge import browser
+    if not browser.within_base(real):
         raise Refused(f"{path} is outside your projects folder.")
     return real
 

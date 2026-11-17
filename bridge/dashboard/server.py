@@ -98,7 +98,7 @@ def web_built() -> bool:
 def _self_rel() -> "str | None":
     """The bridge's own checkout as a project rel, or None when it lives outside BASE_PATH."""
     real = os.path.realpath(selfupdate.REPO)
-    return browser.rel(real) if real.startswith(config.BASE_PATH + os.sep) else None
+    return browser.rel(real) if browser.within_base(real) and real != config.BASE_PATH else None
 
 
 def _abs_project(project) -> str | None:
@@ -520,7 +520,12 @@ class Handler(BaseHTTPRequestHandler):
                                "marks": projectmarks.marks(projects),
                                # The bridge's own checkout, so the dashboard
                                # knows which project's logo is ours.
-                               "self": _self_rel()})
+                               "self": _self_rel(),
+                               # Folders outside BASE_PATH you allowed, and the
+                               # folder chats live in: how the sidebar tells a
+                               # chat from a repo, and what SETTINGS can remove.
+                               "roots": browser.roots.listing(),
+                               "chats": browser.rel(os.path.join(config.BASE_PATH, browser.CHATS_DIR))})
         if path.startswith("/local/project-mark/logo/"):
             got = projectmarks.logo(path[len("/local/project-mark/logo/"):])
             if got is None:
@@ -2399,6 +2404,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, **info})
         if path == "/local/projects/create":
             return self._create_project(chat, body)
+        if path == "/local/roots/remove":
+            # Stop allowing a folder outside BASE_PATH. Nothing on disk changes.
+            # Named by its project key, the way every other project route is.
+            from bridge import roots
+            rel = str(body.get("project") or "")
+            ok = roots.remove(os.path.join(config.BASE_PATH, rel.lstrip("/"))) if rel else False
+            return self._json({"ok": ok, "roots": roots.listing()})
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
         if path == "/local/weather/place":
@@ -2524,24 +2536,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": ok, "output": output, "message": message})
 
     def _create_project(self, chat, body):
-        """Scaffold a new git repo under BASE_PATH and start a session on it with
-        the user's first instruction streaming in immediately."""
-        name = _slug((body.get("name") or "").strip().lower())
-        prompt = (body.get("prompt") or "").strip()
-        if not name or name.startswith("."):
-            return self._json({"error": "invalid name"}, 400)
-        dest = os.path.realpath(os.path.join(config.BASE_PATH, name))
-        if not browser.within_base(dest):
-            return self._json({"error": "invalid name"}, 400)
-        if os.path.exists(dest):
-            return self._json({"error": "already exists"}, 409)
+        """NEW PROJECT: a fresh repo, a folder you name, a clone or a chat
+        (bridge/newproject.py), then a session on it with your first instruction
+        streaming in. A step that needs your yes comes back as `confirm`, with
+        nothing done."""
+        from bridge import newproject
         try:
-            os.makedirs(dest)
-        except OSError as e:
-            return self._json({"error": str(e)}, 500)
-        git._run(dest, "init")
-        git._run(dest, "commit", "--allow-empty", "-m", "init")
-        rel = browser.rel(dest)
+            got = newproject.prepare(body)
+        except newproject.Refused as e:
+            return self._json({"error": str(e)}, e.code)
+        if "confirm" in got:
+            return self._json(got)
+        rel, dest = got["rel"], got["cwd"]
+        prompt = (body.get("prompt") or "").strip()
         # Bound like /local/sessions, but keeping the seeded mode: its first
         # turn starts here, with no picks from a composer to fill one in.
         s = store.create_session(chat, rel, origin="dashboard", cwd=dest,
@@ -2552,9 +2559,9 @@ class Handler(BaseHTTPRequestHandler):
             job = runner.start_streaming_job(chat, prompt, [], dest,
                                              session_id=s["id"], origin="dashboard")
             job_id = job.id if job else None
-        return self._json({"project": {"rel": rel, "name": name},
+        return self._json({"project": {"rel": rel, "name": got["name"]},
                            "session": _session_brief(store.get_session(s["id"])),
-                           "job_id": job_id})
+                           "job_id": job_id, "notes": got["notes"]})
 
     def _run(self, chat, body):
         prompt = (body.get("prompt") or "").strip()
@@ -3142,6 +3149,8 @@ _httpd: ThreadingHTTPServer | None = None
 
 def start() -> ThreadingHTTPServer:
     global _httpd
+    from bridge import newproject
+    newproject.ensure_general()
     _httpd = ThreadingHTTPServer((config.DASH_HOST, config.DASH_PORT), Handler)
     Thread(target=_httpd.serve_forever, daemon=True).start()
     return _httpd
