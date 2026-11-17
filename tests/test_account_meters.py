@@ -134,6 +134,24 @@ def test_both_servers_list_the_same_logins_with_their_meters():
     assert (a2["slot"], a2["email"], a2["left"], a2["five_hour"]["percent"]) == (2, "b@x.com", 91, 9)
 
 
+def test_every_logins_meter_is_read_side_by_side(monkeypatch):
+    # A cold meter is a `claude -p` per login (~1.7 s, up to its 20 s timeout). Read one
+    # after another, a fresh bridge's /local/accounts took 5.2 s for three logins
+    # (2026-11-17), and the dashboard's boot waits on it.
+    import threading
+    started = threading.Barrier(len(LOGINS), timeout=5)
+    seen = set()
+
+    def usage_for(slot):
+        if slot not in seen:
+            seen.add(slot)
+            started.wait()          # passes only once every login's read has begun
+        return METERS[int(slot)]
+
+    monkeypatch.setattr(accounts, "usage_for", usage_for)
+    assert [a["slot"] for a in accounts.with_meters()] == [1, 2]
+
+
 # --- the bot ------------------------------------------------------------------
 
 def _bot(monkeypatch, project):

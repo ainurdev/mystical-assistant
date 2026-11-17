@@ -35,11 +35,35 @@ _BUILTIN_RULES = {b["rule"] for b in BUILTINS}
 # `claude mcp list` health-checks every server, which takes seconds (measured
 # 8.6s here, 15 servers). The set of configured servers changes about never, so
 # one call is reused — and once it has ever succeeded, no caller waits on it
-# again: a stale list is served while the refresh runs off-thread.
+# again: a stale list is served while the refresh runs off-thread. That holds
+# across restarts too: the last good list is saved, and a fresh process starts
+# from it. Without it the dashboard's first session list waited out a full check
+# after every restart (16 s on a cold server, 2026-11-17), since every session's
+# brief carries the default deny list.
 _TTL = 300
 _cache: "tuple[float, list[dict]] | None" = None
 _lock = threading.Lock()
 _filling = False   # a background refresh is already in flight
+
+
+def _saved_path() -> str:
+    from bridge import config
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "mcp_servers.json")
+
+
+def _load_saved() -> None:
+    """A fresh process starts from the list the last one saved, stamped stale so
+    it's served at once and refreshed off-thread. Caller holds _lock."""
+    global _cache
+    if _cache is not None:
+        return
+    try:
+        with open(_saved_path(), encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        return
+    if isinstance(saved, list):
+        _cache = (0.0, saved)
 
 # "name: rest - ✔ Connected" / "name: rest - ! Needs authentication". The name is
 # matched lazily rather than as "no colons": a plugin server is called
@@ -123,7 +147,15 @@ def _fill() -> list[dict]:
         found = _parse(p.stdout)
     except (OSError, subprocess.SubprocessError):
         found = []
+    answered = bool(found)   # a failed check lists nothing; don't save that over a good list
     found += _project_locals({s["name"] for s in found})
+    if answered:
+        try:
+            with open(_saved_path() + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(found, f)
+            os.replace(_saved_path() + ".tmp", _saved_path())
+        except OSError:
+            pass   # this process's cache still works; the next start just checks again
     with _lock:
         _cache = (time.time(), found)
         _filling = False
@@ -142,6 +174,8 @@ def servers(refresh: bool = False) -> list[dict]:
     """
     global _filling
     with _lock:
+        if not refresh:
+            _load_saved()
         cached = _cache
         if cached and not refresh:
             if time.time() - cached[0] < _TTL:
@@ -150,8 +184,8 @@ def servers(refresh: bool = False) -> list[dict]:
                 _filling = True
                 threading.Thread(target=_fill, daemon=True).start()
             return cached[1]
-    # ponytail: concurrent cold callers each fetch. Bounded to the boot window,
-    # and warm() closes it; add an in-flight wait if that ever shows up.
+    # ponytail: concurrent cold callers each fetch, now only before any list was
+    # saved (a first run, or after invalidate()); add an in-flight wait if that shows up.
     return _fill()
 
 
@@ -161,12 +195,18 @@ def invalidate() -> None:
     global _cache
     with _lock:
         _cache = None
+        try:
+            os.remove(_saved_path())
+        except OSError:
+            pass
 
 
 def ready() -> bool:
-    """True once the list has been fetched at least once — i.e. servers() will
-    answer without shelling out. Lets a caller say what it is waiting for."""
+    """True once there is a list to answer with, this process's or the one the
+    last saved — i.e. servers() will answer without shelling out. Lets a caller
+    say what it is waiting for."""
     with _lock:
+        _load_saved()
         return _cache is not None
 
 

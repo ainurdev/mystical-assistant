@@ -30,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from bridge import credentials, usage
 
@@ -687,8 +688,14 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
     """Every login with its meter(). The Accounts panel lists these, and both
     composers read from them the in-use login's usage and how much each
     profile's login has left. Both servers call this one function so they
-    return the same rows. max_age=0 reads every login now (Check now)."""
-    return [{**a, **meter(a["slot"], max_age)} for a in list_accounts()]
+    return the same rows. max_age=0 reads every login now (Check now).
+    Side by side: a cold meter is a `claude -p` each (5.2 s for three in a row
+    on a fresh bridge, which the dashboard's boot waited on)."""
+    accts = list_accounts()
+    if not accts:
+        return []
+    with ThreadPoolExecutor(max_workers=len(accts)) as pool:
+        return list(pool.map(lambda a: {**a, **meter(a["slot"], max_age)}, accts))
 
 
 def pick(exclude=(), strategy: str = "best") -> "int | None":
