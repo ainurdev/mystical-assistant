@@ -71,13 +71,13 @@ export const PONYTAILS: { id: string; label: string }[] = [
   { id: "ultra", label: "Ultra" },
 ];
 
-// Past this share of the window, COMPACT lights up. A fraction, not a token
+// Past this share of the window, the CTX percentage lights up. A fraction, not a token
 // count: the ceiling moves with the model and with a session's own compact-at.
 const COMPACT_SUGGEST = 0.75;
-// The context readout is a segmented instrument, not a track: eight lamps read
-// as fast as a bar at a tenth of the width, and the width is the point — the
-// old full-bleed bar spent a whole row of the composer to render "1%".
-const CTX_SEGMENTS = 8;
+// The context readout is a number and a ⚙ (design-drafts/composer-flow-chip): the eight
+// lamps before it still took a tab's width to say "7%". Where it compacts lives behind the ⚙.
+// Unset ("auto"/null, claude's own trigger near the window's end) reads as 1M.
+const AUTOCOMPACT_AT: [string, string][] = [["150000", "150K"], ["500000", "500K"], ["1000000", "1M"]];
 // The prompt box's kinds of work (lib/kinds), each with its glyph on the rail.
 const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: Hammer, refactor: Blocks, fix: Bug, ship: GitMerge, ask: MessageCircleQuestionMark };
 // The FLOW chip's and the FLOWS sheet's glyph per flow id (lib/flowview flowOf), looked up by plain string.
@@ -696,7 +696,7 @@ export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
 
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
-  draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
+  draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
   dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
@@ -758,6 +758,9 @@ export function Composer({
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
+  /** The session's auto-compact point ("auto" | token count | null = claude's default), and its setter. */
+  autocompact?: string | null;
+  onAutocompact?: (v: string | null) => void;
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
   onEjectQueued?: (id: string) => void; // pull it out and run it in a fresh session
@@ -813,7 +816,7 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
   const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
@@ -1414,7 +1417,6 @@ export function Composer({
   const ctxMax = contextWindow || 1_000_000;
   const ctxPct = Math.min(100, Math.round((ctx / ctxMax) * 100));
   const suggest = ctx >= ctxMax * COMPACT_SUGGEST;
-  const ctxSegs = Math.min(CTX_SEGMENTS, Math.ceil((ctxPct / 100) * CTX_SEGMENTS));
   // The meter is teal until the window is actually filling. Colour that is
   // always on is colour that says nothing.
   const ctxColor = ctxPct >= 85 ? "var(--err)" : suggest ? "var(--warn)" : "var(--acc)";
@@ -1565,22 +1567,26 @@ export function Composer({
       {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...plusVerbs])}
     </div>
   );
-  // FLOW (design-drafts/flow-chip, A · STEP CHIP): the path's next step beside +, ⚡ when it
-  // starts by itself, an amber ✋ when it waits on you. Its sheet is PRESET's, hung from the
+  // FLOW (design-drafts/flow-chip, A · STEP CHIP; moved by composer-flow-chip, A · ON THE RAIL):
+  // the path's next step in the rail's facts cell, ⚡ when it starts by itself, an amber ✋ when
+  // it waits on you. Off the typing line, where it squeezed the prompt into a column; no flow
+  // name, the rail's marked glyph is the flow. Its sheet is PRESET's, hung from the
   // chip: three switches this session may set over SETTINGS (picking SETTINGS' own value
   // follows it again, as PRESET follows a profile), SKIP and JUMP TO, and a Reset.
   const fchip = shelled && flowsOn && !onAgent && onFlow ? flowChip ?? null : null;
   const [flowAt, setFlowAt] = useState(0);
   useEffect(() => { if (!fchip) setOpenDrop((d) => (d === "flow" ? "" : d)); }, [fchip]);
-  const FlowGlyph = FLOW_ICON[fchip?.flow ?? ""] ?? RouteIcon;
   const flowBtn = fchip && (
     <div className="pb-flow-w">
       <button type="button" className="pb-flow" data-mark={fchip.mark} aria-haspopup="dialog" aria-expanded={openDrop === "flow"}
         title={`FLOW · ${fchip.label}, step ${fchip.step} of ${fchip.total}. Next: ${fchip.next.label.toUpperCase()}, ${MARK_WORDS[fchip.mark]}.`}
         aria-label={`${fchip.label}, next ${fchip.next.label.toUpperCase()}, ${MARK_WORDS[fchip.mark]}`}
-        onClick={(e) => { setFlowAt((e.currentTarget.parentElement as HTMLElement).offsetLeft); setOpenDrop((d) => (d === "flow" ? "" : "flow")); }}>
-        <FlowGlyph size={12} strokeWidth={2} aria-hidden />
-        {fchip.flow && <span className="pb-flow-n">{fchip.label}</span>}
+        onClick={(e) => {
+          const card = e.currentTarget.closest(".pb-card");
+          setFlowAt(card ? e.currentTarget.getBoundingClientRect().left - card.getBoundingClientRect().left : 0);
+          setOpenDrop((d) => (d === "flow" ? "" : "flow"));
+        }}>
+        <span className="pb-flow-n">NEXT</span>
         <b>{fchip.next.label.toUpperCase()}</b>
         {fchip.mark === "auto" ? <Zap size={11} strokeWidth={2.4} aria-hidden /> : <Hand size={11} strokeWidth={2.2} aria-hidden />}
       </button>
@@ -1632,33 +1638,44 @@ export function Composer({
   // Claude's window and Claude's /compact: an agent's meter would divide its
   // tokens by the wrong ceiling, and /compact would reach it as plain text.
   // SMART ZONE: the ~150k past which a flow compacts at its next boundary (bridge/route.py),
-  // a tick on the meter, and the readout in the warn colour once past it.
+  // the readout in the warn colour once past it.
   const zone = !!routing && !!smartZone;
   const pastZone = zone && ctx >= SMART_ZONE;
+  const ctxOpen = openDrop === "ctx";
+  const atPicked = (v: string) => v === (!autocompact || autocompact === "auto" ? "1000000" : autocompact);
   const ctxBlock = onAgent ? null : (
-    <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}${zone ? ` · smart zone ${fmtTokens(SMART_ZONE)}${pastZone ? ", past it" : ""}` : ""}`}>
+    <div className="ctrl-ctx" data-open={ctxOpen ? "" : undefined}
+      title={ctxOpen ? undefined : `Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}${zone ? ` · smart zone ${fmtTokens(SMART_ZONE)}${pastZone ? ", past it" : ""}` : ""}`}>
       <span className="lbl" style={pastZone ? { color: "var(--warn)" } : undefined}>CTX</span>
-      <span className="seg">
-        {Array.from({ length: CTX_SEGMENTS }, (_, i) => (
-          <i key={i} style={i < ctxSegs ? { background: ctxColor } : undefined} />
-        ))}
-        {zone && SMART_ZONE < ctxMax && <b className="zone" aria-hidden style={{ left: `${(SMART_ZONE / ctxMax) * 100}%` }} />}
-      </span>
-      <span style={{ color: suggest ? ctxColor : pastZone ? "var(--warn)" : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
-      {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
-      {onCompact && (!shelled || suggest) && (
-        // Whatever is in the box rides along as compaction instructions ("keep
-        // the auth work, drop the log spelunking") — Piebald opens a dialog for
-        // this; we already have a text box right there.
-        <button onClick={() => { onCompact(typed.trim()); setText(""); }} disabled={disabled || running}
-          title={text.trim()
-            ? "Compact the context, keeping what you've typed in mind"
-            : "Compact context (/compact) — type first to steer what the summary keeps"}
-          style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer",
-                   opacity: disabled || running ? 0.4 : 1,
-                   ...(suggest ? { border: `1px solid ${ctxColor}`, color: ctxColor } : null) }}>
-          COMPACT
-        </button>
+      <b className="cx-n" style={suggest ? { color: ctxColor } : pastZone ? { color: "var(--warn)" } : undefined}>{ctxPct}%</b>
+      <span className="cx-of">of {fmtTokens(ctxMax)}</span>
+      <button type="button" className="cx-g" aria-label="Context and auto-compact" aria-haspopup="dialog" aria-expanded={ctxOpen}
+        onMouseDown={(e) => e.preventDefault()} onClick={() => setOpenDrop((d) => (d === "ctx" ? "" : "ctx"))}>
+        <Settings size={12} strokeWidth={2} aria-hidden />
+      </button>
+      {ctxOpen && (
+        <div className="pb-pp cx-pp" role="dialog" aria-label="Context">
+          <h4>Context<span>this session</span></h4>
+          <div className="cx-meta">{ctx > 0 ? <><b>{fmtTokens(ctx)}</b> of {fmtTokens(ctxMax)} used · {ctxPct}%</> : "Not measured yet: the next turn measures it."}</div>
+          {onAutocompact && (
+            <div className="pb-pr"><b>Auto-compact</b>
+              <div className="pb-sg" role="group" aria-label="Auto-compact at">
+                {AUTOCOMPACT_AT.map(([v, face]) => (
+                  <button key={face} type="button" aria-pressed={atPicked(v)} onClick={() => onAutocompact(v)}>{face}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="pb-pf">Compacts when the window reaches this. Default 1M.
+            {onCompact && (
+              // Whatever is in the box rides along as compaction instructions ("keep
+              // the auth work, drop the log spelunking"): the text box is right there.
+              <button type="button" disabled={disabled || running}
+                title={text.trim() ? "Compact the context, keeping what you've typed in mind" : "Compact context (/compact) — type first to steer what the summary keeps"}
+                onClick={() => { onCompact(typed.trim()); setText(""); setOpenDrop(""); }}>Compact now</button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2165,7 +2182,7 @@ export function Composer({
         })}
         {gear}
       </div>}
-      <div className="pb-seg pb-facts" role="status">{facts}</div>
+      <div className="pb-seg pb-facts"><span role="status">{facts}</span>{flowBtn}</div>
       <div className="pb-seg pb-preset" data-open={openDrop === "preset" ? "" : undefined}>{presetBtn}</div>
       {profileChip && <div className="pb-seg pb-use">{profileChip}</div>}
     </div>
@@ -2180,7 +2197,7 @@ export function Composer({
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           <div className="pb-line">
-            {plusBtn}{flowBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
+            {plusBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
             <div className="pb-body">{attachRow}{editor}</div>
             <div className="pb-keys">{actions(false)}</div>
           </div>
