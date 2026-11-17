@@ -1,13 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Send, Users, X } from "lucide-react";
+import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Users, X } from "lucide-react";
 import type { Received, Receiving, RivendellTask, TeamOverview, Teammate } from "../../api";
 import { api } from "../../api";
 import { initials, splitTitle } from "../../lib/rivendelltasks";
 import { hhmm, useClock12 } from "../../lib/surfaces";
-import { teamFeed, type FeedItem } from "../../lib/teamfeed";
+import { byDay, teamFeed, type FeedItem } from "../../lib/teamfeed";
 import { KIND_LABEL, byPresence, onWhat, personTint, presence, relationLine, sentBefore, shareFacts } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
-import { TabKick } from "./TabKick";
 import { Bar } from "./MoveDock";
 
 const UI = "var(--ui-font, inherit)";
@@ -45,8 +44,8 @@ export function Avatar({ id, name, src, size = 26, state }: { id: string; name: 
 
 const btnStyle = (pri?: boolean) => ({
   appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, height: 26, padding: "0 10px",
-  boxSizing: "border-box", borderRadius: 7, border: `1px solid ${mix("var(--acc)", pri ? 52 : 22)}`,
-  background: pri ? mix("var(--acc)", 15) : "transparent", color: pri ? "var(--txh)" : "var(--txm)", fontFamily: UI,
+  boxSizing: "border-box", borderRadius: 7, border: `1px solid ${pri ? "var(--acc)" : "transparent"}`, ...(pri ? {} : { padding: "0 6px 0 0" }),
+  background: "transparent", color: pri ? "var(--acc)" : "var(--txm)", fontFamily: UI,
   fontSize: "var(--t95)", fontWeight: 600, letterSpacing: ".06em", whiteSpace: "nowrap", textDecoration: "none",
 }) as const;
 
@@ -54,29 +53,31 @@ function Btn({ icon, label, pri, onClick, title }: { icon: ReactNode; label: str
   return <button type="button" onClick={onClick} title={title} style={btnStyle(pri)}>{icon}{label}</button>;
 }
 
-/** A small rounded tag beside a card's kind, or on a SEEN row: SENT BACK, UPDATE · V2, V3. */
+/** A small tag beside a card's kind: SENT BACK, UPDATE · V2. Coloured text, no fill (flat, as TASKS). */
 export const Pill = ({ children, c }: { children: ReactNode; c: string }) => (
   <span style={{
-    flex: "none", display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 6px", borderRadius: 999, whiteSpace: "nowrap",
-    border: `1px solid ${mix(c, 45)}`, background: mix(c, 10), color: c, fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 1,
+    flex: "none", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+    color: c, fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 1,
   }}>{children}</span>
 );
 
-const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; top?: number }) => (
-  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", padding: `${top}px 12px 6px` }}>
-    {label}<span style={{ letterSpacing: 0.5, fontFamily: MONO }}>{right}</span>
+/** A day in the STREAM: its name in small caps, a hairline to the edge. */
+const Day = ({ label }: { label: string }) => (
+  <div className="caps" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px", fontSize: "var(--t9)", fontWeight: 700, letterSpacing: 2, color: "var(--txl)" }}>
+    {label}<span style={{ flex: 1, height: 1, background: mix("var(--line)", 60) }} />
   </div>
 );
 
-/** The TEAM tab (bridge/team.py): one row per teammate — on or away, the task
- *  they're on (WHO'S ON WHAT, read off this repo's Rivendell tasks, or every
- *  project's when no project links it), ➤ to send them the session you have
- *  open — then what they sent you, how far your own sends got, and SEEN: what
- *  you opened or continued, one quiet line each until you remove it or it
- *  expires. App owns the team data (it polls, and the rail badge and the session
- *  menu read it too); the task list is read here, once a minute while showing.
- *  `sessionTitle` is null when the open session isn't yours to send.
- *  Design: .mystical/design-drafts/rivendell-reimagine (T-A · WHO'S ON WHAT). */
+/** The TEAM tab (bridge/team.py), C · STREAM: who's here as faces you tap to send
+ *  the session you have open (the task they're on under each: WHO'S ON WHAT, read
+ *  off this repo's Rivendell tasks, or every project's when no project links it),
+ *  then one timeline split by day: shares still coming in, what they sent you (a
+ *  card while it waits for you), how far your own sends got, what you opened or
+ *  continued. Flat, as TASKS since rivendell-tab-v3: no fills, a share to you is
+ *  the one left rule. App owns the team data (it polls, and the rail badge and
+ *  the session menu read it too); the task list is read here, once a minute while
+ *  showing. `sessionTitle` is null when the open session isn't yours to send.
+ *  Design: .mystical/design-drafts/team-flat (C · STREAM). */
 export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
@@ -97,7 +98,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
   const [zoom, setZoom] = useState<string | null>(null);
   const [allSeen, setAllSeen] = useState(false);
   const roster = [...(data?.roster ?? [])].sort(byPresence);
-  const face = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
+  const faceOf = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
   const feed = data ? teamFeed(data, now) : { today: [], earlier: [] };
   const [tasks, setTasks] = useState<RivendellTask[]>([]);
   useEffect(() => {
@@ -111,16 +112,14 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
 
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);
-    const c = personTint(r.from.id || r.from.name);
     const thread = typeof r.meta.thread === "string" ? r.meta.thread : undefined;
     const rel = relationLine(r, now, r.relation === "back" ? sentBefore(data?.outbox ?? [], thread, r.from.id)?.last : null, h12);
     return (
       <div key={r.id} style={{
-        margin: "0 12px 8px", padding: "11px", borderRadius: 13,
-        border: `1px solid ${mix("var(--acc)", 38)}`, background: "color-mix(in srgb, var(--acc) 5%, var(--panel2))",
+        margin: "2px 12px 10px", padding: "4px 0 6px 10px", borderLeft: "2px solid var(--acc)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={22} />
+          <Avatar id={r.from.id || r.from.name} name={r.from.name} src={faceOf(r.from.id)} size={22} />
           <span style={{ minWidth: 0, fontFamily: UI, fontSize: "var(--t115)", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             <b style={{ color: "var(--txh)", fontWeight: 600 }}>{r.from.name}</b> sent you{r.at ? ` · ${stamp(r.at)}` : ""}
           </span>
@@ -142,7 +141,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
           </button>
         )}
         {r.note && (
-          <div style={{ marginTop: 7, padding: "1px 0 1px 9px", borderLeft: `2px solid ${mix(c, 45)}`, fontFamily: UI, fontSize: "var(--t11)", lineHeight: 1.45, color: "var(--txm)", overflowWrap: "anywhere" }}>{r.note}</div>
+          <div style={{ marginTop: 7, fontStyle: "italic", fontFamily: UI, fontSize: "var(--t11)", lineHeight: 1.45, color: "var(--txm)", overflowWrap: "anywhere" }}>{r.note}</div>
         )}
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)" }}>
           {f.project && <span style={{ color: "var(--info)", fontFamily: UI }}>{f.project}</span>}
@@ -200,7 +199,6 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
   // CONTINUE HERE and remove (your copy goes).
   const line = (it: Extract<FeedItem, { kind: "line" }>) => {
     const r = it.r, key = it.id;
-    const Icon = it.icon === "send" ? Send : MessageSquare;
     const busy = r && step?.id === r.id ? step.text : null;
     const rest = it.text.startsWith(it.who) ? it.text.slice(it.who.length) : it.text;
     const text = <><b>{it.who}</b>{rest}</>;
@@ -209,7 +207,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
       <div key={key} className="tf-line" data-act={r ? "" : undefined} title={`${it.text}${it.tip ? ` · ${it.tip}` : ""} · ${stamp(it.at)}`}
         onClick={r ? () => reopen(r) : undefined} onMouseEnter={() => setHov(key)} onMouseLeave={() => setHov(null)}
         onFocus={() => setHov(key)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHov(null); }}>
-        <span className="tf-ic"><Icon size={13} strokeWidth={2} /></span>
+        <span className="tf-tm">{hhmm(it.at, h12)}</span>
         {r ? <button type="button" className="tf-tx tf-btn">{text}</button> : <span className="tf-tx">{text}</span>}
         {r && hov === key && !busy ? (
           <span className="tf-r" style={{ display: "flex", gap: 2 }}>
@@ -219,7 +217,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
             <RowBtn label="Remove: your copy goes" color="var(--txl)" onClick={() => onDismiss(r)}><X size={12} strokeWidth={2} /></RowBtn>
           </span>
         ) : (
-          <span className="tf-r" style={{ color: it.status ? col : "var(--txl)" }}>{busy ?? it.status ?? stamp(it.at)}</span>
+          <span className="tf-r" style={{ color: it.status ? col : "var(--txl)" }}>{busy ?? it.status ?? ""}</span>
         )}
       </div>
     );
@@ -229,8 +227,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
   /** A share still arriving (bridge/team.py receiving): its bytes, then its turns filed. The tab
    *  looks again each second while one is here (App), so the bar moves as it comes. */
   const incoming = (r: Receiving) => (
-    <div key={r.id} title={`${r.title} · from ${r.from}`} style={{ margin: "0 12px 8px", padding: "9px 10px 10px 11px", borderRadius: 13,
-      border: `1px solid ${mix("var(--purple)", 30)}`, background: "color-mix(in srgb, var(--purple) 4%, var(--panel2))" }}>
+    <div key={r.id} title={`${r.title} · from ${r.from}`} style={{ margin: "2px 12px 10px", padding: "2px 0 2px 10px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ flex: "none", color: "var(--purple)", display: "flex" }}><Download size={11} strokeWidth={2} /></span>
         <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t115)", color: "var(--txh)" }}>{r.title}</span>
@@ -239,7 +236,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
         </span>
       </div>
       <div style={{ marginTop: 8, display: "flex" }}>
-        <Bar style="sweep" pct={r.pct} color="var(--purple)" h={3} />
+        <Bar style="sweep" pct={r.pct} color="var(--purple)" h={2} />
       </div>
       <div style={{ marginTop: 6, fontFamily: UI, fontSize: "var(--t105)", color: "var(--txl)" }}>
         from {r.from}{r.stage === "filing" ? " · writing its turns" : ""}
@@ -247,37 +244,25 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
     </div>
   );
 
-  /** A teammate: face and presence, the task they're on, ➤ sends them the open session. */
-  const person = (t: Teammate) => {
+  /** A teammate as a face to tap: it sends them the open session (the send sheet).
+   *  Under it, the task they're on, else when they were on. */
+  const face = (t: Teammate) => {
     const w = onWhat(t, tasks);
     const st = w.task?.implementation?.status;
+    const busy = st === "IN_PROGRESS" || st === "PENDING";
     const name = t.name.trim().split(/\s+/)[0] || t.name;
-    const send = sessionTitle ? `Send “${sessionTitle}” to ${name}` : "Open a session of yours to send it";
+    const send = sessionTitle ? `Send “${sessionTitle}” to ${name}` : `${name}: open a session of yours to send it`;
+    const at = t.lastSeenAt ? Date.parse(t.lastSeenAt) / 1000 : NaN;
+    const sub = w.task ? `${w.task.key || splitTitle(w.task.name).title}${busy ? ` · ${st === "PENDING" ? "queued" : "running"}` : ""}`
+      : Number.isNaN(at) ? "not linked" : `${t.online ? "on" : "off"} · ${stamp(at)}`;
     return (
-      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${mix("var(--line)", 60)}` }}
-        title={`${t.name} · ${presence(t, now, h12)}${t.device ? ` · shares ${t.device.name} (Mac)` : ""}`}>
-        <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={28} state={t.online ? "on" : "away"} />
-        <div style={{ flex: 1, minWidth: 0, fontFamily: UI }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap" }}>
-            <b style={{ fontSize: "var(--t115)", fontWeight: 700, color: "var(--txh)" }}>{name}</b>
-            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", fontSize: "var(--t95)", color: "var(--txl)" }}>
-              {presence(t, now, h12)}{w.n ? ` · ${w.n} task${w.n === 1 ? "" : "s"}` : ""}
-            </span>
-          </div>
-          <div style={{ marginTop: 2, fontSize: "var(--t10)", color: w.task ? "var(--txm)" : "var(--txg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {w.task ? <>
-              {w.task.key && <span style={{ fontFamily: MONO, fontSize: "var(--t85)", color: "var(--txl)", marginRight: 5 }}>{w.task.key}</span>}
-              {splitTitle(w.task.name).title}
-              {(st === "IN_PROGRESS" || st === "PENDING") && <span style={{ color: "var(--acc)" }}> · {st === "PENDING" ? "queued" : "running"}</span>}
-            </> : "no open task here"}
-          </div>
-        </div>
-        <button type="button" disabled={!sessionTitle} onClick={() => onSendTo(t)} title={send} aria-label={send} style={{
-          appearance: "none", cursor: sessionTitle ? "pointer" : "default", flex: "none", display: "grid", placeItems: "center", width: 28, height: 28,
-          borderRadius: 8, border: `1px solid ${mix("var(--acc)", sessionTitle ? 32 : 12)}`, background: "transparent",
-          color: sessionTitle ? "var(--acc)" : "var(--txg)", padding: 0,
-        }}><Send size={12} strokeWidth={2} /></button>
-      </div>
+      <button key={t.id} type="button" className="tf-face" disabled={!sessionTitle} onClick={() => onSendTo(t)} aria-label={send}
+        title={`${send}\n${t.name} · ${presence(t, now, h12)}${w.task ? `\n${w.task.key ? `${w.task.key} ` : ""}${splitTitle(w.task.name).title}${w.n > 1 ? ` (+${w.n - 1} more)` : ""}` : ""}${t.device ? `\nshares ${t.device.name} (Mac)` : ""}`}
+        data-away={t.online ? undefined : ""}>
+        <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={38} state={t.online ? "on" : "away"} />
+        <b>{name}</b>
+        <small style={{ color: busy ? "var(--acc)" : undefined }}>{sub}</small>
+      </button>
     );
   };
 
@@ -286,29 +271,35 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't show the team yet." />;
     if (fail) return <Empty title="Couldn't read the team" text={fail} />;
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);
+    const shown = [...feed.today, ...(allSeen ? feed.earlier : feed.earlier.slice(0, EARLIER_ROWS))];
+    const days = byDay(shown, now);
+    const coming = data.receiving ?? [];
+    if (coming.length && days[0]?.label !== "Today") days.unshift({ label: "Today", items: [] });
     return (
       <>
-        {!data.error && roster.length > 0 && <><Sect label="PEOPLE" right="who's on what" top={10} />{roster.map(person)}</>}
-        {(data.receiving?.length ?? 0) > 0 && <><Sect label="COMING IN" right={data.receiving!.length} top={10} />{data.receiving!.map(incoming)}</>}
+        {!data.error && roster.length > 0 && <div className="tf-faces">{roster.map(face)}</div>}
         {data.error && <Empty title="No roster right now" text={data.error} />}
-        {!data.error && !roster.length && !feed.today.length && !feed.earlier.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
-        {feed.today.length > 0 && <><Sect label="TODAY" top={10} />{feed.today.map(feedRow)}</>}
-        {feed.earlier.length > 0 && (
-          <>
-            <Sect label="EARLIER" top={14} />
-            {(allSeen ? feed.earlier : feed.earlier.slice(0, EARLIER_ROWS)).map(feedRow)}
-            {feed.earlier.length > EARLIER_ROWS && (
-              <button type="button" onClick={() => setAllSeen((v) => !v)} className="tf-fold">{allSeen ? "show less ↑" : `${feed.earlier.length - EARLIER_ROWS} more ↓`}</button>
-            )}
-          </>
+        {!data.error && !roster.length && !days.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
+        {days.map((d, i) => (
+          <div key={`${i}-${d.label}`}>
+            <Day label={d.label} />
+            {i === 0 && d.label === "Today" && coming.map(incoming)}
+            {d.items.map(feedRow)}
+          </div>
+        ))}
+        {feed.earlier.length > EARLIER_ROWS && (
+          <button type="button" onClick={() => setAllSeen((v) => !v)} className="tf-fold">{allSeen ? "show less ↑" : `${feed.earlier.length - EARLIER_ROWS} more ↓`}</button>
         )}
       </>
     );
   };
 
   return (
-    <div className="panel gp tf" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <TabKick name="TEAM" tools={<button className="gp-ib" title="refresh" aria-label="refresh" onClick={onRefresh}><RefreshCw size={14} /></button>} />
+    <div className="gp tf" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div className="tf-to">
+        <span>{sessionTitle ? <>Tap a face to send <b>{sessionTitle}</b></> : "Open a session of yours to send it"}</span>
+        <button className="gp-ib" title="refresh" aria-label="refresh" onClick={onRefresh}><RefreshCw size={13} /></button>
+      </div>
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>

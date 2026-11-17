@@ -4,7 +4,7 @@
 // today and earlier; newest first. Things that go wrong quietly: a dismissed send
 // still listed, an opened send still reading WAITING, a continued share shown as a card.
 import type { Received, Share, TeamOverview } from "../api.ts";
-import { teamFeed } from "./teamfeed.ts";
+import { byDay, teamFeed } from "./teamfeed.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -41,10 +41,10 @@ ok(c?.kind === "share" && c.r.id === "new", "an unopened inbox share is today's 
 ok(f.today.length === 1, "continued old item and old send are not today");
 const lines = f.earlier.filter((x) => x.kind === "line");
 ok(lines.length === 2 && f.earlier.length === 2, "two earlier lines");
-const sent = lines.find((x) => x.kind === "line" && x.icon === "send");
+const sent = lines.find((x) => x.kind === "line" && x.text.startsWith("You sent"));
 ok(sent?.kind === "line" && sent.status === "OPENED ✓✓" && sent.tone === "ok", "an opened send reads OPENED ✓✓, ok");
 ok(sent?.kind === "line" && sent.text === "You sent EFAS Pentest to Erfan", "send line text");
-const cont = lines.find((x) => x.kind === "line" && x.icon === "msg");
+const cont = lines.find((x) => x.kind === "line" && x.text.startsWith("You continued"));
 ok(cont?.kind === "line" && cont.text === "You continued Mahdi's NR Kantoor Project Status · v2", "continued item line text");
 ok(!JSON.stringify(f).includes("Gone"), "a dismissed send is absent");
 ok(f.earlier[0].at >= f.earlier[1].at, "newest first");
@@ -57,3 +57,11 @@ ok(qw?.kind === "line" && qw.status === "AFTER ITS TURN" && qw.tone === "warn" &
 const w = teamFeed(team({ outbox: [snd({}), snd({ id: "d", deliveredAt: iso(500) })] }), now);
 const st = w.today.map((x) => (x.kind === "line" ? x.status : ""));
 ok(st.includes("WAITING") && st.includes("DELIVERED"), "WAITING and DELIVERED stay");
+
+// STREAM: the timeline under the faces, split by day. Today first, then each older day
+// by its date ("Nov 5"), newest first; items keep their order inside a day.
+const g = byDay(f.today.concat(f.earlier), now);
+ok(g[0]?.label === "Today" && g[0].items.length === f.today.length, "today's items under Today");
+ok(g.length === 2 && g[1].label === new Date((now - 10 * 86400) * 1000).toLocaleDateString([], { month: "short", day: "numeric" }), "an older day under its date");
+ok(g[1].items.length === 2 && g[1].items[0].at >= g[1].items[1].at, "a day keeps newest first");
+ok(byDay([], now).length === 0, "no items, no days");
