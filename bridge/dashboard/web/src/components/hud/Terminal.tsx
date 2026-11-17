@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
-import { TicketBrief, TicketList } from "./TicketMap";
+import { TicketBrief, TicketList, TicketPart } from "./TicketMap";
 import { AgentsView } from "../AgentsView";
 import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
@@ -681,12 +681,13 @@ export function Terminal({
         <div className="np-meta" style={flat ? { display: "contents" } : { display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
           {helperChat && (
             <button type="button" className="ma-crumb" title={`Back to ${gridMain?.title || "its chat"}`} onClick={() => openAgentSession(helperChat)}>
-              <span aria-hidden>‹</span> {gridMain?.title || "chat"}
+              <span aria-hidden>‹</span> <span className="ma-crumb-t">{gridMain?.title || "chat"}</span>
             </button>
           )}
           {selected?.ticket_of && (
             <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
-              <span aria-hidden>‹</span> {superTitle || "its session"}
+              <span aria-hidden>‹</span> <span className="ma-crumb-t">{superTitle || "its session"}</span>
+              {sessionId && <TicketPart superId={selected.ticket_of} sessionId={sessionId} />}
             </button>
           )}
           <button

@@ -378,14 +378,29 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   );
 }
 
+/** Where a session sits in its set: the ticket numbers, its own (if a ticket), or whether it is the merge pass. */
+function partOf(set: TicketSet, sessionId: string) {
+  const ns = Object.keys(set.tickets).sort();
+  const n = ns.find((x) => set.tickets[x].session_id === sessionId);
+  return { ns, n, merge: !n && set.merge_session === sessionId };
+}
+
+/** The ticket crumb's count (prompt box B · ISLAND): which part this is, of how many; "merge" on the merge pass. */
+export function TicketPart({ superId, sessionId }: { superId: string; sessionId: string }) {
+  // shortcut: polls the set a second time beside TicketBrief's poll, lift the hook into Terminal if a third reader appears.
+  const [set] = useTicketSet(superId);
+  if (!set?.tickets) return null;
+  const { ns, n, merge } = partOf(set, sessionId);
+  if (!n && !merge) return null;
+  return <span className="ma-crumb-n">{n ? `${Number(n) || n}/${ns.length}` : "merge"}</span>;
+}
+
 /** What a ticket session is, pinned at the top of its transcript: its number of the set, the
  *  super session it came from, what it waits on, its branch and where it merges. */
 export function TicketBrief({ superId, sessionId, superTitle }: { superId: string; sessionId: string; superTitle?: string }) {
   const [set] = useTicketSet(superId);
   if (!set?.tickets) return null;
-  const ns = Object.keys(set.tickets).sort();
-  const n = ns.find((x) => set.tickets[x].session_id === sessionId);
-  const merge = !n && set.merge_session === sessionId;
+  const { ns, n, merge } = partOf(set, sessionId);
   if (!n && !merge) return null;
   const t = n ? set.tickets[n] : null;
   const into = set.feature_branch || "the feature branch";

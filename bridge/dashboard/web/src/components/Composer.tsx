@@ -1849,7 +1849,7 @@ export function Composer({
     </div>
   );
   // B · DECK (.mystical/design-drafts/prompt-box-v2): mid-turn the box says what the turn is
-  // doing now, with its clock, the login warning and Pause/Stop, so the keys keep one job:
+  // doing now, with its clock and Pause/Stop, so the keys keep one job:
   // Enter's target, picked by NOW|NEXT. The queue stacks above the box as a deck, NEXT nearest.
   const deckRun = shelled && running && !askBtn;
   const nowStrip = deckRun && (
@@ -1857,7 +1857,6 @@ export function Composer({
       <i className="pb-now-dot" aria-hidden />
       <span className="pb-now-what" title={activity || undefined}>{activity || "working…"}</span>
       {bg > 0 && <span className="pb-now-bg">+ {bg} background</span>}
-      {dryPill}
       {turnStarted ? <span className="pb-now-clock">{turnClock(nowSec - turnStarted)}</span> : null}
       {pauseBtn}
       {stopBtn}
@@ -1913,7 +1912,7 @@ export function Composer({
   // CSS hides an empty ledger and, past one live item, every pill's
   // description (.pill-desc) — busy means terse.
   const ledger = (className: string) => (
-    <div className={`pb-ledger ${className}`}>{deckRun ? null : dryPill}{pills}</div>
+    <div className={`pb-ledger ${className}`}>{pills}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -2083,7 +2082,6 @@ export function Composer({
   const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;
   const boxProps = {
     "data-drag": dragging ? "" : undefined,
-    "data-running": running ? "" : undefined,
     style: { position: "relative", display: "flex", alignItems: "flex-start", gap: 11, border: `1px solid ${dragging ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: "color-mix(in srgb, var(--panel2) 70%, transparent)", padding: "10px 13px", fontFamily: "'JetBrains Mono',monospace" } as CSSProperties,
     onDragOver: (e: React.DragEvent) => { e.preventDefault(); if (!dragging) setDragging(true); },
     onDragLeave: () => setDragging(false),
@@ -2272,14 +2270,19 @@ export function Composer({
   );
   // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
   // arrives flattened from Terminal; .pb-lead lays it out in index.css.
+  // B · ISLAND (.mystical/design-drafts/prompt-box-wild): the lead floats over the card as one
+  // pill; mid-turn the now strip joins it (data-now) and only it shines, so the card keeps its
+  // height. The login warning floats beside it as a second pill.
   const shell =
       <>
-        <div className="pb-tabs pb-lead">{lead}{workTab}{queuedList}{ctxBlock}</div>
+        <div className="pb-isles">
+          <div className="pb-tabs pb-lead" data-now={nowStrip ? "" : undefined}>{lead}{workTab}{queuedList}{nowStrip}{ctxBlock}</div>
+          {dryPill}
+        </div>
         {dock}
         {embedNote}
         {deck}
         <div {...boxProps} className="cmdbox pb-card" data-deck={deck ? "" : undefined}>
-          {nowStrip}
           {ledger("")}
           <div className="pb-line">
             {plusBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
