@@ -1,5 +1,5 @@
 // Run: node src/lib/ticketdag.check.ts  (from web/) — grep the output for "Assertion failed".
-import { dagLayout, kindOf } from "./ticketdag.ts";
+import { dagLayout, graphWidth, kindOf, waveLabel } from "./ticketdag.ts";
 
 const k = (status: string, state?: string, stalled?: boolean) => kindOf({ status, stalled }, state);
 console.assert(k("done") === "done" && k("fix") === "fix" && k("queued") === "q" && k("missing") === "q", "done, fix and waiting rows");
@@ -30,4 +30,12 @@ console.assert(!e("04", "MERGE") && g.edges.length === 6, "no other edges");
 const c = dagLayout([T("1"), T("2", "1"), T("3", "2", "1")]);
 console.assert(c.nodes.find((x) => x.n === "3")!.col === 2, "column is 1 + the longest chain");
 console.assert(dagLayout([]).cols === 1, "an empty set is just MERGE");
+// Wave labels: the full map spells a wave out; the compact one stays short so 12 columns fit its width.
+console.assert(waveLabel(1, 12, "now", true) === "WAVE 2 · NOW" && waveLabel(0, 12, "done", true) === "WAVE 1 ✓" && waveLabel(2, 12, "", true) === "WAVE 3", "big labels");
+console.assert(waveLabel(1, 12, "now", false) === "NOW" && waveLabel(0, 12, "done", false) === "W1 ✓" && waveLabel(9, 12, "", false) === "W10", "compact labels");
+console.assert(waveLabel(11, 12, "", false) === "MERGE" && waveLabel(11, 12, "now", true) === "MERGE", "the last column is MERGE");
+// Compact width: 680 while a column gets 48 units, then it grows and the card scrolls sideways.
+console.assert(graphWidth(12, false) === 680 && graphWidth(3, false) === 680, "a usual set fits 680");
+console.assert(graphWidth(25, false) === 2 * 54 + 24 * 48, "a 24-wave set keeps 48 units a column");
+console.assert(graphWidth(3, true) === 640 && graphWidth(12, true) === 2 * 80 + 11 * 150, "big: 150 a column, 640 at least");
 console.log("ticketdag checks ran");

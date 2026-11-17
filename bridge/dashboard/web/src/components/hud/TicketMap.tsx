@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronUp, Hand, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
 import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../api";
 import { derivePending } from "../../chat";
-import { dagLayout, kindOf, type Kind } from "../../lib/ticketdag";
+import { dagLayout, graphWidth, kindOf, waveLabel, type Kind } from "../../lib/ticketdag";
 import { changeFlows, useFlowSettings } from "../../lib/flowsettings";
 import { askConfirm } from "../ui/Ask";
 import { Switch } from "../ui/Switch";
@@ -56,8 +56,8 @@ function Graph({ set, kinds, status, big, sel, onPick }: {
   const { g, now } = waves(set, kinds);
   const inCol = (c: number) => g.nodes.filter((x) => x.col === c).length;
   const rowsMax = Math.max(1, ...Array.from({ length: g.cols }, (_, c) => inCol(c)));
-  // A column is at least 150px (big) so labels never overlap; a wide set scrolls sideways.
-  const r = big ? 20 : 13, padX = big ? 80 : 54, top = big ? 44 : 30, W = big ? Math.max(640, 2 * padX + (g.cols - 1) * 150) : 680;
+  // A column has a floor width so labels never overlap; a wider set scrolls sideways.
+  const r = big ? 20 : 13, padX = big ? 80 : 54, top = big ? 44 : 30, W = graphWidth(g.cols, !!big);
   const H = top + (big ? Math.max(260, rowsMax * 120) : Math.max(56, rowsMax * 40)) + (big ? 30 : 8);
   const colW = g.cols > 1 ? (W - 2 * padX) / (g.cols - 1) : W - 2 * padX;
   const X = (c: number) => (g.cols > 1 ? padX + c * colW : W / 2);
@@ -65,10 +65,9 @@ function Graph({ set, kinds, status, big, sel, onPick }: {
     x: X(x.col), y: top + ((H - top - (big ? 30 : 8)) / inCol(x.col)) * (x.row + 0.5),
   }]));
   const merging = set.status === "merging" || set.status === "merged";
-  const label = (c: number) => (c === g.cols - 1 ? "MERGE"
-    : `WAVE ${c + 1}${g.nodes.every((x) => x.col !== c || kinds[x.n] === "done") ? " ✓" : c === now ? " · NOW" : ""}`);
+  const label = (c: number) => waveLabel(c, g.cols, g.nodes.every((x) => x.col !== c || kinds[x.n] === "done") ? "done" : c === now ? "now" : "", !!big);
   return (
-    <svg className={`tm-graph${big ? " big" : ""}`} viewBox={`0 0 ${W} ${H}`} style={big ? { "--min-w": `${W}px` } as CSSProperties : undefined}
+    <svg className={`tm-graph${big ? " big" : ""}`} viewBox={`0 0 ${W} ${H}`} style={big ? { "--min-w": `${W}px` } as CSSProperties : W > 680 ? { minWidth: W, maxHeight: "none" } : undefined}
          role="group" aria-label={`Dependency graph of ${ns.length} tickets in ${g.cols - 1} waves, then merge`}>
       {Array.from({ length: g.cols }, (_, c) => (
         <g key={`w${c}`} className={`tm-wave${c === now ? " now" : ""}`}>
