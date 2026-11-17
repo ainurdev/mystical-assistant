@@ -1996,6 +1996,8 @@ input {
 .agm-bt { font-family: var(--d-face, var(--mono)); font-size: var(--t115); line-height: 1.55; font-style: italic;
   color: var(--txm); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .agm-brief[data-open] .agm-bt { display: block; }
+/* a background shell's command line: the machine's own words, not a brief */
+.agm-brief[data-cmd] .agm-bt { font-family: var(--mono); font-style: normal; }
 .agm-more { appearance: none; margin-top: 6px; padding: 0; border: 0; background: none; cursor: pointer;
   font-family: var(--ui-font); font-size: var(--t105); color: var(--txd); }
 .agm-more:hover { color: var(--acc); }

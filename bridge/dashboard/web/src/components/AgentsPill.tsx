@@ -13,7 +13,8 @@ import { Spinner } from "./ui";
  *  and an agent only counts as running while its session's process is alive.
  *  Once the turn has answered with tasks still running in the background
  *  (status `background`), it counts those instead, shells too, from Claude
- *  Code's own list: how many, the newest, the bar, the oldest's age. */
+ *  Code's own list: how many, the newest, the bar, the oldest's age. The
+ *  roster it opens lists them too: an idle session's shells left it empty. */
 export function AgentsPill({
   sessionId,
   running,
@@ -155,6 +156,7 @@ export function AgentsPill({
           sessionId={sessionId}
           agents={data?.agents ?? []}
           workflows={data?.workflows ?? []}
+          background={back ? bg!.bg : undefined}
           initial={typeof open === "string" ? open : null}
           hud={hud}
           onClose={() => setOpen(false)}

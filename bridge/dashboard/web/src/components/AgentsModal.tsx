@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type AgentInfo, type StoreEvent, type StoreTurn, type WorkflowInfo } from "../api";
+import { api, type AgentInfo, type BgTask, type StoreEvent, type StoreTurn, type WorkflowInfo } from "../api";
 import type { HudSettings } from "../lib/theme";
 import { hhmm } from "../lib/surfaces";
 import { agentMeta, fmtClock, fmtSpan, modelName, rosterSections, type Sub } from "../lib/subagents";
@@ -115,6 +115,7 @@ export function AgentsModal({
   sessionId,
   agents,
   workflows,
+  background,
   initial,
   hud,
   onClose,
@@ -122,6 +123,10 @@ export function AgentsModal({
   sessionId: string;
   agents: AgentInfo[];
   workflows: WorkflowInfo[];
+  /** What the pill counts once the turn has answered (status `background`):
+   *  the shells and tasks still running in the session's process. Agents among
+   *  them are left out, as the roster lists them under Working already. */
+  background?: BgTask[];
   /** Open on this agent (an AGENT plate's open ↗) rather than the first one. */
   initial?: string | null;
   hud?: HudSettings;
@@ -132,9 +137,15 @@ export function AgentsModal({
   const all = useMemo(() => rosterSections(agents, workflows, "").flatMap((s) => s.items), [agents, workflows]);
   const sections = useMemo(() => rosterSections(agents, workflows, filter), [agents, workflows, filter]);
   const shown = sections.flatMap((s) => s.items);
-  // Open on what's working — WORKING sorts first — else the newest.
-  const [selected, setSelected] = useState<string | null>(() => initial ?? all[0]?.key ?? null);
+  const q = filter.trim().toLowerCase();
+  const bgAll = (background ?? []).filter((t) => t.type !== "agent");
+  const bgShown = bgAll.filter((t) => !q || t.desc.toLowerCase().includes(q));
+  const keys = [...bgShown.map((t) => `bg:${t.id}`), ...shown.map((i) => i.key)];
+  // Open on what's working — the background list, then WORKING — else the newest.
+  const [selected, setSelected] = useState<string | null>(
+    () => initial ?? (bgAll[0] ? `bg:${bgAll[0].id}` : all[0]?.key) ?? null);
   const sel = all.find((i) => i.key === selected);
+  const selBg = bgAll.find((t) => `bg:${t.id}` === selected);
   const [tick, setTick] = useState(0);
   const selRowRef = useRef<HTMLButtonElement>(null);
 
@@ -144,10 +155,10 @@ export function AgentsModal({
   const now = Date.now() / 1000;
 
   useEffect(() => {
-    if (!nLive) return;                        // no spinner, no clocks, when idle
+    if (!nLive && !bgAll.length) return;       // no spinner, no clocks, when idle
     const id = setInterval(() => setTick((t) => t + 1), 110);
     return () => clearInterval(id);
-  }, [nLive]);
+  }, [nLive, bgAll.length]);
 
   // The modal owns these keys while it's open: capture, so the sessions
   // panel's "/" (its search box) doesn't fire behind it.
@@ -158,15 +169,15 @@ export function AgentsModal({
       else if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); filterRef.current?.focus(); }
       else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        const i = shown.findIndex((x) => x.key === selected);
-        const next = shown[Math.max(0, Math.min(shown.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
-        if (next) setSelected(next.key);
+        const i = keys.indexOf(selected ?? "");
+        const next = keys[Math.max(0, Math.min(keys.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
+        if (next) setSelected(next);
       } else return;
       e.stopPropagation();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [shown, selected, onClose]);
+  }, [keys, selected, onClose]);
 
   useEffect(() => { selRowRef.current?.scrollIntoView({ block: "nearest" }); }, [selected]);
 
@@ -182,14 +193,21 @@ export function AgentsModal({
       <div className="agm" role="dialog" aria-modal="true" aria-labelledby="agm-title" onClick={(e) => e.stopPropagation()}>
         <div className="agm-head">
           <span className="agm-title" id="agm-title">Agents</span>
+          {bgAll.length > 0 && (
+            <span className="agm-chip" data-live="">
+              <span className="agm-spin">{SPIN[tick % SPIN.length]}</span>{bgAll.length} in background
+            </span>
+          )}
           {nLive > 0 && (
             <span className="agm-chip" data-live="">
               <span className="agm-spin">{SPIN[tick % SPIN.length]}</span>{nLive} working
             </span>
           )}
-          <span className="agm-chip">{all.length - nLive} done</span>
-          {/* done / total, so a long fan-out reads as progress, not a number */}
-          <span className="agm-bar"><i style={{ width: `${Math.round(((all.length - nLive) / Math.max(1, all.length)) * 100)}%` }} /></span>
+          {all.length > 0 && <>
+            <span className="agm-chip">{all.length - nLive} done</span>
+            {/* done / total, so a long fan-out reads as progress, not a number */}
+            <span className="agm-bar"><i style={{ width: `${Math.round(((all.length - nLive) / Math.max(1, all.length)) * 100)}%` }} /></span>
+          </>}
           {Number.isFinite(first) && (
             <span className="agm-span">since {day(first)}{hhmm(first)} · {tools.toLocaleString("en")} tool calls</span>
           )}
@@ -206,6 +224,23 @@ export function AgentsModal({
               </label>
             )}
             <div className="agm-list mscroll" role="listbox" aria-label="agents">
+              {bgShown.length > 0 && (
+                <div>
+                  <div className="agm-sec"><span>In background</span><span>{filter ? `${bgShown.length} of ${bgAll.length}` : bgAll.length}</span></div>
+                  {bgShown.map((t) => {
+                    const key = `bg:${t.id}`, on = key === selected;
+                    return (
+                      <button key={key} type="button" role="option" aria-selected={on} className="agm-row" data-live=""
+                        ref={on ? selRowRef : undefined} onClick={() => setSelected(key)} title={t.desc}>
+                        <Glyph running frame={tick} />
+                        <span className="agm-t">{t.desc || t.type}</span>
+                        <span className="agm-dur">{fmtClock(now - t.since)}</span>
+                        <span className="agm-m">{t.type}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {sections.map((s) => (
                 <div key={s.name}>
                   <div className="agm-sec"><span>{s.name}</span><span>{filter ? `${s.items.length} of ${s.total}` : s.total}</span></div>
@@ -224,7 +259,7 @@ export function AgentsModal({
                   })}
                 </div>
               ))}
-              {!sections.length && <div className="agm-none">no agent answers to “{filter}”.</div>}
+              {!sections.length && !bgShown.length && <div className="agm-none">no agent answers to “{filter}”.</div>}
             </div>
             <div className="agm-keys"><span><kbd>↑↓</kbd>agents</span><span><kbd>/</kbd>filter</span><span><kbd>esc</kbd>close</span></div>
           </nav>
@@ -245,6 +280,23 @@ export function AgentsModal({
               </div>
             )}
             {sel && <Run key={sel.key} sessionId={sessionId} agentId={sel.a.agent_id} run={sel.run} hud={hud} />}
+            {selBg && (
+              <>
+                <div className="agm-rhead">
+                  <Glyph running frame={tick} />
+                  <span className="agm-rt">{selBg.desc || selBg.type}</span>
+                  <span style={{ flex: 1 }} />
+                  <span className="agm-facts">{selBg.type} · {fmtClock(now - selBg.since)}</span>
+                  <span className="agm-chip" data-live="">running</span>
+                </div>
+                <div className="mscroll agm-scroll">
+                  <div className="agm-brief" data-open="" data-cmd="">
+                    <div className="agm-bl">{selBg.type === "shell" ? "Command" : "Task"}<em>since {hhmm(selBg.since)}</em></div>
+                    <div className="agm-bt">{selBg.desc}</div>
+                  </div>
+                </div>
+              </>
+            )}
           </section>
         </div>
       </div>
