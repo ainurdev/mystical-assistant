@@ -1739,9 +1739,9 @@ def test_a_ticket_of_yours_waits_on_you_until_go(make_set, monkeypatch):
     t = s.state["tickets"]["02"]
     assert (t["status"], t["session_id"], t["worktree"]) == ("yours", "", "")      # no agent, no worktree
     assert [x["sid"] for x in s.starts] == [s.sid("01")] and not s.worktree_add_calls("02")
-    assert said == [("tickets_yours", s.flow, "#02 T02 is yours. Tap Go in TICKETS once it's done:\n- ok\n- say go")]
+    assert said == [("tickets_yours", s.flow, "#02 T02 is yours. Tap Go in PARTS once it's done:\n- ok\n- say go")]
     mine = lambda: [(n["kind"], n["verb"], n["body"]) for n in notices.needs({}) if n["session_id"] == s.flow]  # noqa: E731
-    assert mine() == [("tickets_yours", "YOURS", "#02 is yours: Go in TICKETS once done")]
+    assert mine() == [("tickets_yours", "YOURS", "#02 is yours: Go in PARTS once done")]
     assert tickets.retry(s.folder, "02") == "#02 isn't waiting for a retry"      # Retry never hands it to an agent
     tickets.boot()
     assert s.status("02") == "yours" and s.status("03") == "queued"

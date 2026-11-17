@@ -355,7 +355,7 @@ def yours() -> dict:
 
 def yours_line(ns: list) -> str:
     """What tickets of yours say in Needs you: which, and what ends the wait."""
-    return f"{' and '.join('#' + n for n in ns)} {'is' if len(ns) == 1 else 'are'} yours: Go in TICKETS once done"
+    return f"{' and '.join('#' + n for n in ns)} {'is' if len(ns) == 1 else 'are'} yours: Go in PARTS once done"
 
 
 def summary_for(session_id: str):
@@ -511,7 +511,7 @@ def _refresh(folder: str, st: dict) -> None:
     except (OSError, TicketError) as e:
         if st.get("refresh_error") != str(e):   # each tick reads it again: say it once
             st["refresh_error"] = str(e)
-            notices.emit("tickets", st["parent_session"], body=f"New or changed tickets wait: {e}.")
+            notices.emit("tickets", st["parent_session"], body=f"New or changed parts wait: {e}.")
         return
     st.pop("refresh_error", None)
     for n, bs in deps.items():
@@ -762,7 +762,7 @@ def _hand_over(st: dict, n: str, todos: list) -> None:
     t.update(status="yours", human=True)
     sid = st["parent_session"]
     chat = (store.get_session(sid) or {}).get("chat_id")
-    body = (f"#{n} {t['title']} is yours. Tap Go in TICKETS once it's done"
+    body = (f"#{n} {t['title']} is yours. Tap Go in PARTS once it's done"
             + (":\n" + "\n".join(f"- {x}" for x in todos) if todos else "."))
     # shortcut: rings under the set lock, so an unreachable Telegram (30 s timeout) holds other
     # tickets' turn ends that long; send it after the lock if that ever bites.
