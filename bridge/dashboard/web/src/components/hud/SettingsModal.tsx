@@ -12,7 +12,7 @@ import {
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, RotateCw, Send, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
-  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork,
+  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork, Plus,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
@@ -35,10 +35,12 @@ import { openSession } from "../../lib/devicerun";
 import { ChatImagesSection } from "./ChatImagesSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
-import { MARK } from "./CouncilPanel";
+import { Mark } from "./CouncilPanel";
+import { AGENT, benchNames, reviewerName, who } from "../../lib/council";
 import {
   api,
   type AccountInfo,
+  type CouncilAccount,
   type CouncilSettings,
   type EnvSetting,
   type Integration,
@@ -3352,8 +3354,7 @@ function ProjectsPage({ projects, current, onAccountsChanged, onOpenSkills }: {
 
 /** Council (design-drafts/council-tab; bridge/council.py): who reviews a session's
  *  work before origin, and what score lets it through. Every change saves at once
- *  and the row shows what the bridge answered, which has clamped it. Codex's
- *  sign-in is ACCOUNTS ▸ AGENTS: the button deep-links there. */
+ *  and the row shows what the bridge answered, which has clamped it. */
 function Stepper({ label, text, onStep }: { label: string; text: string; onStep: (d: number) => void }) {
   // The Type tab's size stepper (.tp-step). A span: the row's `> div` rule would stretch a div to half the row.
   return (
@@ -3365,6 +3366,12 @@ function Stepper({ label, text, onStep }: { label: string; text: string; onStep:
   );
 }
 
+const SIGNED_OUT = "not signed in";     // bridge/council.py SIGNED_OUT: that row offers Sign in
+
+/** Reviewers, B · ON THE BENCH (design-drafts/council-reviewers): the accounts that
+ *  review sit as chips; + Add a reviewer lists every account the bridge could run,
+ *  by agent, dimmed where one can't sit now (Sign in deep-links to ACCOUNTS). An
+ *  outside agent with a reviewer on gets a line of the projects it may read. */
 function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; projects: ProjectsSettingsProps; onSignIn: () => void }) {
   const [s, setS] = useState<CouncilSettings | null>(null);
   // Each click steps from the latest value, not the rendered one, so fast clicks
@@ -3374,13 +3381,29 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
   const confirmed = useRef<CouncilSettings | null>(null);
   const seq = useRef(0);
   const [err, setErr] = useState<string | null>(null);
-  // null = not read; the Codex seat's login as the last TEST or turn found it.
-  const [codexIn, setCodexIn] = useState<boolean | null>(null);
+  const [menu, setMenu] = useState(false);
+  const bench = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    void api.councilSettings().then((r) => { latest.current = confirmed.current = r; setS(r); }).catch(() => setErr("Couldn't read the council's settings."));
-    void api.acpAgents().then((r) => setCodexIn(
-      Object.entries(r.options).some(([k, o]) => k.startsWith("codex|") && o.signed_in === true))).catch(() => {});
+    void api.councilSettings().then((r) => {
+      if (!Array.isArray(r.reviewers)) return setErr("Restart the bridge to pick reviewers per account.");
+      latest.current = confirmed.current = r;
+      setS(r);
+    }).catch(() => setErr("Couldn't read the council's settings."));
   }, []);
+  const shut = (refocus?: boolean) => {
+    setMenu(false);
+    if (refocus) bench.current?.querySelector<HTMLElement>(".cr-add")?.focus();
+  };
+  useEffect(() => {
+    if (!menu) return;
+    // As the typeface menu: start on the first row and bring the list into the pane.
+    const m = bench.current?.querySelector(".cr-menu");
+    m?.querySelector<HTMLElement>("[role=menuitemcheckbox]")?.focus({ preventScroll: true });
+    m?.scrollIntoView({ block: "nearest" });
+    const away = (e: PointerEvent) => { if (!bench.current?.contains(e.target as Node)) shut(); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [menu]);
   async function save(patch: (c: CouncilSettings) => Partial<CouncilSettings>) {
     if (!latest.current) return;
     setErr(null);
@@ -3388,7 +3411,8 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
     setS(latest.current);
     const id = ++seq.current;
     try {
-      const r = await api.saveCouncilSettings(latest.current);
+      const { accounts: _rows, ...body } = latest.current;    // the rows are the bridge's to send
+      const r = await api.saveCouncilSettings(body);
       if (id === seq.current) { latest.current = confirmed.current = r; setS(r); }
     } catch {
       if (id !== seq.current) return;
@@ -3397,65 +3421,114 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
       setErr("Couldn't save that.");
     }
   }
+  const toggle = (k: string) => void save((c) => ({ reviewers: c.reviewers.includes(k) ? c.reviewers.filter((x) => x !== k) : [...c.reviewers, k] }));
+  const reads = (agent: string, list: string[]) => void save((c) => ({ projects: { ...c.projects, [agent]: list } }));
   const name = (rel: string) => projects.groups.find((g) => g.rel === rel)?.name ?? rel;
-  const free = s ? projects.groups.filter((g) => !s.codex_projects.includes(g.rel)) : [];
+  const rows = s?.accounts ?? [];
+  const outside = s ? [...new Set(s.reviewers.map((k) => k.split(":")[0]))].filter((a) => a !== "claude") : [];
+  const row = (a: CouncilAccount) => {
+    const on = !!s?.reviewers.includes(a.key), signin = !a.ok && a.status === SIGNED_OUT;
+    return (
+      <div key={a.key} className={`cr-mr${on ? " hot" : ""}${a.ok ? "" : " off"}`}>
+        <button type="button" role="menuitemcheckbox" aria-checked={on} className="cr-mrb" onClick={() => toggle(a.key)}>
+          <span className="cr-tick" aria-hidden>{on ? "✓" : ""}</span>
+          <span className="cr-name">{a.label || "Machine login"}</span>
+          <span className={`cr-st${!a.ok && !signin ? " warn" : ""}`}>{a.status}</span>
+        </button>
+        {signin && <button type="button" className="cr-si" onClick={() => { shut(); onSignIn(); }}>Sign in ›</button>}
+      </div>
+    );
+  };
   return (
     <AimFold id="council" title="Council" secs={["COUNCIL"]} openSec={openSec} hint="reviews a session's work before origin"
-      count={s ? `${s.bar.toFixed(1)} · ${s.max_rounds} rounds · ${[s.claude && "Claude", s.codex && codexIn && "Codex"].filter(Boolean).join(" + ") || "no reviewers"}` : null}
+      count={s ? `${s.bar.toFixed(1)} · ${s.max_rounds} rounds · ${benchNames(s.reviewers, rows)}` : null}
       right={<span className="aim-chip">NEW</span>}>
       {err && <div className="aim-xerr">{err}</div>}
       {s && (
         <div className="aim-vfields" style={{ gridTemplateColumns: "1fr" }}>
           <div className="aim-vfield row">
-            <div><b>Pass at</b><span>the average both reviewers have to reach, out of 10</span></div>
+            <div><b>Pass at</b><span>the average your reviewers have to reach, out of 10</span></div>
             <Stepper label="the bar" text={s.bar.toFixed(1)} onStep={(d) => void save((c) => ({ bar: c.bar + d * 0.5 }))} />
           </div>
           <div className="aim-vfield row">
-            <div><b>Rounds at most</b><span>a round is two reviews, then one fix turn in the session</span></div>
+            <div><b>Rounds at most</b><span>a round is one review from each reviewer, then one fix turn in the session</span></div>
             <Stepper label="the rounds" text={String(s.max_rounds)} onStep={(d) => void save((c) => ({ max_rounds: c.max_rounds + d }))} />
           </div>
           <div className="aim-vfield row">
             <div><b>Stop early</b><span>when a round doesn't raise the score, and ask you</span></div>
             <Switch on={s.stop_early} label="Stop early" onClick={() => void save((c) => ({ stop_early: !c.stop_early }))} />
           </div>
-          <div className="aim-vfield">
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div className="aim-vfield cr-revs">
+            <div className="cr-head">
               <b>Reviewers</b>
-              <span>each reads the work fresh, in a session of its own</span>
+              <span>each reads the work fresh, in a session of its own · a must-fix blocks when more than half flag it</span>
             </div>
-            <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
-              <span className="cn-mk claude">{MARK.claude}</span>
-              {/* council.py seat_claude: its own rubric prompt in plan mode, on the session's login slot */}
-              <div><b>Claude</b><span>the session's own login · every project</span></div>
-              <Switch on={s.claude} label="Claude reviews" onClick={() => void save((c) => ({ claude: !c.claude }))} />
+            <div ref={bench} className="cr-bench"
+              onKeyDown={(e) => {
+                if (!menu) return;
+                if (e.key === "Escape") { e.stopPropagation(); shut(true); }   // the menu, not the dialog
+                else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitemcheckbox]")];
+                  const i = items.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowDown" ? 1 : -1);
+                  items[Math.max(0, Math.min(items.length - 1, i))]?.focus();
+                }
+              }}
+              // Tabbing out shuts it; a click elsewhere is the pointerdown above.
+              onBlur={(e) => { if (menu && e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) shut(); }}>
+              {s.reviewers.map((k) => {
+                const r = rows.find((x) => x.key === k), w = who(k, r);
+                return (
+                  <span key={k} className={`cr-seatchip${r && !r.ok ? " off" : ""}`} title={r?.status}>
+                    <Mark agent={w.agent} />
+                    <b>{AGENT[w.agent] ?? w.agent}</b>
+                    {w.label && <span className="cr-acc">{w.label}</span>}
+                    <button type="button" className="cr-x" aria-label={`Take ${reviewerName(w)} off the council`} onClick={() => toggle(k)}>×</button>
+                  </span>
+                );
+              })}
+              <button type="button" className="cr-add" aria-haspopup="menu" aria-expanded={menu} onClick={() => (menu ? shut() : setMenu(true))}>
+                <Plus size={12} strokeWidth={2.4} aria-hidden />Add a reviewer<ChevronDown size={12} strokeWidth={2.2} aria-hidden />
+              </button>
+              {menu && (
+                <div className="cr-menu" role="menu" aria-label="Accounts that can review">
+                  {rows.length === 0 && <div className="cr-mh">No account to add yet: sign one in under Accounts.</div>}
+                  {rows.map((a, i) => (
+                    <Fragment key={a.key}>
+                      {a.agent !== rows[i - 1]?.agent && <div className="cr-mh"><Mark agent={a.agent} />{(AGENT[a.agent] ?? a.agent).toUpperCase()}</div>}
+                      {row(a)}
+                    </Fragment>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
-              <span className="cn-mk codex">{MARK.codex}</span>
-              <div>
-                <b>Codex</b>
-                <span>{codexIn ? "signed in" : codexIn === false ? "not signed in" : "sign in to use Codex"} · one sign-in with your ChatGPT plan</span>
+            {outside.length > 0 && (
+              <div className="cr-reads">
+                {outside.map((ag) => {
+                  const mine = s.projects[ag] ?? [];
+                  const label = AGENT[ag] ?? ag;
+                  return (
+                    <div key={ag} className="cr-rd">
+                      <Mark agent={ag} />
+                      <span className="cr-lab">{label} reads</span>
+                      {mine.length === 0 && <span className="cr-none">no project yet, so it sits out</span>}
+                      {mine.map((rel) => (
+                        <span key={rel} className="cr-chip">
+                          {name(rel)}
+                          <button type="button" aria-label={`Stop ${label} reading ${name(rel)}`} onClick={() => reads(ag, mine.filter((r) => r !== rel))}>×</button>
+                        </span>
+                      ))}
+                      <select className="aim-sel cr-pickp" aria-label={`Pick projects ${label} may read`} value=""
+                        onChange={(e) => { const v = e.target.value; if (v) reads(ag, [...mine, v]); }}>
+                        <option value="">+ Pick projects</option>
+                        {projects.groups.filter((g) => !mine.includes(g.rel)).map((g) => <option key={g.rel} value={g.rel}>{g.name}</option>)}
+                      </select>
+                    </div>
+                  );
+                })}
+                <div className="cr-foot">Claude logins read every project. Any other agent reads only the projects you list for it.</div>
               </div>
-              {!codexIn && <button type="button" className="aim-xbtn" onClick={onSignIn}>Sign in</button>}
-              <Switch on={s.codex} label="Codex reviews" onClick={() => void save((c) => ({ codex: !c.codex }))} />
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-              <b>Codex may review</b>
-              {s.codex_projects.length === 0 && <span className="aim-hint">none yet</span>}
-              {s.codex_projects.map((rel) => (
-                <span key={rel} className="aim-chip">
-                  {name(rel)}{" "}
-                  <button type="button" aria-label={`Stop Codex reviewing ${name(rel)}`} onClick={() => void save((c) => ({ codex_projects: c.codex_projects.filter((r) => r !== rel) }))}
-                    style={{ all: "unset", cursor: "pointer" }}>×</button>
-                </span>
-              ))}
-              <select className="aim-sel" aria-label="Pick projects Codex may review" value=""
-                style={{ width: 150, height: 26, padding: "0 8px", fontSize: 12, color: "var(--acc)" }}
-                onChange={(e) => { const v = e.target.value; if (v) void save((c) => ({ codex_projects: [...c.codex_projects, v] })); }}>
-                <option value="">+ Pick projects</option>
-                {free.map((g) => <option key={g.rel} value={g.rel}>{g.name}</option>)}
-              </select>
-              <span className="aim-hint">client code stays with Claude</span>
-            </div>
+            )}
           </div>
         </div>
       )}

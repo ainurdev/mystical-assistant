@@ -1,4 +1,4 @@
-import type { CouncilBrief } from "../api";
+import type { CouncilAccount, CouncilBrief, CouncilFinding, CouncilSeat } from "../api";
 
 /* How the COUNCIL tab reads a run (bridge/council.py brief(); design:
    .mystical/design-drafts/council-tab, A · SCOREBOARD): the rail tile, the
@@ -46,11 +46,67 @@ export function columns(c: CouncilBrief): { n: string; v: number | null; cls: ""
 }
 
 /** The two pass rules on the last round that scored: the average reaches the
- *  bar, and no must-fix every seat agrees on. null before any round has. */
+ *  bar, and no must-fix more than half of its reviewers agree on. null before any round has. */
 export function rules(c: CouncilBrief): { avg: boolean | null; shared: boolean | null } {
   const last = c.rounds[c.rounds.length - 1];
   if (last?.score == null) return { avg: null, shared: null };
   return { avg: last.score >= c.bar, shared: last.blocking === 0 };
+}
+
+/* Reviewers per account (design: .mystical/design-drafts/council-reviewers, B · ROLL
+   CALL and B · ON THE BENCH). A reviewer's key is "<agent>:<account>"; its seat
+   names it. A run saved before then keys its seats "claude"/"codex" and names none. */
+
+/** An agent's name as the council says it; one not listed keeps its id. */
+export const AGENT: Record<string, string> = { claude: "Claude", codex: "Codex", gemini: "Gemini", kimi: "Kimi", opencode: "opencode" };
+type Who = { agent: string; label: string };
+export const who = (key: string, named?: { agent?: string; label?: string }): Who =>
+  ({ agent: named?.agent ?? key.split(":")[0], label: named?.label ?? "" });
+const agentName = (w: Who) => AGENT[w.agent] ?? w.agent;
+/** "Claude · main"; an agent's own machine login is just "Codex". */
+export const reviewerName = (w: Who) => (w.label ? `${agentName(w)} · ${w.label}` : agentName(w));
+/** A coin's few letters: the account, else the agent. */
+export const coinName = (w: Who) => w.label || agentName(w);
+/** Settings' fold head: "Claude main + Codex". */
+export const benchNames = (keys: string[], rows: CouncilAccount[] = []) =>
+  keys.map((k) => { const w = who(k, rows.find((r) => r.key === k)); return w.label ? `${agentName(w)} ${w.label}` : agentName(w); })
+    .join(" + ") || "no reviewers";
+
+/** bridge/council.py blocking(): more than half of those that answered flag it. */
+export const agreed = (f: Pick<CouncilFinding, "by">, ran: string[]) => 2 * f.by.filter((k) => ran.includes(k)).length > ran.length;
+/** Who answered a round (the last that scored by default): its `ran`, else the seats that finished. */
+export function answered(c: CouncilBrief, r = c.rounds[c.rounds.length - 1]): string[] {
+  return r?.ran ?? Object.keys(c.seats).filter((k) => c.seats[k].state === "done");
+}
+/** The roll call's reviewers: an old run's switched-off seat was never one. */
+export const reviewers = (c: CouncilBrief) => Object.entries(c.seats).filter(([, s]) => s.state !== "off");
+const OLD_OUT: Record<string, string> = { "sign-in": "not signed in", "not-allowed": "not allowed here" };
+const satOut = (s: CouncilSeat) => (s.state === "out" ? s.error || "sat out" : OLD_OUT[s.state] ?? null);
+
+/** The line under the roll call: only who sat out or didn't answer, and why; else a count. */
+export function rollWhy(c: CouncilBrief): { odd: { name: string; text: string }[]; note: string } {
+  const seats = reviewers(c);
+  const odd = seats.flatMap(([k, s]) => {
+    const out = satOut(s);
+    const text = out ? `sat out: ${out}` : s.state === "error" ? `didn't answer: ${(s.error || "error").split("\n")[0]}` : "";
+    return text ? [{ name: reviewerName(who(k, s)), text }] : [];
+  });
+  const n = seats.length;
+  const note = odd.length ? ""
+    : n === 0 ? "No reviewer is on · add one in Settings ▸ Council"
+    : n === 1 ? "1 reviewer · add more in Settings ▸ Council"
+    : seats.some(([, s]) => s.state === "running") ? `${n} reviewers reading`
+    : seats.every(([, s]) => s.state === "done") ? `${n} reviewers · all answered`
+    : `${n} reviewers ready`;
+  return { odd, note };
+}
+
+/** One coin: its look, and what sits under its mark (a score, a spinner, ! or –). */
+export function coin(s: CouncilSeat, passed: boolean): { cls: "" | "busy" | "ok" | "err" | "off"; mid: string } {
+  if (s.state === "running") return { cls: "busy", mid: "spin" };
+  if (s.state === "done" && s.score != null) return { cls: passed ? "ok" : "", mid: s.score.toFixed(1) };
+  if (s.state === "error") return { cls: "err", mid: "!" };
+  return { cls: satOut(s) ? "off" : "", mid: "–" };
 }
 
 /** The hero's pill and its two lines, in the mockups' words. */

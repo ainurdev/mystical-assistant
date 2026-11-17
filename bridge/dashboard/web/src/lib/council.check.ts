@@ -1,8 +1,11 @@
 // Run: node bridge/dashboard/web/src/lib/council.check.ts
 // How the COUNCIL tab reads a run: the rail tile, the chart's columns, the two
 // pass rules and the hero's pill (design: council-tab, A · SCOREBOARD).
-import type { CouncilBrief, CouncilRound } from "../api.ts";
-import { columns, hero, parseCouncilPrompt, railTile, rules, sevCount, tileKey } from "./council.ts";
+import type { CouncilBrief, CouncilFinding, CouncilRound, CouncilSeat } from "../api.ts";
+import {
+  agreed, answered, benchNames, coin, coinName, columns, hero, parseCouncilPrompt, railTile, reviewerName, reviewers, rollWhy,
+  rules, sevCount, tileKey, who,
+} from "./council.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -98,3 +101,44 @@ eq(sevCount("The council reviewed it. Answer a wrong one as \"<number>. NO: <why
   + "2. SHOULD · t.py:2 · claude · c\n3. SHOULD · t.py · codex · d\n4. NIT · x.py:1 · claude · e"),
   "1 must · 2 should · 1 nit", "the stamp's tally counts the numbered findings, not the instructions");
 eq(sevCount("1. rename x\n2. add a test"), "", "lines without a severity count nothing");
+
+// --- reviewers per account (design: council-reviewers, B · ROLL CALL) --------------------
+const seat = (state: CouncilSeat["state"], over: Partial<CouncilSeat> = {}): CouncilSeat =>
+  ({ state, score: null, summary: "", error: "", ...over });
+const main = { agent: "claude", label: "main" }, codex = { agent: "codex", label: "" };
+eq(who("claude:2", { agent: "claude", label: "work" }), { agent: "claude", label: "work" }, "a reviewer is its agent and account");
+eq(who("codex"), { agent: "codex", label: "" }, "a run saved before reviewers per account: its key is the agent");
+eq([reviewerName(main), reviewerName(codex)], ["Claude · main", "Codex"], "a full name: an agent's own login is the agent");
+eq([coinName(main), coinName(codex)], ["main", "Codex"], "a coin's name: the account, else the agent");
+eq(benchNames(["claude:1", "codex:", "kimi:a_1"], [{ key: "claude:1", agent: "claude", label: "main", status: "signed in", ok: true }]),
+  "Claude main + Codex + Kimi", "the fold head names who is on; one with no row yet still reads as its agent");
+eq(benchNames([], []), "no reviewers", "nobody on");
+
+const by = (...k: string[]) => ({ by: k }) as CouncilFinding;
+eq([agreed(by("a"), ["a"]), agreed(by("a"), ["a", "b"]), agreed(by("a", "b"), ["a", "b", "c"]), agreed(by("a", "b"), ["a", "b", "c", "d"])],
+  [true, false, true, false], "a must-fix is agreed when more than half of those that answered flag it");
+eq(answered(brief({ rounds: [{ n: 1, score: 8, blocking: 0, ran: ["claude:1", "codex:"] }] })), ["claude:1", "codex:"],
+  "who answered a round: its ran");
+eq(answered(brief({ rounds: [{ n: 1, score: 8, blocking: 0 }], seats: { claude: seat("done"), codex: seat("error") } })), ["claude"],
+  "a bridge from before ran: the seats that finished");
+
+eq(reviewers(brief({ seats: { claude: seat("on"), codex: seat("off") } })).map(([k]) => k), ["claude"],
+  "an old run's switched-off Codex was never a reviewer: no coin");
+eq(rollWhy(brief({ status: "reviewing", seats: { "claude:1": seat("running", main),
+  "kimi:": seat("out", { agent: "kimi", label: "", error: "out of usage" }), "codex:": seat("error", { ...codex, error: "timed out\nstderr" }) } })),
+{ odd: [{ name: "Kimi", text: "sat out: out of usage" }, { name: "Codex", text: "didn't answer: timed out" }], note: "" },
+"the line names only who sat out or failed, and why");
+eq(rollWhy(brief({ seats: { claude: seat("sign-in"), codex: seat("not-allowed") } })).odd.map((o) => o.text),
+  ["sat out: not signed in", "sat out: not allowed here"], "an old run's sign-in and not-allowed read as sitting out");
+eq(rollWhy(brief({ seats: { "claude:1": seat("on", main) } })).note, "1 reviewer · add more in Settings ▸ Council", "one reviewer");
+eq(rollWhy(brief({ seats: { "claude:1": seat("on", main), "codex:": seat("on", codex) } })).note, "2 reviewers ready", "ready");
+eq(rollWhy(brief({ status: "reviewing", seats: { "claude:1": seat("running", main), "codex:": seat("done", codex) } })).note,
+  "2 reviewers reading", "a round being read");
+eq(rollWhy(brief({ status: "passed", seats: { "claude:1": seat("done", main), "codex:": seat("done", codex) } })).note,
+  "2 reviewers · all answered", "a round read");
+eq(rollWhy(brief({ seats: {} })).note, "No reviewer is on · add one in Settings ▸ Council", "nobody on");
+
+eq([coin(seat("running"), false), coin(seat("done", { score: 8.44 }), false), coin(seat("done", { score: 9.1 }), true),
+  coin(seat("error"), false), coin(seat("out"), false), coin(seat("sign-in"), false), coin(seat("on"), false), coin(seat("stopped"), false)],
+[{ cls: "busy", mid: "spin" }, { cls: "", mid: "8.4" }, { cls: "ok", mid: "9.1" }, { cls: "err", mid: "!" },
+  { cls: "off", mid: "–" }, { cls: "off", mid: "–" }, { cls: "", mid: "–" }, { cls: "", mid: "–" }], "each coin's look and what it holds");

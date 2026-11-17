@@ -518,7 +518,7 @@ class Handler(BaseHTTPRequestHandler):
             from bridge import council
             sid = path[len("/local/council/"):]
             if sid == "settings":
-                return self._json(council.settings())
+                return self._json({**council.settings(), "accounts": council.candidates()})
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "no such session"}, 404)
@@ -1799,7 +1799,7 @@ class Handler(BaseHTTPRequestHandler):
             from bridge import council
             sid = path[len("/local/council/"):]
             if sid == "settings":
-                return self._json(council.save_settings(body))
+                return self._json({**council.save_settings(body), "accounts": council.candidates()})
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "no such session"}, 404)

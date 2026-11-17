@@ -20,9 +20,9 @@ def _sid(chat=None):
 def test_settings_routes():
     h, box = _handler()
     h._get_api("/local/council/settings", {})                          # noqa: SLF001
-    assert box["code"] == 200 and box["obj"]["bar"] == 9.0
+    assert box["code"] == 200 and box["obj"]["bar"] == 9.0 and isinstance(box["obj"]["accounts"], list)
     h._post_api("/local/council/settings", {"bar": 12})                # noqa: SLF001
-    assert box["obj"]["bar"] == 10.0
+    assert box["obj"]["bar"] == 10.0 and isinstance(box["obj"]["accounts"], list)
     h._post_api("/local/council/settings", {"bar": 9})                 # noqa: SLF001
 
 

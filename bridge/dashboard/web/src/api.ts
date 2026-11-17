@@ -1933,13 +1933,20 @@ export interface CouncilFinding {
   blocking?: boolean;
   dismissed?: boolean;
 }
+/** A reviewer in a run, keyed "<agent>:<account>" (bridge/council.py). "out" sat the
+ *  round out, `error` saying why. A run saved before reviewers per account keys its
+ *  seats "claude"/"codex", names none, and may hold off, sign-in or not-allowed. */
 export interface CouncilSeat {
-  state: "running" | "done" | "error" | "stopped" | "on" | "off" | "sign-in" | "not-allowed";
+  state: "running" | "done" | "error" | "stopped" | "on" | "out" | "off" | "sign-in" | "not-allowed";
   score: number | null;
   summary: string;
   error: string;
+  agent?: string;
+  /** The account's name; "" for an agent's own machine login. */
+  label?: string;
 }
-export interface CouncilRound { n: number; score: number | null; blocking: number }
+/** `ran`: who answered it, the keys a finding's `by` counts against (older bridges omit it). */
+export interface CouncilRound { n: number; score: number | null; blocking: number; ran?: string[] }
 export interface CouncilBrief {
   status: string;
   reason: string;
@@ -1962,10 +1969,15 @@ export interface CouncilSettings {
   bar: number;
   max_rounds: number;
   stop_early: boolean;
-  claude: boolean;
-  codex: boolean;
-  codex_projects: string[];
+  /** Who reviews: "claude:<slot>", "<agent>:<account id>", "<agent>:" for its machine login. */
+  reviewers: string[];
+  /** The projects each outside agent may read; Claude logins read every one. */
+  projects: Record<string, string[]>;
+  /** Every account that could review, as the bridge answers; never sent back. */
+  accounts?: CouncilAccount[];
 }
+/** One row of + Add a reviewer: `status` is why it can't sit now (ok false), else how it signs in. */
+export interface CouncilAccount { key: string; agent: string; label: string; status: string; ok: boolean }
 
 export const api = {
   state: () => req<DashState>("/local/state"),
