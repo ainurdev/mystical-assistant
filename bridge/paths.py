@@ -367,6 +367,17 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         return dict(_cache[session_id])
 
 
+def set_branch(session_id: str, branch: str) -> None:
+    """The feature branch a work-list task named before its flow's first step (worklist._launch);
+    a StepDone that names another replaces it, as the latest one said wins."""
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        if f:
+            f["branch"] = branch
+            _save_locked()
+
+
 def _ended(f: dict) -> dict:
     """A replaced flow as `past` keeps it: its steps as they stood, stopped on the one it was at,
     unless it had ended."""

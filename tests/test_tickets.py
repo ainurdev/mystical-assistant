@@ -457,7 +457,7 @@ def test_first_prompt_title_and_path(make_set):
     assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
                          f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
                          "tk/x/01-x in this checkout and commit there. When it is done and the tests pass, "
-                         "call StepDone." + tickets._elsewhere(s.state, "01")}]
+                         "call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01")}]
     sess = store.get_session(t["session_id"])
     assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
     assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x/01-x"
@@ -483,7 +483,7 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
     assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
                                       "Work on branch tk/x/01-x in this checkout and commit there. When it is done "
-                                      "and the tests pass, call StepDone." + tickets._elsewhere(s.state, "01"))
+                                      "and the tests pass, call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01"))
     s.finish("01")
     assert s.status("01") == "done"
 
@@ -620,9 +620,12 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     s = make_set({"01": "#03", "02": None, "03": None})
     _finish_all(s, "02", "03", "01")
     (m,) = _merges(s)
-    assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
+    assert m["prompt"] == ("No path for this message.\n\nFirst run the project's full test suite on feat/x as it is, so you "
+                           "can tell what already failed from what the merge breaks.\n"
+                           "Merge these branches into feat/x, in this order, each with git merge --no-ff: "
                            "tk/x/02-x, tk/x/03-x, tk/x/01-x\nResolve any clash so both tickets' work survives, run the "
-                           "project's full test suite, fix what breaks, and commit. Then call StepDone. "
+                           "project's full test suite, fix what breaks, and commit. End your final reply with what "
+                           "failed before the merge and what fails after it. Then call StepDone. "
                            "Run tests in the foreground.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
@@ -774,7 +777,7 @@ def test_a_merge_retry_with_fast_step_done_ends_merged(make_set, monkeypatch):
     assert tickets.retry(s.folder, "merge") == ""
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "merged"
-    assert s.starts[-1]["prompt"].startswith("No path for this message.\n\nMerge these")
+    assert "Merge these branches" in s.starts[-1]["prompt"]
 
 
 def test_a_refused_merge_retry_keeps_the_path_state(make_set):
@@ -1044,6 +1047,17 @@ def test_approve_before_build_waits_and_starts_nothing(make_set):
     assert s.state["feature_branch"] == "" and tickets.sets()
     assert _git(s.main, "branch", "--format=%(refname:short)") == "master"
     assert s.build() == "" and s.state["status"] == "approve"   # asked again: still waiting, still nothing started
+
+
+@pytest.mark.parametrize("graph,waits", [({"01": None}, False), ({"01": None, "02": "#01"}, True)])
+def test_a_tasks_one_part_starts_without_asking_and_two_wait(make_set, graph, waits):
+    from contextlib import closing
+    s = make_set(graph, build=False, on="approve")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET origin='work' WHERE id=?", (s.flow,))
+        c.commit()
+    assert s.build() == ""
+    assert (s.state["status"] == "approve") is waits and bool(s.starts) is not waits
 
 
 def test_approve_builds(make_set):

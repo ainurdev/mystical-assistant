@@ -87,7 +87,9 @@ tickets, saves the set as `approve` and stops: no feature branch, carry or workt
 approve() (the Approve & build tap) does the rest; decline() (Not now) stops it instead,
 the one way out short of building it. The wait rings once (`tickets_wait`) and stays in
 Needs you until then, read live (notices.needs), unless its session is abandoned. boot()
-and tick() leave an `approve` set alone.
+and tick() leave an `approve` set alone. A set of one ticket made by a work-list task's
+session (origin "work") never waits: pressing the task's Start was the approval
+(bridge/worklist.py), and a second tap for one part is friction.
 
 Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's state and why,
 and how its session's last turn ended (StepDone or not, the last tool, the last words). It
@@ -407,6 +409,8 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             order(tks)
             if not tks:
                 raise TicketError(f"no tickets in {folder}")
+            # a work-list task's one part starts without asking: its Start was the approval
+            wait = wait and not (len(tks) == 1 and was != "approve" and sess.get("origin") == "work")
             if not wait:
                 _branch(st, sess, flow_session_id, since)
         except Exception as e:  # noqa: BLE001 — a cycle, a missing blocker or git: nothing starts
@@ -503,13 +507,20 @@ def _elsewhere(st: dict, n: str) -> str:
             + f" For where the whole set stands, run {_STATUS} {st['slug']}.")
 
 
+# What a part's final reply ends with, carried over from the work run (2026-11-17): what it decided
+# and what it couldn't check is what you need before the merge.
+_REPORT = (" End your final reply with two short lists, headed exactly \"Decisions:\" (choices you made that the "
+           "user may want to check) and \"Not verified:\" (what you couldn't run or see for yourself), each "
+           "saying \"none\" if so.")
+
+
 def _done_line() -> str:
     """How a ticket ends. With PONYTAIL on it reviews its own diff first: a ticket path
     has no REVIEW station, since MERGE is what joins the branches (bridge/paths.py)."""
     if aifeatures.enabled("ponytail"):
         return ("When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
-                "fix what it finds and commit, then call StepDone.")
-    return "When it is done and the tests pass, call StepDone."
+                "fix what it finds and commit, then call StepDone." + _REPORT)
+    return "When it is done and the tests pass, call StepDone." + _REPORT
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
@@ -655,9 +666,12 @@ def tick(folder: str) -> None:
 def _merge_prompt(st: dict, tks: dict) -> str:
     branches = ", ".join(_home_branches(st, tks))
     return ("No path for this message.\n\n"   # else the paths pack has Claude pick a path
+            f"First run the project's full test suite on {st['feature_branch']} as it is, so you can tell "
+            "what already failed from what the merge breaks.\n"
             f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
             f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
-            "suite, fix what breaks, and commit."
+            "suite, fix what breaks, and commit. End your final reply with what failed before the merge and "
+            "what fails after it."
             + "".join(f"\nThen in {repo}: merge {', '.join(bs)} into {st['feature_branch']} there the same way, "
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."

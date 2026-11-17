@@ -5,8 +5,8 @@ import threading
 
 import pytest
 
-from bridge import aifeatures, config, experimental, multi_api, runner, store, worklist as wl, workrefine as rf, workrun as wr
-from bridge import channel, queue_manager
+from bridge import aifeatures, config, experimental, multi_api, runner, store, worklist as wl, workrefine as rf
+from bridge import queue_manager
 
 CHAT = config.DASH_CHAT_ID
 
@@ -147,7 +147,7 @@ def test_it_can_be_switched_off(world, monkeypatch):
 def test_the_routes(world):
     sid = world["s"]["id"]
     body, status = multi_api.post("worklist/refine/send", {"session_id": sid, "id": "w1", "text": "x"}, CHAT)
-    assert status == 200 and "runs" in body
+    assert status == 200 and body["items"]
     settle(world)
     body, status = multi_api.post("worklist/refine/accept", {"session_id": sid, "id": "w1", "at": 1}, CHAT)
     assert status == 200 and body["items"][0]["title"] == "Better"
@@ -163,39 +163,3 @@ def test_sources_are_only_what_an_agent_could_read(world, monkeypatch):
     monkeypatch.setattr(wl.shutil, "which", lambda n: None)
     body, status = multi_api.get("worklist/sources", {"session": [world["s"]["id"]]}, CHAT)
     assert status == 200 and body["sources"] == ["Linear", "My notes"]
-
-
-def run_with_blocked(world, started=False):
-    run = wr.start(store.get_session(world["s"]["id"]), None)
-    if started:
-        def mark(d):
-            d["items"][0]["session_id"] = "some-helper"
-        wl.mutate(world["root"], mark)
-    wr.tool(store.get_session(world["s"]["id"]), {"action": "block_item", "id": "w1", "text": "Which key?"})
-    return run
-
-
-def test_answering_a_blocked_task_reaches_the_manager(world, monkeypatch):
-    said = []
-    monkeypatch.setattr(channel, "human_message", lambda chat, to, text: said.append(text))
-    run = run_with_blocked(world)
-    body, status = multi_api.post("worklist/run/answer", {"session_id": world["s"]["id"], "run": run["id"], "id": "w1", "text": "Use the staging one"}, CHAT)
-    assert status == 200 and item(world)["state"] == "todo" and item(world)["note"] == ""
-    assert "Use the staging one" in said[0] and "start_item" in said[0]
-
-
-def test_answering_a_task_with_a_copy_goes_back_to_review(world, monkeypatch):
-    said = []
-    monkeypatch.setattr(channel, "human_message", lambda chat, to, text: said.append(text))
-    run = run_with_blocked(world, started=True)
-    wr.answer(world["root"], wl.load(world["root"])["runs"][0], "w1", "Yes")
-    assert item(world)["state"] == "review" and "merge_item" in said[0] and run["id"]
-
-
-def test_an_answer_needs_words_and_a_blocked_task(world):
-    run = run_with_blocked(world)
-    with pytest.raises(wl.Refused, match="needs to know"):
-        wr.answer(world["root"], run, "w1", " ")
-    wr.answer(world["root"], wl.load(world["root"])["runs"][0], "w1", "ok")
-    with pytest.raises(wl.Refused, match="isn't waiting"):
-        wr.answer(world["root"], wl.load(world["root"])["runs"][0], "w1", "ok")

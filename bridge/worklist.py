@@ -1,8 +1,19 @@
 """The project's work list: tasks you keep, which outlive any chat.
 
 Different from a goal (bridge/goals.py), which is one objective a single chat loops on. This
-is many tasks, kept per project, that any chat can read and that a run works through
-(bridge/workrun.py). See docs/superpowers/specs/work-list.md.
+is many tasks, kept per project, that any chat can read. A task is what you want done and when;
+how it is built is its flow (GLOSSARY: Task, Flow, Part). Starting one (start, from the panel's
+Start) opens a session of its own on the flow you picked (build, fix or design), named for the
+task, on a branch named for it, and from then on the task's state mirrors that flow: spec, parts
+or build doing; a set waiting for approval or a part needing a fix blocked; merging or the
+council review; the flow's end done. Read live in view(), and written back at every turn's end
+(after_turn), which is also when a task waiting on another starts. A one-part task's set starts
+without the approval a bigger one waits for (tickets.start_build). See docs/superpowers/specs/work-list.md.
+
+Why only a tap starts one: items come from trackers and notes anyone may have written in, so text
+in a task must not be able to set work going. A task after another (depends_on) starts by itself
+only once you pressed its Start (`armed`), when the one it waits on is done; a dependency an agent
+added alone never starts anything.
 
 Why it holds no integrations: an agent reads Jira, Linear, Rivendell or your notes with whichever
 tools it has, and writes the list through one tool. So a new tracker needs no code, and nothing
@@ -14,8 +25,8 @@ moves with the project, and it's readable when the store is mid-migration. The f
 bridge-owned, so the MYSTICAL panel can't clear it (mystical_dir.OWNED). In-process lock only:
 the bridge is the one writer.
 
-An agent can't set item states a run owns: `doing` and `review` belong to the run, and an item
-in them can't be edited out from under a helper. Nothing here starts anything.
+An agent can't set the states a flow owns: `doing` and `review` follow the task's session, and a
+task in them can't be edited out from under it.
 
 Stdlib only.
 """
@@ -31,7 +42,7 @@ import time
 from bridge import chat_images
 
 STATES = ("todo", "doing", "review", "blocked", "done", "dropped")
-SET_BY_HAND = ("todo", "blocked", "done", "dropped")   # doing and review are the run's
+SET_BY_HAND = ("todo", "blocked", "done", "dropped")   # doing and review are the flow's
 LIVE = ("doing", "review")
 MAX_ITEMS, MAX_TITLE, MAX_DETAIL, MAX_NOTE = 500, 200, 8000, 1000
 _lock = threading.RLock()
@@ -56,7 +67,7 @@ def load(root: str) -> dict:
     except (OSError, ValueError):
         data = {}
     data = data if isinstance(data, dict) else {}
-    return {"next": int(data.get("next") or 1), "items": list(data.get("items") or []), "runs": list(data.get("runs") or [])}
+    return {"next": int(data.get("next") or 1), "items": list(data.get("items") or [])}
 
 
 def save(root: str, data: dict) -> None:
@@ -75,10 +86,6 @@ def mutate(root: str, fn):
         out = fn(data)
         save(root, data)
         return out
-
-
-def active_run(data: dict) -> "dict | None":
-    return next((r for r in data["runs"] if r.get("state") in ("running", "paused")), None)
 
 
 def _text(value, limit: int) -> str:
@@ -154,9 +161,9 @@ def _edit(data: dict, item: dict, patch: dict, session: "str | None") -> None:
     state = patch.get("state")
     if state and state != item["state"]:
         if state not in SET_BY_HAND:
-            raise Refused(f"An item can't be set to {state} by hand: a run moves it there.")
+            raise Refused(f"An item can't be set to {state} by hand: its flow moves it there.")
         if item["state"] in LIVE:
-            raise Refused(f"{item['id']} is {item['state']} in a run. Stop or restart it there first.")
+            raise Refused(f"{item['id']} is {item['state']} in its session. Stop it there first.")
         _set_state(item, state, session)
     item["updated"] = time.time()
 
@@ -189,7 +196,7 @@ def remove(root: str, ids: list) -> int:
         gone = {_find(data, i)["id"] for i in ids}
         for item in data["items"]:
             if item["id"] in gone and item["state"] in LIVE:
-                raise Refused(f"{item['id']} is {item['state']} in a run. Stop or restart it there first.")
+                raise Refused(f"{item['id']} is {item['state']} in its session. Stop it there first.")
         data["items"] = [i for i in data["items"] if i["id"] not in gone]
         for item in data["items"]:
             item["depends_on"] = [d for d in item.get("depends_on") or [] if d not in gone]
@@ -219,7 +226,7 @@ def _same(item: dict, row: dict) -> bool:
 def replace(root: str, rows: list, session: "str | None" = None, clear_done: bool = False) -> dict:
     """Make the list this, as a refresh from a tracker or "start over" does. An item it names, by
     id or source ref, is kept with its state. Open items it doesn't name go. Finished ones stay,
-    as they're the record, unless clear_done. Anything a run is holding stays too."""
+    as they're the record, unless clear_done. A started one stays too."""
     if not isinstance(rows, list):
         raise Refused("Give the items as a list.")
 
@@ -239,9 +246,8 @@ def replace(root: str, rows: list, session: "str | None" = None, clear_done: boo
                 seen.add(item["id"])
                 new.append(item)
                 added += 1
-        run = active_run(data)
-        held = set(run["items"]) if run else set()
-        stays = [i for i in old if i["id"] not in seen and (i["state"] in LIVE or i["id"] in held or (i["state"] in ("done", "dropped") and not clear_done))]
+        stays = [i for i in old if i["id"] not in seen and (i["state"] in LIVE or i.get("session_id") and i["state"] not in ("done", "dropped")
+                                                             or (i["state"] in ("done", "dropped") and not clear_done))]
         removed = len([i for i in old if i["id"] not in seen]) - len(stays)
         data["items"] = new + stays
         known = {i["id"] for i in data["items"]}
@@ -253,21 +259,181 @@ def replace(root: str, rows: list, session: "str | None" = None, clear_done: boo
 
 # ------- what the surfaces read ----------------------------------------------
 
-def _group(item: dict, run: "dict | None", chat: "str | None") -> str:
-    state = item["state"]
-    if state == "done":
-        return "here" if chat and item.get("done_in") == chat else "done"
-    if state == "todo":
-        return "next" if not run or item["id"] in run["items"] else "later"
-    return state
+# ------- a task's flow ---------------------------------------------------------
+
+KINDS = {"build": "feat", "fix": "fix", "design": "feat"}   # the flows a task starts, and their branch's type
+# What line 2 of a task's row says while its flow is on a step.
+_STEP = {"grill": "Grilling the plan", "design": "Drawing the design", "spec": "Writing the spec",
+         "tickets": "Splitting it into parts", "diagnose": "Finding the cause", "build-here": "Building",
+         "review": "Reviewing", "retro": "Retro", "audit": "Auditing the repo", "improve": "Planning the refactor"}
 
 
-def view(root: str, chat: "str | None" = None) -> dict:
-    """Everything, with each item's sidebar group, so both apps group it alike."""
-    data = load(root)
-    run = active_run(data)
+def _flow(sid: str) -> "tuple[dict, dict]":
+    """(the session's flow, its newest set of parts) as they stand."""
+    from bridge import paths, tickets
+    return paths.get(sid) or {}, tickets.summary_for(sid) or {}
+
+
+def _parts(st: dict) -> list:
+    ts = st.get("tickets") if isinstance(st.get("tickets"), dict) else {}
+    return [{"n": n.lstrip("0") or "0", "title": t.get("title") or "", "status": t.get("status") or "",
+             "session_id": t.get("session_id") or ""} for n, t in sorted(ts.items()) if isinstance(t, dict)]
+
+
+def _mirrored(f: dict, st: dict) -> str:
+    """A started task's state, read off its flow."""
+    if f.get("end"):
+        return "done"
+    status = st.get("status")
+    if status in ("approve", "stopped", "fix") or any(p["status"] in ("fix", "missing") for p in _parts(st)):
+        return "blocked"
+    return "review" if status in ("merging", "merged") else "doing"
+
+
+def _now(f: dict, st: dict) -> str:
+    """What a started task is doing, in a few words."""
+    status, parts = st.get("status"), _parts(st)
+    if status == "approve":
+        return f"{len(parts)} parts wait for your approval"
+    if status in ("stopped", "fix"):
+        return st.get("error") or "Stopped: it needs you"
+    fixing = [p for p in parts if p["status"] in ("fix", "missing")]
+    if fixing:
+        return f"#{fixing[0]['n']} {fixing[0]['title']} needs a fix"
+    if status == "merging":
+        return "Merging the parts"
+    if status == "merged" and not f.get("end"):
+        return "Council review" if "review" not in (f.get("done") or []) else "Retro"
+    if status == "building":
+        running = [p for p in parts if p["status"] == "running"]
+        return (f"Building {', '.join('#' + p['n'] for p in running)}" if running else "Building")
+    step = next((st_[0] for st_ in f.get("stations") or [] if st_[0] not in (f.get("done") or [])
+                 and st_[0] not in (f.get("skipped") or [])), None)
+    return _STEP.get(step or "", "Starting")
+
+
+def branch_for(title: str, kind: str) -> str:
+    from bridge import flowbranch
+    return f"{KINDS[kind]}/{flowbranch.title_slug(title)}"
+
+
+def start(root: str, iid: str, kind: str, chat_session: "str | None") -> dict:
+    """The panel's Start: the task's own session on `kind`'s flow, seen from `chat_session`'s chat.
+    One waiting on a task not done yet is armed instead, and starts when that one is (after_turn)."""
+    if kind not in KINDS:
+        raise Refused("Start it as build, fix or design.")
+    from bridge import store
+    chat = store.get_session(chat_session) if chat_session else None
+    if not chat:
+        raise Refused("Start it from a chat.")
+
+    def claim(data: dict):
+        item = _find(data, iid)
+        if item["state"] != "todo" or item.get("session_id"):
+            raise Refused(f"{item['id']} is {item['state']}: only a task not started yet starts.")
+        done = {i["id"] for i in data["items"] if i["state"] == "done"}
+        item.update(kind=kind, chat_id=chat["chat_id"], updated=time.time())
+        if any(d not in done for d in item.get("depends_on") or []):
+            item["armed"] = True
+            return None
+        item.pop("armed", None)
+        item["state"] = "doing"   # claimed before the session opens: a second tap is refused
+        return dict(item)
+    item = mutate(root, claim)
+    if item:
+        _launch(root, item)
+    return _find(load(root), iid)
+
+
+def _launch(root: str, item: dict) -> None:
+    """Session, branch and first turn for a claimed task. One that can't start goes back to todo,
+    with why in its note."""
+    from bridge import config, flowbranch, paths, profiles, runner, store
+    kind, sid = item["kind"], ""
+    try:
+        prefix, slug = KINDS[kind], flowbranch.title_slug(item["title"])
+        branch, cwd = f"{prefix}/{slug}", root
+        if kind == "fix":   # FIX fixes in its first step: it gets its branch before it, never the default one
+            branch, cwd = flowbranch.ensure_feature_branch({"cwd": root}, slug, prefix)
+        pid = profiles.claude_default(root)   # Claude, never an agent: flows are Claude's
+        s = store.create_session(item["chat_id"], root, origin="work", cwd=cwd,
+                                 permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE, profile_id=pid)
+        sid = s["id"]
+        store.rename(sid, item["title"])
+        mutate(root, lambda data: _find(data, item["id"]).update(session_id=sid, branch=branch, note=""))
+        prompt = item["title"] + (f"\n\n{item['detail']}" if item.get("detail") else "") + \
+            f"\n\nThis is task {item['id']} on the project's work list."
+        job = runner.start_streaming_job(item["chat_id"], prompt, [], project=cwd, session_id=sid,
+                                         origin="work", flow=kind, flow_by="you")
+        if job is None or job.refusal:
+            raise RuntimeError(job.refusal if job else "the bridge refused the run")
+        paths.set_branch(sid, branch)
+    except Exception as e:  # noqa: BLE001 — told on the task, never raised into a turn's end
+        print(f"[worklist] {item['id']} didn't start: {e!r}", file=sys.stderr)
+
+        def back(data: dict) -> None:
+            i = _find(data, item["id"])
+            if not sid:
+                _set_state(i, "todo", None)
+            i["note"] = _text(f"Didn't start: {e}", MAX_NOTE)
+        mutate(root, back)
+
+
+def sync(root: str) -> None:
+    """Write each started task's state back from its flow, then start the armed tasks whose
+    blockers are done."""
+    def go(data: dict) -> list:
+        for item in data["items"]:
+            if item.get("session_id") and item["state"] not in ("done", "dropped"):
+                state = _mirrored(*_flow(item["session_id"]))
+                if state != item["state"]:
+                    _set_state(item, state, item["session_id"])
+        done = {i["id"] for i in data["items"] if i["state"] == "done"}
+        ready = []
+        for item in data["items"]:
+            if item.get("armed") and item["state"] == "todo" and all(d in done for d in item.get("depends_on") or []):
+                item.pop("armed")
+                _set_state(item, "doing", None)
+                ready.append(dict(item))
+        return ready
+    for item in mutate(root, go):
+        _launch(root, item)
+
+
+def after_turn(job) -> None:
+    """Any turn's end: a task's session, part or merge may have moved its flow."""
+    try:
+        from bridge import store
+        s = store.get_session(job.store_session_id) or {}
+        root = root_of(s.get("cwd") or s.get("project"))
+        if root and os.path.isfile(_path(root)):
+            sync(root)
+    except Exception as e:  # noqa: BLE001 — nothing may raise into a turn's end
+        print(f"[worklist] after_turn: {e!r}", file=sys.stderr)
+
+
+# ------- what the surfaces read ----------------------------------------------
+
+def _live(item: dict) -> dict:
+    """The task as the panel draws it: a started one's state, parts and step read off its flow now."""
+    if not item.get("session_id") or item["state"] in ("done", "dropped"):
+        return item
+    f, st = _flow(item["session_id"])
+    return {**item, "state": _mirrored(f, st), "now": _now(f, st), "parts": _parts(st),
+            "sessions": [item["session_id"], *[p["session_id"] for p in _parts(st) if p["session_id"]],
+                         *([st["merge_session"]] if st.get("merge_session") else [])]}
+
+
+def _group(item: dict) -> str:
+    """Needs you, Building, Up next or Done. The panel moves a task with an open Ask to needs too."""
+    return {"blocked": "needs", "doing": "building", "review": "building", "todo": "next"}.get(item["state"], "done")
+
+
+def view(root: str) -> dict:
+    """Everything, with each item's group, so both apps group it alike."""
     from bridge import workrefine
-    return {"items": [{**i, "group": _group(i, run, chat), "refining": workrefine.refining(root, i["id"])} for i in data["items"]],
+    items = [_live(i) for i in load(root)["items"]]
+    return {"items": [{**i, "group": _group(i), "refining": workrefine.refining(root, i["id"])} for i in items],
             "project": os.path.basename(root), "root": root}
 
 
@@ -344,10 +510,12 @@ def api(path: str, body: dict, root: "str | None", session: "str | None") -> "tu
             remove(root, body.get("ids"))
         elif path == "worklist/reorder":
             reorder(root, body.get("ids"))
+        elif path == "worklist/start":
+            start(root, str(body.get("id") or ""), str(body.get("kind") or ""), session)
         else:
             return {"error": "No such route."}, 404
     except Refused as e:
         return {"error": str(e)}, 400
     except OSError as e:
         return {"error": f"Couldn't save it: {e}"}, 500
-    return view(root, session), 200
+    return view(root), 200
