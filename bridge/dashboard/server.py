@@ -1703,7 +1703,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": "No path is running in this session."})
             turn = store.running_turn_id(s["id"]) or store.latest_turn_id(s["id"]) or ""
             choice = body.get("choice")
-            nxt = paths.step_done(s["id"], turn, choice if choice in ("here", "tickets") else None)
+            nxt = paths.step_done(s["id"], turn, choice if choice in ("here", "tickets") else None,
+                                  str(body.get("branch") or ""))
             return self._json({"text": f"Step done. Next: {nxt}, which starts when this turn ends. "
                                f"Make this your last tool call: {nxt} does its own work."
                                if nxt else "Step done. That was the last step."})

@@ -460,6 +460,7 @@ def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
     monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)
     monkeypatch.setattr(goals, "continue_after_turn", lambda *a, **k: False)
     monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(toolsets, "servers", lambda refresh=False: [])   # a cold list runs `claude mcp list` through Popen
     monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
     monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
     monkeypatch.setattr(learn, "kick", lambda *a, **k: None)

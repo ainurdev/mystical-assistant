@@ -162,6 +162,16 @@ _PATH_TOOLS = [
                 "choice": {"type": "string", "enum": ["here", "tickets"],
                            "description": "After a grill: 'tickets' only when two or more parts "
                                           "can be built at the same time, else 'here'."},
+                "branch": {"type": "string",
+                           "description": "When the next step builds (after a grill, a design or a "
+                                          "ticket breakdown): the feature branch to build on, as "
+                                          "type/short-name. type is feat, fix, refactor, docs, chore, "
+                                          "ci, test, perf, build, style or revert. short-name is two to "
+                                          "four lowercase words for what is being built, 40 characters "
+                                          "at most: never the session's title or its first message. If "
+                                          "ListRivendellTasks is one of your tools, call it first, and "
+                                          "when an open task covers the work its key leads the name as "
+                                          "written, e.g. fix/NRA-61-login-redirect."},
             },
         },
     },
@@ -208,7 +218,7 @@ def _call(name: str, args: dict) -> str:
         return _bridge("/local/flow/set", {k: str(args[k]) for k in ("path", "why", "skill") if args.get(k)},
                        "record a path")
     if name == "StepDone":
-        return _bridge("/local/flow/done", {"choice": str(args["choice"])} if args.get("choice") else {},
+        return _bridge("/local/flow/done", {k: str(args[k]) for k in ("choice", "branch") if args.get(k)},
                        "mark a step done")
     if name in ("ListRivendellTasks", "CreateRivendellTask"):
         return _rivendell(name, args)

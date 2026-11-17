@@ -58,7 +58,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, experimental, git, handoff, profiles, prompt_pack, store
+from bridge import config, experimental, flowbranch, git, handoff, profiles, prompt_pack, store
 
 MAIN = "main"
 USER = "you"
@@ -274,9 +274,23 @@ def _link_deps(top: str, path: str) -> list:
     return links
 
 
-def _make_copy(chat: dict, cwd: str, short: str, start_at: "str | None" = None) -> "tuple[dict | None, str | None]":
-    """A worktree for a writer. Returns ({path, branch, base, top, cwd}, refusal). It starts from
-    the chat's current state, or from `start_at` for a work run's item (bridge/workrun.py)."""
+def _copy_place(top: str, name: str) -> "tuple[str, str]":
+    """(branch, worktree path) for a copy Mystical makes of the repo at `top`: mystical/<name>, with
+    -2, -3, ... while that branch or folder is taken (another session's helper of the same name, an
+    earlier run that day).
+    shortcut: two copies named alike in the same instant would both get the name, and the second isn't
+    made and says so; lock around this and the worktree add if that ever shows up."""
+    root, taken = os.path.join(config.BASE_PATH, ".worktrees", os.path.basename(top)), set(git.branches(top))
+    slug, n = name, 2
+    while f"mystical/{slug}" in taken or os.path.lexists(os.path.join(root, slug)):
+        slug, n = f"{name}-{n}", n + 1
+    return f"mystical/{slug}", os.path.join(root, slug)
+
+
+def _make_copy(chat: dict, cwd: str, name: str, start_at: "str | None" = None) -> "tuple[dict | None, str | None]":
+    """A worktree for a writer, its branch named after the helper (mystical/helper-ink-outline), so the
+    branch list says whose copy it is. Returns ({path, branch, base, top, cwd}, refusal). It starts
+    from the chat's current state, or from `start_at` for a work run's item (bridge/workrun.py)."""
     top = _top(cwd)
     if not top:
         return None, "This folder isn't a git repository, so a helper can't have its own copy."
@@ -287,8 +301,7 @@ def _make_copy(chat: dict, cwd: str, short: str, start_at: "str | None" = None) 
         base = base.strip()
         if rc != 0:
             return None, f"Couldn't read this repository's state: {err.strip()[:200]}"
-    path = os.path.join(config.BASE_PATH, ".worktrees", os.path.basename(top), f"helper-{short}")
-    branch = f"mystical/helper-{short}"
+    branch, path = _copy_place(top, f"helper-{flowbranch.short_name(name.lower()) or uuid.uuid4().hex[:8]}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     ok, msg = git.worktree_add(top, path, branch, base)
     if not ok:
@@ -389,7 +402,7 @@ def start(chat: dict, plan: list) -> list:
         parent_cwd = t.get("from_dir") or (moved if moved and os.path.isdir(moved) else None) or chat.get("cwd") or config.BASE_PATH
         copy = None
         if t["write"]:
-            copy, why = _make_copy(chat, parent_cwd, short, t.get("base"))
+            copy, why = _make_copy(chat, parent_cwd, name, t.get("base"))
             if why:
                 lines.append(f"{name}: not started. {why}")
                 continue

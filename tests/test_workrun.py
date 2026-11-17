@@ -1,5 +1,6 @@
 """A run on the work list, against real git: where code goes, and what stops it."""
 import os
+import re
 import subprocess
 import threading
 
@@ -166,6 +167,25 @@ def test_the_full_path_leaves_your_branch_alone_until_you_merge(world):
     assert os.path.exists(os.path.join(world["p"], "b.txt")) and os.path.exists(os.path.join(world["p"], "c.txt"))
     assert not os.path.isdir(run["path"])
     assert run["branch"] not in git(world["p"], "branch", "--list")
+
+
+def test_a_runs_branch_says_the_day_and_how_much_and_its_helpers_their_item(world):
+    run = begin(world)                                                 # two items
+    assert re.fullmatch(r"mystical/work-[a-z]{3}\d\d-2-items", run["branch"])
+    assert os.path.basename(run["path"]) == run["branch"].removeprefix("mystical/")
+    assert git(run["path"], "rev-parse", "--abbrev-ref", "HEAD") == run["branch"]
+    call(world, action="start_item", id="w1")
+    assert copy_of(world, "w1")["branch"] == "mystical/helper-w1"
+
+
+def test_a_second_run_that_day_gets_a_number(world):
+    first = begin(world, titles=("x",))
+    assert first["branch"].endswith("-1-item")
+    call(world, action="finish", summary="Nothing to do.")             # finished, not merged: its branch stays
+    wl.add(world["root"], [{"title": "y"}])
+    second = wr.start(chat(world), ["w2"])["branch"]
+    day = first["branch"].split("-")[1]                                # midnight between them: another day, nothing to number
+    assert second == first["branch"] + "-2" or day not in second
 
 
 def test_uncommitted_work_stays_out_and_is_mentioned(world):

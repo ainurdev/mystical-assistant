@@ -1302,7 +1302,8 @@ def file_path(share_id: str) -> "tuple[str, str] | None":
 
 
 def _slug(text: str, cap: int) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:cap].strip("-") or "share"
+    from bridge import git
+    return git.cut_words(re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-"), cap) or "share"
 
 
 def _local_project(meta: dict) -> "str | None":
@@ -1399,7 +1400,12 @@ def continue_plan(share_id: str, into: "str | None" = None, project: "str | None
     attach = [{"name": "transcript.md", "url": f"/local/rivendell/team/transcript.md?id={share_id}"}]
     attach += [{"name": os.path.basename(p), "url": "/local/attachment?path=" + urllib.parse.quote(p)}
                for p in _session_pictures(rec)[:_ATTACH - 1]]
-    branch = f"from-{first}/{_slug(rec['title'], 40)}" if code else None
+    # Named after their feature branch (feat/globe-prototype gives from-erfan/globe-prototype), which says
+    # what the code is; off one (the default branch, a detached HEAD), after the session's title.
+    # shortcut: a feature branch is taken to be one with a slash, so a teammate on a slashless one gets the
+    # title and one on release/2.1 gets 2-1; compare with the repo's default branch if that reads wrong.
+    theirs = (meta.get("branch") or "").partition("/")[2]
+    branch = f"from-{first}/{_slug(theirs or rec['title'], 40)}" if code else None
     if branch:
         # A branch of its own each time: the same session sent again has the same title, and on the
         # last one's branch unpack finds its worktree holding their older code and refuses.

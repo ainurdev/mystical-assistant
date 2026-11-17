@@ -28,6 +28,10 @@ _Avoid_: station, phase, stage
 The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its tickets, its review **Step** is a council on the merged work.
 _Avoid_: panel, jury, review loop
 
+**Feature branch**:
+The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**; when a task covers the work, the task's key leads the name. The session's title names it only when the agent gave no name.
+_Avoid_: flow branch, session branch
+
 **Ticket**:
 One part of a feature that a **Flow** split off to be built beside the others, in a **Session** and worktree of its own.
 _Avoid_: task, sub-task, issue

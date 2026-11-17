@@ -256,10 +256,10 @@ class BuiltSet:
         return sum(s["sid"] == self.sid(n) for s in self.starts)
 
     def worktree_add_calls(self, n):
-        return [a for a in self.adds if a["branch"] == f"tk/x-{n}"]
+        return [a for a in self.adds if a["branch"] == f"tk/x/{n}-x"]
 
     def git_log_for(self, n):
-        return _git(self.main, "log", "--format=%s", f"tk/x-{n}")
+        return _git(self.main, "log", "--format=%s", f"tk/x/{n}-x")
 
     def job(self, n, status="done"):
         return SimpleNamespace(store_session_id=self.sid(n), id=store.latest_turn_id(self.sid(n)), status=status,
@@ -317,16 +317,16 @@ def test_dependent_waits_then_bases_on_blocker(make_set):
     assert s.status("04") == "queued"
     s.finish("01")
     assert s.status("01") == "done" and s.status("04") == "running"
-    assert s.state["tickets"]["04"]["base"] == "tk/x-01"
-    _git(s.main, "merge-base", "--is-ancestor", "tk/x-01", "tk/x-04")     # raises if 04 isn't built on 01
+    assert s.state["tickets"]["04"]["base"] == "tk/x/01-x"
+    _git(s.main, "merge-base", "--is-ancestor", "tk/x/01-x", "tk/x/04-x")     # raises if 04 isn't built on 01
 
 
 def test_two_blockers_merge_second_in(make_set):
     s = make_set({"02": None, "03": None, "06": "#02, #03"})
     s.finish("02")
     s.finish("03")
-    assert s.state["tickets"]["06"]["base"] == "tk/x-02"
-    assert "Merge branch 'tk/x-03'" in s.git_log_for("06")
+    assert s.state["tickets"]["06"]["base"] == "tk/x/02-x"
+    assert "Merge branch 'tk/x/03-x'" in s.git_log_for("06")
     assert "First resolve" not in s.starts[-1]["prompt"]
 
 
@@ -335,7 +335,38 @@ def test_a_merge_clash_is_the_first_job(make_set):
     s.finish("02", file="same.txt")
     s.finish("03", file="same.txt")
     assert s.status("06") == "running"
-    assert s.starts[-1]["prompt"].endswith("\nFirst resolve the merge of tk/x-03 left in this checkout.")
+    assert s.starts[-1]["prompt"].endswith("\nFirst resolve the merge of tk/x/03-x left in this checkout.")
+
+
+def test_a_ticket_branch_is_named_after_its_file(make_set):
+    s = make_set({"01": None}, build=False)
+    for name, head in (("07-usage-bars.md", "# 07: Usage bars"), ("8-Live Board!.md", "# 8: Live board")):
+        with open(os.path.join(s.folder, name), "w") as f:
+            f.write(f"{head}\n\n**Blocked by:** None\n")
+    assert s.build() == ""
+    assert [t["branch"] for _, t in sorted(s.state["tickets"].items())] == \
+        ["tk/x/01-x", "tk/x/07-usage-bars", "tk/x/08-live-board"]
+    assert _git(s.state["tickets"]["07"]["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x/07-usage-bars"
+
+
+def test_a_set_builds_on_the_branch_the_flow_named(make_set):
+    s = make_set({"01": None}, build=False)
+    paths.step_done(s.flow, "t0", choice="tickets", branch="fix/NRA-61-login-redirect")
+    assert s.build() == ""
+    st = s.state
+    assert st["feature_branch"] == "fix/NRA-61-login-redirect"
+    assert _git(st["feature_checkout"], "rev-parse", "--abbrev-ref", "HEAD") == "fix/NRA-61-login-redirect"
+    assert st["tickets"]["01"]["branch"] == "tk/x/01-x"       # tickets stay under their folder's name
+    assert s.state["tickets"]["01"]["base"] == "fix/NRA-61-login-redirect"
+
+
+def test_a_set_approved_after_its_session_moved_on_keeps_the_flows_branch(make_set):
+    s = make_set({"01": None}, build=False, on="approve")
+    paths.step_done(s.flow, "t0", choice="tickets", branch="feat/usage-bars")
+    assert s.build() == "" and s.state["status"] == "approve"
+    paths.set_path(s.flow, "fix", "something else", "you")    # the session went on to another flow
+    assert tickets.approve(s.folder) == ""
+    assert s.state["feature_branch"] == "feat/usage-bars"
 
 
 def test_error_marks_fix_and_holds_dependents(make_set):
@@ -404,7 +435,7 @@ def test_missing_ticket_file_is_held_not_fatal(make_set):
 
 def test_existing_branch_is_reused(make_set):
     s = make_set({"01": None}, build=False)
-    _git(s.main, "branch", "tk/x-01")
+    _git(s.main, "branch", "tk/x/01-x")
     assert s.build() == ""
     assert s.worktree_add_calls("01")[0]["create"] is False and s.status("01") == "running"
 
@@ -425,11 +456,11 @@ def test_first_prompt_title_and_path(make_set):
     t = s.state["tickets"]["01"]
     assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
                          f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
-                         "tk/x-01 in this checkout and commit there. When it is done and the tests pass, "
+                         "tk/x/01-x in this checkout and commit there. When it is done and the tests pass, "
                          "call StepDone." + tickets._elsewhere(s.state, "01")}]
     sess = store.get_session(t["session_id"])
     assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
-    assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x-01"
+    assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x/01-x"
     f = paths.get(t["session_id"])
     assert (f["path"], f["skill"]) == ("one", "implement")
 
@@ -451,7 +482,7 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     tickets.retry(s.folder, "01")
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
     assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
-                                      "Work on branch tk/x-01 in this checkout and commit there. When it is done "
+                                      "Work on branch tk/x/01-x in this checkout and commit there. When it is done "
                                       "and the tests pass, call StepDone." + tickets._elsewhere(s.state, "01"))
     s.finish("01")
     assert s.status("01") == "done"
@@ -590,7 +621,7 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     _finish_all(s, "02", "03", "01")
     (m,) = _merges(s)
     assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
-                           "tk/x-02, tk/x-03, tk/x-01\nResolve any clash so both tickets' work survives, run the "
+                           "tk/x/02-x, tk/x/03-x, tk/x/01-x\nResolve any clash so both tickets' work survives, run the "
                            "project's full test suite, fix what breaks, and commit. Then call StepDone. "
                            "Run tests in the foreground.")
     sess = store.get_session(m["sid"])
@@ -645,7 +676,7 @@ def _merged_set(s):
     s.finish("02")
     st = s.state
     # 01 merges onto the feature branch; 02 does not
-    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
     tickets.save(s.folder, {**st, "status": "merged"})
     return st
 
@@ -654,23 +685,23 @@ def test_cleanup_skips_unmerged(make_set):
     s = make_set({"01": None, "02": None})
     st = _merged_set(s)
     skipped = tickets.cleanup(s.folder)[1]
-    assert skipped == ["tk/x-02"]
+    assert skipped == ["tk/x/02-x"]
     assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and os.path.isdir(st["tickets"]["02"]["worktree"])
-    assert "tk/x-01" not in _git(s.main, "branch", "--format=%(refname:short)").split()
+    assert "tk/x/01-x" not in _git(s.main, "branch", "--format=%(refname:short)").split()
     assert tickets.merged_count(s.state) == 0               # 01's branch is gone now
 
 
 def test_cleanup_skips_a_dirty_worktree_and_waits_for_merged(make_set):
     s = make_set({"01": None})
     s.finish("01")
-    assert tickets.cleanup(s.folder)[1] == ["tk/x-01"]       # not merged yet: nothing is touched
+    assert tickets.cleanup(s.folder)[1] == ["tk/x/01-x"]       # not merged yet: nothing is touched
     st = s.state
-    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
     assert tickets.merged_count(st) == 1
     tickets.save(s.folder, {**st, "status": "merged"})
     with open(os.path.join(st["tickets"]["01"]["worktree"], "wip.txt"), "w") as f:
         f.write("x")
-    assert tickets.cleanup(s.folder)[1] == ["tk/x-01"] and os.path.isdir(st["tickets"]["01"]["worktree"])
+    assert tickets.cleanup(s.folder)[1] == ["tk/x/01-x"] and os.path.isdir(st["tickets"]["01"]["worktree"])
 
 
 def _dpost(path, body, chat=1):
@@ -695,7 +726,7 @@ def test_ticket_endpoints_only_take_registered_folders(make_set, tmp_path):
             assert r["code"] == 404 and "error" in r["obj"]
     assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "01"})["obj"] == {"text": "#01 is still working"}
     assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "09"})["obj"] == {"text": "#09 isn't waiting for a retry"}
-    assert _dpost("/local/tickets/cleanup", {"folder": s.folder})["obj"] == {"removed": [], "skipped": ["tk/x-01"]}
+    assert _dpost("/local/tickets/cleanup", {"folder": s.folder})["obj"] == {"removed": [], "skipped": ["tk/x/01-x"]}
 
 
 def test_get_tickets_lists_sets_with_live_ticket_status(make_set, monkeypatch):
@@ -802,14 +833,14 @@ def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkey
 def test_a_merge_step_done_with_a_branch_left_out_is_fix(make_set, monkeypatch):
     s = make_set({"01": None, "02": None})
     _finish_all(s, "01", "02")
-    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")    # 02 left out
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")    # 02 left out
     said = []
     monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
     sid = s.state["merge_session"]
     paths.step_done(sid, store.latest_turn_id(sid))
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "fix"
-    assert said == [("tickets", s.flow, "MERGE called StepDone, but tk/x-02 isn't merged into feat/x yet.")]
+    assert said == [("tickets", s.flow, "MERGE called StepDone, but tk/x/02-x isn't merged into feat/x yet.")]
 
 
 def test_ticket_and_merge_sessions_run_claude_whatever_the_projects_default(make_set, monkeypatch):
@@ -1092,7 +1123,7 @@ def test_merged_counts_only_done_tickets(make_set):
     s.finish("01")
     st = s.state
     assert tickets.merged_count(st) == 0                # done, not merged
-    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
     assert tickets.merged_count(s.state) == 1
 
 
@@ -1110,9 +1141,9 @@ def _other_repo(s, n, commit=True, name="other"):
         f.write("a\n")
     _git(other, "add", "-A")
     _git(other, "commit", "-qm", "init")
-    wt = git.worktree_path_for(other, f"tk/x-{n}")
+    wt = git.worktree_path_for(other, f"tk/x/{n}-x")
     os.makedirs(os.path.dirname(wt), exist_ok=True)
-    _git(other, "worktree", "add", "-q", "-b", f"tk/x-{n}", wt, "main")
+    _git(other, "worktree", "add", "-q", "-b", f"tk/x/{n}-x", wt, "main")
     if commit:
         with open(os.path.join(wt, f"{n}.txt"), "w") as f:
             f.write(n)
@@ -1139,10 +1170,10 @@ def test_an_empty_branch_in_another_repo_is_still_fix(make_set):
 def test_the_prompt_says_where_other_repos_work_goes(make_set):
     s = make_set({"01": None, "02": "#01"})
     first = s.starts[0]["prompt"]
-    assert "another repo" in first and "<repo>/tk-x-01" in first and "branch tk/x-01" in first
+    assert "another repo" in first and "<repo>/tk-x-01-x" in first and "branch tk/x/01-x" in first
     assert "foreground" in first
     s.finish("01")
-    assert "start from tk/x-01 there" in s.starts[-1]["prompt"]
+    assert "start from tk/x/01-x there" in s.starts[-1]["prompt"]
 
 
 def test_merge_covers_the_other_repos_and_waits_for_them(make_set, monkeypatch):
@@ -1151,17 +1182,17 @@ def test_merge_covers_the_other_repos_and_waits_for_them(make_set, monkeypatch):
     s.finish("01")
     s.finish("02")
     (m,) = _merges(s)
-    assert f"Then in {other}: merge tk/x-02 into feat/x" in m["prompt"]
-    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
-    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-02")
+    assert f"Then in {other}: merge tk/x/02-x into feat/x" in m["prompt"]
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/02-x")
     said = []
     monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append(kw.get("body")))
     sid = s.state["merge_session"]
     paths.step_done(sid, store.latest_turn_id(sid))
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "fix"             # the other repo's branch isn't merged there yet
-    assert said == [f"MERGE called StepDone, but tk/x-02 in {other} isn't merged into feat/x yet."]
-    _git(other, "branch", "feat/x", "tk/x-02")
+    assert said == [f"MERGE called StepDone, but tk/x/02-x in {other} isn't merged into feat/x yet."]
+    _git(other, "branch", "feat/x", "tk/x/02-x")
     st = s.state
     st["status"] = "merging"
     tickets.save(s.folder, st)
@@ -1330,19 +1361,19 @@ def test_a_ticket_that_names_another_repo_builds_only_there(make_set, monkeypatc
     _repos_line(s, "02", other)
     assert s.build() == ""
     t = s.state["tickets"]["01"]
-    assert t["worktree"] == git.worktree_path_for(other, "tk/x-01")
-    assert "tk/x-01" not in git.branches(s.main)          # no empty branch at home
+    assert t["worktree"] == git.worktree_path_for(other, "tk/x/01-x")
+    assert "tk/x/01-x" not in git.branches(s.main)          # no empty branch at home
     assert store.get_session(t["session_id"])["cwd"] == t["worktree"]
     s.finish("01")                                        # commits in its worktree, the other repo
     assert s.status("01") == "done" and s.status("02") == "running"
-    _git(other, "merge-base", "--is-ancestor", "tk/x-01", "tk/x-02")   # 02 builds on 01 there
+    _git(other, "merge-base", "--is-ancestor", "tk/x/01-x", "tk/x/02-x")   # 02 builds on 01 there
     s.finish("02")
     s.finish("03")
     (m,) = _merges(s)
-    assert "each with git merge --no-ff: tk/x-03\n" in m["prompt"]
-    assert f"Then in {other}: merge tk/x-01, tk/x-02 into feat/x" in m["prompt"]
-    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-03")
-    _git(other, "branch", "feat/x", "tk/x-02")
+    assert "each with git merge --no-ff: tk/x/03-x\n" in m["prompt"]
+    assert f"Then in {other}: merge tk/x/01-x, tk/x/02-x into feat/x" in m["prompt"]
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/03-x")
+    _git(other, "branch", "feat/x", "tk/x/02-x")
     sid = s.state["merge_session"]
     paths.step_done(sid, store.latest_turn_id(sid))
     tickets.after_turn(_merge_job(s))
@@ -1608,7 +1639,7 @@ def test_a_merged_set_cleans_up_its_ticket_worktrees_and_keeps_their_scratch(mak
     paths.step_done(sid, store.latest_turn_id(sid))
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "merged"
-    assert not any(os.path.isdir(w) for w in wts) and not {"tk/x-01", "tk/x-02"} & _branches(s)
+    assert not any(os.path.isdir(w) for w in wts) and not {"tk/x/01-x", "tk/x/02-x"} & _branches(s)
     assert os.path.isfile(os.path.join(s.main, ".mystical", "archive", os.path.basename(wts[0]), ".mystical", "shot.png"))
 
 
@@ -1616,17 +1647,17 @@ def test_boot_cleans_up_a_set_merged_before_its_clean_up_ran(make_set):
     s = make_set({"01": None})
     s.finish("01")
     st = s.state
-    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
     tickets.save(s.folder, {**st, "status": "merged"})                # a restart cut it between the two
     tickets.boot()
-    assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and "tk/x-01" not in _branches(s)
+    assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and "tk/x/01-x" not in _branches(s)
 
 
 def test_cleanup_leaves_a_ticket_whose_session_is_at_work(make_set):
     s = make_set({"01": None})
     s.finish("01")
     st = s.state
-    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x/01-x")
     tickets.save(s.folder, {**st, "status": "merged"})
     s.hand_turn("01")                                                  # you typed into the ticket's session
-    assert tickets.cleanup(s.folder) == ([], ["tk/x-01"]) and os.path.isdir(st["tickets"]["01"]["worktree"])
+    assert tickets.cleanup(s.folder) == ([], ["tk/x/01-x"]) and os.path.isdir(st["tickets"]["01"]["worktree"])

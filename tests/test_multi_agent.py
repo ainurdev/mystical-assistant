@@ -4,6 +4,7 @@ store and, where a turn runs, tests/fake_acp_agent.py (docs/superpowers/plans/
 multi-agent-chats.md)."""
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -400,6 +401,22 @@ def test_quiet_pings(tmp_path, monkeypatch, on):
 
 
 # ---- merging ----------------------------------------------------------------------
+
+def test_a_copy_is_named_after_its_helper_and_a_taken_name_gets_a_number(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _repo(repo)
+    monkeypatch.setattr(config, "BASE_PATH", str(tmp_path))
+    chat = store.create_session(CHAT, "/p", cwd=str(repo))
+    one, _ = channel._make_copy(chat, str(repo), "Ink Outline")
+    two, _ = channel._make_copy(chat, str(repo), "Ink Outline")       # another session's helper of that name
+    odd, _ = channel._make_copy(chat, str(repo), "?!")                # nothing a branch can hold: an id
+    assert (one["branch"], os.path.basename(one["path"])) == ("mystical/helper-ink-outline", "helper-ink-outline")
+    assert (two["branch"], os.path.basename(two["path"])) == ("mystical/helper-ink-outline-2", "helper-ink-outline-2")
+    assert re.fullmatch(r"mystical/helper-[0-9a-f]{8}", odd["branch"])
+    assert subprocess.run(["git", "-C", one["path"], "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
+                          text=True).stdout.strip() == "mystical/helper-ink-outline"
+
 
 def _writer(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
