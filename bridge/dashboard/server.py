@@ -128,6 +128,51 @@ def _rehome_moved(s: dict) -> bool:
     return True
 
 
+# Every open tab polls /local/sessions every 5 s, and a build is ~0.2 s of GIL-bound
+# work answered with ~700 KB. Without this, a few tabs pile builds up until each
+# takes 30 s (2026-11-17: four orphaned headless dashboards pinned the bridge).
+# The lock makes concurrent pollers wait for one build instead of each running it;
+# a dashboard POST clears the cache so the user's own change shows on the next poll.
+_SESSIONS_TTL = 2.0
+_sessions_lock = threading.Lock()
+_sessions_cache: dict = {}    # (chat, project) -> (built_at, payload)
+
+
+def _sessions_payload(chat, project) -> dict:
+    """The /local/sessions answer for one chat (and project, or all when None)."""
+    native.refresh(chat)           # surface VSCode sessions started since last poll
+    rows = (store.list_sessions(chat, project) if project is not None
+            else store.list_sessions_all(chat))
+    # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
+    # stay out of the lists; their transcripts remain viewable by id.
+    # One that had moved into a tree that still exists is re-filed there
+    # instead: removing the tree it started in must not hide its work.
+    # Plugin-worker sessions are exempt: their default workdir is
+    # BASE_PATH itself ("/", never a project), and a run the PLUGINS
+    # tab exists to show must not be filtered into invisibility.
+    # A real project that moved or was deleted keeps its sessions listed,
+    # marked missing (browser.gone), for MOVE TO PROJECT.
+    rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
+            or browser.project_exists(r["project"]) or _rehome_moved(r)
+            or browser.gone(r["project"])]
+    # Ticket and merge sessions name their super session; that one carries its set's count.
+    from bridge import tickets
+    of, counts = tickets.owners()
+    return {"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
+                          **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
+                         for b in map(_session_brief, rows)]}
+
+
+def _sessions_cached(chat, project) -> dict:
+    key = (chat, project)
+    with _sessions_lock:
+        hit = _sessions_cache.get(key)
+        if hit is None or time.time() - hit[0] > _SESSIONS_TTL:
+            hit = (time.time(), _sessions_payload(chat, project))
+            _sessions_cache[key] = hit
+        return hit[1]
+
+
 def _reveal_target(path) -> str | None:
     """The real path behind an absolute one the OS file manager may be shown, or
     None. The roots are the ones the dashboard already serves files from: the
@@ -447,7 +492,10 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
-            return self._post_api(path, body)
+            try:
+                return self._post_api(path, body)
+            finally:
+                _sessions_cache.clear()    # a user change shows on the next poll, not 2 s later
         except Exception as e:  # noqa: BLE001
             self._safe500(e)
 
@@ -668,28 +716,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "since must be epoch seconds"}, 400)
             return self._json(shots.since(chat, since))
         if path == "/local/sessions":
-            native.refresh(chat)           # surface VSCode sessions started since last poll
-            project = qs.get("project", [None])[0]
-            rows = (store.list_sessions(chat, project) if project is not None
-                    else store.list_sessions_all(chat))
-            # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
-            # stay out of the lists; their transcripts remain viewable by id.
-            # One that had moved into a tree that still exists is re-filed there
-            # instead: removing the tree it started in must not hide its work.
-            # Plugin-worker sessions are exempt: their default workdir is
-            # BASE_PATH itself ("/", never a project), and a run the PLUGINS
-            # tab exists to show must not be filtered into invisibility.
-            # A real project that moved or was deleted keeps its sessions listed,
-            # marked missing (browser.gone), for MOVE TO PROJECT.
-            rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                    or browser.project_exists(r["project"]) or _rehome_moved(r)
-                    or browser.gone(r["project"])]
-            # Ticket and merge sessions name their super session; that one carries its set's count.
-            from bridge import tickets
-            of, counts = tickets.owners()
-            return self._json({"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
-                                             **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
-                                            for b in map(_session_brief, rows)]})
+            return self._json(_sessions_cached(chat, qs.get("project", [None])[0]))
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).
         if path.startswith("/local/sessions/") and path.endswith("/breakdown"):
