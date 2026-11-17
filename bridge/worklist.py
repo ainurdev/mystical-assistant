@@ -401,10 +401,13 @@ def sync(root: str) -> None:
 
 
 def after_turn(job) -> None:
-    """Any turn's end: a task's session, part or merge may have moved its flow."""
+    """A turn's end in a task's session, a part's or the merge's: its flow may have moved. Other
+    sessions are passed over before any git runs (root_of), as every turn ends here."""
     try:
         from bridge import store
         s = store.get_session(job.store_session_id) or {}
+        if s.get("origin") not in ("work", "ticket", "ticket-merge"):
+            return
         root = root_of(s.get("cwd") or s.get("project"))
         if root and os.path.isfile(_path(root)):
             sync(root)

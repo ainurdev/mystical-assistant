@@ -162,6 +162,8 @@ def test_a_started_tasks_state_follows_its_flow(world, started, monkeypatch):
     assert live()["group"] == "building" and live()["state"] == "review"
     assert wl.load(r)["items"][0]["state"] == "doing"       # read live; written at a turn's end
     paths._cache[got["session_id"]]["end"] = 1                # the flow's last step is done
+    wl.after_turn(SimpleNamespace(store_session_id=world["session"]["id"]))   # not a task's session: nothing read
+    assert wl.load(r)["items"][0]["state"] == "doing"
     wl.after_turn(SimpleNamespace(store_session_id=got["session_id"]))
     assert wl.load(r)["items"][0]["state"] == "done"
 
