@@ -25,8 +25,16 @@ One part of a **Flow** (grill, design, build, review, retro…): done, running, 
 _Avoid_: station, phase, stage
 
 **Council**:
-The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its **Parts**, its review **Step** is a council on the merged work.
+The **Reviewers** that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its **Parts**, its review **Step** is a council on the merged work.
 _Avoid_: panel, jury, review loop
+
+**Reviewer**:
+One **Account** you switched on to sit on the **Council**: each round it reads the work fresh, on its own, scores it out of 10 and lists what it would fix.
+_Avoid_: judge, seat, juror
+
+**Account**:
+One sign-in Mystical runs an agent under: a Claude login, another agent's login, or a pasted API key.
+_Avoid_: slot, profile
 
 **Feature branch**:
 The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**; when a task covers the work, the task's key leads the name. The session's title names it only when the agent gave no name.
