@@ -43,7 +43,8 @@ export function docked(turns: Turn[], prose: boolean): Docked | null {
  *  what comes before it is context, what follows it a hint ("Pick any, or
  *  none."). Claude front-loads context, so the ask was the line people missed. */
 export function splitAsk(q: string): { ctx: string; ask: string; tail: string } {
-  const parts = q.match(/[^.!?\n]+(?:[.!?]+["')\]]*|\n+|$)\s*/g) ?? [q];
+  // A sentence ends at . ! ? then the end or a space and a word that isn't lower case: "8.4", "index.ts" and "e.g. the" go on.
+  const parts = q.match(/(?:[^.!?\n]|[.!?](?![.!?]*["')\]]*(?:\s+[^a-z\s]|\s*$)))+(?:[.!?]+["')\]]*|\n+|$)\s*/g) ?? [q];
   let at = -1;
   parts.forEach((p, i) => { if (/\?["')\]]*\s*$/.test(p)) at = i; });
   if (at < 0) return { ctx: "", ask: q.trim(), tail: "" };

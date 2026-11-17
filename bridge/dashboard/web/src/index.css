@@ -7913,24 +7913,28 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s ease-out infinite; }
 @keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
+/* the fold (ask-dock-readable): one line, the ask itself, so the session above can be read; the body is hidden, not gone */
+.ad-fold { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: max(3px, var(--rc-rs));
+  border: 1px solid var(--rc-line2); background: transparent; color: var(--txm); }
+.ad-fold:hover { color: var(--txh); border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
+.askdock[data-folded] > :not(.ad-h) { display: none; }
+.askdock[data-folded] .ad-h { flex-wrap: nowrap; padding-bottom: 11px; }
+.ad-line { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t14); font-weight: 650; color: var(--txh); }
 
-/* the question: the ask as a headline, context folded under it */
+/* the question: context first, in full, then the ask as a headline */
 .ad-b { padding: 7px 16px 13px; display: flex; flex-direction: column; min-height: 0; }
 .ad-ask { margin: 0; font-size: var(--t16); line-height: 1.35; font-weight: 750; color: var(--txh); overflow-wrap: anywhere; }
 .ad-ask .md, .ad-ask p { margin: 0; font: inherit; color: inherit; }
 .ad-ask b { font-weight: 800; }
 .ad-tail { margin: 3px 0 0; font-size: var(--t12); color: var(--txl); }
-.ad-ctx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 5px 0 0; padding: 0; border: 0; background: none;
-  font-size: var(--t12); line-height: 1.5; color: var(--txl); }
-.ad-ctx[data-open] { display: block; -webkit-line-clamp: unset; }
-.ad-ctx b { color: var(--rc-ink); font-weight: 700; }
+.ad-ctx { margin: 0 0 8px; max-width: 72ch; font-size: var(--t14); line-height: 1.6; color: var(--txm); overflow-wrap: anywhere; white-space: pre-line; }
 .ad-hint, .ad-note { margin: 9px 0 0; font-size: var(--t115); color: var(--txl); }
 .ad-note { margin: 0; padding: 0 16px 12px; }
 .ad-err { margin: 9px 0 0; font-size: var(--t12); color: var(--err); }
 
 /* options: a keycap, the name, what it does */
-.ad-rows { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
-.ad-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; row-gap: 2px; align-items: start; padding: 9px 11px 10px 9px;
+.ad-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 12px; }
+.ad-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: start; padding: 11px 14px 11px 12px;
   border-radius: max(3px, var(--rc-rs)); background: var(--panel2); border: 1px solid var(--rc-line); transition: border-color .12s ease, background-color .12s ease; }
 .ad-row:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
 .ad-row[aria-pressed="true"] { border-color: var(--rc); background: color-mix(in oklab, var(--rc) 12%, var(--panel2)); }
@@ -7940,12 +7944,12 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   box-shadow: inset 0 -2px 0 color-mix(in oklab, #000 40%, transparent); transition: transform .12s ease; }
 .ad-key[data-on] { background: var(--rc); color: var(--rc-on); border-color: var(--rc); box-shadow: none; transform: translateY(1px); }
 .ad-row[data-multi] .ad-key { border-radius: 4px; }
-.ad-lab { min-width: 0; font-size: var(--t13); font-weight: 750; line-height: 24px; color: var(--txh); overflow-wrap: anywhere; }
-.ad-desc { grid-column: 2; font-size: var(--t115); line-height: 1.45; color: var(--txm); }
-.ad-sug { margin-left: 6px; color: var(--rc-ink); font-size: var(--t11); vertical-align: 1px; }
+.ad-lab { min-width: 0; font-size: var(--t15); font-weight: 650; line-height: 24px; color: var(--txh); overflow-wrap: anywhere; }
+.ad-desc { grid-column: 2; font-size: var(--t135); line-height: 1.5; color: var(--txm); }
+.ad-sug { margin-left: 8px; color: var(--rc-ink); font-size: var(--t115); font-weight: 600; }
 .askdock .tc-key { color: var(--rc-ink); }
 /* several questions: a pill per header, the answered ones carry their answer */
-.ad-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 16px 0; }
+.ad-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ad-back, .ad-st { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--rc-line2); background: var(--panel2);
   font-size: var(--t12); font-weight: 650; color: var(--txm); }
 .ad-back { padding: 3px 9px 3px 5px; border-radius: max(3px, var(--rc-rs)); }
@@ -8076,7 +8080,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-reply[data-quiet] { background: transparent; color: var(--txm); font-weight: 650; gap: 7px; }
 .ad-reply:disabled { opacity: .55; }
 /* narrow: one column, so a description never wraps to a word a line */
-@container (max-width: 560px) { .ad-rows, .ad-pics { grid-template-columns: minmax(0, 1fr); } .ad-aside { margin-left: 0; } }
+@container (max-width: 560px) { .ad-pics { grid-template-columns: minmax(0, 1fr); } .ad-aside { margin-left: 0; } }
 .composer[data-docked] { container-type: inline-size; }
 
 /* in the transcript: where it was asked … */
@@ -8914,9 +8918,6 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
   border: 1px solid color-mix(in srgb, var(--acc) 26%, transparent); background: color-mix(in srgb, var(--acc) 5%, transparent); }
 .qopt-on .kc i, .bg-primary .kc i, .ad-btn[data-pri] .kc i { color: inherit; border-color: color-mix(in srgb, currentColor 40%, transparent); background: transparent; }
 @media (hover: none) { .kc-hover { display: none; } }
-/* the dock's option rows put their keycaps in a column of their own, beside the label and its line */
-.ad-row[data-keys] { grid-template-columns: 24px minmax(0, 1fr) auto; }
-.ad-row[data-keys] > .kc { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
 
 /* NEXT STEP (/design-first git-better): the stretch you're on is a card with the
    one filled button; a bar counts the legs to the base; a pulse runs down the line. */
