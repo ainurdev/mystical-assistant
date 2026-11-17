@@ -3711,6 +3711,8 @@ export function App() {
                       // (caps.steer, Settings ▸ Experimental): SEND queues instead.
                       onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
+                      autocompact={selected?.autocompact}
+                      onAutocompact={!sessionId ? undefined : (v) => void api.setAutocompact(sessionId, v).then(() => void loadSessions(), (e) => notify("error", `Auto-compact not saved: ${(e as Error).message}`))}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
