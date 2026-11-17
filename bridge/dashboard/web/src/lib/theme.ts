@@ -18,6 +18,7 @@
 import type { KindId, KindRun } from "./kinds";
 import { toIndicator, type Indicator } from "./indicator";
 import { toIntro, type Intro } from "./intro";
+import { HEAD_DEFAULT, toHead, type HeadLook } from "./headlook";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
 import { toChatBg, type ChatBg } from "./toolwidget";
@@ -400,6 +401,8 @@ export interface HudSettings {
   // right, replies capped short of the far edge, the header shrunk to a pill of
   // readouts, and model/permission/effort folded into one popover over SEND.
   layout: ChatLayout;
+  // SETTINGS ▸ CHAT ▸ HEADER: the header island's shape, fade and glass (lib/headlook).
+  head: HeadLook;
   // Per-kind overrides of the prompt box's run knobs (lib/kinds); a kind not here uses its own defaults.
   kindPresets?: Partial<Record<KindId, Partial<KindRun>>>;
   // Which key sends from the composer. "enter": Enter sends, Shift+Enter is a
@@ -438,7 +441,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, chatBg: "none",
-  layout: "default", kindPresets: {}, sendKey: "enter", clocks: [], autoClean: true,
+  layout: "default", head: HEAD_DEFAULT, kindPresets: {}, sendKey: "enter", clocks: [], autoClean: true,
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -559,6 +562,7 @@ export function loadSettings(): HudSettings {
         clocks: toClocks(p.clocks),
         autoClean: p.autoClean !== false,
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
+        head: toHead(p.head),
         kindPresets: p.kindPresets && typeof p.kindPresets === "object" ? p.kindPresets : {},
       };
     }

@@ -9016,3 +9016,13 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .rl-foot .clg-acts button.pri { --k: var(--acc); } .rl-foot .clg-acts button.ok { --k: var(--ok); } .rl-foot .clg-acts button.warn { --k: var(--warn); }
 .rl-foot .clg-acts button:is(.pri, .ok, .warn) { color: var(--acc-on); background: var(--k); border-color: var(--k); box-shadow: 0 6px 16px -8px var(--k); }
 .rl-foot .clg-acts button:is(.pri, .ok, .warn):hover:not(:disabled) { background: color-mix(in oklab, var(--k) 85%, white); }
+
+/* SETTINGS ▸ CHAT ▸ HEADER ▸ GLASS (lib/headlook): FROSTED is the island as it was;
+   CLEAR lets the column show through, SOLID is the panel. :is(*, :hover) keeps the
+   families' hover wash ([data-fam] .isle:is(:hover…) .isle-glass) from undoing it. */
+.isle[data-glass="clear"]:is(*, :hover) .isle-glass { background: color-mix(in srgb, var(--panel) 55%, transparent) !important; backdrop-filter: blur(3px) !important; }
+.isle[data-glass="solid"]:is(*, :hover) .isle-glass { background: var(--panel) !important; backdrop-filter: none !important; }
+/* The views switch in natural case where the family lowercases the header's readouts. */
+[data-fam="middle-earth"] .isle-reads .ma-viewsw button::first-letter { text-transform: uppercase; }
+/* The families read the switch at UI size: their scale's --t85 was a 7px label. */
+[data-fam] .isle-reads .ma-viewsw button { font-size: var(--t11); letter-spacing: 0; }
