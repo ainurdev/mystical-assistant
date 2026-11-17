@@ -6,6 +6,23 @@ picked **B · CURVE** (not the recommended A · CHAPTERS), asked for time beside
 four add-ons, and approved round 2 as drawn. Drafts: `.mystical/design-drafts/session-tab/`
 (cards 01–04, SPEC.md). UX pattern: `session-tab`.
 
+## Three islands since 2026-11-17 (B · NOW + MORE)
+
+Asked 2026-11-17 (DESIGN flow): "useful but so busy, maybe island features and parts with indicator
+that these are collapsible". Picked **B · NOW + MORE** (not the recommended A · ISLANDS). Drafts:
+`.mystical/design-drafts/session-islands/`. The sections below keep their looks, now in three
+rounded cards, each foldable part marked by a chevron (› folded, ⌄ in the accent open):
+
+- **NOW**: "Now", the active flow as a pill ("Fix · step 2 of 4"), Compact; the window's number
+  over its curve (the chevron opens the full curve, as before); the now bar; the active flow's steps
+  with NEXT, AUTO and Skip (only a flow of two or more steps, not a folded ASK/SHIP run).
+- **The list card**: FLOWS, TIME, ON WHAT and HELPERS as rows (icon, name, one value, chevron),
+  **one open at a time** (`lib/sessionfolds.ts`); FLOWS shows the names of the last three segments
+  folded, its track and the opened segment's steps opened; ON WHAT's sentence moves inside.
+- **TURNS**: its own card with a header that folds it (open by default); rows lose the number chip
+  (muted mono number, accent on the lit and running turn) and their dividers.
+- The header's ⇕ folds the window and the list at once (the turns stay as they are).
+
 ## The tab (components/hud/SessionPanel.tsx), quiet since 2026-11-12
 
 Asked 2026-11-12 (DESIGN flow): "less details on first glance and on clicking have more data … all
