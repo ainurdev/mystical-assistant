@@ -129,3 +129,25 @@ _Avoid_: cheat sheet, key list, keyboard help
 **Shortcut nudge**:
 A short note naming a control's shortcut, shown when you click that control instead of pressing its key; it stops once you have used the key or seen it three times.
 _Avoid_: hint, tip, toast
+
+## Watcher
+
+**Watcher**:
+The part of Mystical that studies how you work across every project's sessions over time, and suggests what in Mystical, or in a project's own setup, should change so the work goes better. It only suggests; it never changes anything itself.
+_Avoid_: audit, study, insights, retro, dreaming, monitor
+
+**Lens**:
+One question the Watcher keeps asking of your sessions: how the dashboard's UI serves you, how what you asked for went, or which tools, routes and flows a session took.
+_Avoid_: category, dimension, check
+
+**Watch**:
+One nightly pass of the Watcher over everything since the last one.
+_Avoid_: run, scan, job, audit
+
+**Finding**:
+One thing a watch or a retro suggests changing, with its evidence and how often it has shown up over time; every finding sits in one list. You pick it for a work list or set it aside; once it is built, later watches check that it stays gone and reopen it if it comes back.
+_Avoid_: insight, issue, suggestion, recommendation, RED
+
+**Click log**:
+The dashboard's own record of the controls you press and where, kept on this machine. Usage sharing is the other source: masked clicks and replays sent to PostHog.
+_Avoid_: telemetry, analytics, tracking
