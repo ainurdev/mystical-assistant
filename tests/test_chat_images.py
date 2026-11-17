@@ -46,6 +46,18 @@ def test_attachment_is_the_default_and_the_switch_persists():
     assert multi_api.post("chat-images", {"mode": "nope"}, CHAT)[1] == 400
 
 
+
+def test_shown_pictures_default_to_the_chat_and_the_choice_sits_beside_send_images():
+    """SYSTEM ▸ IMAGES ▸ Pictures it shows you: in the chat, or the WORK gallery only."""
+    assert multi_api.get("chat-images", {}, CHAT)[0]["shown"] == "chat"
+    assert multi_api.post("chat-images", {"mode": "inline"}, CHAT)[0]["shown"] == "chat"
+    got = multi_api.post("chat-images", {"shown": "gallery"}, CHAT)[0]
+    assert got == {"mode": "inline", "shown": "gallery"}          # one choice keeps the other
+    assert multi_api.get("chat-images", {}, CHAT)[0] == {"mode": "inline", "shown": "gallery"}
+    assert multi_api.post("chat-images", {"shown": "nope"}, CHAT)[1] == 400
+    experimental.set_enabled(False)
+    assert multi_api.get("chat-images", {}, CHAT)[0]["shown"] == "chat"
+
 def test_upload_saves_a_timestamped_file_in_the_project_and_stays_out_of_git(tmp_path):
     r = _repo(tmp_path)
     s = store.create_session(CHAT, "/proj", cwd=str(r))

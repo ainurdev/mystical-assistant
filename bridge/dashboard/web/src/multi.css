@@ -238,6 +238,14 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-compare-side { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ma-compare-lab { font-family: var(--mono); font-size: var(--t9); letter-spacing: 1.5px; color: var(--txd); }
 .ma-compare .ma-proof-img { width: 100%; max-height: 360px; object-fit: contain; }
+/* Gallery only: one line in the chat, the pictures in the WORK strip. */
+.ma-proof-line { appearance: none; display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; margin: 6px 0 2px var(--rail, 0);
+  padding: 5px 10px 5px 5px; font: inherit; font-size: var(--t11); color: var(--txm); background: transparent; cursor: zoom-in; text-align: left;
+  border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent); border-radius: 8px; }
+.ma-proof-line:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+.ma-proof-mini { flex: none; width: 34px; height: 22px; object-fit: cover; border-radius: 4px; background: var(--panel3); }
+.ma-proof-says { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ma-proof-go { flex: none; color: var(--acc); }
 .ma-gone { padding: 14px 18px; font-size: var(--t11); color: var(--txl); border: 1px dashed var(--line2); }
 .ma-lb-meta { position: fixed; top: 12px; left: 12px; z-index: 96; max-width: min(46vw, 560px); padding: 7px 11px; font-size: var(--t12); line-height: 1.45;
   color: var(--tx); background: color-mix(in srgb, var(--panel3) 82%, transparent); border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); }

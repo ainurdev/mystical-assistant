@@ -2,11 +2,14 @@ import { useState } from "react";
 import { api } from "../api";
 import { ImageLightbox, MediaThumb, ZoomButton, type Shown } from "./ImageLightbox";
 import type { ProofItem } from "../lib/pictures";
+import { useChatImages } from "../lib/chatimages";
 
 /* What the agent is showing you (lib/pictures): drawn large with the answer, outside
    the WORK zone, each with its caption. A running turn draws one in place as it lands;
    a finished turn draws them above its answer, or where the answer names them
-   ([[view:v1]], components/DataView AnswerParts). */
+   ([[view:v1]], components/DataView AnswerParts). With SYSTEM ▸ Pictures it shows you:
+   Gallery only, the pictures sit in the WORK zone's strip (RunStream) and this is one
+   line that opens them. */
 
 /** One picture, or the quiet note a pruned upload leaves. */
 function Picture({ path, alt, onOpen, onGone, gone }: {
@@ -31,6 +34,7 @@ export function ProofBlock({ items, all, turn }: {
 }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
+  const galleryOnly = useChatImages().shown === "gallery";
   const markGone = (p: string) => setGone((g) => new Set(g).add(p));
   const gallery: Shown[] = (all ?? items).flatMap((it) => it.images.filter((p) => !gone.has(p)).map((p, k) => ({
     src: api.attachmentUrl(p),
@@ -41,6 +45,24 @@ export function ProofBlock({ items, all, turn }: {
     turn,
   })));
   if (!items.length) return null;
+  if (galleryOnly) {
+    const first = items.flatMap((it) => it.images).find((p) => !gone.has(p));
+    if (!first) return null;
+    const n = items.reduce((t, it) => t + it.images.length, 0);
+    const caption = items.map((it) => it.caption).find(Boolean);
+    const src = api.attachmentUrl(first);
+    return (
+      <>
+        {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
+        <button type="button" className="ma-proof-line" onClick={() => setZoom(src)}
+          aria-label={`Open ${n} picture${n === 1 ? "" : "s"} shown${caption ? `: ${caption}` : ""}`}>
+          <MediaThumb src={src} alt="" className="ma-proof-mini" onError={() => markGone(first)} />
+          <span className="ma-proof-says">{n} picture{n === 1 ? "" : "s"} shown{caption ? ` · ${caption}` : ""}</span>
+          <span className="ma-proof-go">open ›</span>
+        </button>
+      </>
+    );
+  }
   return (
     <section className="ma-proof" aria-label="Proof">
       <div className="ma-proof-lab">PROOF</div>

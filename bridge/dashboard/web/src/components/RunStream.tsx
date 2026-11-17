@@ -14,6 +14,7 @@ import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
 import { fmtTokens } from "../lib/week";
 import { useMultiOn } from "../lib/multistore";
+import { useChatImages } from "../lib/chatimages";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
@@ -2455,6 +2456,10 @@ export const RunStream = memo(function RunStream({
   const multiOn = useMultiOn();
   const dossier = toolStyle === "dossier";
   const mx = multiOn && dossier;
+  // SYSTEM ▸ Pictures it shows you: Gallery only files what it shows you (lib/pictures) in
+  // the WORK strip with what it looked at; components/Proof says it in one line.
+  const shownTo = useChatImages().shown;
+  const galleryOnly = mx && shownTo === "gallery";
   const clockAt = (e: TimedEvent): string | undefined => {
     if (turnStarted == null || e.at == null) return undefined;
     const s = Math.max(0, e.at - turnStarted);
@@ -2517,7 +2522,7 @@ export const RunStream = memo(function RunStream({
   /** A tool whose pictures are shown to you (lib/pictures), once it has come back with them. */
   const showAt = (i: number): boolean => {
     const e = events[i];
-    return mx && e?.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
+    return mx && !galleryOnly && e?.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
   };
   const turnWord = [turnNo ? `turn ${turnNo}` : "", turnStarted ? hhmm(turnStarted) : ""].filter(Boolean).join(" · ");
   const addShots = (ev: number, call: string, about: string, paths: string[] = [], clip?: Clip, at?: number) => {
@@ -2529,6 +2534,10 @@ export const RunStream = memo(function RunStream({
   events.forEach((e, i) => {
     if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
     else if (e.type === "tool" && !showAt(i)) { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
+    else if (galleryOnly && e.type === "figure") {
+      addShots(i, e.kind === "compare" ? "compare_images" : "show_image", "", e.images, undefined, e.at);
+      for (const s of shotsOf.get(i) ?? []) s.caption = e.caption;
+    }
   });
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
@@ -2571,7 +2580,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && (t === "figure" || t === "report" || t === "data" || t === "design" || showAt(i));
+    return !ended && ((t === "figure" && !galleryOnly) || t === "report" || t === "data" || t === "design" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2936,7 +2945,7 @@ export const RunStream = memo(function RunStream({
       case "tool_done":
         return null;
       case "figure": {
-        if (!mx || ended) return null;
+        if (!mx || ended || galleryOnly) return null;
         const item = proofs.find((p) => p.i === i);
         return item ? <ProofBlock key={i} items={[item]} all={proofs} turn={turnWord} /> : null;
       }
@@ -3218,6 +3227,7 @@ export const RunStream = memo(function RunStream({
         if (!showAt(i)) for (const p of d?.images ?? []) { lastPic = i; pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) }); }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
+      else if (galleryOnly && e.type === "figure") for (const p of e.images ?? []) pics.push({ path: p, name: e.caption || "Shown", unseen: shotUnseen(p, e.at) });
     }
     const secs = first != null && last != null ? last - first : 0;
     const lookNote = noteLine(looked?.get(lastPic) ?? "");

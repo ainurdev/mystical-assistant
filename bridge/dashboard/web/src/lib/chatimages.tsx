@@ -3,23 +3,29 @@ import { req } from "../api";
 import type { ImageScope } from "./embeds";
 
 /* Images in the chat, the client's half of bridge/chat_images.py: the SYSTEM ▸ Send
-   images choice, the upload, and whose chat an address in the markdown belongs to. The
-   choice has nothing to do with the experimental switch. An older bridge has no such
+   images and Pictures it shows you choices, the upload, and whose chat an address in the
+   markdown belongs to. The choices have nothing to do with the experimental switch. An older bridge has no such
    route (a 404): that's attachment mode, as it has always been, and the row says to
    restart. */
 
 export type ChatImagesMode = "attachment" | "inline";
+/** Where a picture the agent shows you draws: large in the chat, or in the WORK gallery. */
+export type ShownPictures = "chat" | "gallery";
 
 export type ChatImagesState = {
   loaded: boolean;
   mode: ChatImagesMode;
+  shown: ShownPictures;
   /** This bridge has no such route: older code. */
   stale: boolean;
 };
 
 const isGone = (e: unknown) => e instanceof Error && /^(not found|HTTP 404)$/i.test(e.message);
 
-let state: ChatImagesState = { loaded: false, mode: "attachment", stale: false };
+let state: ChatImagesState = { loaded: false, mode: "attachment", shown: "chat", stale: false };
+type Got = { mode?: string; shown?: string };
+const read = (d: Got): ChatImagesState =>
+  ({ loaded: true, mode: d.mode === "inline" ? "inline" : "attachment", shown: d.shown === "gallery" ? "gallery" : "chat", stale: false });
 let started = false;
 const subs = new Set<() => void>();
 
@@ -30,10 +36,9 @@ function publish(next: ChatImagesState) {
 
 async function refresh(): Promise<void> {
   try {
-    const d = await req<{ mode?: string }>("/local/chat-images");
-    publish({ loaded: true, mode: d.mode === "inline" ? "inline" : "attachment", stale: false });
+    publish(read(await req<Got>("/local/chat-images")));
   } catch (e) {
-    if (isGone(e)) publish({ loaded: true, mode: "attachment", stale: true });
+    if (isGone(e)) publish({ loaded: true, mode: "attachment", shown: "chat", stale: true });
     else if (!state.loaded) publish({ ...state, loaded: true });
     /* any other failure keeps the last answer: a blip shouldn't change how a paste lands */
   }
@@ -58,10 +63,12 @@ export function useChatImages(): ChatImagesState {
 /** Read at the moment of a paste, so the handler never closes over an old answer. */
 export const chatImagesInline = () => state.mode === "inline";
 
-/** POST chat-images. Throws so the row can say why. */
-export async function setChatImagesMode(mode: ChatImagesMode): Promise<void> {
-  const d = await req<{ mode?: string }>("/local/chat-images", { method: "POST", body: { mode } });
-  publish({ loaded: true, mode: d.mode === "inline" ? "inline" : "attachment", stale: false });
+/** POST chat-images, either choice. Throws so the row can say why. */
+export async function setChatImages(body: { mode: ChatImagesMode } | { shown: ShownPictures }): Promise<void> {
+  const d = await req<Got>("/local/chat-images", { method: "POST", body });
+  // A bridge from before Pictures it shows you answers without it, and the pick would vanish.
+  if ("shown" in body && d.shown === undefined) throw new Error("The bridge is running older code. Restart it to use this.");
+  publish(read(d));
 }
 
 /** POST chat-images/upload. The bridge's sentence comes back as the Error's message. */
