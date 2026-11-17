@@ -1,5 +1,4 @@
 import { request } from "./api";
-import { useChatImage } from "./chatimg";
 import { ChatImage } from "../components/ChatImage";
 import { useChat } from "./chat";
 import type { DataEv } from "./dataview";
@@ -58,16 +57,10 @@ export const autoGet = <T,>() => request<T>("/api/automations");
 export const autoCall = <T,>(path: string, body: Record<string, unknown> = {}) =>
   request<T>(`/api/automations/${path}`, { method: "POST", body });
 
-/** The project's work list and its run (bridge/worklist.py, workrun.py). */
+/** The project's work: its tasks and this chat's plan (bridge/worklist.py, chatplan.py). */
 export const workGet = <T,>(session: string | null, project?: string | null) =>
   request<T>(`/api/worklist?session=${encodeURIComponent(session ?? "")}&project=${encodeURIComponent(project ?? "")}`);
 export const workCall = <T,>(path: string, session: string | null, project: string | null | undefined, body: Record<string, unknown> = {}) =>
   request<T>(`/api/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await request<{ sources: string[] }>(`/api/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
-
-/** A picture a run kept (bridge/workrun.py _keep_evidence). Fetched with the init-data, as an img can't send it. */
-export function WorkPicture({ session, path, alt }: { session: string | null; path: string; alt: string }) {
-  const look = useChatImage({ session: session ?? undefined }, path);
-  return look.url ? <a href={look.url} target="_blank" rel="noreferrer"><img className="wl-pic" src={look.url} alt={alt} loading="lazy" /></a> : null;
-}

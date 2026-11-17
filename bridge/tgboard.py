@@ -68,10 +68,6 @@ owner's Telegram app does with a widget: docs/superpowers/specs/telegram-widgets
   LOOK_S must never spawn claude, and a turn's own rate-limit events keep the cache live.
   No reading, no footer. The login is named (alias, else email) only when the registry
   holds a second login: list_accounts() would ask the Keychain on every look.
-- A session managing a running work run (workrun's "_work" mark) shows it on its row, kind
-  "w": the item in progress as its step, "p" = [done, total, more in progress], timed from
-  the run's start. Its Stop is "w:<row key>" and does what /work stop does (workrun._stop).
-  A paused run has no row; the manager's turn or its helpers are what make the row exist.
 
 Limit cards (ticket 08). Both usage-limit notices (runner's park, ladder's choice) ask
 limit_card first: with the board on, in the owner's chat, the notice is a widget
@@ -92,7 +88,7 @@ import sys
 import threading
 import time
 
-from bridge import accounts, config, experimental, limits, notices, runner, store, telegram, usage, worklist, workrun
+from bridge import accounts, config, experimental, limits, notices, runner, store, telegram, usage
 
 LOOK_S = 5
 REFRESH_S = 60
@@ -184,31 +180,7 @@ def rows(chat: int, snap: "dict | None" = None) -> list:
         if sid not in out:
             out[sid] = {"sid": sid, "c": "h", "t": _title(store.get_session(sid), sid),
                         "s": f"{h['n']} helper{'s' if h['n'] != 1 else ''} working", "a": h["a"]}
-    for r in out.values():
-        _work_row(r)
     return sorted(out.values(), key=lambda r: r["a"] or 0, reverse=True)
-
-
-def _managed_run(sid: str) -> "tuple":
-    """(project, its work list, the run) for the running work run this session manages
-    (workrun._mark_chat), or Nones."""
-    mark = store.parse_json((store.get_session(sid) or {}).get("chat_config")).get("_work") or {}
-    root = mark.get("root")
-    data = worklist.load(root) if root else {"runs": []}
-    run = next((r for r in data["runs"] if r.get("id") == mark.get("run")), None)
-    return (root, data, run) if run and run.get("state") == "running" else (None, None, None)
-
-
-def _work_row(r: dict) -> None:
-    """A manager's row, while its run is running, becomes a work-run row: counts, an item in
-    progress and the run's start (the page composes the words, so the title keeps its bytes)."""
-    _, data, run = _managed_run(r["sid"])
-    if not run:
-        return
-    items = [i for i in data["items"] if i["id"] in run.get("items", [])]
-    doing = [i["title"] for i in items if i["state"] == "doing"]   # not review: that waits on the manager
-    r.update(c="w", s=doing[0] if doing else "", a=run.get("started"), n="",   # no tokens on a work-run row
-             p=[sum(i["state"] == "done" for i in items), len(items), max(len(doing) - 1, 0)])
 
 
 # Needs-you kinds as the row's verb ("asks: which layout?"); the rest read as the bell's verb.
@@ -519,12 +491,6 @@ def _stop(q: dict) -> str:
     sid = (_sent.get("keys") or {}).get(req)
     if not sid:
         return "no"
-    if req.startswith("w:"):            # what /work stop does: the run pauses, its turns stop
-        root, _, run = _managed_run(sid)
-        if not run:
-            return "gone"
-        workrun._stop(root, run)
-        return "ok"
     job = runner.live_job(sid)
     return "ok" if job and job.interrupt() else "gone"
 

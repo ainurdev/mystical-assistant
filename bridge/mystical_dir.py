@@ -10,7 +10,6 @@ where things go, and the MYSTICAL panel shows it by kind.
   scratch/  throwaway scripts, probes, downloads
   learn/    saved lessons (bridge/learn.py)
   plans/    each chat's plan, as its agent wrote it (bridge/chatplan.py)
-  runs/     what work list runs kept: helpers' screenshots and logs, check output (bridge/workrun.py)
 
 Nothing already there is moved: code, old links and old transcripts name those paths, and an
 agent's folder may hold the only copy of something. An entry that fits no kind reads

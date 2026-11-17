@@ -102,7 +102,7 @@ VERBS = {
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT", "saver_trial": "TRIAL DONE",
-    "tickets": "TICKETS", "tickets_wait": "TICKETS", "tickets_yours": "YOURS",
+    "tickets": "PARTS", "tickets_wait": "PARTS", "tickets_yours": "YOURS",
     "updated": "UPDATED", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED", "design-build": "BUILT"}

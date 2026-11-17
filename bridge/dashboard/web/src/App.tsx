@@ -133,7 +133,7 @@ import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
 import { WorkPanel } from "./components/WorkPanel";
-import { workCall, workGet } from "./lib/readapi";
+import { workGet } from "./lib/readapi";
 import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
@@ -143,7 +143,7 @@ import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { rbody, rightBodyW, shellCols } from "./lib/shell";
-import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } from "./components/hud/Notifications";
+import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound, useNeeds } from "./components/hud/Notifications";
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { isDeviceRun } from "./lib/devicerun";
@@ -284,6 +284,12 @@ interface HeldPrompt {
   // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
   kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string; flow?: SendFlow };
   typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
+}
+
+/** The WORK panel with the Needs you list, so a task whose part asks shows the question. */
+function WorkTab(props: Omit<Parameters<typeof WorkPanel>[0], "asking">) {
+  const needs = useNeeds();
+  return <WorkPanel {...props} asking={needs} />;
 }
 
 export function App() {
@@ -1775,18 +1781,10 @@ export function App() {
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
-    // `/work` opens the work list, and `/work run [n]` starts a run from this chat (bridge/workrun.py).
-    const workCmd = multiOn ? /^\/work(?:\s+run(?:\s+(\d+))?)?\s*$/.exec(text.trim()) : null;
-    if (workCmd) {
+    // `/work` opens the WORK panel; a task starts from its row there (bridge/worklist.py).
+    if (multiOn && /^\/work\s*$/.test(text.trim())) {
       patchSettings({ rightTab: "work", rightOpen: true });
-      if (!/\brun\b/.test(text)) return true;
-      try {
-        await workCall("run/start", sid, null, { parallel: workCmd[1] ? Number(workCmd[1]) : undefined });
-        return true;
-      } catch (e) {
-        notify("error", (e as Error).message);
-        return false;
-      }
+      return true;
     }
     const goalCmd = /^\/goal\b\s*([\s\S]*)$/.exec(text.trim());
     // An agent with no goals (caps.goals): the words go to it as written.
@@ -2727,17 +2725,10 @@ export function App() {
   useEffect(() => {
     if (!multiOn || !sessionId) { setWorkOpen(0); return; }
     let gone = false;
+    // The rail tile counts the tasks being built (bridge/worklist.py groups them).
     const look = () => {
-      workGet<{ items: { state: string; group: string }[]; runs?: { id: string; chat: string; state: string }[] }>(sessionId, null).then((r) => {
-        if (gone) return;
-        const run = (r.runs ?? []).find((x) => x.state === "running" && x.chat === sessionId);
-        setWorkOpen(run ? r.items.filter((i) => i.state === "doing" || i.state === "review" || i.group === "next").length : 0);
-        if (!run) return;
-        const key = `mystical.work-opened.${run.id}`;
-        if (!localStorage.getItem(key)) {
-          localStorage.setItem(key, "1");
-          patchSettings({ rightTab: "work", rightOpen: true });
-        }
+      workGet<{ items: { group: string }[] }>(sessionId, null).then((r) => {
+        if (!gone) setWorkOpen(r.items.filter((i) => i.group === "building" || i.group === "needs").length);
       }, () => { if (!gone) setWorkOpen(0); });
     };
     look();
@@ -2863,10 +2854,10 @@ export function App() {
       id: "docs", short: "DOCS", label: "Docs", icon: <BookOpen {...RAIL} />, scope: "project" as const, group: "project",
       render: () => <DocsPanel onAsk={(text) => { void send(text, [], { force: true }); }} />,
     }] : []),
-    // The project's tasks (components/WorkPanel). Keyed by chat: "done in this chat" is relative to it.
+    // The project's tasks (components/WorkPanel). Keyed by chat: plans and Bring in are the chat's.
     ...(multiOn ? [{
-      id: "work", short: "WORK", label: "Work list", icon: <ListChecks {...RAIL} />, scope: "project" as const, group: "project", badge: workOpen ? String(workOpen) : null,
-      render: () => <WorkPanel key={sessionId ?? ""} chat={sessionId} project={sessionProject} onAsk={(text) => { void send(text, [], { force: true }); }} onOpen={(id) => { openSession(id); toChat(); }} />,
+      id: "work", short: "WORK", label: "Work", icon: <ListChecks {...RAIL} />, scope: "project" as const, group: "project", badge: workOpen ? String(workOpen) : null,
+      render: () => <WorkTab key={sessionId ?? ""} chat={sessionId} project={sessionProject} onAsk={(text) => { void send(text, [], { force: true }); }} onOpen={(id) => { openSession(id); toChat(); }} />,
     }] : []),
     // Your timers, listeners and commands that run agents (components/AutomationsPanel).
     ...(multiOn ? [{

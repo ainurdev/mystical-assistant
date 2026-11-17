@@ -243,37 +243,37 @@ FEATURES = (
               "itself as a queued turn in the same session. Off, the empty prompt box "
               "offers the next step as a ghost suggestion and Tab takes it, as before. A "
               "turn that failed or is still running starts or offers nothing."},
-    {"key": "ticketruns", "env": "TICKET_RUNS", "label": "TICKETS",
+    {"key": "ticketruns", "env": "TICKET_RUNS", "label": "PARTS",
      "parent": "router",
-     "hint": "approved tickets build as sessions, all ready ones at once, merged at the end",
-     "cost": "one session per ticket",
-     "tokens": "a normal run per ticket",
-     "about": "Once you approve the tickets /to-tickets wrote, each one builds in a session "
+     "hint": "approved parts build as sessions, all ready ones at once, merged at the end",
+     "cost": "one session per part",
+     "tokens": "a normal run per part",
+     "about": "Once you approve the parts /to-tickets wrote, each one builds in a session "
               "of its own, in its own worktree on a branch off the feature branch, every ready "
-              "one at once, and a ticket waits until the ones blocking it are done. When the last "
+              "one at once, and a part waits until the ones blocking it are done. When the last "
               "one is done, one session merges them all onto the feature branch. Off, the "
-              "path stops once the ticket files are written."},
+              "flow stops once the parts are written."},
     {"key": "ticketapprove", "env": "TICKET_APPROVE", "label": "APPROVE BEFORE BUILD",
      "parent": "ticketruns",
-     "hint": "tickets wait for your tap before any session starts",
+     "hint": "parts wait for your tap before any session starts",
      "cost": "no extra call",
      "tokens": "0",
-     "about": "Off, BUILD starts as soon as /to-tickets has written the tickets (the skill is "
-              "meant to ask you first, but can skip it). On, the set shows its breakdown in "
-              "the ticket card above its chat's prompt box and waits for Approve & build before any branch, worktree or "
+     "about": "Off, BUILD starts as soon as /to-tickets has written the parts (the skill is "
+              "meant to ask you first, but can skip it). On, the parts show their breakdown in "
+              "the card above its chat's prompt box and waits for Approve & build before any branch, worktree or "
               "session is made."},
     {"key": "mergereview", "env": "MERGE_REVIEW", "label": "REVIEW AFTER MERGE",
      "parent": "ticketruns",
      "hint": "the council reads the merged work before RETRO",
      "cost": "one council run per merged set",
      "tokens": "the merged diff per reviewer and round, and the fix turns",
-     "about": "On, once the merge session has merged every ticket, the council reads the "
+     "about": "On, once the merge session has merged every part, the council reads the "
               "merged branch there, with its own settings (bar, rounds, reviewers), and the "
               "merge session fixes what it finds. FLOW shows this as REVIEW. When the "
               "council passes, RETRO starts. When it stops without passing, "
               "RETRO does not start and you get Council needs you: go on from the merge "
               "session's COUNCIL tab, or press Skip on REVIEW in FLOW to take the work as it "
-              "stands. If a push would send nothing, or you merged the tickets by hand, the "
+              "stands. If a push would send nothing, or you merged the parts by hand, the "
               "step is passed over. Off, RETRO follows MERGE."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",

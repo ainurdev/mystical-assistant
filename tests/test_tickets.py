@@ -457,7 +457,7 @@ def test_first_prompt_title_and_path(make_set):
     assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
                          f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
                          "tk/x/01-x in this checkout and commit there. When it is done and the tests pass, "
-                         "call StepDone." + tickets._elsewhere(s.state, "01")}]
+                         "call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01")}]
     sess = store.get_session(t["session_id"])
     assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
     assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x/01-x"
@@ -483,7 +483,7 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
     assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
                                       "Work on branch tk/x/01-x in this checkout and commit there. When it is done "
-                                      "and the tests pass, call StepDone." + tickets._elsewhere(s.state, "01"))
+                                      "and the tests pass, call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01"))
     s.finish("01")
     assert s.status("01") == "done"
 
@@ -658,9 +658,12 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     s = make_set({"01": "#03", "02": None, "03": None})
     _finish_all(s, "02", "03", "01")
     (m,) = _merges(s)
-    assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
+    assert m["prompt"] == ("No path for this message.\n\nFirst run the project's full test suite on feat/x as it is, so you "
+                           "can tell what already failed from what the merge breaks.\n"
+                           "Merge these branches into feat/x, in this order, each with git merge --no-ff: "
                            "tk/x/02-x, tk/x/03-x, tk/x/01-x\nResolve any clash so both tickets' work survives, run the "
-                           "project's full test suite, fix what breaks, and commit. Then call StepDone. "
+                           "project's full test suite, fix what breaks, and commit. End your final reply with what "
+                           "failed before the merge and what fails after it. Then call StepDone. "
                            "Run tests in the foreground.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
@@ -812,7 +815,7 @@ def test_a_merge_retry_with_fast_step_done_ends_merged(make_set, monkeypatch):
     assert tickets.retry(s.folder, "merge") == ""
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "merged"
-    assert s.starts[-1]["prompt"].startswith("No path for this message.\n\nMerge these")
+    assert "Merge these branches" in s.starts[-1]["prompt"]
 
 
 def test_a_refused_merge_retry_keeps_the_path_state(make_set):
@@ -1084,6 +1087,17 @@ def test_approve_before_build_waits_and_starts_nothing(make_set):
     assert s.build() == "" and s.state["status"] == "approve"   # asked again: still waiting, still nothing started
 
 
+@pytest.mark.parametrize("graph,waits", [({"01": None}, False), ({"01": None, "02": "#01"}, True)])
+def test_a_tasks_one_part_starts_without_asking_and_two_wait(make_set, graph, waits):
+    from contextlib import closing
+    s = make_set(graph, build=False, on="approve")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET origin='work' WHERE id=?", (s.flow,))
+        c.commit()
+    assert s.build() == ""
+    assert (s.state["status"] == "approve") is waits and bool(s.starts) is not waits
+
+
 def test_approve_builds(make_set):
     s = make_set({"01": None, "02": "#01"}, on="approve")
     assert tickets.approve(s.folder) == ""
@@ -1107,7 +1121,7 @@ def test_a_waiting_set_needs_you_until_approved_and_rings_once(make_set, monkeyp
     monkeypatch.setattr(notices, "emit", _EMIT)
     waits = lambda: [(n["kind"], n["verb"], n["body"]) for n in notices.needs({}) if n["session_id"] == s.flow]  # noqa: E731
     assert s.build() == ""
-    assert waits() == [("tickets_wait", "TICKETS", "2 tickets wait for your approval")]
+    assert waits() == [("tickets_wait", "PARTS", "2 parts wait for your approval")]
     assert s.build() == ""                                  # built again while it waits: no second ring
     assert [r["kind"] for r in notices.feed() if r["subject"] == s.flow] == ["tickets_wait"]
     assert tickets.approve(s.folder) == ""
@@ -1117,7 +1131,7 @@ def test_a_waiting_set_needs_you_until_approved_and_rings_once(make_set, monkeyp
 def test_a_waiting_set_outlives_its_notice(make_set):
     s = make_set({"01": None}, on="approve")               # the recorder: no feed row, as once it is a day old
     [n] = [n for n in notices.needs({}) if n["session_id"] == s.flow]
-    assert (n["kind"], n["body"]) == ("tickets_wait", "1 ticket waits for your approval")
+    assert (n["kind"], n["body"]) == ("tickets_wait", "1 part waits for your approval")
     assert n["at"] == tickets.sets()[0]["created"]          # when it began to wait, from the set itself
     asking = {s.flow: {"state": "awaiting", "kind": "question", "label": "which one?"}}
     assert [n["kind"] for n in notices.needs(asking) if n["session_id"] == s.flow] == ["question"]   # one row a session
@@ -1282,8 +1296,8 @@ def test_a_fix_tells_the_flow_session_why(make_set, monkeypatch):
     monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
     s.finish("01", commit=False)
     s.fail("02")
-    assert said == [("tickets", s.flow, "#01 T01 needs a fix: StepDone, but no commit. #04 waits for it. Retry it in TICKETS."),
-                    ("tickets", s.flow, "#02 T02 needs a fix: its turn failed. Retry it in TICKETS.")]
+    assert said == [("tickets", s.flow, "#01 T01 needs a fix: StepDone, but no commit. #04 waits for it. Retry it in PARTS."),
+                    ("tickets", s.flow, "#02 T02 needs a fix: its turn failed. Retry it in PARTS.")]
     assert s.state["tickets"]["02"]["why"] == "its turn failed"
     tickets.retry(s.folder, "02")
     assert "why" not in s.state["tickets"]["02"]              # running again: the old reason is gone

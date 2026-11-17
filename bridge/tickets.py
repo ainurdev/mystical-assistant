@@ -94,7 +94,9 @@ tickets, saves the set as `approve` and stops: no feature branch, carry or workt
 approve() (the Approve & build tap) does the rest; decline() (Not now) stops it instead,
 the one way out short of building it. The wait rings once (`tickets_wait`) and stays in
 Needs you until then, read live (notices.needs), unless its session is abandoned. boot()
-and tick() leave an `approve` set alone.
+and tick() leave an `approve` set alone. A set of one ticket made by a work-list task's
+session (origin "work") never waits: pressing the task's Start was the approval
+(bridge/worklist.py), and a second tap for one part is friction.
 
 TICKETS OF YOURS: a ticket whose file says `**Status:** ready-for-human` (a step only you can
 take, such as a look and a go between two phases) never gets a session. Once its blockers are
@@ -342,7 +344,7 @@ def waiting() -> dict:
 
 def approval_line(n: int) -> str:
     """What a set waiting for Approve & build says: its notice, its Needs-you row, Telegram."""
-    return f"{n} ticket{'s wait' if n != 1 else ' waits'} for your approval"
+    return f"{n} part{'s wait' if n != 1 else ' waits'} for your approval"
 
 
 def yours() -> dict:
@@ -416,7 +418,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
     co = flowbranch._checkout(sess)  # noqa: SLF001
     folder = folder or (_flow_folder(flow_session_id, co, since) if co else "")
     if not folder:
-        msg = "no ticket files were written since this path began"
+        msg = "no parts were written since this flow began"
         notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {msg}.")
         return msg
     slug = flowbranch.feature_slug(os.path.basename(folder))
@@ -440,7 +442,9 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             tks = parse_dir(folder)
             order(tks)
             if not tks:
-                raise TicketError(f"no tickets in {folder}")
+                raise TicketError(f"no parts in {folder}")
+            # a work-list task's one part starts without asking: its Start was the approval
+            wait = wait and not (len(tks) == 1 and was != "approve" and sess.get("origin") == "work")
             if not wait:
                 _branch(st, sess, flow_session_id, since)
         except Exception as e:  # noqa: BLE001 — a cycle, a missing blocker or git: nothing starts
@@ -460,7 +464,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         from bridge import runner  # local import: runner<->tickets cycle
         body = approval_line(len(tks))
         try:
-            runner._notify(sess.get("chat_id"), f"▦ Tickets need you — {runner._session_label(flow_session_id)}\n{body}",  # noqa: SLF001
+            runner._notify(sess.get("chat_id"), f"▦ Parts need you — {runner._session_label(flow_session_id)}\n{body}",  # noqa: SLF001
                            runner._session_kb(sess.get("chat_id"), flow_session_id, "🛠 Open session"),  # noqa: SLF001
                            kind="tickets_wait", sid=flow_session_id, body=body)
         except Exception as e:  # noqa: BLE001 — the set waits either way
@@ -576,13 +580,20 @@ def _elsewhere(st: dict, n: str) -> str:
             + f" For where the whole set stands, run {_STATUS} {st['slug']}.")
 
 
+# What a part's final reply ends with, carried over from the work run (2026-11-17): what it decided
+# and what it couldn't check is what you need before the merge.
+_REPORT = (" End your final reply with two short lists, headed exactly \"Decisions:\" (choices you made that the "
+           "user may want to check) and \"Not verified:\" (what you couldn't run or see for yourself), each "
+           "saying \"none\" if so.")
+
+
 def _done_line() -> str:
     """How a ticket ends. With PONYTAIL on it reviews its own diff first: a ticket path
     has no REVIEW station, since MERGE is what joins the branches (bridge/paths.py)."""
     if aifeatures.enabled("ponytail"):
         return ("When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
-                "fix what it finds and commit, then call StepDone.")
-    return "When it is done and the tests pass, call StepDone."
+                "fix what it finds and commit, then call StepDone." + _REPORT)
+    return "When it is done and the tests pass, call StepDone." + _REPORT
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
@@ -624,7 +635,7 @@ def _settle(st: dict, n: str, status: str) -> None:
     notices.emit("tickets", st["parent_session"],
                  body=f"#{n} {t['title']} needs a fix: {t.get('why') or 'it did not finish'}."
                  + (f" {', '.join('#' + k for k in held)} wait{'s' if len(held) == 1 else ''} for it." if held else "")
-                 + " Retry it in TICKETS.")
+                 + " Retry it in PARTS.")
 
 
 def _start_ticket(folder: str, st: dict, n: str) -> None:
@@ -776,9 +787,12 @@ def go(folder: str, n: str) -> str:
 def _merge_prompt(st: dict, tks: dict) -> str:
     branches = ", ".join(_home_branches(st, tks))
     return ("No path for this message.\n\n"   # else the paths pack has Claude pick a path
+            f"First run the project's full test suite on {st['feature_branch']} as it is, so you can tell "
+            "what already failed from what the merge breaks.\n"
             f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
             f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
-            "suite, fix what breaks, and commit."
+            "suite, fix what breaks, and commit. End your final reply with what failed before the merge and "
+            "what fails after it."
             + "".join(f"\nThen in {repo}: merge {', '.join(bs)} into {st['feature_branch']} there the same way, "
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
@@ -897,7 +911,7 @@ def _merge_end(sid: str, status: str, chat_id=None, carry: bool = True) -> None:
             if kept:
                 notices.emit("tickets", st["parent_session"], body=f"After the merge, {', '.join(kept)} "
                              f"kept {'its' if len(kept) == 1 else 'their'} worktree: uncommitted work there, or a "
-                             "session still at work. Clean up in the ticket map tries again.")
+                             "session still at work. Clean up in PARTS tries again.")
         except Exception as e:  # noqa: BLE001 — a failed clean-up never holds the flow up
             print(f"[tickets] clean-up of {folder} failed: {e}", file=sys.stderr)
         paths.advance(st["parent_session"], "merge", st.get("flow_at"))

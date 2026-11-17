@@ -685,8 +685,8 @@ export function Terminal({
             </button>
           )}
           {selected?.ticket_of && (
-            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "its super session"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
-              <span aria-hidden>‹</span> {superTitle || "super session"}
+            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
+              <span aria-hidden>‹</span> {superTitle || "its session"}
             </button>
           )}
           <button
@@ -759,8 +759,8 @@ export function Terminal({
             {hasAgents && <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)} className="caps">Grid</button>}
             {!!tset && sessionId && (
               <button type="button" aria-pressed={tkLive} onClick={() => { setGridFor(null); setTeam(false); setLivePick({ id: sessionId, on: true }); }}
-                title={`This chat's tickets: ${tset.done} of ${tset.total} done`} className="caps">
-                Tickets {tset.done}/{tset.total}
+                title={`This chat's parts: ${tset.done} of ${tset.total} done`} className="caps">
+                Parts {tset.done}/{tset.total}
                 <i aria-hidden className="vs-prog" style={{ "--p": `${tset.total ? (100 * tset.done) / tset.total : 0}%` } as CSSProperties} />
               </button>
             )}

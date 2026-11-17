@@ -182,20 +182,6 @@ WORK_LIST = _t("work_list", "The project's work list, which the user sees in the
                     "source": {"type": "object", "description": "Where it came from: {kind, ref, url}."}}}},
                 "ids": {"type": "array", "items": {"type": "string"}, "description": "For remove and reorder."},
                 "clear_done": {"type": "boolean"}}, ["action"])
-WORK_RUN = _t("work_run", "Manage a run on the work list, once the user has started one here: you assign items to helpers, review "
-              "and merge. status shows it. start_item gives an item a helper in its own copy of the code. review_item shows what it "
-              "changed. merge_item merges it into the run's branch, never the user's. send_back returns it with what to change. "
-              "block_item says it needs the user. restart_item drops its copy and puts it back up next. finish ends the run. You "
-              "can't start a run, but when the user asks for one in words, propose shows them a card to tap: `ids` and `parallel` are "
-              "optional, and it starts only if they press Start. Only propose when they asked.",
-              {"action": {"type": "string", "enum": ["propose", "status", "start_item", "review_item", "merge_item", "send_back", "block_item", "restart_item", "finish"]},
-               "ids": {"type": "array", "items": {"type": "string"}, "description": "propose: which tasks. Leave out for everything up next."},
-               "parallel": {"type": "integer", "description": "propose: helpers at once, 1 to 5."},
-               "id": {"type": "string", "description": "The item, for everything but propose, status and finish."},
-               "brief": {"type": "string", "description": "start_item: anything to add to the task's own text. The helper sees nothing else."},
-               "profile": {"type": "string", "description": "start_item: a profile name from list_agents, if the user asked for one."},
-               "text": {"type": "string", "description": "send_back: what to change. block_item: what you need from the user."},
-               "summary": {"type": "string", "description": "finish: what happened."}}, ["action"])
 CHAT_PLAN = _t("chat_plan", "Your plan for this chat's work, which the user sees in the Work list as a timeline. For work in several "
                "steps, set it before you start, then mark each step as you go with update: it keeps you on track, and they see "
                "\"step 5 of 10\" without reading back. A step can have a Markdown description, sub-steps and a note on what you "
@@ -250,7 +236,7 @@ def tools_for(s: dict) -> list:
     if not s.get("parent_session") and channel.refusal(s) is None:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
     if not s.get("parent_session"):
-        out += [WORK_LIST, WORK_RUN, CHAT_PLAN]
+        out += [WORK_LIST, CHAT_PLAN]
     if caps["system_prompt"]:              # Claude: the only runtime with background tasks to wait on
         out += [BG_WAIT]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
@@ -463,12 +449,6 @@ def _call(s: dict, name: str, a: dict) -> dict:
             return _text(chatplan.tool(s, a, job))
         except chatplan.Refused as e:
             return _text(str(e), error=True)
-    if name == "work_run":
-        from bridge import workrun
-        try:
-            return _propose_run(s, job, a) if a.get("action") == "propose" else _text(workrun.tool(s, a))
-        except worklist.Refused as e:
-            return _text(str(e), error=True)
     if name == "find_tools":
         return _text(_find(s, a))
     if name == "call_tool":
@@ -481,25 +461,6 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name in gateway_tools.HANDLED:
         return gateway_tools.call(s, job, name, a)
     return _text(f"Unknown tool: {name}", error=True)
-
-
-def _propose_run(s: dict, job, a: dict) -> dict:
-    """A card: only the user's tap starts a run. Text in a ticket can get this far and no further."""
-    from bridge import workrun
-    wanted = [str(i) for i in a["ids"]] if isinstance(a.get("ids"), list) else None
-    questions = workrun.proposal(s, wanted, a.get("parallel"))
-    if job is None:
-        return _text("No turn is running to ask from.", error=True)
-
-    def on_answer(answers: list) -> str:
-        if not channel.approved(answers):
-            return "The user said not now. Nothing started."
-        try:
-            run = workrun.start(store.get_session(s["id"]), wanted, a.get("parallel"))
-        except worklist.Refused as e:
-            return f"It couldn't start: {e}"
-        return f"The run started on {run['branch']}. Your instructions as its manager arrive as a message: wait for them, then use work_run."
-    return _card(job, s, questions, on_answer)
 
 
 def _roster(chat: dict) -> str:

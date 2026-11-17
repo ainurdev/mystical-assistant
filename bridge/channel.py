@@ -287,14 +287,14 @@ def _copy_place(top: str, name: str) -> "tuple[str, str]":
     return f"mystical/{slug}", os.path.join(root, slug)
 
 
-def _make_copy(chat: dict, cwd: str, name: str, start_at: "str | None" = None) -> "tuple[dict | None, str | None]":
+def _make_copy(chat: dict, cwd: str, name: str) -> "tuple[dict | None, str | None]":
     """A worktree for a writer, its branch named after the helper (mystical/helper-ink-outline), so the
     branch list says whose copy it is. Returns ({path, branch, base, top, cwd}, refusal). It starts
-    from the chat's current state, or from `start_at` for a work run's item (bridge/workrun.py)."""
+    from the chat's current state."""
     top = _top(cwd)
     if not top:
         return None, "This folder isn't a git repository, so a helper can't have its own copy."
-    rc, base, _ = (0, start_at, "") if start_at else _git(top, "stash", "create")
+    rc, base, _ = _git(top, "stash", "create")
     base = base.strip()
     if rc != 0 or not base:
         rc, base, err = _git(top, "rev-parse", "HEAD")
@@ -350,7 +350,7 @@ def plan_tasks(chat: dict, tasks: list) -> "tuple[list, str | None]":
         agent, account = _agent_account(chat, profile)
         counts[(agent, account)] = counts.get((agent, account), 0) + 1
         out.append({"brief": brief, "name": t.get("name") or "", "write": bool(t.get("write")),
-                    "profile": profile, "agent": agent, "account": account, "base": t.get("base"), "work": t.get("work"), "from_dir": t.get("from_dir")})
+                    "profile": profile, "agent": agent, "account": account})
     why = _load_problem(chat, "", "", adding=len(out))
     for (agent, account), n in counts.items():
         why = why or _load_problem(chat, agent, account, adding=n)
@@ -399,10 +399,10 @@ def start(chat: dict, plan: list) -> list:
         short = uuid.uuid4().hex[:8]
         # Where its shell last went, unless that's gone: it may have been a helper's copy, since merged.
         moved = chat.get("work_cwd")
-        parent_cwd = t.get("from_dir") or (moved if moved and os.path.isdir(moved) else None) or chat.get("cwd") or config.BASE_PATH
+        parent_cwd = (moved if moved and os.path.isdir(moved) else None) or chat.get("cwd") or config.BASE_PATH
         copy = None
         if t["write"]:
-            copy, why = _make_copy(chat, parent_cwd, name, t.get("base"))
+            copy, why = _make_copy(chat, parent_cwd, name)
             if why:
                 lines.append(f"{name}: not started. {why}")
                 continue
@@ -411,7 +411,7 @@ def start(chat: dict, plan: list) -> list:
         mode = _helper_mode(chat, t["agent"], (t["profile"] or {}).get("mode"), t["write"])
         member = {"name": name, "write": t["write"], "brief": t["brief"], "state": "running",
                   "agent": t["agent"], "account": t["account"], "started": time.time(),
-                  "copy": copy, "short": short, **({"work": t["work"]} if t.get("work") else {})}
+                  "copy": copy, "short": short}
         s = store.create_member(chat, name=name, cwd=cwd, profile_id=pid or chat.get("profile_id"),
                                 permission_mode=mode, member=member)
         if t["agent"] == profiles.CLAUDE:
@@ -643,31 +643,10 @@ def on_turn_end(job) -> None:
         chat = _main_of(s)
         if s.get("parent_session") and chat:
             _helper_turn_ended(job, s, chat)
-        elif chat:
-            _manager_turn_ended(job, chat)
         if chat:
             flush(store.get_session(chat["id"]))
     except Exception as e:  # noqa: BLE001
         print(f"[channel] turn end: {e!r}", file=sys.stderr)
-
-
-def _manager_turn_ended(job, chat: dict) -> None:
-    """A work run's manager may need a nudge (bridge/workrun.py)."""
-    from bridge import workrun
-    try:
-        workrun.manager_ended(job, chat)
-    except Exception as e:  # noqa: BLE001
-        print(f"[channel] work run: {e!r}", file=sys.stderr)
-
-
-def _work_ended(member: dict, state: str, report: str = "") -> str:
-    """A work run's helper finished: its item moves, and its report says what's next."""
-    from bridge import workrun
-    try:
-        return workrun.helper_ended(member, state, report)
-    except Exception as e:  # noqa: BLE001
-        print(f"[channel] work run: {e!r}", file=sys.stderr)
-        return ""
 
 
 def _helper_turn_ended(job, s: dict, chat: dict) -> None:
@@ -683,9 +662,7 @@ def _helper_turn_ended(job, s: dict, chat: dict) -> None:
         words = data_views.strip_refs(job.result or (job.texts[-1] if job.texts else "") or "").strip()
         body = words[:_RESULT_MAX] or f"{name} finished without saying anything."
     _set_state(s["id"], state, ended=time.time())
-    if m.get("work"):
-        body += _work_ended(m, state, body if state == "done" else "")
-    elif (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):
+    if (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):
         stat = _diff_stat(m["copy"])
         if stat:
             body += (f"\n\nIt changed files in its own copy ({stat}). Review with review_helper_changes, "
@@ -783,8 +760,6 @@ def merge(chat: dict, name: str) -> str:
     s, m = _member_by_name(chat, name)
     if s is None:
         return f'No helper is called "{name}".'
-    if m.get("work"):
-        return f"{name} is working on a run's item. Use work_run with merge_item."
     copy = m.get("copy")
     if not copy or not os.path.isdir(copy.get("path") or ""):
         return f"{name} has no copy to merge (state: {m.get('state')})."
@@ -841,8 +816,6 @@ def discard(chat: dict, name: str) -> str:
         return f'No helper is called "{name}".'
     if _running(s["id"]):
         return f"{name} is still working. Stop it first."
-    if m.get("work"):
-        return f"{name} is working on a run's item. Use work_run with restart_item."
     copy = m.get("copy")
     if copy and os.path.isdir(copy.get("path") or ""):
         _remove_copy(copy)

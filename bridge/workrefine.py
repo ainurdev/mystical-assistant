@@ -166,4 +166,4 @@ def api(path: str, body: dict, root: "str | None", session: "str | None", chat_i
         return {"error": str(e)}, 400
     except OSError as e:
         return {"error": f"Couldn't save it: {e}"}, 500
-    return worklist.view(root, session), 200
+    return worklist.view(root), 200

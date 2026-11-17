@@ -241,7 +241,7 @@ _EXPERIMENTAL_NOTE = (
     "work on it together, start its dev server and call show_design with pages [{name, url}]: they can point at the real app.\n\n"
     "A project may have generated docs: read_docs (find_tools) lists them, and where they disagree with the code, trust the code.\n\n"
     "The project's work list is in the user's right sidebar: read or change it with work_list from the mystical MCP server when "
-    "they ask, filling it from whatever they name. Only they start a run on it: if they ask for one, work_run propose gives them a card to tap. "
+    "they ask, filling it from whatever they name. Only they start a task: its Start in the Work panel opens the task's own session. "
     "For work in several steps, keep your plan with chat_plan: set it before you start and mark steps as you go. The user sees it "
     "beside the work list and may change it, which reaches you as a message.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
@@ -864,8 +864,9 @@ def _continue_after_turn(job, effort=None) -> bool:
     the end of that step's turn instead, so one turn end never queues two. A
     ticket's turn end is judged first; the tickets it starts run in sessions of
     their own."""
-    from bridge import council, goals, tickets  # local import: runner<->* cycle
+    from bridge import council, goals, tickets, worklist  # local import: runner<->* cycle
     tickets.after_turn(job)
+    worklist.after_turn(job)
     return (council.after_turn(job) or paths.continue_after_turn(job, effort)
             or goals.continue_after_turn(job, effort))
 
