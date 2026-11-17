@@ -1,5 +1,5 @@
 """tail_slice: last-N-turns windowing over an assembled transcript."""
-from bridge.transcript_page import tail_slice
+from bridge.transcript_page import tail_slice, todo
 
 
 def _data(events, turns=None):
@@ -175,3 +175,9 @@ def test_summary_answer_is_the_line_under_the_to_do_box():
     ]
     s = {t["id"]: t["sum"] for t in summarize(_data(ev, turns=["t1", "t2"]))["turns"]}
     assert (s["t1"]["answer"], s["t2"]["answer"]) == ("Yes, there's a tool.", "Log in to GitHub.")
+
+
+def test_todo_is_the_important_box_first_item():
+    assert todo("> [!IMPORTANT]\n> - Log in.\n> - Say go.\n\nDone.") == "Log in. (+1 more)"
+    assert todo("> [!IMPORTANT]\n> Log in to GitHub.\n") == "Log in to GitHub."     # a box without a list
+    assert todo("> [!NOTE]\n> - Not a to-do.\n\nDone.") == "" and todo("Done.\n> [!IMPORTANT]\n> - x") == ""

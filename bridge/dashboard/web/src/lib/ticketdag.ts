@@ -6,11 +6,12 @@
  *  here, since the bridge refuses to build one. */
 /** What a ticket's row shows, from its status in set.json and its session's live state.
  *  idle: its turn ended without finishing and nothing will start another (the bridge's
- *  `stalled`). An ask wins over idle: answering it is what carries the ticket on. */
-export type Kind = "run" | "ask" | "idle" | "q" | "done" | "fix";
+ *  `stalled`). An ask wins over idle: answering it is what carries the ticket on.
+ *  you: a ticket of yours (ready-for-human), waiting for Go. */
+export type Kind = "run" | "ask" | "idle" | "q" | "done" | "fix" | "you";
 const ASKING = ["awaiting", "asking", "credits"];
 export const kindOf = (t: { status: string; stalled?: boolean }, state?: string): Kind =>
-  t.status === "done" ? "done" : t.status === "fix" ? "fix"
+  t.status === "done" ? "done" : t.status === "fix" ? "fix" : t.status === "yours" ? "you"
     : t.status === "running" ? (state && ASKING.includes(state) ? "ask" : t.stalled ? "idle" : "run") : "q";
 
 export type DagIn = { n: string; blockedBy: string[] };

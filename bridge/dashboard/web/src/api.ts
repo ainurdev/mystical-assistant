@@ -106,7 +106,7 @@ export interface SessionBrief {
   member?: MemberInfo | null;
   // A ticket or merge session names its super session (tickets.owners); that one carries its set's count.
   ticket_of?: string;
-  tickets?: { done: number; total: number; status: string };
+  tickets?: { done: number; total: number; status: string; yours?: string[] };
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the
@@ -1411,9 +1411,10 @@ export interface AccountsInfo {
   pending_login: { slot: number; url: string | null } | null;
 }
 /** One ticket in a set (bridge/tickets.py): `session` is its live turn state, "running" or how the last ended.
- *  `stalled`: its turn ended and nothing will start another, so it waits for Continue. `why`: what a fix is for. */
+ *  `stalled`: its turn ended and nothing will start another, so it waits for Continue. `why`: what a fix is for.
+ *  `yours`: its file says ready-for-human, so no session takes it; Go marks it done. */
 export interface TicketRow {
-  status: "queued" | "running" | "retry" | "done" | "fix" | "missing";
+  status: "queued" | "running" | "retry" | "done" | "fix" | "missing" | "yours";
   title: string; blocked_by: string[]; branch: string; session_id: string; session?: string;
   stalled?: boolean; why?: string;
 }
@@ -2775,6 +2776,9 @@ export const api = {
   tickets: () => req<{ sets: TicketSet[] }>("/local/tickets"),
   retryTicket: (folder: string, n: string) =>
     req<{ text: string }>("/local/tickets/retry", { method: "POST", body: { folder, n } }),
+  /** A ticket of yours is done: what waits on it starts. */
+  goTicket: (folder: string, n: string) =>
+    req<{ text: string }>("/local/tickets/go", { method: "POST", body: { folder, n } }),
   /** A stopped set builds again, once what stopped it is fixed. */
   buildTickets: (folder: string) =>
     req<{ text: string }>("/local/tickets/build", { method: "POST", body: { folder } }),

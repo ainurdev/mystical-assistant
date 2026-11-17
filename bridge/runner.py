@@ -1797,7 +1797,9 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
                      body: str = "") -> None:
     """Ping when a streaming run finishes (or errors), so you can step away. The
     feed's line is the closing sentence, or for a failure what outcomes.py
-    calls it, which a red row is useless without."""
+    calls it, which a red row is useless without. A ticket's or merge's reply
+    that opens with a to-do box gives its to-do instead, Telegram too: nobody
+    reads those sessions, so the bell is where you learn of it (2026-11-17)."""
     if _plugin_session(session_id):
         return
     try:
@@ -1805,10 +1807,12 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
     except Exception:  # noqa: BLE001
         turn = {}
     out = turn.get("outcome") or {}
+    unread = not is_error and (store.get_session(session_id or "") or {}).get("origin") in ("ticket", "ticket-merge")
+    todo = transcript_page.todo(body) if unread else ""
     line = (f"{out['label'].capitalize()}: {out.get('detail') or ''}".strip()[:200]
-            if is_error and out.get("label") else transcript_page.first_line(body)[:200])
+            if is_error and out.get("label") else (f"To do: {todo}" if todo else transcript_page.first_line(body))[:200])
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
-    why = f"\n{line}" if is_error and line else ""
+    why = f"\n{line}" if (is_error or todo) and line else ""
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}{why}",
             _session_kb(chat_id, session_id, "🛠 Open session"),
             kind="failed" if is_error else "done", sid=session_id, body=line,

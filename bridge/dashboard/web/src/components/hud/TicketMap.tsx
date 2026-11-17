@@ -20,8 +20,8 @@ import { Switch } from "../ui/Switch";
  *  live state comes from its session (App's status map); the set is polled while the chat
  *  is open, since ticket turns end on the bridge with no dashboard event to announce them. */
 
-const WORD: Record<Kind, string> = { run: "Running", ask: "Asks you", idle: "Stopped", q: "Waiting", done: "Done", fix: "Fix" };
-const COLOR: Record<Kind, string> = { run: "var(--acc)", ask: "var(--warn)", idle: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)" };
+const WORD: Record<Kind, string> = { run: "Running", ask: "Asks you", idle: "Stopped", q: "Waiting", done: "Done", fix: "Fix", you: "Yours" };
+const COLOR: Record<Kind, string> = { run: "var(--acc)", ask: "var(--warn)", idle: "var(--warn)", q: "var(--txl)", done: "var(--ok)", fix: "var(--err)", you: "var(--warn)" };
 const openKey = (folder: string) => `ticketmap.open:${folder}`;
 const busy = (k: Kind) => k === "run" || k === "ask" || k === "idle";   // holds a session right now
 const ago = (since?: number) => {
@@ -129,7 +129,7 @@ function Graph({ set, kinds, status, big, sel, onPick }: {
 
 /** What waits on you first, as the strip's call and the map's default pick. */
 function urgent(set: TicketSet, ns: string[], kinds: Record<string, Kind>): string {
-  return ns.find((n) => kinds[n] === "ask") ?? ns.find((n) => kinds[n] === "fix") ?? ns.find((n) => kinds[n] === "idle")
+  return ns.find((n) => kinds[n] === "ask") ?? ns.find((n) => kinds[n] === "you") ?? ns.find((n) => kinds[n] === "fix") ?? ns.find((n) => kinds[n] === "idle")
     ?? ((set.status === "fix" || set.merge_stalled) ? "merge" : "");
 }
 
@@ -201,6 +201,10 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     build: () => act(api.buildTickets(set.folder), "build failed"),
     approve: () => act(api.approveTickets(set.folder), "approve failed"),
     decline: () => act(api.declineTickets(set.folder), "not now failed"),
+    go: async (n: string) => {
+      if (!(await askConfirm(`Mark #${n} ${set.tickets[n].title} done? What waits on it starts.`, { ok: "Go" }))) return;
+      act(api.goTicket(set.folder, n), "go failed");
+    },
     clean: async () => {
       if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; their .mystical/ scratch moves to .mystical/archive/, other ignored files (.env) go with them.`, { ok: "Clean up" }))) return;
       try {
@@ -215,6 +219,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     : set.status === "stopped" && set.error !== undefined   // Not now leaves no error: set aside, nothing failed
       ? <span className="tm-call err" title={set.error}>{set.error || "BUILD could not start"}</span>
     : t && kinds[first] === "ask" ? <span className="tm-call warn" title={status.get(t.session_id)?.label ?? undefined}><Hand size={13} aria-hidden /><b>#{first}</b> asks you</span>
+    : t && kinds[first] === "you" ? <span className="tm-call warn" title={t.title}><Hand size={13} aria-hidden /><b>#{first}</b> is yours</span>
     : t && kinds[first] === "fix" ? <span className="tm-call err" title={t.why}><b>#{first}</b> needs a fix</span>
     : t ? <span className="tm-call warn"><b>#{first}</b> stopped</span>
     : first === "merge" ? <span className={`tm-call ${set.status === "fix" ? "err" : "warn"}`}>the merge {set.status === "fix" ? "needs a fix" : "stopped"}</span>
@@ -224,6 +229,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
       <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
     : set.status === "stopped" ? <button className="tm-btn" onClick={ops.build}>Build</button>
     : t && kinds[first] === "ask" ? <button className="tm-btn warn" onClick={() => onOpenSession(t.session_id)}>Answer</button>
+    : t && kinds[first] === "you" ? <button className="tm-btn warn" onClick={() => void ops.go(first)}>Go</button>
     : t && kinds[first] === "fix" ? <button className="tm-btn" onClick={() => ops.retry(first)}><RotateCcw size={11} aria-hidden /> Retry</button>
     : t ? <button className="tm-btn" onClick={() => ops.retry(first)}>Continue</button>
     : first === "merge" ? <button className="tm-btn" onClick={() => ops.retry("merge")}>{set.status === "fix" ? "Retry" : "Continue"}</button>
@@ -302,7 +308,7 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
  *  ticket sessions, one row each, and a row opens that session in the normal session view (it
  *  carries a ‹ back crumb and a TicketBrief). It replaced a grid of live tiles (C · LIVE GRID):
  *  a tile's tool-name tail read nothing like a session, so following a ticket was hard. */
-const RANK: Record<Kind, number> = { ask: 0, fix: 1, idle: 2, run: 3, q: 4, done: 5 };
+const RANK: Record<Kind, number> = { ask: 0, you: 0.5, fix: 1, idle: 2, run: 3, q: 4, done: 5 };
 export function TicketList({ sessionId, status, onOpenSession }: {
   sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
 }) {
@@ -317,6 +323,7 @@ export function TicketList({ sessionId, status, onOpenSession }: {
     if (k === "fix") return `needs a fix: ${t.why || "it did not finish"}`;
     if (k === "q") { const w = t.blocked_by.filter((b) => kinds[b] !== "done"); return w.length ? `waits on ${w.map((b) => `#${b}`).join(" ")}` : "starts next"; }
     if (k === "ask") return `asks you${st?.label ? `: ${st.label}` : ""}`;
+    if (k === "you") return "yours: do its to-dos, then Go";
     if (k === "idle") return "stopped before it finished";
     return st?.label || "working";
   };
@@ -355,11 +362,12 @@ export function TicketList({ sessionId, status, onOpenSession }: {
                       title={sid ? `Open #${n} ${t.title}` : `#${n} has no session yet`}>
                 <span className="tl-dot" style={k === "q" ? undefined : { background: COLOR[k], boxShadow: busy(k) ? `0 0 6px ${COLOR[k]}` : undefined }} />
                 <span className="tl-no">#{n}</span>
-                <span className="tl-lt"><b>{t.title}</b><span style={k === "ask" || k === "idle" ? { color: COLOR[k] } : undefined}>{now(n)}</span></span>
+                <span className="tl-lt"><b>{t.title}</b><span style={k === "ask" || k === "idle" || k === "you" ? { color: COLOR[k] } : undefined}>{now(n)}</span></span>
                 {busy(k) && <span className="tl-tm">{ago(status.get(sid)?.since)}</span>}
                 {sid && <span className="tl-go" aria-hidden>›</span>}
               </button>
               {(k === "fix" || k === "idle") && <button className="tm-btn sm" onClick={() => ops.retry(n)}><RotateCcw size={10} aria-hidden /> {k === "fix" ? "Retry" : "Continue"}</button>}
+              {k === "you" && <button className="tm-btn sm warn" onClick={() => void ops.go(n)}>Go</button>}
             </div>
           );
         })}

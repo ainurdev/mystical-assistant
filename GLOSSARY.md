@@ -33,7 +33,7 @@ The branch a **Flow** builds on, in a worktree of its own. It is named for what 
 _Avoid_: flow branch, session branch
 
 **Ticket**:
-One part of a feature that a **Flow** split off to be built beside the others, in a **Session** and worktree of its own.
+One part of a feature that a **Flow** split off to be built beside the others, in a **Session** and worktree of its own. A ticket of yours (its file says ready-for-human) gets neither: it waits in **Needs you** until you tap Go.
 _Avoid_: task, sub-task, issue
 
 **Ticket set**:
@@ -65,7 +65,7 @@ A message Mystical sends a session on its own, marked as Mystical's, after the s
 _Avoid_: nudge, "go", auto-resume
 
 **Needs you**:
-Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Ticket set** waiting for your approval. It is worked out fresh each time, and a reply's to-dos are not part of it.
+Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Ticket set** waiting for your approval, a **Ticket** of yours waiting for Go. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
 
 **WAITING ON YOU panel**:
