@@ -6,6 +6,7 @@ import { addressFromSrc, addressKind } from "../lib/embeds";
 import { selectionMd } from "../lib/selmd";
 import { ADMONITION_RE, stripMarker } from "../lib/admonition";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
+import { mermaidFlow } from "../lib/mermaid";
 import type { ToolStyle } from "../lib/toolwidget";
 import { ChatImage } from "./ChatImage";
 import { useExperimental } from "../lib/multi";
@@ -13,6 +14,7 @@ import { stripViews } from "../lib/dataview";
 import { refOf, remarkFileRefs } from "../lib/refs";
 import { FileRef, RefImages } from "./FileRef";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
+import { Flow } from "./DataView";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab.
@@ -194,6 +196,12 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
             // ```widget:table — the tag arrives verbatim from remark.
             const lang = /language-([\w:+-]+)/.exec(el?.props?.className ?? "")?.[1] ?? "";
             const code = textOf(el?.props?.children).replace(/\n$/, "");
+            // A Mermaid flowchart, drawn as show_data's flow (lib/mermaid). One it can't
+            // read, or another kind of diagram, stays the code block below.
+            if (lang.toLowerCase() === "mermaid") {
+              const flow = mermaidFlow(code);
+              if (flow) return <div className="dv" data-view="diagram"><Flow ev={flow} full={false} /></div>;
+            }
             // A typed block the model drew on purpose (lib/widgetblock). Every
             // step here can decline — an unknown type, a body still streaming
             // in, a payload that isn't the shape its type promised — and each

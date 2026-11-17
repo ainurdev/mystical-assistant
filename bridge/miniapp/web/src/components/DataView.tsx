@@ -521,13 +521,18 @@ function Tiles({ ev }: { ev: StatsEv }) {
 
 // ---- diagrams ---------------------------------------------------------------
 
-function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean }) {
+/** Also draws a Mermaid flowchart in Markdown (lib/mermaid), inside a `.dv` frame for its tokens. */
+export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean }) {
   const [ref, w] = useSize();
   const layout = useMemo(() => {
     const right = layoutFlow(ev, "right");
     if (ev.direction) return layoutFlow(ev, ev.direction);
     if (print || (w && right.width <= w)) return right;
-    return w < 560 || !full ? layoutFlow(ev, "down") : right;
+    if (w >= 560 && full) return right;
+    // Neither fits: the narrower one scrolls less. A chain goes down; a fan (many steps off
+    // one, like a map of channels) stays across, where down would be a row of them all.
+    const down = layoutFlow(ev, "down");
+    return down.width <= right.width ? down : right;
   }, [ev, w, full, print]);
   // Shrink a little to fit rather than scroll, and past that scroll rather than go unreadable.
   const scale = print || !w || layout.width <= w ? 1 : Math.max(0.8, w / layout.width);
@@ -541,8 +546,9 @@ function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean 
           <svg width={layout.width * scale} height={layout.height * scale} viewBox={`0 0 ${layout.width} ${layout.height}`}>
             {layout.arrows.map((a, i) => (
               <g key={i}>
-                <path d={a.d} fill="none" stroke="var(--txd)" strokeWidth={1.5} strokeDasharray={a.back ? "4 4" : undefined} />
-                <path d={a.head} fill="var(--txd)" />
+                <path d={a.d} fill="none" stroke="var(--txd)" strokeWidth={1.5} strokeDasharray={a.back || a.dashed ? "4 4" : undefined} />
+                {a.head ? <path d={a.head} fill="var(--txd)" /> : null}
+                {a.tail ? <path d={a.tail} fill="var(--txd)" /> : null}
               </g>
             ))}
             {layout.nodes.map((n) => (

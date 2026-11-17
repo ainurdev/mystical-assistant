@@ -9,9 +9,11 @@ import { parseFileRef } from "../lib/filepath";
 import { ADMONITION_RE, stripMarker } from "../lib/admonition";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
+import { mermaidFlow } from "../lib/mermaid";
 import { collapseProgress, type Progress } from "../lib/progressline";
 import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
+import { Flow } from "./DataView";
 import { MdImage, MdLinked, MdTyped } from "./MdImage";
 import { useMultiOn } from "../lib/multistore";
 import { stripViews } from "../lib/dataview";
@@ -313,6 +315,12 @@ export const Markdown = memo(function Markdown({
             // ```widget:table — the tag arrives verbatim from remark.
             const lang = /language-([\w:+-]+)/.exec(el?.props?.className ?? "")?.[1] ?? "";
             const code = textOf(el?.props?.children).replace(/\n$/, "");
+            // A Mermaid flowchart, drawn as show_data's flow (lib/mermaid). One it can't
+            // read, or another kind of diagram, stays the code block below.
+            if (lang.toLowerCase() === "mermaid") {
+              const flow = mermaidFlow(code);
+              if (flow) return <div className="dv" data-view="diagram"><Flow ev={flow} full={false} /></div>;
+            }
             // A typed block the model drew on purpose (lib/widgetblock). Every
             // step here can decline — an unknown type, a body still streaming
             // in, a payload that isn't the shape its type promised — and each

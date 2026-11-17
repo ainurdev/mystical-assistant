@@ -22,11 +22,12 @@ export type ChartEv = Head & { view: "chart"; kind: "bar" | "bar_horizontal" | "
 export type KanbanEv = Head & { view: "kanban"; columns: BoardCol[]; count: number };
 export type StatsEv = Head & { view: "stats"; items: Stat[] };
 export type FlowNode = { id: string; label: string; note: string; shape: "process" | "decision" | "terminal"; group: string };
-export type FlowEdge = { from: string; to: string; label: string };
+/** `dashed` and `heads` come from a Mermaid fence (lib/mermaid); show_data sends neither. */
+export type FlowEdge = { from: string; to: string; label: string; dashed?: boolean; heads?: "end" | "both" | "none" };
 export type FlowEv = Head & { view: "diagram"; kind: "flow"; nodes: FlowNode[]; edges: FlowEdge[]; groups: string[]; direction: "" | "right" | "down" };
 export type TimelineEv = Head & { view: "diagram"; kind: "timeline"; items: { date: string; label: string; note: string; state: "" | "done" | "now" | "next" }[] };
 export type FlowNodeAt = FlowNode & { x: number; y: number; w: number; h: number; lines: string[]; notes: string[] };
-export type FlowArrow = { d: string; head: string; label: string; lx: number; ly: number; back: boolean };
+export type FlowArrow = { d: string; head: string; tail: string; label: string; lx: number; ly: number; back: boolean; dashed: boolean };
 export type FlowLayout = { nodes: FlowNodeAt[]; arrows: FlowArrow[]; width: number; height: number };
 export type DataEv = TableEv | ChartEv | KanbanEv | StatsEv | FlowEv | TimelineEv;
 
@@ -304,27 +305,35 @@ export function layoutFlow(ev: FlowEv, dir: "right" | "down"): FlowLayout {
     }
     along += thick + mainGap;
   });
+  let bows = 0;
   const arrows: FlowArrow[] = ev.edges.flatMap((e): FlowArrow[] => {
     const a = nodes.get(e.from), b = nodes.get(e.to);
     if (!a || !b) return [];
+    const both = e.heads === "both";
+    const mk = (d: string, head: string, lx: number, ly: number, isBack: boolean, tail = ""): FlowArrow =>
+      ({ d, head: e.heads === "none" ? "" : head, tail: both ? tail : "", label: e.label, lx, ly, back: isBack, dashed: !!e.dashed });
+    /** Where the line leaves `p` when a head sits there too, pointing (dx, dy) back into the step. */
+    const leave = (p: number[], dx: number, dy: number) => (both ? [p[0] - dx * 7, p[1] - dy * 7] : p);
     if (a === b) {
       const x = a.x + a.w, y = a.y + a.h / 2;
-      return [{ d: `M${x},${y - 6}C${x + 26},${y - 22} ${x + 26},${y + 22} ${x + 5},${y + 7}`, head: arrowHead(x + 1, y + 5, -1, -0.4), label: e.label, lx: x + 24, ly: y, back: true }];
+      return [mk(`M${x},${y - 6}C${x + 26},${y - 22} ${x + 26},${y + 22} ${x + 5},${y + 7}`, arrowHead(x + 1, y + 5, -1, -0.4), x + 24, y, true)];
     }
-    if (back.has(e)) {
-      // A way back leaves by the side and bows out past both steps, so it can't lie on top of
-      // the arrow going forward between the same two.
-      const reach = 44;
+    // A way back, and a way forward that skips a rank, leave by the side and bow out past
+    // both steps: straight, the first lies on the arrow going forward between the same two,
+    // and the second runs through the steps in between (a decision's "yes" to three steps on).
+    // Each bow reaches a little further than the last, so two never lie on one line.
+    if (back.has(e) || (rank.get(e.to) ?? 0) - (rank.get(e.from) ?? 0) > 1) {
+      const reach = 44 + 16 * bows++;
       if (across) {
         const out = Math.max(a.y + a.h, b.y + b.h) + reach;
-        const p0 = [a.x + a.w / 2, a.y + a.h], p3 = [b.x + b.w / 2, b.y + b.h];
-        return [{ d: `M${p0[0]},${p0[1]}C${p0[0]},${out} ${p3[0]},${out} ${p3[0]},${p3[1] + 7}`, head: arrowHead(p3[0], p3[1], 0, -1),
-          label: e.label, lx: (p0[0] + p3[0]) / 2, ly: (p0[1] + p3[1] + 6 * out) / 8, back: true }];
+        const p0 = [a.x + a.w / 2, a.y + a.h], p3 = [b.x + b.w / 2, b.y + b.h], s = leave(p0, 0, -1);
+        return [mk(`M${s[0]},${s[1]}C${p0[0]},${out} ${p3[0]},${out} ${p3[0]},${p3[1] + 7}`, arrowHead(p3[0], p3[1], 0, -1),
+          (p0[0] + p3[0]) / 2, (p0[1] + p3[1] + 6 * out) / 8, back.has(e), arrowHead(p0[0], p0[1], 0, -1))];
       }
       const out = Math.max(a.x + a.w, b.x + b.w) + reach;
-      const p0 = [a.x + a.w, a.y + a.h / 2], p3 = [b.x + b.w, b.y + b.h / 2];
-      return [{ d: `M${p0[0]},${p0[1]}C${out},${p0[1]} ${out},${p3[1]} ${p3[0] + 7},${p3[1]}`, head: arrowHead(p3[0], p3[1], -1, 0),
-        label: e.label, lx: (p0[0] + p3[0] + 6 * out) / 8, ly: (p0[1] + p3[1]) / 2, back: true }];
+      const p0 = [a.x + a.w, a.y + a.h / 2], p3 = [b.x + b.w, b.y + b.h / 2], s = leave(p0, -1, 0);
+      return [mk(`M${s[0]},${s[1]}C${out},${p0[1]} ${out},${p3[1]} ${p3[0] + 7},${p3[1]}`, arrowHead(p3[0], p3[1], -1, 0),
+        (p0[0] + p3[0] + 6 * out) / 8, (p0[1] + p3[1]) / 2, back.has(e), arrowHead(p0[0], p0[1], -1, 0))];
     }
     const p0 = across ? [a.x + a.w, a.y + a.h / 2] : [a.x + a.w / 2, a.y + a.h];
     const p3 = across ? [b.x, b.y + b.h / 2] : [b.x + b.w / 2, b.y];
@@ -332,9 +341,11 @@ export function layoutFlow(ev: FlowEv, dir: "right" | "down"): FlowLayout {
     const c1 = across ? [p0[0] + reach, p0[1]] : [p0[0], p0[1] + reach];
     const c2 = across ? [p3[0] - reach, p3[1]] : [p3[0], p3[1] - reach];
     const tip = across ? [p3[0] - 7, p3[1]] : [p3[0], p3[1] - 7];
-    return [{ d: `M${p0[0]},${p0[1]}C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${tip[0]},${tip[1]}`,
-      head: across ? arrowHead(p3[0], p3[1], 1, 0) : arrowHead(p3[0], p3[1], 0, 1), label: e.label,
-      lx: (p0[0] + 3 * c1[0] + 3 * c2[0] + p3[0]) / 8, ly: (p0[1] + 3 * c1[1] + 3 * c2[1] + p3[1]) / 8, back: false }];
+    const s = across ? leave(p0, -1, 0) : leave(p0, 0, -1);
+    return [mk(`M${s[0]},${s[1]}C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${tip[0]},${tip[1]}`,
+      across ? arrowHead(p3[0], p3[1], 1, 0) : arrowHead(p3[0], p3[1], 0, 1),
+      (p0[0] + 3 * c1[0] + 3 * c2[0] + p3[0]) / 8, (p0[1] + 3 * c1[1] + 3 * c2[1] + p3[1]) / 8, false,
+      across ? arrowHead(p0[0], p0[1], -1, 0) : arrowHead(p0[0], p0[1], 0, -1))];
   });
   const list = [...nodes.values()];
   const bottoms = arrows.map((a) => a.ly + 12);
