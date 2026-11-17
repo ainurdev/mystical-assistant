@@ -159,7 +159,6 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
   caution: { label: "Caution", color: "var(--err)" },
 };
 
-
 /** Opening a file from prose: the path, the line it named, and where on screen
  *  the link sits (so an ambiguous name can be asked about in place). */
 export type OpenFile = (path: string, line?: number, at?: { x: number; y: number }) => void;
@@ -278,7 +277,7 @@ export const Markdown = memo(function Markdown({
             );
             return (
               <div className="md-admonition" data-kind={kind} style={{ ["--adm" as string]: spec.color }}>
-                <div className="md-admonition-label">{spec.label}</div>
+                <div className="md-admonition-label caps">{spec.label}</div>
                 {stripMarker(children) as ReactNode}
               </div>
             );

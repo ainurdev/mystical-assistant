@@ -2911,8 +2911,8 @@ input {
 /* A /command, drawn as the prompt it is (lib/slash leadCommand,
    design-drafts/slash-chip, C · SEGMENT): a solid segment with a powerline
    arrow, a plugin's namespace a quieter segment in front. The composer's line
-   (MarkdownInput's CmdWidget) and the sent plate (PromptBubble's CmdSeg) share
-   it. Sized in em, so it follows the type settings; the family's small radius
+   (MarkdownInput's CmdWidget) draws it; the sent plate names the command as a
+   plain tag in its header (PromptBubble .pcmd). Sized in em, so it follows the type settings; the family's small radius
    rounds its back, and AURORA's is 0. */
 .cmdseg { display: inline-flex; margin-right: 1.25em; font-size: .92em; white-space: nowrap; }
 .cmdseg .sg {

@@ -6,16 +6,18 @@
    the facts on the right. Words in the UI face, mono only for code, paths and clocks; colour only
    for meaning (accent = you, ask = waits on you, ok = done).
 
-   Loaded last (main.tsx) and scoped to the session's own transcript (Terminal.tsx's scroller is
-   the one dossier with data-isle), so the Agents view and Settings' samples keep their look.
+   Loaded last (main.tsx). The transcript rules are scoped to the session's own transcript
+   (Terminal.tsx's scroller is the one dossier with data-isle), so the Agents view and Settings'
+   samples keep their look; the For you callout and the prompt box rules at the end are global.
    Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
    box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
-   block is indented by --sp-in and draws its node in that margin.
-   ponytail: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
-   stays as it was; a new block kind needs its own mask here. */
+   block is indented by --sp-in and draws its node in that margin, --sp-nx in so the live halo fits.
+   shortcut: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
+   stays as it was; a new block kind needs its own mask here. Move them into the markup if a
+   fourth kind needs one. */
 
 [data-fam] [data-style="dossier"][data-isle] {
-  --sp-in: 38px; --sp-n: 26px; --sp-x: 12px;
+  --sp-nx: 4px; --sp-in: 42px; --sp-n: 26px; --sp-x: 16px;
   /* what a node paints to cut the line: the column's ground (hud/Terminal.tsx) */
   --sp-gnd: color-mix(in srgb, var(--panel2) 60%, var(--canvas));
   --sp-line: var(--line2);
@@ -60,10 +62,10 @@
 }
 [data-fam] [data-style="dossier"][data-isle] .dturn > .dprompt:not([data-job]) { margin-bottom: 0; }
 [data-fam] [data-style="dossier"][data-isle] .pbub-row { position: relative; }
-[data-fam] [data-style="dossier"][data-isle] .pbub-row::before { left: calc(-1 * var(--sp-in)); top: 0; border-color: var(--acc); }
+[data-fam] [data-style="dossier"][data-isle] .pbub-row::before { left: calc(var(--sp-nx) - var(--sp-in)); top: 0; border-color: var(--acc); }
 [data-fam] [data-style="dossier"][data-isle] .pbub-row[data-kind="you"]::before { background: var(--acc); }
 [data-fam] [data-style="dossier"][data-isle] .pbub-row[data-kind="you"]::after {
-  content: ""; position: absolute; z-index: 2; left: calc(-1 * var(--sp-in) + 6.5px); top: 6.5px; width: 13px; height: 13px;
+  content: ""; position: absolute; z-index: 2; left: calc(var(--sp-nx) - var(--sp-in) + 6.5px); top: 6.5px; width: 13px; height: 13px;
   background: var(--acc-on); -webkit-mask: var(--sp-ic-user) center / contain no-repeat; mask: var(--sp-ic-user) center / contain no-repeat;
 }
 [data-fam] [data-style="dossier"][data-isle] .pbub {
@@ -75,8 +77,8 @@
 [data-fam] [data-style="dossier"][data-isle] .pline,
 [data-fam] [data-style="dossier"][data-isle] .pline[data-glyph] { display: block; }
 [data-fam] [data-style="dossier"][data-isle] .pglyph {
-  position: absolute; z-index: 2; left: calc(-1 * var(--sp-in)); top: 0; width: var(--sp-n); height: var(--sp-n);
-  display: grid; place-items: center; font-size: 13px; line-height: 1; text-shadow: none;
+  position: absolute; z-index: 2; left: calc(var(--sp-nx) - var(--sp-in)); top: 0; width: var(--sp-n); height: var(--sp-n);
+  display: grid; place-items: center; font-size: var(--t13); line-height: 1; text-shadow: none;
 }
 [data-fam] [data-style="dossier"][data-isle] .pbub .md { font-family: var(--ui-font, var(--d-face)); font-size: var(--t15, 15px); font-weight: 400; line-height: 1.6; color: var(--txh); }
 /* the header: who, the /command, then the run in the light ink, dot-separated */
@@ -101,8 +103,9 @@
 /* ── the work: a ring, Worked/Working, the steps, its counts and the chevron on the right ── */
 [data-fam] [data-style="dossier"][data-isle] .dwork {
   --zpl: 0px; --zpr: 0px; --zg: var(--sp-gnd);
-  background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0 0 0 var(--sp-in);
+  background: none; border: 0; border-radius: 0; box-shadow: none; padding: 4px 0 0 var(--sp-in);
 }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .dwork { margin-top: 14px; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-head {
   position: relative; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 14px;
   min-height: var(--sp-n); padding: 0; font-family: var(--ui-font);
@@ -110,7 +113,7 @@
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] > .dwork-head { position: sticky; min-height: 34px; background: var(--sp-gnd); }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-pinned] > .dwork-head::before { background: var(--sp-gnd); }
 [data-fam] [data-style="dossier"][data-isle] .dwork-node {
-  left: calc(-1 * var(--sp-in)); top: 0; grid-column: auto; grid-row: auto; display: grid; place-items: center; color: var(--txl);
+  left: calc(var(--sp-nx) - var(--sp-in)); top: 0; grid-column: auto; grid-row: auto; display: grid; place-items: center; color: var(--txl);
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-node { top: 4px; background: var(--sp-gnd); box-shadow: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node {
@@ -144,7 +147,7 @@
 
 /* ── the answer: an ok ring, Answer · how long … ✓ done · when, then the card ── */
 [data-fam] [data-style="dossier"][data-isle] .resblk { position: relative; z-index: 1; padding-left: var(--sp-in); }
-[data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node { display: block; left: 0; top: 0; transform: none; border-color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node { display: block; left: var(--sp-nx); top: 0; transform: none; border-color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node::after {
   content: ""; position: absolute; inset: 5.5px; background: var(--ok);
   -webkit-mask: var(--sp-ic-check) center / contain no-repeat; mask: var(--sp-ic-check) center / contain no-repeat;
@@ -153,7 +156,7 @@
 [data-fam] [data-style="dossier"][data-isle] .resblk[data-bad] > .rail-node::after { background: var(--err); }
 [data-fam] [data-style="dossier"][data-isle] .resblk > .rail-stub { display: none; }
 [data-fam] [data-style="dossier"][data-isle] :is(.res, .resblk[data-bad] .res) { background: none; border: 0; border-radius: 0; box-shadow: none; }
-[data-fam] [data-style="dossier"][data-isle] .res-head {
+[data-fam] [data-style="dossier"][data-isle] .res > .res-head {
   min-height: var(--sp-n); padding: 0; border: 0; gap: 8px;
   font-family: var(--ui-font) !important; font-size: var(--t12); letter-spacing: 0 !important; color: var(--txl);
 }
@@ -194,22 +197,27 @@
 .md-admonition[data-kind="important"] ul > li::marker { content: none; }
 /* the facts: a list whose every item opens with a label (lib/facts) reads as label · text rows */
 [data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts { list-style: none; padding-left: 0; }
-[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li { position: relative; padding-left: 84px; margin: 5px 0; }
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li { display: flow-root; padding-left: 84px; margin: 5px 0; }
 [data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li::marker { content: none; }
 [data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li > :is(strong.md-lead:first-child, p:first-child > strong.md-lead:first-child) {
-  position: absolute; left: 0; top: .1em; width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  float: left; width: 74px; margin: .1em 0 0 -84px; overflow-wrap: anywhere;
   font-family: var(--ui-font); font-size: var(--t12); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txl);
 }
-/* what continues the card (its fold, then the turn's receipt) tucks under its round foot */
+/* what continues the card (its fold, then the turn's receipt) tucks under its round foot.
+   shortcut: the receipt is still RunStream's own row after the answer, joined by the sibling
+   combinator; a report or offer card between them leaves it a loose row. Hand it to FinalResult
+   as a footer if that shows up. */
 [data-fam] [data-style="dossier"][data-isle] .res-fold {
   margin-top: -14px; padding: 18px 14px 6px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px;
   background: var(--sp-card); font-family: var(--ui-font); font-size: var(--t11); letter-spacing: 0; text-transform: none; color: var(--txl);
 }
-[data-fam] [data-style="dossier"][data-isle] .resblk + .ma-rc {
+/* only under an answer with words: one without is a header line, with nothing to tuck under
+   (the same :has() index.css's no-body answer rule already pays) */
+[data-fam] [data-style="dossier"][data-isle] .resblk:has(> .res > .res-body) + .ma-rc {
   position: relative; margin: -14px 0 0 var(--sp-in); padding: 14px 14px 0;
   border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px; background: var(--sp-card);
 }
-[data-fam] [data-style="dossier"][data-isle] .resblk + .ma-rc > .ma-rc-row { border-top: 0; min-height: 36px; }
+[data-fam] [data-style="dossier"][data-isle] .resblk:has(> .res > .res-body) + .ma-rc > .ma-rc-row { border-top: 0; min-height: 36px; }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc { font-family: var(--ui-font); font-size: var(--t12); color: var(--txl); }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc * { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-row { border-top-color: var(--line); }
@@ -219,16 +227,16 @@
 
 /* ── a question (live, docked or answered): an ok ring, Question, its topic › the answer ── */
 [data-fam] [data-style="dossier"][data-isle] .dask { position: relative; padding-left: var(--sp-in); }
-[data-fam] [data-style="dossier"][data-isle] .dask::before { left: 0; top: 0; border-color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .dask::before { left: var(--sp-nx); top: 0; border-color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .dask::after {
-  content: ""; position: absolute; z-index: 1; left: 6.5px; top: 6.5px; width: 13px; height: 13px; background: var(--ok);
+  content: ""; position: absolute; z-index: 1; left: calc(var(--sp-nx) + 6.5px); top: 6.5px; width: 13px; height: 13px; background: var(--ok);
   -webkit-mask: var(--sp-ic-q) center / contain no-repeat; mask: var(--sp-ic-q) center / contain no-repeat;
 }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec { margin: 0; border: 0; background: none; border-radius: 0; font-size: var(--t13); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row { padding: 0; min-height: var(--sp-n); gap: 8px; }
 /* answered: its state (✓, ✕, never answered) is the node, over the ring */
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row:first-child .ask-rec-ic {
-  position: absolute; z-index: 2; left: 0; top: 0; width: var(--sp-n); height: var(--sp-n);
+  position: absolute; z-index: 2; left: var(--sp-nx); top: 0; width: var(--sp-n); height: var(--sp-n);
   box-sizing: border-box; border: 2px solid currentColor; background: var(--sp-gnd);
 }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-k { font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh); }
@@ -239,8 +247,9 @@
 /* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
 .composer[data-pb] .pb-isles { justify-content: flex-start; padding-left: 0; }
-.composer[data-pb] .pb-isles > .pb-tabs { margin-left: -1px; padding-left: 2px; border-color: var(--line2); }
+.composer[data-pb] .pb-isles > .pb-tabs { margin-left: 3px; padding-left: 2px; border-color: var(--line2); }
 .composer[data-pb] .pb-isles > .pb-dry { border: 1px solid var(--line2); }
+.composer[data-pb] .pb-isles > .pb-dry > svg { color: var(--ask, var(--warn)); }   /* usage waits on you */
 .composer[data-pb] .pb-isles .pb-tabs .np-tile {
   box-sizing: border-box; flex: none; width: 26px; height: 26px !important; margin: 1px 0 !important; padding: 0 !important; justify-content: center;
   border-radius: 50% !important; border: 2px solid var(--acc) !important; background: var(--panel) !important; overflow: hidden;

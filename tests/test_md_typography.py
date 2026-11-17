@@ -50,8 +50,12 @@ CASES = [
 
 
 def lead_re(tsx):
-    """The lead-in regex exactly as that surface's Markdown.tsx ships it."""
+    """The lead-in regex exactly as that surface's Markdown.tsx ships it, or the
+    module it imports LEAD_RE from (the dashboard's lib/facts shares it)."""
     src = open(os.path.join(ROOT, tsx), encoding="utf-8").read()
+    imp = re.search(r'import \{[^}]*\bLEAD_RE\b[^}]*\} from "(\.\./lib/\w+)"', src)
+    if imp:
+        src = open(os.path.join(ROOT, os.path.dirname(tsx), imp.group(1) + ".ts"), encoding="utf-8").read()
     m = re.search(r"const LEAD_RE = /(.+?)/;", src)
     assert m, f"LEAD_RE is gone from {tsx} — did the lead-in rule move?"
     return re.compile(m.group(1))

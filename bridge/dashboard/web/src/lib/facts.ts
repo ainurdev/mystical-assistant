@@ -18,6 +18,6 @@ export function isFactList(ul: Element): boolean {
     let head = first(li.children);
     // A loose list's item holds a paragraph: the label leads that.
     if (head?.type === "element" && head.tagName === "p") head = first(head.children);
-    return head?.type === "element" && head.tagName === "strong" && LEAD_RE.test(textOf(head).trim());
+    return head?.type === "element" && head.tagName === "strong" && LEAD_RE.test(textOf(head));
   });
 }

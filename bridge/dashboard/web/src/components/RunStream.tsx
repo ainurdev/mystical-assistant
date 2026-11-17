@@ -1096,7 +1096,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           <Terminal size={13} strokeWidth={2.2} />
         </span>
         <span className="dwork-l1">
-          <span className="dwork-lab">{state ? "Working" : "Worked"}</span>
+          <span className="dwork-lab caps">{state ? "Working" : "Worked"}</span>
           <span className="dwork-ms">
             <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{chapters ? ` · ${chapters} chapters` : ""}{span ? ` · ${span}` : ""}
           </span>
@@ -3714,7 +3714,7 @@ export function FinalResult({
       <RailNode />
       <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
         <div className="res-head">
-          <span className="res-lab">{update ? "Update" : label ?? (dossier ? (bad ? "Answer · error" : "Answer") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          <span className="res-lab caps">{update ? "Update" : label ?? (dossier ? (bad ? "Answer · error" : "Answer") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {/* how long the turn took sits by the label; the right side says done and when */}
           {typeof elapsed === "number" && elapsed > 0 && (
             <span className="res-dur" title="wall time">{wall(elapsed)}</span>
@@ -3724,7 +3724,7 @@ export function FinalResult({
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {!update && typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">
-                {fmtTokens(tokens)} TOK
+                {fmtTokens(tokens)} tokens
               </span>
             )}
           </span>
