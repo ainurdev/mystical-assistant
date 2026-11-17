@@ -47,7 +47,8 @@ export function ChatImagesSection() {
               <div>In the chat: drawn large beside the answer.</div>
               <div>Gallery only: added to the WORK zone's pictures, with one line in the chat to open them. Telegram still gets them.</div>
             </>}>
-            {st.loaded && <div style={{ width: 280 }}><Segmented options={SHOWN} value={st.shown} onPick={(shown) => pick({ shown })} /></div>}
+            {!st.loaded ? <span className="ma-set-note" role="status">reading…</span>
+              : <div style={{ width: 280 }}><Segmented options={SHOWN} value={st.shown} onPick={(shown) => pick({ shown })} /></div>}
           </Row>
         )}
         {error && <div className="ma-set-err" role="alert">{error}</div>}

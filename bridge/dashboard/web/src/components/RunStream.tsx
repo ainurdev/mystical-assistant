@@ -871,7 +871,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
    *  what the agent made of its newest ones, when it has said.
    *  ponytail: one strip, so one note; each picture's own is in the lightbox. A zone
    *  that looked at several things in turn may want a strip per note. */
-  looked?: { note: string };
+  /** `shown`: how many of the pictures it showed you (Gallery only), which it didn't just look at. */
+  looked?: { note: string; shown: number };
   /** The rows for a filter other than all, and how many each would keep (lib/rowfilter). */
   filtered?: (f: RowFilter) => ReactNode[];
   filterCounts?: () => Record<RowFilter, number>;
@@ -1133,9 +1134,9 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
             {!open ? ind : null}
             {pics.length && looked ? (
               <div className="ma-looked">
-                <div className="ma-looked-lab">Looked at {picsWord}</div>
+                <div className="ma-looked-lab">{looked.shown ? picsWord : `Looked at ${picsWord}`}</div>
                 <div className="ma-looked-body">
-                  <ShotRow pics={pics} shut={!open} label={`Looked at ${picsWord}`} onOpen={setZoom} />
+                  <ShotRow pics={pics} shut={!open} label={looked.shown ? picsWord : `Looked at ${picsWord}`} onOpen={setZoom} />
                   {looked.note ? <p className="ma-looked-note">{looked.note}</p> : null}
                 </div>
               </div>
@@ -3207,7 +3208,7 @@ export const RunStream = memo(function RunStream({
     const cats: StepCat[] = [];
     const pics: Pic[] = [];
     const purposes: BashKind[] = [];
-    let lastPic = -1;
+    let lastPic = -1, shown = 0;
     let notes = 0, steps = 0, failed = 0, out = 0, said = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     let live: Extract<TimedEvent, { type: "tool" }> | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
@@ -3224,14 +3225,15 @@ export const RunStream = memo(function RunStream({
         if (mx && e.name === "Bash") purposes.push(bashKind(e.detail ?? e.summary));
         if (!d) { out++; live = e; openAt = e.at; }
         else if (d.is_error) failed++;
+        if (galleryOnly && isShowTool(e.name)) shown += d?.images?.length ?? 0;
         if (!showAt(i)) for (const p of d?.images ?? []) { lastPic = i; pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) }); }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
-      else if (galleryOnly && e.type === "figure") for (const p of e.images ?? []) pics.push({ path: p, name: e.caption || "Shown", unseen: shotUnseen(p, e.at) });
+      else if (galleryOnly && e.type === "figure") for (const p of e.images ?? []) shown++, pics.push({ path: p, name: e.caption || "Shown", unseen: shotUnseen(p, e.at) });
     }
     const secs = first != null && last != null ? last - first : 0;
     const lookNote = noteLine(looked?.get(lastPic) ?? "");
-    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "", purposes, lookNote };
+    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "", purposes, lookNote, shown };
   };
   /** A chapter's name: the note it opens on (lib/dossier cuts there), else
    *  the first words or call in it — one line, without the code ticks. */
@@ -3339,7 +3341,7 @@ export const RunStream = memo(function RunStream({
     return `z${start}`;
   };
   const workZone = (zsegs: Seg[], lastZone: boolean, lastWork = lastZone) => {
-    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span, purposes, lookNote } = tally(zsegs);
+    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span, purposes, lookNote, shown } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
@@ -3396,7 +3398,7 @@ export const RunStream = memo(function RunStream({
       <WorkZone
         key={zoneKey(zsegs[0].start)}
         purposes={mx ? purposes : undefined}
-        looked={mx ? { note: lookNote } : undefined}
+        looked={mx ? { note: lookNote, shown } : undefined}
         filtered={filtered}
         filterCounts={filterCounts}
         reveal={reveal && holds(zsegs, reveal.i) ? reveal.n : 0}

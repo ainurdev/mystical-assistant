@@ -245,10 +245,17 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return _OFF
     if path == "chat-images":
         try:
+            if "mode" not in body and "shown" not in body:
+                raise ValueError("send mode or shown")
+            # Both checked before either is kept, so a bad pair changes nothing.
+            if "mode" in body and body["mode"] not in chat_images.MODES:
+                raise ValueError("mode must be attachment or inline")
+            if "shown" in body and body["shown"] not in chat_images.SHOWN:
+                raise ValueError("shown must be chat or gallery")
             if "mode" in body:
-                chat_images.set_mode(str(body.get("mode") or ""))
+                chat_images.set_mode(body["mode"])
             if "shown" in body:
-                chat_images.set_shown(str(body.get("shown") or ""))
+                chat_images.set_shown(body["shown"])
             return {"mode": chat_images.mode(), "shown": chat_images.shown()}, 200
         except ValueError as e:
             return {"error": str(e)}, 400
