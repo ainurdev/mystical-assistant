@@ -819,8 +819,6 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
-  // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
-  // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
   // NOW|NEXT (B · DECK): what Enter does with the text while a turn runs. Alt+Enter does the other.
   const [enterMode, setEnterMode] = useState<EnterMode>("next");
   const [nowSec, setNowSec] = useState(() => Date.now() / 1000);
@@ -830,6 +828,10 @@ export function Composer({
     const t = window.setInterval(() => setNowSec(Date.now() / 1000), 1000);
     return () => window.clearInterval(t);
   }, [running, turnStarted]);
+  // NOW is picked for one turn: the next turn, or another session, starts back on NEXT.
+  useEffect(() => { if (!running) setEnterMode("next"); }, [running, sessionId]);
+  // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
+  // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
   const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
@@ -1845,29 +1847,30 @@ export function Composer({
     </div>
   );
   const steers = enterTarget(enterMode, false, !!onSteer) === "steer";
+  // CTRL+ENTER mode sends on Ctrl+Enter, so the other target is Ctrl+Alt+Enter there.
+  const otherKey = sendKey === "ctrl-enter" ? "Ctrl+Alt+Enter" : "Alt+Enter";
   const deckKeys = deckRun && (
     <>
       {onSteer && (
         <div className="pb-mode" role="radiogroup" aria-label="What Enter does">
           <button type="button" role="radio" aria-checked={enterMode === "now"} onClick={() => setEnterMode("now")}
-            title="NOW — Enter folds the text into the running turn (Alt+Enter queues it)">Now</button>
+            className="caps" title={`NOW — Enter folds the text into the running turn (${otherKey} queues it)`}>Now</button>
           <button type="button" role="radio" aria-checked={enterMode === "next"} onClick={() => setEnterMode("next")}
-            title="NEXT — Enter queues the text after this turn (Alt+Enter steers)">Next</button>
+            className="caps" title={`NEXT — Enter queues the text after this turn (${otherKey} steers)`}>Next</button>
         </div>
       )}
       {steers ? (
         <button className="act-pri caps" onClick={steer} disabled={!text.trim()} title={`${steerTip} (Enter)`}>
-          Steer <SteerIcon /></button>
+          Steer <SteerIcon />{softSteer && <span className="ma-soft">{STEER_SOFT_WORDS}</span>}<span className="pb-enter" aria-hidden>⏎</span></button>
       ) : (
         <button className="act-pri queue caps" onClick={submit} disabled={disabled || !text.trim()}
-          title={`QUEUE — run this prompt after the current turn (Enter${onSteer ? "; Alt+Enter steers" : ""})`}>
-          Queue <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
+          title={`QUEUE — run this prompt after the current turn (Enter${onSteer ? `; ${otherKey} steers` : ""})`}>
+          Queue <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /><span className="pb-enter" aria-hidden>⏎</span></button>
       )}
     </>
   );
   const deck = shelled && nq > 0 && (() => {
     const { shown, more } = deckView(queued!, 3);
-    const qBtn = { appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "inherit", lineHeight: 1, padding: 0, display: "flex" } as CSSProperties;
     return (
       <div className="pb-deck">
         {more > 0 && (
@@ -1877,13 +1880,13 @@ export function Composer({
         )}
         {shown.map((q, i) => ({ q, i })).reverse().map(({ q, i }) => (
           <div key={q.id} className="pb-dk" data-next={i === 0 ? "" : undefined} style={{ "--d": i } as CSSProperties}>
-            {i === 0 && <span className="pb-dk-lab">{paused ? "HELD" : "NEXT"}</span>}
+            {i === 0 && <span className="pb-dk-lab caps">{paused ? "Held" : "Next"}</span>}
             <span className="pb-dk-n">{i + 1}</span>
             <span className="pb-dk-tx" title={q.text}>{q.text}</span>
             <span className="pb-dk-ac">
-              {running && onSteerQueued && <button style={qBtn} onClick={() => onSteerQueued(q.id)} aria-label="Steer" title="Steer — fold this into the turn that's running now"><SteerIcon size={12} /></button>}
-              {onEjectQueued && <button style={qBtn} onClick={() => onEjectQueued(q.id)} aria-label="Run in a new session" title="Run in a new session">↗</button>}
-              {onCancelQueued && <button style={qBtn} onClick={() => onCancelQueued(q.id)} aria-label="Remove from queue" title="Remove from queue">✕</button>}
+              {running && onSteerQueued && <button onClick={() => onSteerQueued(q.id)} aria-label="Steer" title="Steer — fold this into the turn that's running now"><SteerIcon size={12} /></button>}
+              {onEjectQueued && <button onClick={() => onEjectQueued(q.id)} aria-label="Run in a new session" title="Run in a new session">↗</button>}
+              {onCancelQueued && <button onClick={() => onCancelQueued(q.id)} aria-label="Remove from queue" title="Remove from queue">✕</button>}
             </span>
           </div>
         ))}
@@ -2043,7 +2046,7 @@ export function Composer({
         if (e.key === "Enter" && send) {
           e.preventDefault();
           // Mid-turn the shell's NOW|NEXT switch picks the target; Alt+Enter the other one.
-          if (shelled && running && !ask?.send && enterTarget(enterMode, e.altKey, !!onSteer) === "steer") steer();
+          if (deckRun && enterTarget(enterMode, e.altKey, !!onSteer) === "steer") steer();
           else submit();
         }
       }}
@@ -2055,7 +2058,7 @@ export function Composer({
       }}
       placeholder={ask?.placeholder ?? (disabled ? "working…" : starter ? `${starter} · Tab writes it` : running
         ? bg ? `Steer keeps the ${bg === 1 ? "background task" : `${bg} background tasks`} running; a queued prompt can end ${bg === 1 ? "it" : "them"}…`
-          : shelled && enterTarget(enterMode, false, !!onSteer) === "steer" ? "steer this turn — it reads your message next…"
+          : deckRun && steers ? "steer this turn — it reads your message next…"
           : "queue a prompt — runs after the current turn…"
         : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
     />
