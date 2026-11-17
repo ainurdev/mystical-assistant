@@ -41,7 +41,7 @@ export function runtimeBadge(runtime: string, labels: Record<string, string> = k
     const name = agentLabel(arg, labels);
     return { text: `◇ ${name}`, agent: true, title: `Ran on ${name} — another agent, not Claude` };
   }
-  return { text: `⇄ ACCOUNT ${arg}`, agent: false, title: "Ran on another Claude account after a usage limit" };
+  return { text: `Account ${arg}`, agent: false, title: "Ran on another Claude account after a usage limit" };
 }
 
 /** One picker's rows, AGENT DEFAULT first; null when the agent advertised none

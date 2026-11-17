@@ -17,6 +17,7 @@ import "./agenttools.css";
 import "./dataview.css";
 import "./chatread.css";
 import "./design.css";
+import "./spine.css";
 // Side-effect import: `beforeinstallprompt` fires once, before React mounts, so
 // the listener has to be installed here rather than in the SETTINGS component.
 import "./lib/installprompt";

@@ -761,7 +761,7 @@ export function AskRecord(p:
                 : names.length ? names.map((n) => n.name).join(", ")
                 : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
             </span>
-            {rec && <span className="ask-rec-tag">SUGGESTED</span>}
+            {rec && <span className="ask-rec-tag">Suggested</span>}
             {given?.notes && names.length > 0 && <span className="ask-rec-note" title={given.notes}>+ note</span>}
             {qi === 0 && toggle}
           </div>

@@ -19,7 +19,7 @@ setAgentLabels([{ id: "codex", label: "Codex" }, { id: "gemini", label: "Gemini 
 eq(runtimeBadge("acp:gemini").text, "◇ GEMINI CLI", "the preset's label once known");
 eq(runtimeBadge("acp:newthing").text, "◇ NEWTHING", "an id no preset names falls back to itself");
 ok(runtimeBadge("acp:codex").agent, "an acp tag is an agent turn");
-eq(runtimeBadge("claude:2"), { text: "⇄ ACCOUNT 2", agent: false, title: "Ran on another Claude account after a usage limit" },
+eq(runtimeBadge("claude:2"), { text: "Account 2", agent: false, title: "Ran on another Claude account after a usage limit" },
   "another Claude login keeps its badge");
 eq(agentLabel("opencode"), "OPENCODE", "agentLabel upper-cases");
 

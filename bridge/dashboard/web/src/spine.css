@@ -1,0 +1,259 @@
+/* ── C · SPINE (.mystical/design-drafts/session-one-feel): the session page in one feel ──
+   One line runs down the session and every block hangs off it as a node: your prompt (a filled
+   accent node and a bubble), a steer (an accent ring), the work (a neutral ring, live: an accent
+   ring with a halo), the answer and a question (ok rings). Every block opens with the same header
+   line: the node, a word (You, Steer, Worked, Answer, Question), its details in the light ink,
+   the facts on the right. Words in the UI face, mono only for code, paths and clocks; colour only
+   for meaning (accent = you, ask = waits on you, ok = done).
+
+   Loaded last (main.tsx) and scoped to the session's own transcript (Terminal.tsx's scroller is
+   the one dossier with data-isle), so the Agents view and Settings' samples keep their look.
+   Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
+   box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
+   block is indented by --sp-in and draws its node in that margin.
+   ponytail: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
+   stays as it was; a new block kind needs its own mask here. */
+
+[data-fam] [data-style="dossier"][data-isle] {
+  --sp-in: 38px; --sp-n: 26px; --sp-x: 12px;
+  /* what a node paints to cut the line: the column's ground (hud/Terminal.tsx) */
+  --sp-gnd: color-mix(in srgb, var(--panel2) 60%, var(--canvas));
+  --sp-line: var(--line2);
+  --sp-card: var(--panel);
+  --sp-you: color-mix(in oklab, var(--acc) 72%, var(--txh));
+  --sp-ic-user: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'><path d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>");
+  --sp-ic-check: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");
+  --sp-ic-q: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/><path d='M12 17h.01'/></svg>");
+}
+
+/* ── the line: each turn draws its stretch, on through the gap to the next turn ── */
+[data-fam] [data-style="dossier"][data-isle] .dturn {
+  position: relative; border-bottom: 0; padding-bottom: 10px; margin-bottom: 0;
+}
+[data-fam] [data-style="dossier"][data-isle] .dturn::before {
+  content: ""; position: absolute; left: var(--sp-x); top: calc(var(--sp-n) / 2); bottom: -12px; width: 2px;
+  background: var(--sp-line); pointer-events: none;
+}
+/* the last turn's line runs on down to the prompt box: its island's emblem is the last node */
+[data-fam] [data-style="dossier"][data-isle] .dturn[data-last]::before { bottom: -60px; }
+[data-fam] [data-style="dossier"][data-isle] .agent-rail { display: none; }
+
+/* every block's node: a ring in the ground's colour, so it cuts the line (a plain list: :is() takes no pseudo-elements) */
+[data-fam] [data-style="dossier"][data-isle] .pbub-row::before,
+[data-fam] [data-style="dossier"][data-isle] .dask::before,
+[data-fam] [data-style="dossier"][data-isle] :is(.dwork-node, .resblk > .rail-node) {
+  content: ""; position: absolute; z-index: 1; box-sizing: border-box;
+  width: var(--sp-n); height: var(--sp-n); border-radius: 50%;
+  border: 2px solid var(--sp-line); background: var(--sp-gnd); box-shadow: none;
+}
+
+/* ── the blocks sit in the line's margin ── */
+[data-fam] [data-style="dossier"][data-isle] .rstream > :not(.dwork, .resblk, .dprompt, .dask),
+[data-fam] [data-style="dossier"][data-isle] .dreply > :not(.rstream, .agent-rail),
+[data-fam] [data-style="dossier"][data-isle] .dseam { margin: 14px 0 14px var(--sp-in); }
+[data-fam] [data-style="dossier"][data-isle] .rstream > :is(.dwork, .resblk, .dprompt, .dask) { margin: 18px 0 0; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > :first-child { margin-top: 18px; }
+
+/* ── you: a filled node and a bubble, the header inside it ── */
+[data-fam] [data-style="dossier"][data-isle] .dprompt {
+  background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0 0 0 var(--sp-in);
+}
+[data-fam] [data-style="dossier"][data-isle] .dturn > .dprompt:not([data-job]) { margin-bottom: 0; }
+[data-fam] [data-style="dossier"][data-isle] .pbub-row { position: relative; }
+[data-fam] [data-style="dossier"][data-isle] .pbub-row::before { left: calc(-1 * var(--sp-in)); top: 0; border-color: var(--acc); }
+[data-fam] [data-style="dossier"][data-isle] .pbub-row[data-kind="you"]::before { background: var(--acc); }
+[data-fam] [data-style="dossier"][data-isle] .pbub-row[data-kind="you"]::after {
+  content: ""; position: absolute; z-index: 2; left: calc(-1 * var(--sp-in) + 6.5px); top: 6.5px; width: 13px; height: 13px;
+  background: var(--acc-on); -webkit-mask: var(--sp-ic-user) center / contain no-repeat; mask: var(--sp-ic-user) center / contain no-repeat;
+}
+[data-fam] [data-style="dossier"][data-isle] .pbub {
+  display: flex; flex-direction: column; max-width: 100%;
+  padding: 5px 14px 10px; border-radius: 4px 14px 14px 14px;
+  background: color-mix(in oklab, var(--acc) 8%, transparent); border: 1px solid color-mix(in oklab, var(--acc) 18%, transparent);
+}
+/* the glyph a steer, a wake, a goal or the council wears is its node's icon */
+[data-fam] [data-style="dossier"][data-isle] .pline,
+[data-fam] [data-style="dossier"][data-isle] .pline[data-glyph] { display: block; }
+[data-fam] [data-style="dossier"][data-isle] .pglyph {
+  position: absolute; z-index: 2; left: calc(-1 * var(--sp-in)); top: 0; width: var(--sp-n); height: var(--sp-n);
+  display: grid; place-items: center; font-size: 13px; line-height: 1; text-shadow: none;
+}
+[data-fam] [data-style="dossier"][data-isle] .pbub .md { font-family: var(--ui-font, var(--d-face)); font-size: var(--t15, 15px); font-weight: 400; line-height: 1.6; color: var(--txh); }
+/* the header: who, the /command, then the run in the light ink, dot-separated */
+[data-fam] [data-style="dossier"][data-isle] .pmeta {
+  position: static; transform: none; z-index: auto; order: -1; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 2px 7px; height: auto; min-height: 26px; padding: 0; margin: 0 0 1px;
+  background: none; border: 0; border-radius: 0; white-space: normal;
+  font-family: var(--ui-font) !important; font-size: var(--t12); line-height: 1.3; letter-spacing: 0 !important; text-transform: none !important; color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .pmeta > * + * { padding-left: 0; border-left: 0; }
+[data-fam] [data-style="dossier"][data-isle] .pmeta * { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ :is(.pacct, .psaver, .prun, .pstamp)::before {
+  content: "·"; margin-right: 7px; color: var(--txg);
+}
+[data-fam] [data-style="dossier"][data-isle] .pmeta > b { font-size: var(--t13); font-weight: 700; color: var(--txh) !important; }
+[data-fam] [data-style="dossier"][data-isle] .pmeta > .pcmd { font-weight: 700; color: var(--sp-you); }
+[data-fam] [data-style="dossier"][data-isle] .pmeta :is(.prun, .pmodel, .pstamp) { gap: 0; color: var(--txl); font-family: var(--ui-font); }
+[data-fam] [data-style="dossier"][data-isle] .pmeta .prun[data-new] { color: var(--sp-you); }
+[data-fam] [data-style="dossier"][data-isle] .pmeta .pacct { color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .ppips { display: none; }
+
+/* ── the work: a ring, Worked/Working, the steps, its counts and the chevron on the right ── */
+[data-fam] [data-style="dossier"][data-isle] .dwork {
+  --zpl: 0px; --zpr: 0px; --zg: var(--sp-gnd);
+  background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0 0 0 var(--sp-in);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-head {
+  position: relative; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 14px;
+  min-height: var(--sp-n); padding: 0; font-family: var(--ui-font);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-open] > .dwork-head { position: sticky; min-height: 34px; background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-pinned] > .dwork-head::before { background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-node {
+  left: calc(-1 * var(--sp-in)); top: 0; grid-column: auto; grid-row: auto; display: grid; place-items: center; color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-node { top: 4px; background: var(--sp-gnd); box-shadow: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node {
+  color: var(--sp-you); border-color: var(--sp-you); background: var(--sp-gnd);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--acc) 16%, transparent);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-shots="new"] .dwork-node { border-color: var(--acc); color: var(--acc); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-l1 { grid-column: 1; grid-row: 1; align-items: baseline; gap: 8px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-lab {
+  font-family: var(--ui-font) !important; font-size: var(--t13); font-weight: 700 !important; letter-spacing: 0 !important;
+  text-transform: none !important; color: var(--txh) !important;
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-ms { font-family: var(--ui-font) !important; font-size: var(--t12); letter-spacing: 0 !important; color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-l2 { grid-column: 2; grid-row: 1; margin: 0; min-height: 0; }
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-l2 { display: flex; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-kinds { gap: 10px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-right { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 10px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-chev { flex: none; color: var(--txl); }
+/* tool counts are neutral: the kind hue stays on the open spine's rows, not the header */
+[data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-k { color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-k > i { color: var(--txd); background: none; box-shadow: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-now { grid-column: 1 / -1; grid-row: 2; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-ind { margin-left: 0; }
+[data-fam] [data-style="dossier"][data-isle] .ma-looked-lab {
+  font-family: var(--ui-font); font-size: var(--t12); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-row-thumbs img { border-radius: 8px; }
+/* the agent's words in the work are words: the UI face, code stays mono */
+[data-fam] [data-style="dossier"][data-isle] :is(.ma-looked-note, .pl-line) { font-family: var(--ui-font); letter-spacing: 0; }
+[data-fam] [data-style="dossier"][data-isle] .pl-line { border-left: 0; border-radius: 10px; background: color-mix(in oklab, var(--txl) 6%, transparent); }
+
+/* ── the answer: an ok ring, Answer · how long … ✓ done · when, then the card ── */
+[data-fam] [data-style="dossier"][data-isle] .resblk { position: relative; z-index: 1; padding-left: var(--sp-in); }
+[data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node { display: block; left: 0; top: 0; transform: none; border-color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node::after {
+  content: ""; position: absolute; inset: 5.5px; background: var(--ok);
+  -webkit-mask: var(--sp-ic-check) center / contain no-repeat; mask: var(--sp-ic-check) center / contain no-repeat;
+}
+[data-fam] [data-style="dossier"][data-isle] .resblk[data-bad] > .rail-node { border-color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .resblk[data-bad] > .rail-node::after { background: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .resblk > .rail-stub { display: none; }
+[data-fam] [data-style="dossier"][data-isle] :is(.res, .resblk[data-bad] .res) { background: none; border: 0; border-radius: 0; box-shadow: none; }
+[data-fam] [data-style="dossier"][data-isle] .res-head {
+  min-height: var(--sp-n); padding: 0; border: 0; gap: 8px;
+  font-family: var(--ui-font) !important; font-size: var(--t12); letter-spacing: 0 !important; color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .res-lab {
+  font-family: var(--ui-font) !important; font-size: var(--t13); font-weight: 700 !important; letter-spacing: 0 !important;
+  text-transform: none !important; color: var(--txh) !important;
+}
+[data-fam] [data-style="dossier"][data-isle] .resblk[data-bad] .res-lab { color: var(--err) !important; }
+[data-fam] [data-style="dossier"][data-isle] .res-dur { color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .res-meta { gap: 0; color: var(--ok); font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
+[data-fam] [data-style="dossier"][data-isle] .res-meta > span { font-family: var(--mono) !important; font-size: var(--t11); color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .resblk:not([data-bad]) .res-meta::before { content: "✓ done"; letter-spacing: 0; }
+[data-fam] [data-style="dossier"][data-isle] .resblk:not([data-bad]) .res-meta > span:first-child::before { content: "·"; margin: 0 6px; font-family: var(--ui-font); }
+/* the card hangs off the node: its corner by the node is the small one */
+[data-fam] [data-style="dossier"][data-isle] .res-body {
+  position: relative; z-index: 1; margin-top: 6px; padding: 12px 14px; overflow: hidden;
+  background: var(--sp-card); border: 1px solid var(--line); border-radius: 4px 14px 14px 14px;
+  font-size: var(--t13); line-height: 1.6;
+}
+[data-fam] [data-style="dossier"][data-isle] .res-body .md { color: var(--tx); }
+[data-fam] [data-style="dossier"][data-isle] .res-fade { background: linear-gradient(to bottom, transparent, var(--sp-card)); }
+/* the lead: the answer's first paragraph says the outcome */
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > :is(p:first-child, .md-admonition:first-child + p) {
+  font-size: var(--t15, 15.5px); font-weight: 700; line-height: 1.5; color: var(--txh);
+}
+/* For you (the reply's IMPORTANT box): a strip across the card's top, a tick box per to-do */
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > .md-admonition[data-kind="important"]:first-child {
+  margin: -12px -14px 12px; max-width: none; padding: 10px 14px; border: 0; border-radius: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--adm) 18%, transparent); background: color-mix(in oklab, var(--adm) 8%, transparent);
+}
+.md-admonition[data-kind="important"] .md-admonition-label { font-family: var(--ui-font, inherit); font-size: var(--t12); font-weight: 700; letter-spacing: 0; }
+.md-admonition[data-kind="important"] ul { list-style: none; padding-left: 0; }
+.md-admonition[data-kind="important"] ul > li { position: relative; padding-left: 24px; }
+.md-admonition[data-kind="important"] ul > li::before {
+  content: ""; position: absolute; left: 1px; top: .3em; width: 13px; height: 13px; box-sizing: border-box;
+  border: 1.6px solid var(--adm); border-radius: 4px;
+}
+.md-admonition[data-kind="important"] ul > li::marker { content: none; }
+/* the facts: a list whose every item opens with a label (lib/facts) reads as label · text rows */
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts { list-style: none; padding-left: 0; }
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li { position: relative; padding-left: 84px; margin: 5px 0; }
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li::marker { content: none; }
+[data-fam] [data-style="dossier"][data-isle] .res-body .md > ul.md-facts > li > :is(strong.md-lead:first-child, p:first-child > strong.md-lead:first-child) {
+  position: absolute; left: 0; top: .1em; width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--ui-font); font-size: var(--t12); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txl);
+}
+/* what continues the card (its fold, then the turn's receipt) tucks under its round foot */
+[data-fam] [data-style="dossier"][data-isle] .res-fold {
+  margin-top: -14px; padding: 18px 14px 6px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px;
+  background: var(--sp-card); font-family: var(--ui-font); font-size: var(--t11); letter-spacing: 0; text-transform: none; color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .resblk + .ma-rc {
+  position: relative; margin: -14px 0 0 var(--sp-in); padding: 14px 14px 0;
+  border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px; background: var(--sp-card);
+}
+[data-fam] [data-style="dossier"][data-isle] .resblk + .ma-rc > .ma-rc-row { border-top: 0; min-height: 36px; }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc { font-family: var(--ui-font); font-size: var(--t12); color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc * { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc-row { border-top-color: var(--line); }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc-cell { color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="ok"] { color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="err"] { color: var(--err); }
+
+/* ── a question (live, docked or answered): an ok ring, Question, its topic › the answer ── */
+[data-fam] [data-style="dossier"][data-isle] .dask { position: relative; padding-left: var(--sp-in); }
+[data-fam] [data-style="dossier"][data-isle] .dask::before { left: 0; top: 0; border-color: var(--ok); }
+[data-fam] [data-style="dossier"][data-isle] .dask::after {
+  content: ""; position: absolute; z-index: 1; left: 6.5px; top: 6.5px; width: 13px; height: 13px; background: var(--ok);
+  -webkit-mask: var(--sp-ic-q) center / contain no-repeat; mask: var(--sp-ic-q) center / contain no-repeat;
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec { margin: 0; border: 0; background: none; border-radius: 0; font-size: var(--t13); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row { padding: 0; min-height: var(--sp-n); gap: 8px; }
+/* answered: its state (✓, ✕, never answered) is the node, over the ring */
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row:first-child .ask-rec-ic {
+  position: absolute; z-index: 2; left: 0; top: 0; width: var(--sp-n); height: var(--sp-n);
+  box-sizing: border-box; border: 2px solid currentColor; background: var(--sp-gnd);
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-k { font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-tag { font-size: var(--t11); font-weight: 600; letter-spacing: 0; padding: 0 8px; border-radius: 999px; border-color: var(--line2); color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-open { font-family: var(--mono); font-size: var(--t11); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 6px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
+
+/* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
+.composer[data-pb] { --pb-isle: var(--panel); }
+.composer[data-pb] .pb-isles { justify-content: flex-start; padding-left: 0; }
+.composer[data-pb] .pb-isles > .pb-tabs { margin-left: -1px; padding-left: 2px; border-color: var(--line2); }
+.composer[data-pb] .pb-isles > .pb-dry { border: 1px solid var(--line2); }
+.composer[data-pb] .pb-isles .pb-tabs .np-tile {
+  box-sizing: border-box; flex: none; width: 26px; height: 26px !important; margin: 1px 0 !important; padding: 0 !important; justify-content: center;
+  border-radius: 50% !important; border: 2px solid var(--acc) !important; background: var(--panel) !important; overflow: hidden;
+}
+.composer[data-pb] .pb-isles .pb-tabs .np-tile > * { max-width: 16px; max-height: 16px; }
+.composer[data-pb] .pb-isles .pb-tabs .np-tile + .np-title-btn { padding-left: 9px !important; }
+.composer[data-pb] .pb-isles .pb-tabs .np-title { font-family: var(--ui-font) !important; font-weight: 700 !important; color: var(--txh); }
+/* live: only the pill shines, in the accent (you), and the emblem wears a halo */
+.composer[data-pb] .pb-tabs[data-now]::before {
+  background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
+    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
+}
+.composer[data-pb] .pb-isles .pb-tabs[data-now] .np-tile { box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 22%, transparent); overflow: visible; }
+/* the flow chip and the rail say their words in natural case, and a segment never wraps */
+.pb-flow-n { font-size: var(--t11); letter-spacing: 0; font-weight: 600; }
+.pb-rail, .pb-rail .pb-seg, .pb-rail .pb-seg * { white-space: nowrap; }

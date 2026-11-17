@@ -1602,8 +1602,8 @@ export function Composer({
           setFlowAt(card ? e.currentTarget.getBoundingClientRect().left - card.getBoundingClientRect().left : 0);
           setOpenDrop((d) => (d === "flow" ? "" : "flow"));
         }}>
-        <span className="pb-flow-n">NEXT</span>
-        <b>{fchip.next.label.toUpperCase()}</b>
+        <span className="pb-flow-n">Next</span>
+        <b>{fchip.next.label}</b>
         {fchip.mark === "auto" ? <Zap size={11} strokeWidth={2.4} aria-hidden /> : <Hand size={11} strokeWidth={2.2} aria-hidden />}
       </button>
     </div>

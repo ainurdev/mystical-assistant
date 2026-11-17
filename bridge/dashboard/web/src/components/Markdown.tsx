@@ -7,6 +7,7 @@ import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
 import { ADMONITION_RE, stripMarker } from "../lib/admonition";
+import { isFactList, LEAD_RE } from "../lib/facts";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import { mermaidFlow } from "../lib/mermaid";
@@ -150,15 +151,14 @@ function ProgressBlock({ rows }: { rows: (string | Progress)[] }) {
  *  them unbidden — ask for them in a prompt or a skill — but our own reports and
  *  plenty of pasted README content do. */
 const ADMONITIONS: Record<string, { label: string; color: string }> = {
-  note: { label: "NOTE", color: "var(--acc)" },
-  tip: { label: "TIP", color: "var(--ok)" },
-  important: { label: "IMPORTANT", color: "var(--purple)" },
-  warning: { label: "WARNING", color: "var(--warn)" },
-  caution: { label: "CAUTION", color: "var(--err)" },
+  note: { label: "Note", color: "var(--acc)" },
+  tip: { label: "Tip", color: "var(--ok)" },
+  // What a reply asks you to do (the bridge's IMPORTANT box): it waits on you, so the ask colour.
+  important: { label: "For you", color: "var(--ask, var(--warn))" },
+  warning: { label: "Warning", color: "var(--warn)" },
+  caution: { label: "Caution", color: "var(--err)" },
 };
 
-/** A bold that is really a label: short, one line, ending in a colon. */
-const LEAD_RE = /^[^\n]{2,24}:$/;
 
 /** Opening a file from prose: the path, the line it named, and where on screen
  *  the link sits (so an ambiguous name can be asked about in place). */
@@ -256,6 +256,8 @@ export const Markdown = memo(function Markdown({
               {children}
             </strong>
           ),
+          // Every item opens with a label ("**Merge:** …"): the answer card draws it as rows (lib/facts).
+          ul: ({ node, ...props }) => <ul className={node && isFactList(node) ? "md-facts" : undefined} {...props} />,
           // A wide table used to push the whole transcript column sideways.
           // It scrolls in its own box instead — GitHub's rule, and the one the
           // Mini App already had.
@@ -275,7 +277,7 @@ export const Markdown = memo(function Markdown({
               </blockquote>
             );
             return (
-              <div className="md-admonition" style={{ ["--adm" as string]: spec.color }}>
+              <div className="md-admonition" data-kind={kind} style={{ ["--adm" as string]: spec.color }}>
                 <div className="md-admonition-label">{spec.label}</div>
                 {stripMarker(children) as ReactNode}
               </div>

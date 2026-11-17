@@ -1091,11 +1091,12 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         title={open ? "hide the work" : "show the work"}
         className="dwork-head"
       >
+        {/* the session's spine node (spine.css): what this block is; the chevron at the end says open or shut */}
         <span className="dwork-node" aria-hidden>
-          <ChevronDown size={11} className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
+          <Terminal size={13} strokeWidth={2.2} />
         </span>
         <span className="dwork-l1">
-          <span className="dwork-lab">WORK</span>
+          <span className="dwork-lab">{state ? "Working" : "Worked"}</span>
           <span className="dwork-ms">
             <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{chapters ? ` · ${chapters} chapters` : ""}{span ? ` · ${span}` : ""}
           </span>
@@ -1121,6 +1122,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           ) : pics.length ? (
             <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={12} strokeWidth={2.2} /></i>{pics.length}</span>
           ) : null}
+          <ChevronDown size={13} aria-hidden className={`dwork-chev transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
         {line ? <NowLine now={line} secs={secs} gone={!now} onGone={() => setFading(false)} /> : null}
       </button>
@@ -2726,7 +2728,7 @@ export const RunStream = memo(function RunStream({
               key={i}
               views={i === finalText ? placedViews : undefined}
               result={text}
-              label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
+              label={i === finalText || dossier ? "Answer" : "RESULT // ASK"}
               animate={animate}
               idKey={`${turnId}:${i}`}
               view={i === finalText ? view : null}
@@ -2966,7 +2968,7 @@ export const RunStream = memo(function RunStream({
         if (!mx) return null;
         const live = !!onRespond && pendingIds.has(event.request_id);
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
             {live && askDocked ? <AskMarker kind="secret" topic={event.name} />
               : live ? <SecretCard ev={event} onRespond={(id, opts) => onRespond?.(id, opts)} />
               : <SecretRecord name={event.name} why={event.why} given={secretGiven.get(event.request_id)} stale={ended} />}
@@ -3069,20 +3071,20 @@ export const RunStream = memo(function RunStream({
       case "question": {
         const live = !!onRespond && pendingIds.has(event.request_id);
         if (live && askDocked) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
             <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
               : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
           </div>
         );
         if (!live) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
             <AskRecord kind="question" questions={event.questions}
               answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
               at={answeredAt.get(event.request_id) ?? event.at} />
           </div>
         );
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
             <QuestionCard
               questions={event.questions}
               requestId={event.request_id}
@@ -3712,13 +3714,14 @@ export function FinalResult({
       <RailNode />
       <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
         <div className="res-head">
-          <span className="res-lab">{update ? "UPDATE" : label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          <span className="res-lab">{update ? "Update" : label ?? (dossier ? (bad ? "Answer · error" : "Answer") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          {/* how long the turn took sits by the label; the right side says done and when */}
+          {typeof elapsed === "number" && elapsed > 0 && (
+            <span className="res-dur" title="wall time">{wall(elapsed)}</span>
+          )}
           {drawn && view?.job.kind && <span className="res-kind"><JobTag job={view.job} /></span>}
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
-            {typeof elapsed === "number" && elapsed > 0 && (
-              <span title="wall time">{wall(elapsed)}</span>
-            )}
             {!update && typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">
                 {fmtTokens(tokens)} TOK

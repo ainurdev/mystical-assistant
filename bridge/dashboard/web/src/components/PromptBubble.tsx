@@ -22,36 +22,16 @@ function parseNudge(text: string): { n?: string; max?: string; title?: string; o
   return { n: m[1], max: m[2], title: m[1] ? m[3].trim() : undefined, objective: body ? body[1].trim() : text };
 }
 
-/** A /command as the segment the composer drew it as (MarkdownInput's
- *  CmdWidget is its twin): a plugin's namespace a quieter segment in front. */
-function CmdSeg({ name, desc }: { name: string; desc: string }) {
-  const i = name.lastIndexOf(":");
-  return (
-    <span className="cmdseg" title={desc}>
-      <span className="sr-only">/</span>
-      {i > 0 && <><span className="sg ns">{name.slice(0, i)}</span><span className="sr-only">:</span></>}
-      <span className="sg">{name.slice(i + 1)}</span>
-    </span>
-  );
-}
-
-/** What you said — a prompt, or a steer sent into a turn already running. The
- *  plate holds your words and nothing else; a prompt wears no glyph, since a ❯
- *  there read as the WORK zone's expand chevron right under it
- *  (.mystical/design-drafts/prompt-glyph, A · BARE); a steer leads with ↳ and a
- *  wake with ⧖. The rest rides one tag pinned to the plate's lower edge —
- *  ↳ STEER or ⧖ WAIT OVER when it isn't a prompt of yours, the account or agent
- *  when it wasn't the default (lib/agents runtimeBadge), the model · effort ·
- *  permission the turn ran with,
- *  and when; in a session that drew a Savers trial's saver (bridge/savers.py),
- *  a warn segment says so ("Concise · trial"). A value that moved since the turn
- *  before is lit; a turn from before
- *  turns recorded effort and mode shows only its model — nothing is borrowed from
- *  the session's current picks. A prompt that ran a /command leads with it as a
- *  segment (.mystical/design-drafts/slash-chip, C · SEGMENT).
- *  Geometry and colour live in `.pbub` / `.pline` / `.pmeta` / `.cmdseg`
- *  (index.css, DOSSIER tier 1); nothing here decides either. Design:
- *  .mystical/design-drafts/sent-prompt, B · RIM. */
+/** What you said — a prompt, or a steer sent into a turn already running. A
+ *  node on the session's spine (spine.css, .mystical/design-drafts/session-one-feel,
+ *  C · SPINE) and a bubble: one header line — who (You, Steer, Wait over, Goal,
+ *  Council, a teammate's name), the /command it ran, the account or agent when it
+ *  wasn't the default (lib/agents runtimeBadge), the model · effort · permission
+ *  the turn ran with, and when; a Savers trial's saver says so ("Concise · trial").
+ *  A value that moved since the turn before is lit; a turn from before turns
+ *  recorded effort and mode shows only its model — nothing is borrowed from the
+ *  session's current picks. Then your words. Geometry and colour live in
+ *  `.pbub` / `.pline` / `.pmeta` (index.css, DOSSIER tier 1; spine.css). */
 export function PromptBubble({ text, at, runtime, run, prev, steer, who, commands, savers, children }: {
   text: string;
   /** The Savers trials this session drew the saver in (Transcript.savers). */
@@ -79,8 +59,8 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   const nudge = steer || wake ? null : parseNudge(text);
   // The council's own prompts (bridge/council.py): stamped like a goal's re-prompt.
   const council = steer || wake || nudge ? null : parseCouncilPrompt(text);
-  const councilTag = !council ? "" : "advice" in council ? "⚖ COUNCIL · ADVICE"
-    : `⚖ COUNCIL ${council.round}/${council.max} · ${"fix" in council ? "FIX" : `${council.score.toFixed(1)} of ${council.bar.toFixed(1)}`}`;
+  const councilTag = !council ? "" : "advice" in council ? "Council · advice"
+    : `Council ${council.round}/${council.max} · ${"fix" in council ? "fix" : `${council.score.toFixed(1)} of ${council.bar.toFixed(1)}`}`;
   const [brief, setBrief] = useState(false);
   const purple = wake ? { color: "var(--purple)" } : nudge || council ? { color: "var(--acc)" } : undefined;
   const glyph = wake ? "⧖" : steer ? "↳" : nudge ? "◎" : council ? "⚖" : null;
@@ -90,12 +70,13 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   const lvl = run?.effort ? EFFORTS.findIndex((e) => e.id === (run.effort === "auto" ? "" : run.effort)) : -1;
   // Lit only when both turns recorded it: an older turn's unknown is no change.
   const moved = (k: keyof Run) => (prev?.[k] && run?.[k] && prev[k] !== run[k]) || undefined;
+  // Which node the session's spine draws for it (spine.css).
+  const kind = wake ? "wake" : steer ? "steer" : nudge ? "goal" : council ? "council" : who ? "who" : "you";
   const meta = [
-    (wake || steer || nudge || council || who) && (
-      <b key="who" style={purple}>
-        {wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : nudge ? `◎ GOAL${nudge.n ? ` · AUTO ${nudge.n}/${nudge.max}` : ""}` : council ? councilTag : who}
-      </b>
-    ),
+    <b key="who" style={purple}>
+      {wake ? "Wait over" : steer ? "Steer" : nudge ? `Goal${nudge.n ? ` · auto ${nudge.n}/${nudge.max}` : ""}` : council ? councilTag : who || "You"}
+    </b>,
+    cmd && <span key="cmd" className="pcmd" title={cmd.desc}>/{cmd.name}</span>,
     ...(run ? savers ?? [] : []).map((k) => (
       <span key={`saver-${k}`} className="psaver" title="this session drew the saver in a Savers trial (SETTINGS ▸ AI management ▸ Savers)">
         {saverTag(k)}
@@ -119,12 +100,12 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
     at != null && <span key="at" className="pstamp">{hhmm(at, h12)}</span>,
   ].filter(Boolean);
   return (
-    <div className="pbub-row">
+    <div className="pbub-row" data-kind={kind}>
       <div className="pbub">
+        <div className="pmeta">{meta}</div>
         <div className="pline" data-glyph={glyph ? "" : undefined}>
           {glyph && <span className="pglyph" aria-hidden style={purple}>{glyph}</span>}
           <div className="min-w-0">
-            {cmd && <CmdSeg name={cmd.name} desc={cmd.desc} />}
             {nudge ? (
               <>
                 {/* .md: the face and size the plate gives your own words. */}
@@ -153,7 +134,6 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
             {children}
           </div>
         </div>
-        {meta.length > 0 && <div className="pmeta">{meta}</div>}
       </div>
     </div>
   );

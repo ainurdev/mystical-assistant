@@ -67,7 +67,7 @@ export function TurnReceipt({ r, onJump }: { r: Receipt; onJump: (i: number) => 
         ))}
         <span className="ma-rc-gap" />
         {r.secs != null && <span className="ma-rc-cell ma-rc-q" title="Wall time">{wall(r.secs)}</span>}
-        {r.tokens != null && <span className="ma-rc-cell ma-rc-q" title="Tokens this turn spent">{fmtTokens(r.tokens)} TOK</span>}
+        {r.tokens != null && <span className="ma-rc-cell ma-rc-q" title="Tokens this turn spent">{fmtTokens(r.tokens)} tokens</span>}
         {badge && <span className="ma-rc-cell ma-rc-q" title={badge.title}>{badge.text}</span>}
       </div>
       {open && (
