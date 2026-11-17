@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func syncFloating() {
         let w = dashboard.window
-        floating.update(bridge.waiting, show: notifier.prefs.floating,
+        floating.update(bridge.waiting, turns: bridge.turns, show: notifier.prefs.floating,
                         dashboardInFront: (w?.isVisible ?? false) && (w?.isKeyWindow ?? false))
     }
 

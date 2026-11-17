@@ -40,8 +40,8 @@ import Testing
     """#
     let w = try #require(Running.waiting(Data(json.utf8)))
     #expect(w == [
-        WaitingSession(id: "a", title: "fix the build", label: "awaiting your answer"),
-        WaitingSession(id: "c", title: "needs a decision", label: "needs a decision"),
+        WaitingSession(id: "a", subject: "a", title: "fix the build", label: "awaiting your answer", at: nil),
+        WaitingSession(id: "c", subject: "c", title: "needs a decision", label: "needs a decision", at: nil),
     ])
 }
 
@@ -60,8 +60,8 @@ import Testing
     """#
     let w = try #require(Running.waiting(Data(json.utf8)))
     #expect(w == [
-        WaitingSession(id: "s1", title: "Project logos and theme sync", label: "APPROVE · Bash: rm -rf old-shots"),
-        WaitingSession(id: "", title: "Fix the login form", label: "OFFERED"),
+        WaitingSession(id: "s1", subject: "s1", title: "Project logos and theme sync", label: "APPROVE · Bash: rm -rf old-shots", at: 1729090000),
+        WaitingSession(id: "", subject: "rv:i1:r1", title: "Fix the login form", label: "OFFERED", at: 1729090100),
     ])
 }
 
@@ -69,7 +69,7 @@ import Testing
     // A bridge from before NEEDS YOU sends no "needs": the status map decides.
     let old = #"{"status":{"a":{"state":"awaiting","kind":"question","label":"awaiting your answer"}}}"#
     #expect(Running.waiting(Data(old.utf8)) == [
-        WaitingSession(id: "a", title: "awaiting your answer", label: "awaiting your answer"),
+        WaitingSession(id: "a", subject: "a", title: "awaiting your answer", label: "awaiting your answer", at: nil),
     ])
     // An empty "needs" is a newer bridge with nothing waiting, not an older one.
     let none = #"{"needs":[],"status":{"a":{"state":"awaiting","kind":"question","label":"awaiting your answer"}}}"#
@@ -228,6 +228,88 @@ func shimContext(permission: String, reply: String = "granted") -> (JSContext, (
     let json = #"{"status":{"a":{"state":"working","source":"bridge"},"b":{"state":"awaiting"},"c":{"state":"working","source":"native"},"d":{"state":"live"}}}"#
     #expect(Running.working(Data(json.utf8)) == 2)
     #expect(Running.working(Data("nope".utf8)) == 0)
+}
+
+// MARK: turns
+
+@Test func turnsAreTheJobEachSessionIsRunning() {
+    // Every turn the bridge starts is a fresh job, so a new job id is a new turn.
+    let json = #"{"jobs":[{"session_id":"a","job_id":"9f2c","title":"x"},{"session_id":null,"job_id":"77aa"},{"session_id":"b"}],"status":{}}"#
+    #expect(Running.turns(Data(json.utf8)) == ["a": "9f2c"])
+    #expect(Running.turns(Data("nope".utf8)) == [:])
+}
+
+// MARK: the panel's HIDE
+
+/// A row for the HIDE tests: a session's, or an offer's (`rv:…`, no session), raised `at`.
+private func row(_ subject: String, at: Double = 1) -> WaitingSession {
+    WaitingSession(id: subject.hasPrefix("rv:") ? "" : subject, subject: subject, title: subject, label: "", at: at)
+}
+
+@Test func hideHoldsUntilSomethingNewWaits() throws {
+    let hide = PanelHide([row("s1"), row("rv:i1:r1")], turns: ["s1": "j1"])
+    let same = try #require(hide.after([row("rv:i1:r1"), row("s1")], turns: ["s1": "j1"], dashboardInFront: false))
+    #expect(same == hide)
+    #expect(same.after([row("s1"), row("s2")], turns: ["s1": "j1", "s2": "j9"], dashboardInFront: false) == nil)
+}
+
+@Test func aSessionStaysQuietForTheRestOfItsTurn() throws {
+    var hide = PanelHide([row("s1")], turns: ["s1": "j1"])
+    // Answered, still working on j1; then another card in the same turn.
+    hide = try #require(hide.after([], turns: ["s1": "j1"], dashboardInFront: false))
+    hide = try #require(hide.after([row("s1", at: 2)], turns: ["s1": "j1"], dashboardInFront: false))
+    // The turn is over (nothing running, nothing listed): its next turn's ask is new.
+    hide = try #require(hide.after([], turns: [:], dashboardInFront: false))
+    #expect(hide.after([row("s1", at: 3)], turns: ["s1": "j2"], dashboardInFront: false) == nil)
+}
+
+@Test func aTurnThatStartsStraightAfterIsStillALaterTurn() throws {
+    // A flow's next step starts in the same session between two polls, never seen idle.
+    var hide = PanelHide([row("s1")], turns: ["s1": "j1"])
+    hide = try #require(hide.after([], turns: ["s1": "j2"], dashboardInFront: false))
+    #expect(hide.after([row("s1", at: 2)], turns: ["s1": "j2"], dashboardInFront: false) == nil)
+}
+
+@Test func theRowYouHidNeverBringsItBack() throws {
+    // A ticket set waiting for approval stays listed while its session starts another turn.
+    var hide = PanelHide([row("s9", at: 5)], turns: [:])
+    hide = try #require(hide.after([row("s9", at: 5)], turns: ["s9": "j5"], dashboardInFront: false))
+    // What that turn asks is new.
+    #expect(hide.after([row("s9", at: 8)], turns: ["s9": "j5"], dashboardInFront: false) == nil)
+}
+
+@Test func anOfferStaysHiddenThroughABridgeRestart() throws {
+    // A restarted bridge answers before Rivendell reconnects: its offers go missing a while,
+    // then come back stamped with when it heard of them again (rivendell.py _catch_up).
+    var hide = PanelHide([row("rv:i1:r1")], turns: [:])
+    hide = try #require(hide.after([], turns: [:], dashboardInFront: false))
+    #expect(hide.after([row("rv:i1:r1", at: 2)], turns: [:], dashboardInFront: false) != nil)
+}
+
+@Test func whatTheDashboardShowedCountsAsSeen() throws {
+    var hide = PanelHide([row("s1")], turns: ["s1": "j1"])
+    // s2 asks while the dashboard is in front, and you leave without answering it.
+    hide = try #require(hide.after([row("s1"), row("s2")], turns: ["s1": "j1", "s2": "j7"], dashboardInFront: true))
+    #expect(hide.after([row("s1"), row("s2")], turns: ["s1": "j1", "s2": "j7"], dashboardInFront: false) != nil)
+}
+
+@Test func aFailedPollIsNoNews() {
+    // The bridge down or restarting lists nothing and runs nothing: not every turn over.
+    let hide = PanelHide([row("s1"), row("rv:i1:r1")], turns: ["s1": "j1"])
+    #expect(hide.after([], turns: nil, dashboardInFront: false) == hide)
+}
+
+@Test func theHideIsRememberedAcrossRestarts() {
+    let d = UserDefaults(suiteName: "test.mystical.\(UUID().uuidString)")!
+    #expect(PanelHide.load(d) == nil)   // never hidden
+    let hide = PanelHide([row("s1"), row("rv:i1:r1")], turns: ["s1": "j1"])
+    PanelHide.save(hide, d)
+    #expect(PanelHide.load(d) == hide)
+    // Holding nothing is still a hide: nothing new has come.
+    PanelHide.save(PanelHide([], turns: [:]), d)
+    #expect(PanelHide.load(d) == PanelHide([], turns: [:]))
+    PanelHide.save(nil, d)
+    #expect(PanelHide.load(d) == nil)
 }
 
 // MARK: deep links
