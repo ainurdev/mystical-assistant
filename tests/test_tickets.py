@@ -1738,3 +1738,13 @@ def test_a_ticket_of_yours_waits_on_you_until_go(make_set, monkeypatch):
     assert "start from tk/x/01-x there" in s.starts[-1]["prompt"]
     s.finish("03", commit=False)                                  # #01's commits are not #03's own
     assert s.status("03") == "fix"
+
+
+def test_a_ticket_of_yours_written_into_a_building_set_waits_on_you(make_set):
+    s = make_set({"01": None})
+    _write(s.folder, "02", "T02", "#01")
+    _yours(s, "02")
+    _flow_turn_ends(s)
+    assert s.status("02") == "queued"
+    s.finish("01")
+    assert s.status("02") == "yours" and not s.worktree_add_calls("02")

@@ -33,8 +33,8 @@ The scheduler. BUILD (start_build) freezes the graph into set.json at approval, 
 ticket file edited later can't rewire what has started; one deleted or renamed is
 `missing` when its turn to start comes, and holds its dependents. While the set builds,
 every tick (and the end of each turn of the flow's own session) reads the folder again
-(_refresh): a ticket file with a new number joins as `queued` when it waits for an agent
-(Status ready-for-agent, or none: one that says done was built elsewhere), and a ticket
+(_refresh): a ticket file with a new number joins as `queued` when it is ready (Status
+ready-for-agent or ready-for-human, or none: one that says done was built elsewhere), and a ticket
 that hasn't started takes its file's Blocked by. A change that breaks the graph applies
 nothing and says why once. Before this the folder was read only at approval, and on
 2026-11-17 a super session that wrote tickets 21-24 into its building set built them
@@ -481,13 +481,12 @@ def _row(slug: str, t: Ticket) -> dict:
             "worktree": "", "session_id": "", "base": ""}
 
 
-def _for_an_agent(path: str) -> bool:
-    """A ticket file added to a building set waits for an agent: Status ready-for-agent, or none.
-    shortcut: a new ready-for-human ticket stays out (master would hand it to an agent); admit it
-    once feat/tickets-of-yours lands, whose tick holds one for you."""
+def _ready(path: str) -> bool:
+    """A ticket file added to a building set is ready: Status ready-for-agent or ready-for-human
+    (tick hands that one to you), or none."""
     with open(path, encoding="utf-8") as f:
         m = _STATUS_LINE.search(f.read())
-    return not m or m.group(1).strip("* ").lower().startswith("ready-for-agent")
+    return not m or m.group(1).strip("*` ").lower().startswith(("ready-for-agent", "ready-for-human"))
 
 
 def _refresh(folder: str, st: dict) -> None:
@@ -496,7 +495,7 @@ def _refresh(folder: str, st: dict) -> None:
     tks = st["tickets"]
     try:
         parsed = {t.n: t for t in parse_dir(folder, also=tks)}
-        new = {n: t for n, t in parsed.items() if n not in tks and _for_an_agent(t.path)}
+        new = {n: t for n, t in parsed.items() if n not in tks and _ready(t.path)}
         deps = {n: parsed[n].blocked_by if n in parsed and t["status"] == "queued" else tuple(t["blocked_by"])
                 for n, t in tks.items()}
         deps.update({n: t.blocked_by for n, t in new.items()})
