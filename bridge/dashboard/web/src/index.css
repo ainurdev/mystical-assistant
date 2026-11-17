@@ -4534,14 +4534,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
+/* the buttons inside are menu rows. Not the rail's changelog popover's (.clg-pop): it is a dialog for the keyboard, and its buttons keep their own styles.
+   shortcut: a surface with real buttons opts out here by hand, and every overlay is a dialog (CODING_STANDARDS, overlay keys), so the next
+   one lands here too; make the menu rows opt in when this list grows again */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
   font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
 /* a row loses its rule; a boxed button (UPDATE's footer, .upd-btn; FLOWS' Runs on, .fs-runs) keeps its whole border */
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn):not(.fs-runs) {
   border-bottom-color: transparent !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
+/* UPDATE's footer buttons (.upd-btn) hover from their own state and its Show the commits (.upd-fold) is a link: neither takes the row's wash */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm, .clg-pop)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act, .upd-btn, .upd-fold):hover {
   background: var(--ac-08) !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [role="dialog"]:not(.agm)) [style*="acc) 10%"] { background: var(--f-you) !important; }
@@ -6386,7 +6390,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   box-shadow: inset 0 0 0 1px var(--line2, var(--border-bright)); font: 500 var(--t105)/1 var(--ui-font); color: var(--txd); white-space: nowrap; }
 .clg-same > svg { flex: none; color: var(--acc); }
 .clg-same b { font-weight: 600; color: var(--txb); }
-.clg-acts .clg-same button { width: 20px; height: 20px; padding: 0; justify-content: center; border: 0; border-radius: 99px; background: transparent; }
+.clg-acts .clg-same button { width: 20px; height: 20px; padding: 0; justify-content: center; border: 0; border-radius: 99px; }
 .clg-acts .clg-same button:disabled { opacity: .35; cursor: default; background: transparent; }
 .clg-pos { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font: 500 var(--t10)/1 var(--mono); color: var(--txl); white-space: nowrap; }
 .clg-pos button { appearance: none; cursor: pointer; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line, var(--border));
