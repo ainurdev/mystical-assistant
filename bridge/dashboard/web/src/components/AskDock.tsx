@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowDown, Ban, Check, ChevronLeft, ChevronRight, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
+  ArrowDown, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
   KeyRound, Minimize2, Plug, SquareTerminal, X,
 } from "lucide-react";
 import { api, type AnswerSelection, type CardAnswer, type Question } from "../api";
@@ -42,6 +42,8 @@ export interface AskMode {
   needsText?: boolean;
   /** Where the box's text goes instead of a new prompt. The dock clears the box. */
   send?: (text: string) => void;
+  /** The box's footer while it answers this: the ⌘1–N keys, named once instead of on every row. */
+  hint?: ReactNode;
 }
 
 type Respond = (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string })
@@ -60,34 +62,43 @@ function Wait({ at, word = "waiting" }: { at?: number; word?: string }) {
   return <span className="ad-wait"><span className="ad-beacon" aria-hidden />{w ? `${word} · ${w}` : word}</span>;
 }
 
-function Head({ icon, kind, topic, children, at, word }: {
-  icon: ReactNode; kind: string; topic?: string; children?: ReactNode; at?: number; word?: string;
+/** The dock folded to its head line, so the session above it can be read
+ *  (.mystical/design-drafts/ask-dock-readable, A · LIST + fold). Per ask: the
+ *  next one opens unfolded. Folded, the body is only hidden, so the box still
+ *  answers and ⌘1–9 still pick (their mark stays in the DOM). */
+const Fold = createContext<{ folded: boolean; toggle: () => void } | null>(null);
+
+/** One line: what kind of ask, about what, since when, and the fold. Folded, `line` (the ask itself) stands in for the rest. */
+function Head({ icon, kind, topic, children, at, word, line }: {
+  icon?: ReactNode; kind: string; topic?: string; children?: ReactNode; at?: number; word?: string; line?: string;
 }) {
+  const fold = useContext(Fold);
+  const folded = !!fold?.folded;
   return (
     <div className="ad-h">
-      <span className="ad-g" aria-hidden>{icon}</span>
+      {icon && <span className="ad-g" aria-hidden>{icon}</span>}
       <span className="ad-kind">{kind}</span>
       {topic && <span className="ad-topic">· {topic}</span>}
-      {children}
+      {folded ? line && <span className="ad-line">{line}</span> : children}
       <Wait at={at} word={word} />
+      {fold && (
+        <button type="button" className="ad-fold" onClick={fold.toggle} aria-expanded={!folded}
+          title={folded ? "Open it again" : "Fold it to read the session"} aria-label={folded ? "Open it again" : "Fold it"}>
+          {folded ? <ChevronUp size={14} strokeWidth={2.4} aria-hidden /> : <ChevronDown size={14} strokeWidth={2.4} aria-hidden />}
+        </button>
+      )}
     </div>
   );
 }
 
-/** Context, then the ask. Context is folded to two lines; a click opens it. */
+/** Context, then the ask: in reading order, all of it (it scrolls in the dock when long). */
 function AskText({ text }: { text: string }) {
   const s = splitAsk(text);
-  const [open, setOpen] = useState(false);
   return (
     <>
+      {s.ctx && <p className="ad-ctx">{s.ctx}</p>}
       <p className="ad-ask">{s.ask}</p>
       {s.tail && <p className="ad-tail">{s.tail}</p>}
-      {s.ctx && (
-        <button type="button" className="ad-ctx" data-open={open ? "" : undefined} onClick={() => setOpen((o) => !o)}
-          title={open ? "Fold the context" : "Show all of it"}>
-          <b>Context ›</b> {s.ctx}
-        </button>
-      )}
     </>
   );
 }
@@ -105,17 +116,21 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
   /** The box held a draft when this docked; it's set aside until you answer. */
   stashed: boolean;
 }) {
-  // A marker's "answer below" lands here: flash the dock, focus the box.
+  const key = d.kind === "prose" ? d.turnId : d.requestId;
+  // Which ask is folded: a new one (another key) opens unfolded.
+  const [foldedKey, setFoldedKey] = useState<string | null>(null);
+  const fold = useMemo(() => ({ folded: foldedKey === key, toggle: () => setFoldedKey((f) => f === key ? null : key) }), [foldedKey, key]);
+  // A marker's "answer below" lands here: open the dock, flash it, focus the box.
   const [flash, setFlash] = useState(0);
   useEffect(() => {
-    const f = () => setFlash((n) => n + 1);
+    const f = () => { setFoldedKey(null); setFlash((n) => n + 1); };
     window.addEventListener("ask:focus", f);
     return () => window.removeEventListener("ask:focus", f);
   }, []);
   useEffect(() => () => bind(null), [bind]);
-  const key = d.kind === "prose" ? d.turnId : d.requestId;
   return (
-    <div className="askdock" data-kind={d.kind} data-flash={flash % 2 ? "a" : flash ? "b" : undefined}>
+    <Fold.Provider value={fold}>
+    <div className="askdock" data-kind={d.kind} data-flash={flash % 2 ? "a" : flash ? "b" : undefined} data-folded={fold.folded ? "" : undefined}>
       {d.kind === "question"
         ? <QuestionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} bind={bind} />
         : d.kind === "permission"
@@ -125,6 +140,7 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
             : <ProseDock key={key} d={d} onAnswer={onAnswer} bind={bind} />}
       {stashed && <p className="ad-note">Your draft is set aside: it comes back after you answer.</p>}
     </div>
+    </Fold.Provider>
   );
 }
 
@@ -211,14 +227,18 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
       : state.startsWith("one:") && pick ? <>Send <Pk k={pick.key} /> {pick.name}</>
       : state === "own" ? "Send your answer"
       : "Pick or type an answer";
+    const n = Math.min(q.options.length, 9);
+    // The rows show letters; the hint says which ones the digits reach.
+    const reach = n > 1 ? `${optionKey(q.options[0].label, 0).key}–${optionKey(q.options[n - 1].label, n - 1).key}` : n ? optionKey(q.options[0].label, 0).key : "";
     return {
       placeholder: picked.length ? "Add a note, or just send…" : "Or type your own answer…",
       label,
+      hint: n > 0 ? <>{n > 1 ? <><Keys k="Ctrl+1" />{" – "}<Keys k={`Ctrl+${n}`} /></> : <Keys k="Ctrl+1" />} picks {reach}</> : undefined,
       ready: !sending && (state === "all" || /^(next:|one:|many:|verb:)/.test(state) || (state === "next" && picked.length > 0)),
       send: (t: string) => { void sendRef.current(t); },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, picked.length > 0]);
+  }, [state, picked.length > 0, page]);
   useEffect(() => { bind(mode); }, [mode, bind]);
   // ⌘1–9 pick on this page and a pick-one question then moves on by itself (the
   // last one waits); ⌘↵ is the box's button: Next, or Send on the last (ui/Keys).
@@ -235,14 +255,13 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
     return true;
   });
 
+  const folded = !!useContext(Fold)?.folded;
   const pics = staged(q);
   const texts = previewTexts(q);
   return (
     <>
-      <Head icon={<CircleQuestionMark size={13} strokeWidth={2.2} />} kind={qs.length > 1 ? "Questions" : "Question"}
-        topic={qs.length > 1 ? `${page + 1} of ${qs.length}` : task ? "Rivendell task" : q.header} at={d.at}>
-        {d.of > 1 && <span className="ad-more">+{d.of - 1} more after this</span>}
-      </Head>
+      <Head kind="Question" topic={qs.length > 1 ? (folded ? `${page + 1} of ${qs.length}` : undefined) : task ? "Rivendell task" : q.header}
+        at={d.at} line={splitAsk(q.question).ask}>
       {qs.length > 1 && (
         <div className="ad-steps">
           {page > 0 && (
@@ -263,27 +282,27 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
           })}
         </div>
       )}
+        {d.of > 1 && <span className="ad-more">+{d.of - 1} more after this</span>}
+      </Head>
       <div className="ad-b" key={page}>
         <span ref={mark} data-ask-keys hidden />
         {task ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
         {pics
           ? <Pictures q={q} chosen={picked} onPick={toggle} sending={sending} />
           : (
-            <div className="ad-rows" style={{ "--n": q.options.length === 4 ? 2 : Math.min(q.options.length, 3) } as React.CSSProperties}
-              role={q.multiSelect ? "group" : "radiogroup"} aria-label={q.header}>
+            <div className="ad-rows" role={q.multiSelect ? "group" : "radiogroup"} aria-label={q.header}>
               {q.options.map((o, i) => {
                 const k = optionKey(o.label, i);
                 const on = picked.includes(o.label);
                 return (
                   <button key={o.label} type="button" className="ad-row" aria-pressed={on} disabled={sending}
-                    data-multi={q.multiSelect ? "" : undefined} data-keys={i < 9 ? "" : undefined} onClick={() => toggle(o.label)}>
+                    data-multi={q.multiSelect ? "" : undefined} onClick={() => toggle(o.label)}>
                     <Key k={k.key} on={on} />
                     <span className="ad-lab">
                       {task ? taskLabel(o.label, true) : k.name}
-                      {k.rec && !task && <span className="ad-sug" title="Suggested">★</span>}
+                      {k.rec && !task && <span className="ad-sug">Recommended</span>}
                     </span>
                     {o.description && <span className="ad-desc">{o.description}</span>}
-                    {i < 9 && <Keys k={`Ctrl+${i + 1}`} hover />}
                   </button>
                 );
               })}
@@ -433,13 +452,12 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
         </div>
       )}
       {rows.length > 0 && (
-        <div className="ad-rows" style={{ "--n": rows.length === 4 ? 2 : Math.min(rows.length, 3) } as React.CSSProperties}
-          role={readOnly ? undefined : "radiogroup"} aria-label={q.header}>
+        <div className="ad-rows" role={readOnly ? undefined : "radiogroup"} aria-label={q.header}>
           {rows.map((x) => {
             const on = chosen.includes(x.o.label);
             const inner = <>
               <Key k={x.key} on={on} />
-              <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}</span>
+              <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug">Recommended</span>}</span>
               {x.o.description && <span className="ad-desc">{x.o.description}</span>}
             </>;
             return readOnly
@@ -534,7 +552,7 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
   return (
     <>
       <Head icon={plan ? <ListChecks size={13} strokeWidth={2.2} /> : mcp ? <Plug size={13} strokeWidth={2.2} /> : <SquareTerminal size={13} strokeWidth={2.2} />}
-        kind={plan ? "Plan" : "Permission"} topic={topic} at={d.at} word="asked">
+        kind={plan ? "Plan" : "Permission"} topic={topic} at={d.at} word="asked" line={plan ? undefined : d.summary}>
         {d.of > 1 && <span className="ad-more">+{d.of - 1} more after this</span>}
       </Head>
       <div className="ad-b">
@@ -627,7 +645,7 @@ function ProseDock({ d, onAnswer, bind }: {
   });
   return (
     <>
-      <Head icon={<MessageCircleQuestion size={13} strokeWidth={2.2} />} kind="Asked in the answer" at={d.at} word="asked" />
+      <Head icon={<MessageCircleQuestion size={13} strokeWidth={2.2} />} kind="Asked in the answer" at={d.at} word="asked" line={splitAsk(d.ask.question).ask.replace(/[*_`#>]/g, "")} />
       <div className="ad-b">
         <div className="ad-ask"><Markdown>{d.ask.question}</Markdown></div>
         <div className="ad-replies">
@@ -686,14 +704,14 @@ function RecordQuestions({ questions, answered }: { questions: Question[]; answe
             {staged(q)
               ? <Pictures q={q} chosen={chosen} onPick={() => {}} sending={false} readOnly />
               : (
-                <div className="ad-rows" style={{ "--n": q.options.length === 4 ? 2 : Math.min(q.options.length, 3) } as React.CSSProperties}>
+                <div className="ad-rows">
                   {q.options.map((o, i) => {
                     const k = optionKey(o.label, i);
                     const on = chosen.includes(o.label);
                     return (
                       <div key={o.label} className="ad-row" aria-pressed={on} data-ro="" data-multi={q.multiSelect ? "" : undefined}>
                         <Key k={k.key} on={on} />
-                        <span className="ad-lab">{isTask(questions) ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug" title="Suggested">★</span>}</span>
+                        <span className="ad-lab">{isTask(questions) ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug">Recommended</span>}</span>
                         {o.description && <span className="ad-desc">{o.description}</span>}
                       </div>
                     );

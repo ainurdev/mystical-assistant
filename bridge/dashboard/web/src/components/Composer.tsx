@@ -2114,7 +2114,7 @@ export function Composer({
   const facts = ghost && capt
     ? <span className="pb-route"><b data-tone={capt.tone}>{capt.tag}</b>{capt.why && <span className="why">{capt.why}</span>}
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
-    : ask?.send ? <span data-tone="dim">your answer goes to the question above</span>
+    : ask?.send ? ask.hint && <span data-tone="dim" className="kc-hover">{ask.hint}</span>
     : kind && <span>{[...(steps ? [{ text: steps } as Fact] : []), ...kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null,
         designLinked: designLinked ?? null, mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;

@@ -33,6 +33,13 @@ console.assert(t.ask === "Which extras should come with it?" && t.tail === "Pick
 console.assert(splitAsk("Pick a colour.").ask === "Pick a colour.", "no question mark: all of it is the ask");
 const v = splitAsk("Two ways to go.\nWhich one?");
 console.assert(v.ctx === "Two ways to go." && v.ask === "Which one?", `newline: ${JSON.stringify(v)}`);
+// A point inside a number or a word is no sentence end (the headline read "4 and file them as tickets?").
+const w = splitAsk("The round came back at 8.4 with two findings. Should I fix both, or ship 8.4 and file them as tickets?");
+console.assert(w.ctx === "The round came back at 8.4 with two findings." && w.ask === "Should I fix both, or ship 8.4 and file them as tickets?", `decimal: ${JSON.stringify(w)}`);
+const y = splitAsk("Two found. Should I use a helper, e.g. the merge one?");
+console.assert(y.ctx === "Two found." && y.ask === "Should I use a helper, e.g. the merge one?", `abbreviation: ${JSON.stringify(y)}`);
+const x = splitAsk("Bump it to v1.2.3 in index.ts? Or keep it?");
+console.assert(x.ctx === "Bump it to v1.2.3 in index.ts?" && x.ask === "Or keep it?", `dotted: ${JSON.stringify(x)}`);
 
 console.assert(waited(100, 130) === "30s" && waited(100, 220) === "2m" && waited(undefined) === "", "waited");
 console.log("askdock ok");
