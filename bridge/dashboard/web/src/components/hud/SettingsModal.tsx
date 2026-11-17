@@ -98,7 +98,7 @@ import { TONES, chime, push, pushGranted, pushSupported, requestPush, type ToneK
 import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
-import { UpdateButton } from "./UpdateButton";
+import { UpdateButton, type Feed } from "./UpdateButton";
 import { restartBridge } from "../../lib/restart";
 import { takeSettingsFocus } from "../../lib/opensettings";
 import { testText } from "../../lib/rivendelltasks";
@@ -119,7 +119,7 @@ export interface SettingsModalProps {
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
-  onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed self-update hands git's error to Claude
+  onFeed: Feed; // a failed self-update hands git's error to Claude
   onClose: () => void;
   // A profile can carry the open session's tool switches, so the panel reads them.
   sessionTools: string[];
@@ -1081,7 +1081,7 @@ function TypePicker({ settings, autoBase, onPatch }: {
 }
 
 /** What the bridge's own checkout is running, and the pull-and-restart button. */
-function UpdatePanel({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
+function UpdatePanel({ onFeed }: { onFeed: Feed }) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   useEffect(() => {
     let live = true;

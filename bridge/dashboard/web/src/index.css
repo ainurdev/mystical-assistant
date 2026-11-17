@@ -8943,6 +8943,29 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .rl-kick.ok { color: var(--ok); } .rl-kick.warn { color: var(--warn); } .rl-kick.bad { color: var(--err); }
 .rl-sha { margin-top: 4px; font: 500 var(--t10)/1.3 var(--mono); color: var(--txf); overflow-wrap: anywhere; }
 .rl-dirty > svg { flex: none; margin-top: 2px; }
+/* UpdateReader's fixing row (design B · SESSION ROW): the AI session fixing a failed update,
+   live; the whole row opens it. Tone follows its phase: acc working, warn asking, ok done, err failed. */
+.upd-fix { --k: var(--acc); appearance: none; cursor: pointer; display: flex; flex-direction: column; gap: 5px; width: 100%; margin-top: 10px;
+  padding: 10px 11px; text-align: left; font: inherit; color: inherit; border-radius: var(--f-rad-s, 0);
+  border: 1px solid color-mix(in oklab, var(--k) 40%, transparent); background: color-mix(in oklab, var(--k) 6%, transparent); }
+.upd-fix:hover { background: color-mix(in oklab, var(--k) 12%, transparent); }
+.upd-fix.ok { --k: var(--ok); } .upd-fix.warn { --k: var(--warn); } .upd-fix.bad { --k: var(--err); }
+.upd-fix .top { display: flex; align-items: center; gap: 8px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .14em; color: var(--k); }
+.upd-fix .dot { flex: none; width: 7px; height: 7px; border-radius: 9px; background: var(--k); box-shadow: 0 0 8px var(--k); }
+.upd-fix .dot.pulse { animation: tnpulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .upd-fix .dot.pulse { animation: none; } }
+.upd-fix .go { margin-left: auto; font: 500 var(--t95) var(--mono); letter-spacing: 0; }
+.upd-fix b { font: 600 var(--t125)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
+.upd-fix .l { font: 400 var(--t95)/1.5 var(--mono); color: var(--txm); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.upd-errfold { padding: 0; }
+.upd-errfold > button { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 11px;
+  border: 0; background: transparent; font: 500 var(--t95) var(--mono); color: var(--txm); text-align: left; }
+.upd-errfold > button b { flex: none; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--err); }
+.upd-errfold > button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upd-errfold > button i { flex: none; font-style: normal; color: var(--txf); }
+.upd-errfold pre { padding: 0 11px 9px; }
+.upd-fixwrap { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.upd-fixwrap .upd-fix, .upd-fixwrap .gl-err { margin-top: 0; }
 .rl-foot { flex: none; display: flex; flex-direction: column; gap: 7px; padding: 10px 14px 12px; border-top: 1px solid var(--line, var(--border));
   background: var(--panel2, var(--panel)); }
 .rl-foot .clg-mline { margin: 0; padding: 0; border: 0; color: var(--txf); }
