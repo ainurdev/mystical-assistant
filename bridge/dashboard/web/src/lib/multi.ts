@@ -199,10 +199,13 @@ export function parseFrame(text: string | null | undefined): Frame | null {
   return { kind: "other", from: null, verb: null, body: text.slice(1).trim() };
 }
 
+/** bridge/paths.py NO_PATH: the bridge's order to Claude in front of your words, never drawn as them. */
+export const dropNoPath = (text: string) => text.replace(/^No path for this message\.\s*/, "");
+
 /** A prompt line for lists that show one row a turn (the checkpoints rail). */
 export function promptLabel(text: string): string {
   // An image in the text reads as a word in a one-line label, not as its address.
-  text = text.replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, "[image]");
+  text = dropNoPath(text).replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, "[image]");
   const f = parseFrame(text);
   if (!f) return text;
   if (f.kind === "agent") return `${f.from}: ${f.body}`;

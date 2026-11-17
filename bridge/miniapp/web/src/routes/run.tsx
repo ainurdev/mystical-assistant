@@ -23,7 +23,7 @@ import { RunMonitor } from "../components/RunMonitor";
 import { AgentBar, type AgentTab } from "../components/AgentSwitch";
 import { AgentGrid } from "../components/AgentGrid";
 import { IncomingNote } from "../components/MultiRows";
-import { parseFrame, resumeLine } from "../lib/frame";
+import { dropNoPath, parseFrame, resumeLine } from "../lib/frame";
 import { providerName, useChannel } from "../lib/multi";
 import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
@@ -499,7 +499,7 @@ function RunPage({ barKey }: { barKey: string }) {
                 {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
                 {turn.prompt && !resumed && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                    {experimental ? <PromptText text={framed ? framed.body : turn.prompt} /> : turn.prompt}
+                    {experimental ? <PromptText text={framed ? framed.body : dropNoPath(turn.prompt)} /> : dropNoPath(turn.prompt)}
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}

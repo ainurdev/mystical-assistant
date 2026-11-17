@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/multi.check.ts
-import { canOpen, clampLimit, elapsedOf, foldRows, latestActivity, mergeActions, mergeLine, parseFrame, promptLabel, rankProfiles, rowTags, skillQuery, sortRows, tally, treeIds, type AgentRow } from "./multi.ts";
+import { canOpen, clampLimit, dropNoPath, elapsedOf, foldRows, latestActivity, mergeActions, mergeLine, parseFrame, promptLabel, rankProfiles, rowTags, skillQuery, sortRows, tally, treeIds, type AgentRow } from "./multi.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -75,6 +75,8 @@ ok(mergeLine("rev", "merged").includes("uncommitted"), "merge line");
   ok(parseFrame("plain words") === null && parseFrame(null) === null, "no frame");
   ok(promptLabel("⇄ rev says. It comes from another agent.\n\nhi") === "rev: hi", "the checkpoint label");
   ok(promptLabel("mine") === "mine", "an ordinary label");
+  ok(promptLabel("No path for this message.\n\nhide it") === "hide it", "the bridge's no-path line isn't your words");
+  ok(dropNoPath("say No path for this message.") === "say No path for this message.", "only a leading no-path line comes off");
 }
 
 ok(clampLimit("max_agents", 99) === 20 && clampLimit("max_hops", 0) === 1 && clampLimit("per_account", NaN) === 1, "limits clamp");

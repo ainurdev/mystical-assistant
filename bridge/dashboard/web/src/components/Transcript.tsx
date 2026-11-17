@@ -20,7 +20,7 @@ import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, LimitCredits, useLeaveIt, type LimitLive } from "./LimitCard";
 import { limitNudge, resumeNudge } from "../lib/limit";
-import { parseFrame, promptLabel } from "../lib/multi";
+import { dropNoPath, parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
 
@@ -315,7 +315,7 @@ function TurnBlock({
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
               : frame && frame.kind !== "user" ? <IncomingNote frame={frame} at={turn.started} />
-              : <PromptBubble text={frame ? frame.body : turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} savers={savers} />}
+              : <PromptBubble text={frame ? frame.body : dropNoPath(turn.prompt)} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} savers={savers} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (

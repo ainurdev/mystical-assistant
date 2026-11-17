@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { List, X } from "lucide-react";
 import { useChat, type Turn } from "../lib/chat";
 import { useExperimental } from "../lib/multi";
+import { dropNoPath } from "../lib/frame";
 
 /* CHECKPOINTS — every prompt in this chat as one list, so a long conversation is
    navigable without scrolling through it. A turn that asked you something shows
@@ -33,7 +34,7 @@ function turnMarks(turn: Turn, n: number, multi: boolean): Mark[] {
       turnId: turn.id,
       n,
       kind: "prompt",
-      text: turn.prompt || "(no prompt)",
+      text: dropNoPath(turn.prompt || "") || "(no prompt)",
       meta: bits.join(" · "),
       tone: turn.status === "running" ? "running" : turn.status === "error" ? "failed" : "",
     },

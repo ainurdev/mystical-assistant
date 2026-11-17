@@ -14,6 +14,9 @@ export function resumeLine(prompt: string | null | undefined): string | null {
   return null;
 }
 
+/** bridge/paths.py NO_PATH: the bridge's order to Claude in front of your words, never drawn as them. */
+export const dropNoPath = (text: string) => text.replace(/^No path for this message\.\s*/, "");
+
 export const FRAME = "⇄";
 
 export type Framed = {
