@@ -28,6 +28,7 @@ import { useAiFeatures } from "../lib/ai";
 import { promptSteps, runs, STEP_DOES } from "../lib/flowsteps";
 import { flowRuns, saveRun } from "../lib/flowruns";
 import { askConfirm } from "./ui/Ask";
+import { deckView, enterTarget, turnClock, type EnterMode } from "../lib/boxdeck";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 import { HelpersRow } from "./HelpersRow";
@@ -698,7 +699,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
+  activity = "", turnStarted, dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
   /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
   words?: string[];
@@ -774,6 +775,10 @@ export function Composer({
   fileSink?: { current: ((files: FileList | File[]) => void) | null };
   /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
   placeholder?: string;
+  /** What the running turn did last, in a line (lib/multi latestActivity): the box's now strip. */
+  activity?: string;
+  /** Epoch seconds the running turn opened: the now strip's clock. */
+  turnStarted?: number;
   /** What the session waits on you for (AskDock), hung on the box's top edge in every layout. */
   dock?: ReactNode;
   /** While it waits, the box answers it: its text and its button belong to the ask. */
@@ -816,6 +821,15 @@ export function Composer({
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows">("");
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
+  // NOW|NEXT (B · DECK): what Enter does with the text while a turn runs. Alt+Enter does the other.
+  const [enterMode, setEnterMode] = useState<EnterMode>("next");
+  const [nowSec, setNowSec] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    if (!running || !turnStarted) return;
+    setNowSec(Date.now() / 1000);
+    const t = window.setInterval(() => setNowSec(Date.now() / 1000), 1000);
+    return () => window.clearInterval(t);
+  }, [running, turnStarted]);
   const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
@@ -1692,6 +1706,26 @@ export function Composer({
       {ask.label}</button>
   );
   const softSteer = multi?.caps?.steer === "soft";
+  // After the answer it ends the background tasks, so it says so.
+  const stopBtn = (
+    <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"} {...keyAttrs(SHORTCUTS.stop.keys)}
+      title={bg ? "STOP — end the background tasks this turn left running; its answer stays" : "STOP — interrupt this turn now"}>
+      <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />{bg ? "Stop them" : null}</button>
+  );
+  // The graceful counterpart to STOP: no interrupt, no half-written
+  // file — the turn lands, then the loop holds. It keeps its armed
+  // state here so the banner is confirmation, not the only tell.
+  const pauseBtn = onTogglePause && (
+    <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
+      aria-label={paused ? "Resume" : "Pause"}
+      title={paused
+        ? "PAUSED — nothing starts after this turn. Click to resume."
+        : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
+      <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+  );
+  const steerTip = softSteer
+    ? `STEER — ${agentPick?.label.toLowerCase() ?? "this agent"} takes this ${STEER_SOFT_WORDS}: the running tool finishes, then it reads your message and carries on (falls back to queueing if the run just ended)`
+    : "STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)";
   const actions = (withDesign: boolean) => askBtn ? (
     <>
       {running && (
@@ -1703,28 +1737,12 @@ export function Composer({
     </>
   ) : running ? (
     <>
-      {/* After the answer it ends the background tasks, so it says so. */}
-      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"} {...keyAttrs(SHORTCUTS.stop.keys)}
-        title={bg ? "STOP — end the background tasks this turn left running; its answer stays" : "STOP — interrupt this turn now"}>
-        <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />{bg ? "Stop them" : null}</button>
-      {/* The graceful counterpart to STOP: no interrupt, no half-written
-          file — the turn lands, then the loop holds. It keeps its armed
-          state here so the banner is confirmation, not the only tell. */}
-      {onTogglePause && (
-        <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
-          aria-label={paused ? "Resume" : "Pause"}
-          title={paused
-            ? "PAUSED — nothing starts after this turn. Click to resume."
-            : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
-          <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
-      )}
+      {stopBtn}
+      {pauseBtn}
       <span className="act-fence" aria-hidden />
       {withDesign && designBtn}
       {onSteer && (
-        <button className="act-alt caps" onClick={steer} disabled={!text.trim()}
-          title={softSteer
-            ? `STEER — ${agentPick?.label.toLowerCase() ?? "this agent"} takes this ${STEER_SOFT_WORDS}: the running tool finishes, then it reads your message and carries on (falls back to queueing if the run just ended)`
-            : "STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)"}>
+        <button className="act-alt caps" onClick={steer} disabled={!text.trim()} title={steerTip}>
           Steer <SteerIcon />{softSteer && <span className="ma-soft">{STEER_SOFT_WORDS}</span>}</button>
       )}
       <button className="act-pri queue caps" onClick={submit} disabled={disabled || !text.trim()}
@@ -1792,12 +1810,7 @@ export function Composer({
       {/* .pb-ww: the words a narrow box drops (index.css), the glyphs and the count stay */}
       {paused ? <><Pause size={9} strokeWidth={0} fill="currentColor" aria-hidden /><span className="pb-ww">paused</span></>
         : running && <><i aria-hidden /><span className="pb-ww">working</span></>}
-      {nq > 0 && (
-        <button type="button" aria-expanded={openDrop === "queued"} title={queued!.map((q) => q.text).join("\n")}
-          onClick={() => setOpenDrop((d) => (d === "queued" ? "" : "queued"))}>
-          {(running || paused) && <span className="pb-ww">· </span>}{nq} {paused ? "held" : "queued"} <i aria-hidden>▾</i>
-        </button>
-      )}
+      {nq > 0 && <span className="pb-wq">{(running || paused) && <span className="pb-ww">· </span>}{nq} {paused ? "held" : "queued"}</span>}
       {paused && onTogglePause && (
         <button type="button" className="pb-resume" onClick={onTogglePause} aria-label="Resume" title="Let queued prompts and goal nudges run again">
           <Play size={8} strokeWidth={0} fill="currentColor" aria-hidden /><span className="pb-ww">RESUME</span></button>
@@ -1816,10 +1829,71 @@ export function Composer({
       ))}
     </div>
   );
+  // B · DECK (.mystical/design-drafts/prompt-box-v2): mid-turn the box says what the turn is
+  // doing now, with its clock, the login warning and Pause/Stop, so the keys keep one job:
+  // Enter's target, picked by NOW|NEXT. The queue stacks above the box as a deck, NEXT nearest.
+  const deckRun = shelled && running && !askBtn;
+  const nowStrip = deckRun && (
+    <div className="pb-now" role="status">
+      <i className="pb-now-dot" aria-hidden />
+      <span className="pb-now-what" title={activity || undefined}>{activity || "working…"}</span>
+      {bg > 0 && <span className="pb-now-bg">+ {bg} background</span>}
+      {dryPill}
+      {turnStarted ? <span className="pb-now-clock">{turnClock(nowSec - turnStarted)}</span> : null}
+      {pauseBtn}
+      {stopBtn}
+    </div>
+  );
+  const steers = enterTarget(enterMode, false, !!onSteer) === "steer";
+  const deckKeys = deckRun && (
+    <>
+      {onSteer && (
+        <div className="pb-mode" role="radiogroup" aria-label="What Enter does">
+          <button type="button" role="radio" aria-checked={enterMode === "now"} onClick={() => setEnterMode("now")}
+            title="NOW — Enter folds the text into the running turn (Alt+Enter queues it)">Now</button>
+          <button type="button" role="radio" aria-checked={enterMode === "next"} onClick={() => setEnterMode("next")}
+            title="NEXT — Enter queues the text after this turn (Alt+Enter steers)">Next</button>
+        </div>
+      )}
+      {steers ? (
+        <button className="act-pri caps" onClick={steer} disabled={!text.trim()} title={`${steerTip} (Enter)`}>
+          Steer <SteerIcon /></button>
+      ) : (
+        <button className="act-pri queue caps" onClick={submit} disabled={disabled || !text.trim()}
+          title={`QUEUE — run this prompt after the current turn (Enter${onSteer ? "; Alt+Enter steers" : ""})`}>
+          Queue <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      )}
+    </>
+  );
+  const deck = shelled && nq > 0 && (() => {
+    const { shown, more } = deckView(queued!, 3);
+    const qBtn = { appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "inherit", lineHeight: 1, padding: 0, display: "flex" } as CSSProperties;
+    return (
+      <div className="pb-deck">
+        {more > 0 && (
+          <button type="button" className="pb-dk pb-dk-more" style={{ "--d": shown.length } as CSSProperties}
+            aria-expanded={openDrop === "queued"} onClick={() => setOpenDrop((d) => (d === "queued" ? "" : "queued"))}>
+            + {more} more {paused ? "held" : "queued"} <i aria-hidden>▾</i></button>
+        )}
+        {shown.map((q, i) => ({ q, i })).reverse().map(({ q, i }) => (
+          <div key={q.id} className="pb-dk" data-next={i === 0 ? "" : undefined} style={{ "--d": i } as CSSProperties}>
+            {i === 0 && <span className="pb-dk-lab">{paused ? "HELD" : "NEXT"}</span>}
+            <span className="pb-dk-n">{i + 1}</span>
+            <span className="pb-dk-tx" title={q.text}>{q.text}</span>
+            <span className="pb-dk-ac">
+              {running && onSteerQueued && <button style={qBtn} onClick={() => onSteerQueued(q.id)} aria-label="Steer" title="Steer — fold this into the turn that's running now"><SteerIcon size={12} /></button>}
+              {onEjectQueued && <button style={qBtn} onClick={() => onEjectQueued(q.id)} aria-label="Run in a new session" title="Run in a new session">↗</button>}
+              {onCancelQueued && <button style={qBtn} onClick={() => onCancelQueued(q.id)} aria-label="Remove from queue" title="Remove from queue">✕</button>}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  })();
   // CSS hides an empty ledger and, past one live item, every pill's
   // description (.pill-desc) — busy means terse.
   const ledger = (className: string) => (
-    <div className={`pb-ledger ${className}`}>{dryPill}{pills}</div>
+    <div className={`pb-ledger ${className}`}>{deckRun ? null : dryPill}{pills}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1966,7 +2040,12 @@ export function Composer({
         // CTRL+ENTER mode leaves a bare Enter to the editor, which makes it
         // the markdown-aware newline Shift+Enter is in the default mode.
         const send = sendKey === "ctrl-enter" ? e.ctrlKey || e.metaKey : !e.shiftKey;
-        if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
+        if (e.key === "Enter" && send) {
+          e.preventDefault();
+          // Mid-turn the shell's NOW|NEXT switch picks the target; Alt+Enter the other one.
+          if (shelled && running && !ask?.send && enterTarget(enterMode, e.altKey, !!onSteer) === "steer") steer();
+          else submit();
+        }
       }}
       onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
       onAttach={() => fileRef.current?.click()}
@@ -1976,6 +2055,7 @@ export function Composer({
       }}
       placeholder={ask?.placeholder ?? (disabled ? "working…" : starter ? `${starter} · Tab writes it` : running
         ? bg ? `Steer keeps the ${bg === 1 ? "background task" : `${bg} background tasks`} running; a queued prompt can end ${bg === 1 ? "it" : "them"}…`
+          : shelled && enterTarget(enterMode, false, !!onSteer) === "steer" ? "steer this turn — it reads your message next…"
           : "queue a prompt — runs after the current turn…"
         : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
     />
@@ -2177,12 +2257,14 @@ export function Composer({
         <div className="pb-tabs pb-lead">{lead}{workTab}{queuedList}{ctxBlock}</div>
         {dock}
         {embedNote}
-        <div {...boxProps} className="cmdbox pb-card">
+        {deck}
+        <div {...boxProps} className="cmdbox pb-card" data-deck={deck ? "" : undefined}>
+          {nowStrip}
           {ledger("")}
           <div className="pb-line">
             {plusBtn}{flowBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
             <div className="pb-body">{attachRow}{editor}</div>
-            <div className="pb-keys">{actions(false)}</div>
+            <div className="pb-keys">{deckKeys || actions(false)}</div>
           </div>
           {rail}
         </div>

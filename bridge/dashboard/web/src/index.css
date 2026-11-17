@@ -5410,6 +5410,44 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-work > button > i { font-style: normal; font-size: var(--t8); }
 .pb-work > .pb-resume { display: inline-flex; align-items: center; font-size: var(--t85); letter-spacing: 1.2px; padding: 1px 6px; border: 1px solid var(--warn); color: var(--warn); }
 .pb-resume > svg { display: none; }
+.pb-work > .pb-wq { color: var(--purple-h); }
+
+/* B · DECK (.mystical/design-drafts/prompt-box-v2). Mid-turn the card opens with a now strip: what
+   the turn did last, its clock, the login warning, Pause and Stop; a light runs along its top edge. */
+.pb-card[data-running] { border-color: color-mix(in oklab, var(--ok) 35%, var(--line, transparent)) !important; }
+.pb-card[data-running]::before { content: ""; position: absolute; top: -1px; left: 0; width: 30%; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--ok), transparent); animation: pb-sweep 2.8s ease-in-out infinite alternate; }
+@keyframes pb-sweep { from { transform: translateX(0); } to { transform: translateX(233%); } }
+@media (prefers-reduced-motion: reduce) { .pb-card[data-running]::before { animation: none; left: 35%; } }
+.pb-now { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 12px 7px 14px; border-bottom: 1px solid var(--line, color-mix(in srgb, var(--acc) 10%, transparent));
+  background: color-mix(in oklab, var(--ok) 4%, transparent); font-family: var(--ui-font, inherit); font-size: var(--t105); color: var(--txm); }
+.pb-now-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 22%, transparent); }
+.pb-now-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txh); }
+.pb-now-bg { flex: none; color: var(--purple-h); }
+.pb-now > .pb-dry { flex: 0 1 auto; min-width: 0; }
+.pb-now-clock { flex: none; font-family: var(--mono, monospace); font-size: var(--t10); color: var(--txl); font-variant-numeric: tabular-nums; }
+/* NOW|NEXT: what Enter does with the text while a turn runs */
+.pb-mode { display: flex; flex: none; height: 28px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-radius: var(--f-rad-s, 0); overflow: hidden; }
+.pb-mode > button { appearance: none; cursor: pointer; border: 0; background: none; padding: 0 9px; font-family: var(--ui-font, inherit);
+  font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); }
+.pb-mode > button[aria-checked="true"] { background: color-mix(in oklab, var(--txb) 9%, transparent); color: var(--txh); }
+.pb-mode > button:hover:not([aria-checked="true"]) { color: var(--txm); }
+/* the queue as a deck: strips stacked above the card, NEXT nearest and widest */
+.pb-deck { display: flex; flex-direction: column; padding: 0 10px; position: relative; z-index: 26; }
+.pb-dk { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 12px; min-width: 0;
+  margin: 0 calc(var(--d, 0) * 12px); margin-top: -3px; border: 1px solid var(--line2, color-mix(in srgb, var(--purple) 24%, transparent)); border-bottom: 0;
+  border-radius: var(--f-rad-s, 0) var(--f-rad-s, 0) 0 0; background: color-mix(in oklab, var(--panel) 92%, var(--canvas, #000));
+  font-family: var(--ui-font, inherit); font-size: var(--t105); color: var(--txm); }
+.pb-dk:first-child { margin-top: 0; }
+.pb-dk[data-next] { background: var(--panel); color: var(--txh); }
+.pb-dk-lab { flex: none; font-size: var(--t85); font-weight: 700; letter-spacing: .12em; color: var(--purple-h); }
+.pb-dk-n { flex: none; font-family: var(--mono, monospace); font-size: var(--t10); color: var(--purple); }
+.pb-dk-tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-dk-ac { flex: none; display: flex; gap: 10px; color: var(--txl); font-size: var(--t11); opacity: 0; transition: opacity .12s; }
+.pb-dk:is(:hover, :focus-within, [data-next]) .pb-dk-ac { opacity: 1; }
+.pb-dk-ac > button:hover { color: var(--txh) !important; }
+.pb-dk-more { appearance: none; cursor: pointer; justify-content: center; font-size: var(--t10); color: var(--purple-h); }
+.pb-dk-more > i { font-style: normal; font-size: var(--t8); }
 
 /* narrow: names give way first, then the words around the numbers */
 @container (max-width: 640px) {
