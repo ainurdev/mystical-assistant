@@ -419,7 +419,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
               {pics.map((x, pi) => (
                 <button key={x.o.label} type="button" className="ad-chip" aria-pressed={chosen.includes(x.o.label)} data-shown={pi === shown ? "" : undefined}
                   disabled={sending} onClick={() => { setShown(pi); if (!readOnly) onPick(x.o.label); }}>
-                  <Key k={x.key} on={chosen.includes(x.o.label)} />{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}
+                  <Key k={x.key} on={chosen.includes(x.o.label)} />{x.name}{x.rec && <span className="ad-sug">Recommended</span>}
                   {x.pv.shots.length > 0 && <small>{x.pv.shots.length === 1 ? "1 shot" : `${x.pv.shots.length} shots`}</small>}
                 </button>
               ))}
@@ -437,7 +437,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
                   <span className="ad-th ad-frame">{layers(x, (k) => k === kOf(x))}{same}</span>
                   <span className="ad-meta">
                     <Key k={x.key} on={on} />
-                    <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}</span>
+                    <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug">Recommended</span>}</span>
                     {x.o.description && <span className="ad-desc">{x.o.description}</span>}
                   </span>
                 </button>
