@@ -415,7 +415,7 @@ export function Terminal({
     // how the old peek got stuck showing the tail at the top of the scroll.
     const measure = () => {
       raf = 0;
-      const edge = root.getBoundingClientRect().top + ISLE_EDGE;
+      const edge = root.getBoundingClientRect().top + isleBottom;
       let best: number | null = null;
       for (const el of root.querySelectorAll<HTMLElement>("[data-prompt-idx]")) {
         if (el.getBoundingClientRect().top >= edge) continue;
@@ -436,7 +436,7 @@ export function Terminal({
       ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [scrollRef, contentRef, view, empty, turns.length]);
+  }, [scrollRef, contentRef, view, empty, turns.length, isleBottom]);
 
   // What the bar says. Held past the point the bar hides so leaving the top of a
   // turn is a fade-out, not a blank bar sliding away.
@@ -451,7 +451,7 @@ export function Terminal({
   // No LAST row beside a pill (it has no row to fold out of), nor when HEADER ▸ LAST LINE is off.
   const showPeek = !empty && !pill && head.last && peekIdx !== null && !!held.current;
   // HEADER ▸ FADE: a mask on the scroller, so the words fade into whatever ground is behind them.
-  const band = fadeBand(head.fade, isleBottom + (showPeek ? PEEK_H : 0), pill);
+  const bandAt = (peek: boolean) => fadeBand(head.fade, isleBottom + (peek ? PEEK_H : 0), pill);
   // HEADER ▸ HIDE WHILE READING: the island slides away while you scroll down,
   // and back on any scroll up, near the top, or when the pointer nears it.
   const isleRef = useRef<HTMLDivElement | null>(null);
@@ -465,11 +465,20 @@ export function Terminal({
       const y = root.scrollTop, d = y - last;
       last = y;
       if (y < 80 || d < -4) setTucked(false);
-      else if (d > 4 && !isleRef.current?.matches(":focus-within")) setTucked(true);
+      // Off the tail only: following a streaming reply scrolls down too, and that isn't reading.
+      else if (d > 4 && root.scrollHeight - y - root.clientHeight > 40 && !isleRef.current?.matches(":focus-within")) setTucked(true);
     };
+    setTucked(false);
     root.addEventListener("scroll", on, { passive: true });
     return () => root.removeEventListener("scroll", on);
-  }, [scrollRef, tuckOn, view]);
+  }, [scrollRef, tuckOn, view, sessionId]);
+  // COMPACT with nothing to hold draws no pill (below), and a tucked header is
+  // gone: no fade for a header that isn't there.
+  const isleShown = !(compact && isChat && !chrome && !hasAgents && !hasSubs && !tset);
+  const band = isleShown && !tucked ? bandAt(showPeek) : null;
+  // The words' top padding clears the band at rest, without the LAST row, so
+  // that row opening (or the header tucking) never moves the transcript.
+  const restTo = isleShown ? bandAt(false)?.to ?? 0 : 0;
 
   // Presentation only: whether the load has run long enough to be worth showing.
   // The retune below still gates on the raw `loading`, which is what actually
@@ -552,7 +561,7 @@ export function Terminal({
       {/* --isle-b: where an open WORK zone's header pins (index.css, DOSSIER): level with the
           compact pill, which then floats over the plate's right end (data-isle=pill hides those
           chips while pinned); under the island bar and its LAST row otherwise */}
-      <div ref={scrollRef} data-style="dossier" data-isle={pill && !band ? "pill" : "bar"} className="mscroll mscroll-bare" style={{ ...({ "--isle-b": `${pill ? band?.to ?? ISLE_TOP : isleBottom + 6 + (showPeek ? PEEK_H : 0)}px` } as CSSProperties),
+      <div ref={scrollRef} data-style="dossier" data-isle={pill && !restTo ? "pill" : "bar"} className="mscroll mscroll-bare" style={{ ...({ "--isle-b": `${pill ? restTo || ISLE_TOP : isleBottom + 6 + (showPeek ? PEEK_H : 0)}px` } as CSSProperties),
           // Faded, a pinned WORK header waits below the fade, not level with the pill.
           ...(band ? { maskImage: fadeMask(band), WebkitMaskImage: fadeMask(band) } : {}), flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
@@ -563,7 +572,7 @@ export function Terminal({
             below it: parked at the top nothing has slid under it, so the
             LAST row stays folded and the transcript opens on its first
             message, not on a header repeating it. */}
-        <div ref={contentRef} style={{ minHeight: "100%", padding: `${Math.max(ISLE_EDGE + 12, band?.to ?? 0)}px 0 16px`, position: "relative" }}>
+        <div ref={contentRef} style={{ minHeight: "100%", padding: `${Math.max(ISLE_EDGE + 12, restTo)}px 0 16px`, position: "relative" }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState
               flashing in front of a transcript that's about to arrive. */}
@@ -745,13 +754,13 @@ export function Terminal({
         {/* One switch for every view of this chat: there were two, each with its own CHAT. */}
         {isChat && (hasAgents || hasSubs || (!!tset && !!sessionId)) && (
           <span className="ma-viewsw" role="group" aria-label="Chat views">
-            <button type="button" aria-pressed={!grid && !team && !tkLive} onClick={() => { setGridFor(null); setTeam(false); if (tset && sessionId) setLivePick({ id: sessionId, on: false }); }}>CHAT</button>
-            {hasSubs && <button type="button" aria-pressed={team} onClick={() => { setGridFor(null); setTeam(true); }} title="This chat's sub-agents: who's working, what they're doing, what they said">AGENTS{subsWorking ? ` ${subsWorking}` : ""}</button>}
-            {hasAgents && <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>}
+            <button type="button" aria-pressed={!grid && !team && !tkLive} onClick={() => { setGridFor(null); setTeam(false); if (tset && sessionId) setLivePick({ id: sessionId, on: false }); }} className="caps">Chat</button>
+            {hasSubs && <button type="button" aria-pressed={team} onClick={() => { setGridFor(null); setTeam(true); }} title="This chat's sub-agents: who's working, what they're doing, what they said" className="caps">Agents{subsWorking ? ` ${subsWorking}` : ""}</button>}
+            {hasAgents && <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)} className="caps">Grid</button>}
             {!!tset && sessionId && (
               <button type="button" aria-pressed={tkLive} onClick={() => { setGridFor(null); setTeam(false); setLivePick({ id: sessionId, on: true }); }}
-                title={`This chat's tickets: ${tset.done} of ${tset.total} done`}>
-                TICKETS {tset.done}/{tset.total}
+                title={`This chat's tickets: ${tset.done} of ${tset.total} done`} className="caps">
+                Tickets {tset.done}/{tset.total}
                 <i aria-hidden className="vs-prog" style={{ "--p": `${tset.total ? (100 * tset.done) / tset.total : 0}%` } as CSSProperties} />
               </button>
             )}
@@ -794,7 +803,7 @@ export function Terminal({
     // right as a pill — a thing that holds numbers, not a bar pretending to be
     // the column's top edge. No corner brackets: they belong to a rectangle.
     // HEADER ▸ GLASS rides data-glass (index.css); tucked, it slides up out of the column.
-    <div ref={isleRef} className={pill ? "isle isle-pill" : "panel isle"} data-glass={head.glass} data-tucked={tucked || undefined} style={{
+    <div ref={isleRef} className={pill ? "isle isle-pill" : "panel isle"} data-glass={head.glass} data-tucked={tucked || undefined} inert={tucked || undefined} style={{
       ...(pill
         ? isChat
           ? { position: "absolute", top: ISLE_TOP, right: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${isleGutter} + ${ISLE_X}px))` }
@@ -857,7 +866,7 @@ export function Terminal({
         paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
-      {!(compact && isChat && !chrome && !hasAgents && !hasSubs && !tset) && island}
+      {isleShown && island}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>

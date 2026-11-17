@@ -989,9 +989,9 @@ function PreviewHead({ settings, pill }: { settings: HudSettings; pill: boolean 
         height: settings.layout === "compact" ? 34 : 40, padding: "0 12px" }}>
         {h.search && <span className="ma-cs-btn"><Search size={13} strokeWidth={2} aria-hidden /></span>}
         <span className="ma-viewsw">
-          <button type="button" aria-pressed>CHAT</button>
-          <button type="button">AGENTS 2</button>
-          <button type="button">TICKETS 3/5<i aria-hidden className="vs-prog" style={{ "--p": "60%" } as CSSProperties} /></button>
+          <button type="button" aria-pressed className="caps">Chat</button>
+          <button type="button" className="caps">Agents 2</button>
+          <button type="button" className="caps">Tickets 3/5<i aria-hidden className="vs-prog" style={{ "--p": "60%" } as CSSProperties} /></button>
         </span>
       </div>
     </div>
@@ -5056,11 +5056,12 @@ export function SettingsModal(props: SettingsModalProps) {
                     <Row label="HIDE WHILE READING" desc="slides away as you scroll down, back on scroll up">
                       <Switch on={settings.head.hide} onClick={() => headPatch({ hide: !settings.head.hide })} />
                     </Row>
-                    {!(settings.layout === "compact" && settings.head.shape === "pill") && (
-                      <Row label="LAST LINE" desc="when scrolled up, name the turn you're in and jump to the end">
-                        <Switch on={settings.head.last} onClick={() => headPatch({ last: !settings.head.last })} />
-                      </Row>
-                    )}
+                    {/* Always drawn, so picking a shape never resizes the card; a pill has no row for it. */}
+                    <Row label="LAST LINE" desc={settings.layout === "compact" && settings.head.shape === "pill"
+                      ? "in the bar: when scrolled up, name the turn you're in (a pill has no room for it)"
+                      : "when scrolled up, name the turn you're in and jump to the end"}>
+                      <Switch on={settings.head.last} onClick={() => headPatch({ last: !settings.head.last })} />
+                    </Row>
                     <Row label="SEARCH BUTTON" desc="the ⌕ that searches this chat">
                       <Switch on={settings.head.search} onClick={() => headPatch({ search: !settings.head.search })} />
                     </Row>
