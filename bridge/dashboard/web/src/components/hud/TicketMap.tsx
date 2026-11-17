@@ -308,12 +308,14 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
  *  carries a ‹ back crumb and a TicketBrief). It replaced a grid of live tiles (C · LIVE GRID):
  *  a tile's tool-name tail read nothing like a session, so following a ticket was hard. */
 const RANK: Record<Kind, number> = { ask: 0, you: 0.5, fix: 1, idle: 2, run: 3, q: 4, done: 5 };
-export function TicketList({ sessionId, status, onOpenSession }: {
+export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void;
+  /** Where the list starts: below the chat's header island, which floats over the column. */
+  top?: number;
 }) {
   const [set, reload] = useTicketSet(sessionId);
   const v = useSetView(set, status, reload, onOpenSession);
-  if (!v) return <div className="tl-live"><div className="tl-empty">No ticket set in this session.</div></div>;
+  if (!v) return <div className="tl-live" style={{ paddingTop: top }}><div className="tl-empty">No ticket set in this session.</div></div>;
   const { ns, kinds, name, facts, ops, call, action, dots } = v;
   const tk = v.set.tickets;
   const now = (n: string) => {
@@ -330,7 +332,7 @@ export function TicketList({ sessionId, status, onOpenSession }: {
   const mergeSid = v.set.merge_session;
   const into = v.set.feature_branch || "the feature branch";
   return (
-    <div className="tl-live" role="region" aria-label={`Tickets: ${name}`}>
+    <div className="tl-live" role="region" aria-label={`Tickets: ${name}`} style={{ paddingTop: top }}>
       <div className="tl-bar">
         <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Tickets</span>
         {dots}<span className="tm-c">{facts}</span>

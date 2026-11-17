@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
+import { fadeBand, fadeMask, type HeadLook } from "../../lib/headlook";
 
 import { ago, projectName, setClock12, useClock12, windowLabels } from "../../lib/surfaces";
 import { fmtOffset, matchZones, placeName, zoneCity, zoneList, zoneTime } from "../../lib/almanac";
@@ -256,6 +257,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
+  { tab: "transcript", sec: "HEADER", terms: "header island pill bar shape fade dissolve gradient glass frosted blur clear solid transparent hide scroll auto-hide last line search switch chat agents tickets" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain noise paper lamp light haze wash mat wallpaper chat background" },
@@ -947,12 +949,19 @@ const SAMPLE_ANSWER = "The strip counted pictures per turn, not per WORK zone, s
  *  re-declares the type scale (index.css), so its --fs reaches every --t*
  *  inside; --ui-font is the face DOSSIER's prose reads (--d-face). Inert: a
  *  picture, not a turn. */
-function TypePreview({ stack, size, settings }: { stack: string; size: number; settings: HudSettings }) {
+function TypePreview({ stack, size, settings, withHead }: { stack: string; size: number; settings: HudSettings; withHead?: boolean }) {
   const now = Math.floor(Date.now() / 1000);
+  // CHAT's preview wears the header too (HEADER's rows), with the turn starting
+  // a little under it, so its fade and glass show on real words.
+  const pill = settings.layout === "compact" && settings.head.shape === "pill";
+  const bottom = settings.layout === "compact" ? 44 : 50;
+  const band = withHead ? fadeBand(settings.head.fade, bottom, pill) : null;
   return (
     <div className="typepv" inert data-bg={settings.chatBg} data-layout={settings.layout}
-      style={{ "--fs": `${size}px`, "--ui-font": stack } as CSSProperties}>
-      <div data-style="dossier" style={{ fontFamily: "var(--mono)", fontSize: "var(--t13)", lineHeight: 1.6 }}>
+      style={{ "--fs": `${size}px`, "--ui-font": stack, ...(withHead ? { paddingTop: 0 } : {}) } as CSSProperties}>
+      {withHead && <PreviewHead settings={settings} pill={pill} />}
+      <div data-style="dossier" style={{ fontFamily: "var(--mono)", fontSize: "var(--t13)", lineHeight: 1.6,
+        ...(withHead ? { paddingTop: bottom - 18 } : {}), ...(band ? { maskImage: fadeMask(band), WebkitMaskImage: fadeMask(band) } : {}) }}>
         <div className="dturn flex flex-col gap-2" data-last>
           <div className="dprompt"><PromptBubble text={SAMPLE_ASK} at={now - 126} run={SAMPLE_RUN} /></div>
           <div className="dreply relative space-y-1.5">
@@ -961,6 +970,29 @@ function TypePreview({ stack, size, settings }: { stack: string; size: number; s
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** The chat header as HEADER's rows draw it (Terminal.tsx's island, standing still): the
+ *  view switch, the ⌕ when it is on, in a pill or a bar, behind its glass. */
+function PreviewHead({ settings, pill }: { settings: HudSettings; pill: boolean }) {
+  const h = settings.head;
+  return (
+    <div className={pill ? "isle isle-pill" : "panel isle"} data-glass={h.glass}
+      style={{ position: "absolute", top: 8, zIndex: 2, ...(pill ? { right: 16 } : { left: 16, right: 16 }),
+        borderRadius: pill ? 999 : undefined, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+      <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit",
+        background: `color-mix(in srgb, var(--panel) ${pill ? 97 : 88}%, transparent)`, backdropFilter: "blur(10px) saturate(1.15)" }} />
+      <div className="isle-reads" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10,
+        height: settings.layout === "compact" ? 34 : 40, padding: "0 12px" }}>
+        {h.search && <span className="ma-cs-btn"><Search size={13} strokeWidth={2} aria-hidden /></span>}
+        <span className="ma-viewsw">
+          <button type="button" aria-pressed className="caps">Chat</button>
+          <button type="button" className="caps">Agents 2</button>
+          <button type="button" className="caps">Tickets 3/5<i aria-hidden className="vs-prog" style={{ "--p": "60%" } as CSSProperties} /></button>
+        </span>
       </div>
     </div>
   );
@@ -4608,6 +4640,8 @@ export function SettingsModal(props: SettingsModalProps) {
     onSetUnit,
     onSetPlace,
   } = props;
+  // HEADER rows patch one field of the look (lib/headlook) and keep the rest.
+  const headPatch = (p: Partial<HeadLook>) => onPatch({ head: { ...settings.head, ...p } });
 
   // A caller may still name one of the tabs AI MANAGEMENT replaced; it lands
   // on that page, on the fold the tab became.
@@ -4994,6 +5028,47 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
 
                 <Section
+                  title="HEADER"
+                  top
+                  info="The island over the chat: its view switch (CHAT, AGENTS, TICKETS), search and readouts. SHAPE is for COMPACT, where it is a pill on the right or a bar across the top. FADE dissolves the chat before it reaches the header, so no half line sits beside or under it. GLASS is how much of the chat shows through the header itself."
+                >
+                  <div style={CARD}>
+                    {settings.layout === "compact" && (
+                      <Row first label="SHAPE" desc="a pill on the right, or a bar across the top">
+                        <div style={{ width: 300 }}>
+                          <Segmented options={[{ label: "PILL", value: "pill" }, { label: "BAR", value: "bar" }]}
+                            value={settings.head.shape} onPick={(shape) => headPatch({ shape })} />
+                        </div>
+                      </Row>
+                    )}
+                    <Row first={settings.layout !== "compact"} label="FADE UNDER IT" desc="how the chat dissolves as it scrolls under the header">
+                      <div style={{ width: 300 }}>
+                        <Segmented options={[{ label: "OFF", value: "off" }, { label: "SOFT", value: "soft" }, { label: "DEEP", value: "deep" }]}
+                          value={settings.head.fade} onPick={(fade) => headPatch({ fade })} />
+                      </div>
+                    </Row>
+                    <Row label="GLASS" desc="see-through, blurred, or a solid panel">
+                      <div style={{ width: 300 }}>
+                        <Segmented options={[{ label: "CLEAR", value: "clear" }, { label: "FROSTED", value: "frosted" }, { label: "SOLID", value: "solid" }]}
+                          value={settings.head.glass} onPick={(glass) => headPatch({ glass })} />
+                      </div>
+                    </Row>
+                    <Row label="HIDE WHILE READING" desc="slides away as you scroll down, back on scroll up">
+                      <Switch on={settings.head.hide} onClick={() => headPatch({ hide: !settings.head.hide })} />
+                    </Row>
+                    {/* Always drawn, so picking a shape never resizes the card; a pill has no row for it. */}
+                    <Row label="LAST LINE" desc={settings.layout === "compact" && settings.head.shape === "pill"
+                      ? "in the bar: when scrolled up, name the turn you're in (a pill has no room for it)"
+                      : "when scrolled up, name the turn you're in and jump to the end"}>
+                      <Switch on={settings.head.last} onClick={() => headPatch({ last: !settings.head.last })} />
+                    </Row>
+                    <Row label="SEARCH BUTTON" desc="the ⌕ that searches this chat">
+                      <Switch on={settings.head.search} onClick={() => headPatch({ search: !settings.head.search })} />
+                    </Row>
+                  </div>
+                </Section>
+
+                <Section
                   title="COMPOSER"
                   top
                   info="ENTER sends on Enter, and Shift+Enter starts a new line. CTRL+ENTER swaps them: Enter starts a new line and Ctrl+Enter (Cmd+Enter on a Mac) sends — for prompts you write across several lines."
@@ -5118,7 +5193,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 </div>
                 <aside className="tr-pv" aria-label="preview">
                   <div className="tp-bar"><b>Preview</b><span>{settings.layout} · {settings.chatBg}</span></div>
-                  <TypePreview stack={faceStack(settings.font, settings.theme)} size={settings.baseFont || autoBase} settings={settings} />
+                  <TypePreview stack={faceStack(settings.font, settings.theme)} size={settings.baseFont || autoBase} settings={settings} withHead />
                 </aside>
               </div>
             )}

@@ -75,10 +75,16 @@ button.ma-tr-row:hover { background: var(--ac-08, color-mix(in srgb, var(--acc) 
 .tk-kid .tm { font-size: var(--t95); color: var(--txd); }
 
 /* ---- the nameplate's CHAT | GRID and a helper's path back ---- */
-.ma-viewsw { display: inline-flex; flex: none; border: 1px solid color-mix(in srgb, var(--acc) 20%, transparent); border-radius: var(--f-rad-s, 0); overflow: hidden; }
-.ma-viewsw button { appearance: none; padding: 1px 7px; border: 0; background: none; cursor: pointer; font-family: var(--mono); font-size: var(--t85, var(--t9)); letter-spacing: 1.2px; color: var(--txd); }
+/* One switch for the chat's views (Terminal.tsx): CHAT · AGENTS · GRID · TICKETS, 24px like the ⌕ beside it.
+   Buttons are inline-block, not flex: ::first-letter (natural case in Middle-earth) needs a block container. */
+.ma-viewsw { display: inline-flex; flex: none; height: 24px; border: 1px solid color-mix(in srgb, var(--acc) 20%, transparent); border-radius: var(--f-rad-s, 0); overflow: hidden; }
+.ma-viewsw button { position: relative; display: inline-block; line-height: 22px; white-space: nowrap; appearance: none; padding: 0 8px; border: 0; background: none; cursor: pointer; font-family: var(--mono); font-size: var(--t85, var(--t9)); letter-spacing: 1.2px; color: var(--txd); }
 .ma-viewsw button:hover { color: var(--txb); }
 .ma-viewsw button[aria-pressed="true"] { color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.ma-viewsw button + button { border-left: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
+/* TICKETS d/t: the set's progress, a 2px line along the button's foot. */
+.ma-viewsw .vs-prog { position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; border-radius: 2px; pointer-events: none;
+  background: linear-gradient(to right, var(--ok) var(--p), color-mix(in srgb, var(--txl) 30%, transparent) var(--p)); }
 .ma-crumb { appearance: none; flex: 0 1 auto; min-width: 0; max-width: 240px; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; font-size: var(--t95);
   color: var(--acc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ma-crumb:hover { color: var(--txb); }
