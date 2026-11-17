@@ -40,7 +40,8 @@ const STATE: Record<string, { label: string }> = {
   todo: { label: "Not started" }, done: { label: "Done" }, dropped: { label: "Dropped" },
 };
 const GROUPS = [["needs", "Needs you"], ["building", "Building"], ["next", "Up next"], ["done", "Done"]] as const;
-const errorOf = (e: unknown) => (e instanceof Error ? e.message : "That didn't work.");
+// A bridge still running code from before tasks started flows has no worklist/start: say how to make this live.
+const errorOf = (e: unknown) => (e instanceof Error ? (e.message === "No such route." ? "The bridge runs older code. Press ⟳ to make this live." : e.message) : "That didn't work.");
 
 /** As tall as its text, so it never scrolls. */
 const fitBox = (el: HTMLTextAreaElement | null) => {
@@ -70,11 +71,16 @@ const slug = (t: string) => {
   return (s.length > 40 ? s.slice(0, 41).replace(/-[^-]*$/, "") : s) || "task";
 };
 
+const FIXING = ["fix", "missing"];   // a part's statuses that wait on you (bridge/worklist.py FIXING)
+/** The tasks this one waits on that aren't done yet. */
+const waitsOf = (item: Item, items: Item[]) => item.depends_on.filter((d) => items.find((i) => i.id === d)?.state !== "done");
+const whenDone = (waits: string[]) => `starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done`;
+
 function Meter({ parts }: { parts: Part[] }) {
   const done = parts.filter((p) => p.status === "done").length;
   return (
     <>
-      <span className="wl-m" aria-hidden>{parts.map((p) => <b key={p.n} data-p={p.status === "done" ? "ok" : p.status === "running" ? "run" : p.status === "fix" || p.status === "missing" ? "ask" : undefined} />)}</span>
+      <span className="wl-m" aria-hidden>{parts.map((p) => <b key={p.n} data-p={p.status === "done" ? "ok" : p.status === "running" ? "run" : FIXING.includes(p.status) ? "ask" : undefined} />)}</span>
       <span className="wl-n" aria-label={`${done} of ${parts.length} parts done`}>{done}/{parts.length}</span>
     </>
   );
@@ -83,13 +89,13 @@ function Meter({ parts }: { parts: Part[] }) {
 function Start({ item, items, call, close }: { item: Item; items: Item[]; call: Call; close: () => void }) {
   const [kind, setKind] = useState<Flow>(() => item.kind ?? guessFlow(`${item.title} ${item.detail}`));
   const f = FLOWS.find((x) => x.id === kind)!;
-  const waits = item.depends_on.filter((d) => items.find((i) => i.id === d)?.state !== "done");
+  const waits = waitsOf(item, items);
   return (
     <div className="wl-start">
       <div className="wl-seg" role="radiogroup" aria-label="Flow">
         {FLOWS.map((x) => <button key={x.id} type="button" role="radio" aria-checked={kind === x.id} onClick={() => setKind(x.id)}>{x.label}</button>)}
       </div>
-      <p className="wl-lede">New session on <b className="wl-branch">{f.type}/{slug(item.title)}</b>. {f.what}{waits.length ? ` It starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done.` : ""}</p>
+      <p className="wl-lede">New session on <b className="wl-branch">{f.type}/{slug(item.title)}</b>. {f.what}{waits.length ? ` It ${whenDone(waits)}.` : ""}</p>
       <div className="wl-row">
         <button type="button" className="dg-send wl-grow" onClick={async () => { if (await call("start", { id: item.id, kind })) close(); }}>{waits.length ? "Start after" : "Start"} {f.label.toLowerCase()}</button>
         <button type="button" className="dg-btn" onClick={close}>Cancel</button>
@@ -109,7 +115,7 @@ function Row({ item, group, ask, items, canUp, canDown, onOpen, call, go, onMove
   const dot = group === "needs" ? "ask" : item.state === "review" ? "rev" : group === "building" ? "run" : group === "done" ? "ok" : "q";
   const asker = ask ? parts.find((p) => p.session_id === ask.subject) : undefined;
   const talked = !!item.refine?.messages.length;
-  const waits = item.depends_on.filter((d) => items.find((i) => i.id === d)?.state !== "done");
+  const waits = waitsOf(item, items);
   const toggle = () => (sid && onOpen ? onOpen(sid) : setOpen((v) => (v === "more" ? "" : "more")));
   return (
     <li className="wl-r" data-s={item.state} data-open={open || undefined}>
@@ -125,7 +131,7 @@ function Row({ item, group, ask, items, canUp, canDown, onOpen, call, go, onMove
       </div>
       <div className={ask ? "wl-l2 wl-asks" : "wl-l2"}>
         {ask ? <span className="wl-w">{asker ? <em>#{asker.n} </em> : null}{ask.body}</span>
-          : <span className={item.note && !item.now ? "wl-w wl-warn" : "wl-w"}>{item.now ?? (item.note || [item.id, source?.ref ? `${source.kind ?? ""} ${source.ref}`.trim() : "", item.armed && waits.length ? `starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done` : ""].filter(Boolean).join(" · "))}</span>}
+          : <span className={item.note && !item.now ? "wl-w wl-warn" : "wl-w"}>{item.now ?? (item.note || [item.id, source?.ref ? `${source.kind ?? ""} ${source.ref}`.trim() : "", item.armed && waits.length ? whenDone(waits) : ""].filter(Boolean).join(" · "))}</span>}
         {ask && onOpen ? <button type="button" className="dg-btn wl-ans" onClick={() => onOpen(ask.subject)}>Answer</button> : null}
       </div>
       {open === "start" ? <Start item={item} items={items} call={call} close={() => setOpen("")} /> : null}
@@ -136,7 +142,7 @@ function Row({ item, group, ask, items, canUp, canDown, onOpen, call, go, onMove
           <div className="wl-row">
             {item.state === "todo" ? <button type="button" className="dg-send wl-i" onClick={() => go({ k: "refine", id: item.id })}><Sparkles size={13} aria-hidden />{talked ? "Keep refining" : "Refine"}</button> : null}
             <button type="button" className="dg-btn wl-i" onClick={() => go({ k: "edit", id: item.id })}><Pencil size={13} aria-hidden />Edit</button>
-            {item.state === "done" || item.state === "dropped" || item.state === "blocked" ? <button type="button" className="dg-btn" onClick={() => void call("update", { items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
+            {!sid && (item.state === "done" || item.state === "dropped" || item.state === "blocked") ? <button type="button" className="dg-btn" onClick={() => void call("update", { items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
             <span className="wl-gap" />
             {item.state === "todo" ? <>
               <button type="button" className="wl-ic" aria-label={`Move ${item.title} up`} title="Move up" disabled={!canUp} onClick={() => onMove(true)}><ArrowUp size={14} aria-hidden /></button>

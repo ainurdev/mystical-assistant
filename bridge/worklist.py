@@ -263,6 +263,7 @@ def replace(root: str, rows: list, session: "str | None" = None, clear_done: boo
 
 KINDS = {"build": "feat", "fix": "fix", "design": "feat"}   # the flows a task starts, and their branch's type
 # What line 2 of a task's row says while its flow is on a step.
+FIXING = ("fix", "missing")   # a part's statuses that wait on you
 _STEP = {"grill": "Grilling the plan", "design": "Drawing the design", "spec": "Writing the spec",
          "tickets": "Splitting it into parts", "diagnose": "Finding the cause", "build-here": "Building",
          "review": "Reviewing", "retro": "Retro", "audit": "Auditing the repo", "improve": "Planning the refactor"}
@@ -280,14 +281,20 @@ def _parts(st: dict) -> list:
              "session_id": t.get("session_id") or ""} for n, t in sorted(ts.items()) if isinstance(t, dict)]
 
 
+def _underway(f: dict) -> str:
+    """The flow's step now: its first not done or skipped."""
+    gone = set(f.get("done") or []) | set(f.get("skipped") or [])
+    return next((step[0] for step in f.get("stations") or [] if step[0] not in gone), "")
+
+
 def _mirrored(f: dict, st: dict) -> str:
-    """A started task's state, read off its flow."""
+    """A started task's state, read off its flow: a flow without parts is in review on its review step."""
     if f.get("end"):
         return "done"
     status = st.get("status")
-    if status in ("approve", "stopped", "fix") or any(p["status"] in ("fix", "missing") for p in _parts(st)):
+    if status in ("approve", "stopped", "fix") or any(p["status"] in FIXING for p in _parts(st)):
         return "blocked"
-    return "review" if status in ("merging", "merged") else "doing"
+    return "review" if status in ("merging", "merged") or (not st and _underway(f) == "review") else "doing"
 
 
 def _now(f: dict, st: dict) -> str:
@@ -297,7 +304,7 @@ def _now(f: dict, st: dict) -> str:
         return f"{len(parts)} parts wait for your approval"
     if status in ("stopped", "fix"):
         return st.get("error") or "Stopped: it needs you"
-    fixing = [p for p in parts if p["status"] in ("fix", "missing")]
+    fixing = [p for p in parts if p["status"] in FIXING]
     if fixing:
         return f"#{fixing[0]['n']} {fixing[0]['title']} needs a fix"
     if status == "merging":
@@ -307,14 +314,7 @@ def _now(f: dict, st: dict) -> str:
     if status == "building":
         running = [p for p in parts if p["status"] == "running"]
         return (f"Building {', '.join('#' + p['n'] for p in running)}" if running else "Building")
-    step = next((st_[0] for st_ in f.get("stations") or [] if st_[0] not in (f.get("done") or [])
-                 and st_[0] not in (f.get("skipped") or [])), None)
-    return _STEP.get(step or "", "Starting")
-
-
-def branch_for(title: str, kind: str) -> str:
-    from bridge import flowbranch
-    return f"{KINDS[kind]}/{flowbranch.title_slug(title)}"
+    return _STEP.get(_underway(f), "Starting")
 
 
 def start(root: str, iid: str, kind: str, chat_session: "str | None") -> dict:
@@ -381,14 +381,18 @@ def _launch(root: str, item: dict) -> None:
 
 def sync(root: str) -> None:
     """Write each started task's state back from its flow, then start the armed tasks whose
-    blockers are done."""
+    blockers are done or merged (their council and retro needn't hold the next one up)."""
     def go(data: dict) -> list:
+        merged = set()
         for item in data["items"]:
             if item.get("session_id") and item["state"] not in ("done", "dropped"):
-                state = _mirrored(*_flow(item["session_id"]))
+                f, st = _flow(item["session_id"])
+                if st.get("status") == "merged":
+                    merged.add(item["id"])
+                state = _mirrored(f, st)
                 if state != item["state"]:
                     _set_state(item, state, item["session_id"])
-        done = {i["id"] for i in data["items"] if i["state"] == "done"}
+        done = merged | {i["id"] for i in data["items"] if i["state"] == "done"}
         ready = []
         for item in data["items"]:
             if item.get("armed") and item["state"] == "todo" and all(d in done for d in item.get("depends_on") or []):
@@ -509,6 +513,7 @@ def api(path: str, body: dict, root: "str | None", session: "str | None") -> "tu
             add(root, body.get("items"), session)
         elif path == "worklist/update":
             update(root, body.get("items"), session)
+            sync(root)   # a blocker marked done by hand starts what was armed behind it
         elif path == "worklist/remove":
             remove(root, body.get("ids"))
         elif path == "worklist/reorder":

@@ -176,11 +176,29 @@ def test_a_task_after_another_starts_only_once_armed_and_its_blocker_is_done(wor
     assert got["state"] == "todo" and got["armed"] and not started
     wl.sync(r)
     assert not started
-    wl.update(r, [{"id": a["id"], "state": "done"}])
-    wl.sync(r)
-    items = {i["id"]: i for i in wl.load(r)["items"]}
+    multi_api.post("worklist/update", {"session_id": world["session"]["id"], "items": [{"id": a["id"], "state": "done"}]}, CHAT)
+    items = {i["id"]: i for i in wl.load(r)["items"]}            # marked done by hand: what waited starts
     assert [x["flow"] for x in started] == ["design"] and items[b["id"]]["state"] == "doing"
     assert items[c["id"]]["state"] == "todo"                  # an agent's dependency starts nothing
+
+
+def test_a_task_waiting_on_another_starts_at_its_merge_not_its_retro(world, started, monkeypatch):
+    from bridge import tickets
+    r = world["root"]
+    a = wl.start(r, wl.add(r, [{"title": "a"}])[0]["id"], "build", world["session"]["id"])
+    b = wl.add(r, [{"title": "b", "depends_on": [a["id"]]}])[0]
+    wl.start(r, b["id"], "build", world["session"]["id"])
+    monkeypatch.setattr(tickets, "summary_for", lambda sid: {"status": "merged", "tickets": {}} if sid == a["session_id"] else None)
+    wl.sync(r)
+    assert len(started) == 2 and wl.load(r)["items"][1]["state"] == "doing"
+
+
+def test_a_fix_on_its_review_step_is_in_review(world, started):
+    from bridge import paths
+    r = world["root"]
+    got = wl.start(r, wl.add(r, [{"title": "Login loops"}])[0]["id"], "fix", world["session"]["id"])
+    paths.mark_done(got["session_id"], "diagnose")
+    assert (wl.view(r)["items"][0]["state"], wl.view(r)["items"][0]["now"]) == ("review", "Reviewing")
 
 
 def test_a_task_that_cant_start_goes_back_with_why(world, started, monkeypatch):

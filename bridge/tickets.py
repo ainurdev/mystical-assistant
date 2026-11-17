@@ -408,7 +408,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             tks = parse_dir(folder)
             order(tks)
             if not tks:
-                raise TicketError(f"no tickets in {folder}")
+                raise TicketError(f"no parts in {folder}")
             # a work-list task's one part starts without asking: its Start was the approval
             wait = wait and not (len(tks) == 1 and was != "approve" and sess.get("origin") == "work")
             if not wait:
