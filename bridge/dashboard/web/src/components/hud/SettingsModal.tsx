@@ -36,7 +36,7 @@ import { ChatImagesSection } from "./ChatImagesSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
 import { Mark } from "./CouncilPanel";
-import { AGENT, benchNames, reviewerName, who } from "../../lib/council";
+import { agentName, benchNames, reviewerName, who } from "../../lib/council";
 import {
   api,
   type AccountInfo,
@@ -3366,8 +3366,6 @@ function Stepper({ label, text, onStep }: { label: string; text: string; onStep:
   );
 }
 
-const SIGNED_OUT = "not signed in";     // bridge/council.py SIGNED_OUT: that row offers Sign in
-
 /** Reviewers, B · ON THE BENCH (design-drafts/council-reviewers): the accounts that
  *  review sit as chips; + Add a reviewer lists every account the bridge could run,
  *  by agent, dimmed where one can't sit now (Sign in deep-links to ACCOUNTS). An
@@ -3427,7 +3425,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
   const rows = s?.accounts ?? [];
   const outside = s ? [...new Set(s.reviewers.map((k) => k.split(":")[0]))].filter((a) => a !== "claude") : [];
   const row = (a: CouncilAccount) => {
-    const on = !!s?.reviewers.includes(a.key), signin = !a.ok && a.status === SIGNED_OUT;
+    const on = !!s?.reviewers.includes(a.key), signin = !a.ok && a.signin;
     return (
       <div key={a.key} className={`cr-mr${on ? " hot" : ""}${a.ok ? "" : " off"}`}>
         <button type="button" role="menuitemcheckbox" aria-checked={on} className="cr-mrb" onClick={() => toggle(a.key)}>
@@ -3481,7 +3479,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
                 return (
                   <span key={k} className={`cr-seatchip${r && !r.ok ? " off" : ""}`} title={r?.status}>
                     <Mark agent={w.agent} />
-                    <b>{AGENT[w.agent] ?? w.agent}</b>
+                    <b>{agentName(w.agent)}</b>
                     {w.label && <span className="cr-acc">{w.label}</span>}
                     <button type="button" className="cr-x" aria-label={`Take ${reviewerName(w)} off the council`} onClick={() => toggle(k)}>×</button>
                   </span>
@@ -3495,7 +3493,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
                   {rows.length === 0 && <div className="cr-mh">No account to add yet: sign one in under Accounts.</div>}
                   {rows.map((a, i) => (
                     <Fragment key={a.key}>
-                      {a.agent !== rows[i - 1]?.agent && <div className="cr-mh"><Mark agent={a.agent} />{(AGENT[a.agent] ?? a.agent).toUpperCase()}</div>}
+                      {a.agent !== rows[i - 1]?.agent && <div className="cr-mh"><Mark agent={a.agent} /><span className="caps">{agentName(a.agent)}</span></div>}
                       {row(a)}
                     </Fragment>
                   ))}
@@ -3506,7 +3504,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
               <div className="cr-reads">
                 {outside.map((ag) => {
                   const mine = s.projects[ag] ?? [];
-                  const label = AGENT[ag] ?? ag;
+                  const label = agentName(ag);
                   return (
                     <div key={ag} className="cr-rd">
                       <Mark agent={ag} />

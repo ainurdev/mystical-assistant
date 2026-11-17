@@ -254,8 +254,12 @@ def _bench(monkeypatch, opts):
         {"slot": 4, "alias": "old", "email": None, "disabled": True}])
     dead = {accounts.credentials_path(3)}
     monkeypatch.setattr(usage, "has_token", lambda path: path not in dead)
-    spent = {accounts.credentials_path(2): {"available": True, "seven_day": None,
-                                            "five_hour": {"percent": 100, "resets_at": None}}}
+    at = lambda h: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() + h * 3600))
+    spent = {accounts.credentials_path(2): {"available": True, "seven_day": {"percent": 40, "resets_at": at(90)},
+                                            "five_hour": {"percent": 100, "resets_at": at(2)}},
+             # a reading from before its window rolled over: no longer out of usage
+             accounts.credentials_path(1): {"available": True, "seven_day": None,
+                                            "five_hour": {"percent": 100, "resets_at": at(-3)}}}
     monkeypatch.setattr(usage, "cached", lambda path: spent.get(path, {"available": False}))
     monkeypatch.setattr(acp_agents, "available", lambda: [
         {"id": "codex", "label": "Codex", "key_required": False, "installed": True},
@@ -277,6 +281,8 @@ def test_seats_for(monkeypatch):
     on = ["claude:1", "claude:2", "claude:3", "claude:4", "codex:", "kimi:", "opencode:", "gemini:a_g"]
     s = dict(council.DEFAULTS, reviewers=on, projects={a: ["p"] for a in ("codex", "kimi", "opencode", "gemini")})
     got = council.seats_for({"project": "p"}, s)
+    assert got["claude:2"]["error"].startswith("out of usage · back at ")
+    got["claude:2"]["error"] = "out of usage"
     assert {k: (v["state"], v["error"]) for k, v in got.items()} == {
         "claude:1": ("on", ""), "claude:2": ("out", "out of usage"), "claude:3": ("out", "not signed in"),
         "claude:4": ("out", "turned off in Accounts"), "codex:": ("on", ""), "kimi:": ("out", "not signed in"),
@@ -296,13 +302,49 @@ def test_the_bench_lists_every_account_that_could_review(monkeypatch):
     login and every account added for it. One that can't sit now says why."""
     _bench(monkeypatch, {("codex", ""): {"signed_in": True, "mode": [{"value": "read-only"}]},
                          ("gemini", "a_g"): {"signed_in": True}})
-    assert [(r["key"], r["agent"], r["label"], r["status"], r["ok"]) for r in council.candidates()] == [
+    rows = council.candidates(["opencode:"])
+    assert rows[1]["status"].startswith("out of usage · back at ")
+    rows[1]["status"] = "out of usage"
+    assert [k for r in rows if r["signin"] for k in [r["key"]]] == ["claude:3", "kimi:"]   # a sign-in fixes these
+    assert [(r["key"], r["agent"], r["label"], r["status"], r["ok"]) for r in rows] == [
         ("claude:1", "claude", "me", "signed in", True), ("claude:2", "claude", "work", "out of usage", False),
         ("claude:3", "claude", "account 3", "not signed in", False),
         ("claude:4", "claude", "old", "turned off in Accounts", False),
         ("codex:", "codex", "", "signed in", True),                    # opencode isn't installed: not offered
         ("gemini:a_g", "gemini", "AI Studio", "API key", True),         # Gemini signs in with keys only
-        ("kimi:", "kimi", "", "not signed in", False)]
+        ("kimi:", "kimi", "", "not signed in", False),
+        ("opencode:", "opencode", "", "not installed", False)]           # on, so it's listed with why it can't sit
+
+
+def test_a_signed_out_machine_login_stays_a_reviewer(monkeypatch):
+    """Slot 1 lists only while its tokens read: signed out, it sits out with a Sign in, never "removed"."""
+    _bench(monkeypatch, {})
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 2, "alias": "work", "email": None, "disabled": False}])
+    s = council.save_settings({"reviewers": ["claude:1", "claude:2"]})
+    assert s["reviewers"] == ["claude:1", "claude:2"]
+    seat = council.seats_for({}, s)["claude:1"]
+    assert (seat["state"], seat["error"]) == ("out", "not signed in")
+    assert [(r["key"], r["status"], r["signin"]) for r in council.candidates([])][:1] == [("claude:1", "not signed in", True)]
+    store.set_setting("council", None)
+
+
+def test_a_reviewer_that_never_got_the_prompt_sat_out(monkeypatch):
+    """Its asking mode wouldn't take hold, or it couldn't start: it never read the work."""
+    monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
+
+    def refused(job, **kw):
+        job.turn = SimpleNamespace(sid=None)
+        job.status, job.error_msg = "error", "Kimi Code wouldn't switch to mode 'default', so the prompt wasn't sent."
+    monkeypatch.setattr(acp, "run_turn", refused)
+    r = council.seat_agent("kimi", "", "p", "/tmp")
+    assert (r["ok"], r["out"]) == (False, True) and "wouldn't switch" in r["error"]
+
+    def crashed(job, **kw):
+        job.turn = SimpleNamespace(sid="s1")             # the prompt went: it read, then failed
+        job.status, job.error_msg = "error", "Kimi Code exited"
+    monkeypatch.setattr(acp, "run_turn", crashed)
+    assert council.seat_agent("kimi", "", "p", "/tmp")["out"] is False
 
 
 def test_each_outside_reviewer_reads_in_its_asking_mode_or_not_at_all(monkeypatch):
@@ -439,7 +481,7 @@ def test_each_account_reviews_and_more_than_half_must_agree(rig, monkeypatch):
     b = council.start(rig.session, "/tmp")
     assert sorted(slots) == [1, 2]                                    # each login reads on its own account
     assert b["score"] == 8.0 and (b["seats"]["kimi:"]["state"], b["seats"]["kimi:"]["error"]) == ("out", "out of usage")
-    assert [(f["file"], f["blocking"]) for f in b["findings"] if f["sev"] == "must"] == [("a.py", True), ("b.py", False)]
+    assert [(f["file"], f["blocking"]) for f in b["to_fix"] if f["sev"] == "must"] == [("a.py", True), ("b.py", False)]
     assert b["rounds"][0]["ran"] == ["claude:1", "claude:2", "codex:"] and b["rounds"][0]["blocking"] == 1
     assert "\n1. MUST · a.py:1 · 2 of 3 · must at a.py:1\n2. MUST · b.py:5 · 1 of 3 · " in rig.queued[0]["prompt"]
 
@@ -450,6 +492,13 @@ def test_a_round_nobody_can_read_stops_and_says_why(rig, monkeypatch):
     assert (b["status"], b["reason"]) == ("stopped", "no reviewer answered: out of usage")
     monkeypatch.setattr(council, "seats_for", lambda session, s: {})
     assert council.start(rig.session, "/tmp")["reason"] == "no reviewer is switched on"
+
+
+def test_a_reviewer_whose_mode_wont_take_hold_sits_the_round_out(rig):
+    rig.claude = [_said(7.0, _FIX)]
+    rig.codex = [{"ok": False, "error": "Codex wouldn't switch to mode 'read-only', so the prompt wasn't sent.", "out": True}]
+    b = council.start(rig.session, "/tmp")
+    assert b["seats"]["codex:"]["state"] == "out" and b["rounds"][0]["ran"] == ["claude:1"]
 
 
 def test_round_that_passes_notifies_once(rig):
@@ -657,11 +706,38 @@ def test_brief_reads_the_run(rig):
     council.after_turn(_job(rig, "j2", result="1. NO: still not"))
     b = council.brief(rig.sid, "/tmp", full=True)
     assert [r["score"] for r in b["rounds"]] == [7.0, 7.5, 8.0] and b["score"] == 8.0
-    assert [(f["file"], f["blocking"]) for f in b["findings"]] == [("git.py", True), ("y.py", False)]
-    assert [f["file"] for f in b["advice"]] == ["y.py"] and b["previous"][0]["state"] == "answered"
+    assert [(f["file"], f["blocking"], f["round"]) for f in b["to_fix"]] == [("git.py", True, 3), ("y.py", False, 3)]
+    assert [(f["file"], f["round"]) for f in b["fixed"]] == [("x.py", 1)] and b["answered"] == []   # git.py: raised again
     assert b["stuck"]["rounds"] == 2 and b["stuck"]["answer"] == "still not"
-    assert b["fixed_total"] == 1 and b["elapsed"] >= 0
+    assert b["elapsed"] >= 0
     assert b["material"] == {"commits": [["abc", "fix push"]], "files": 2, "add": 9, "del": 3}
+
+
+def test_the_list_says_what_is_left_to_fix_what_was_fixed_and_what_was_answered(rig):
+    """One list across the run, each finding once as it stands at its latest round,
+    most urgent first: an agreed must-fix, then by severity. One the last round
+    raised again is still to fix, whatever the fix turn before said."""
+    a, b, x, y = ("must", "a.py", 1), ("should", "b.py", 5), ("nit", "x.py", 9), ("must", "y.py", 30)
+    rig.claude, rig.codex = [_said(6.0, a, b, x), _said(7.0, a, y)], [_said(6.0, a), _said(7.0, y)]
+    council.start(rig.session, "/tmp")                                # round 1: a (both), b, x
+    council.after_turn(_job(rig, "j1", result="3. NO: taste"))        # a and b fixed, x answered; round 2: a again, y
+    l = council.brief(rig.sid)
+    assert [(f["file"], f["round"], f["blocking"]) for f in l["to_fix"]] == [("y.py", 2, True), ("a.py", 2, False)]
+    assert [(f["file"], f["round"]) for f in l["fixed"]] == [("b.py", 1)]
+    assert [(f["file"], f["round"], f["answer"]) for f in l["answered"]] == [("x.py", 1, "taste")]
+    assert council.brief(council.store.create_session(555, "/counciltest", origin="dashboard")["id"])["to_fix"] == []
+
+
+def test_the_list_ranks_a_finding_by_how_its_own_round_agreed():
+    """1 of 1 agreed outranks 2 of 4 not, though more flagged the second."""
+    seats = lambda *keys: {k: {"state": "done"} for k in keys}
+    f = lambda file, by: {"id": f"{file}:1", "sev": "must", "file": file, "line": 1, "title": file, "by": by,
+                          "state": "fixed", "answer": ""}
+    c = {"dismissed": [], "rounds": [
+        {"n": 1, "seats": seats("a", "b", "c", "d"), "findings": [f("two-of-four.py", ["a", "b"])]},
+        {"n": 2, "seats": seats("a"), "findings": [f("one-of-one.py", ["a"])]},
+        {"n": 3, "seats": seats("a"), "findings": []}]}
+    assert [x["file"] for x in council.ledger(c)["fixed"]] == ["one-of-one.py", "two-of-four.py"]
 
 
 def test_council_prompts_do_not_rearm_goals():

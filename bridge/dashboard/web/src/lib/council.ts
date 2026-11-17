@@ -62,14 +62,14 @@ export const AGENT: Record<string, string> = { claude: "Claude", codex: "Codex",
 type Who = { agent: string; label: string };
 export const who = (key: string, named?: { agent?: string; label?: string }): Who =>
   ({ agent: named?.agent ?? key.split(":")[0], label: named?.label ?? "" });
-const agentName = (w: Who) => AGENT[w.agent] ?? w.agent;
+export const agentName = (agent: string) => AGENT[agent] ?? agent;
 /** "Claude · main"; an agent's own machine login is just "Codex". */
-export const reviewerName = (w: Who) => (w.label ? `${agentName(w)} · ${w.label}` : agentName(w));
+export const reviewerName = (w: Who) => (w.label ? `${agentName(w.agent)} · ${w.label}` : agentName(w.agent));
 /** A coin's few letters: the account, else the agent. */
-export const coinName = (w: Who) => w.label || agentName(w);
+export const coinName = (w: Who) => w.label || agentName(w.agent);
 /** Settings' fold head: "Claude main + Codex". */
 export const benchNames = (keys: string[], rows: CouncilAccount[] = []) =>
-  keys.map((k) => { const w = who(k, rows.find((r) => r.key === k)); return w.label ? `${agentName(w)} ${w.label}` : agentName(w); })
+  keys.map((k) => { const w = who(k, rows.find((r) => r.key === k)); return w.label ? `${agentName(w.agent)} ${w.label}` : agentName(w.agent); })
     .join(" + ") || "no reviewers";
 
 /** bridge/council.py blocking(): more than half of those that answered flag it. */
@@ -158,7 +158,7 @@ export function parseCouncilPrompt(text: string): CouncilPrompt | null {
 }
 
 /** A council prompt's findings by severity, from its numbered lines (council.py
- *  _line, "1. MUST · git.py:584 · claude · …"): "1 must · 3 should". A round's
+ *  _line, "1. MUST · git.py:584 · 2 of 3 · …"): "1 must · 3 should". A round's
  *  folded stamp says this rather than its fix prompt's opening sentence, which
  *  is the same every round. "" when no line reads as a finding. */
 export function sevCount(body: string): string {

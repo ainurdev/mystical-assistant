@@ -17,7 +17,7 @@ const eq = (got: unknown, want: unknown, what: string) =>
 const rounds = (...s: number[]): CouncilRound[] => s.map((score, i) => ({ n: i + 1, score, blocking: 0 }));
 const brief = (over: Partial<CouncilBrief>): CouncilBrief => ({
   status: "idle", reason: "", round: 0, max_rounds: 5, bar: 9, score: null, rounds: [], seats: {},
-  findings: [], previous: [], stuck: null, advice: [], fixed_total: 0, advice_sent: false, elapsed: 0, ...over,
+  stuck: null, to_fix: [], fixed: [], answered: [], advice_sent: false, elapsed: 0, ...over,
 });
 const idle = brief({});
 const running = brief({ status: "reviewing", round: 3, rounds: rounds(6.4, 8.1), score: 8.1 });
@@ -37,7 +37,7 @@ eq(railTile(idle), { busy: false }, "idle: a calm tile");
 eq(railTile(null), { busy: false }, "no brief yet: a calm tile");
 
 // --- when App re-renders for the tile ---------------------------------------------
-ok(tileKey(running) === tileKey({ ...running, elapsed: 999, findings: running.previous, material: null }),
+ok(tileKey(running) === tileKey({ ...running, elapsed: 999, fixed: running.to_fix, material: null }),
   "a poll where only the clock, the rows or the material moved keeps App's brief");
 ok(tileKey(running) !== tileKey({ ...running, round: 4 }), "a new round re-renders");
 ok(tileKey(running) !== tileKey({ ...running, status: "stopped" }), "a new status re-renders");
@@ -110,7 +110,7 @@ eq(who("claude:2", { agent: "claude", label: "work" }), { agent: "claude", label
 eq(who("codex"), { agent: "codex", label: "" }, "a run saved before reviewers per account: its key is the agent");
 eq([reviewerName(main), reviewerName(codex)], ["Claude · main", "Codex"], "a full name: an agent's own login is the agent");
 eq([coinName(main), coinName(codex)], ["main", "Codex"], "a coin's name: the account, else the agent");
-eq(benchNames(["claude:1", "codex:", "kimi:a_1"], [{ key: "claude:1", agent: "claude", label: "main", status: "signed in", ok: true }]),
+eq(benchNames(["claude:1", "codex:", "kimi:a_1"], [{ key: "claude:1", agent: "claude", label: "main", status: "signed in", ok: true, signin: false }]),
   "Claude main + Codex + Kimi", "the fold head names who is on; one with no row yet still reads as its agent");
 eq(benchNames([], []), "no reviewers", "nobody on");
 

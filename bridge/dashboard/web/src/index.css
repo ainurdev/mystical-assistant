@@ -7345,7 +7345,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border: 2px solid color-mix(in srgb, var(--cn-acc2) 20%, transparent); border-top-color: var(--cn-acc2); }
 /* every agent wears Codex's neutral plate; Claude keeps the accent */
 .cn-mk { flex: none; width: 22px; height: 22px; border-radius: var(--f-rad-s, 7px); display: inline-flex; align-items: center; justify-content: center;
-  font: 800 11px/1 var(--f); color: var(--txb); background: linear-gradient(135deg, color-mix(in srgb, var(--txl) 70%, var(--panel)), color-mix(in srgb, var(--txl) 30%, var(--panel3))); }
+  font: 800 var(--t11)/1 var(--f); color: var(--txb); background: linear-gradient(135deg, color-mix(in srgb, var(--txl) 70%, var(--panel)), color-mix(in srgb, var(--txl) 30%, var(--panel3))); }
 .cn-mk.claude { color: var(--acc-on); background: linear-gradient(135deg, var(--acc), color-mix(in srgb, var(--acc) 62%, var(--panel3))); }
 /* THEY DISAGREE: the finding they keep raising and the session keeps answering, and your two ways out */
 .cn-needs { flex: none; margin: 10px 12px 0; padding: 11px 12px; border-radius: var(--f-rad, 12px);
@@ -7379,9 +7379,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* the marks wrap under the path when both don't fit: six of them beside a Send button left "gi…" of git.py:611 */
 .cn-s { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .cn-s code { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 500 var(--t10)/1 var(--mono); color: var(--txl); }
-/* a finding's marks: one per reviewer that answered, lit for those that flagged it, then "2/3" */
+/* a finding's marks: one per reviewer that answered, lit for those that flagged it, then "2/3"; they wrap as one */
+.cr-who { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .cr-by { flex: none; display: inline-flex; gap: 2px; }
-.cr-by .cn-mk { width: 14px; height: 14px; border-radius: 4px; font-size: 8px; }
+.cr-by .cn-mk { width: 14px; height: 14px; border-radius: 4px; font-size: var(--t8); }
 .cr-by .cn-mk svg { width: 9px; height: 9px; }
 .cr-by .cn-mk.no { opacity: .22; }
 .cr-n { flex: none; font: 800 var(--t85)/1 var(--f); letter-spacing: .6px; color: var(--txl); }
@@ -7390,14 +7391,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* the state rides data-st: "fixed" as a class is Tailwind's position: fixed */
 .cn-fst[data-st="fixed"] { color: var(--ok); } .cn-fst[data-st="open"] { color: var(--warn); }
 .cn-ans { margin-top: 5px; padding-left: 8px; border-left: 2px solid var(--l2); font: italic 600 var(--t11)/1.35 var(--f); color: var(--txm); }
-.cn-fold { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; box-sizing: border-box; padding: 0 14px; border: 0; border-bottom: 1px solid var(--l);
-  background: none; font: 700 var(--t115)/1 var(--f); color: var(--txm); text-align: left; white-space: nowrap; }
-.cn button.cn-fold { border-radius: 0; cursor: pointer; appearance: none; }
-.cn button.cn-fold:hover { background: var(--wash); }
-.cn-fold b { font-weight: 800; color: var(--txb); }
-.cn-fold .r { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txl); }
-.cn-fold .r i { display: inline-block; font-style: normal; transition: transform .15s; }
-.cn-fold[aria-expanded="true"] .r i { transform: rotate(90deg); }
 /* the state's one or two moves, pinned under the list */
 .cn-foot { flex: none; display: flex; gap: 7px; padding: 10px 12px 12px; border-top: 1px solid var(--l); }
 .cn-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border: 1px solid transparent;
@@ -7416,7 +7409,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-btn:disabled { opacity: .45; cursor: not-allowed; }
 .cn-btn:focus-visible { outline: 1.5px solid var(--acc); outline-offset: 2px; }
 .cn-btn svg { flex: none; }
-@media (prefers-reduced-motion: reduce) { .cn-pulse, .cn-spin { animation: none; } .cn-fold .r i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cn-pulse, .cn-spin { animation: none; } }
 
 /* === COUNCIL REVIEWERS · Settings ▸ AI management ▸ Council ======================
    B · ON THE BENCH (design-drafts/council-reviewers): the reviewers that are on as
@@ -7431,40 +7424,40 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cr-seatchip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 7px; border-radius: 10px;
   background: var(--panel2); box-shadow: inset 0 0 0 1px var(--l2); }
 .cr-seatchip.off { opacity: .55; }
-.aim-vfield .cr-seatchip b { font: 600 13px var(--f); color: var(--txb); }
-.aim-vfield .cr-seatchip .cr-acc { font-size: 12px; color: var(--txd); }
-.cr-x { all: unset; cursor: pointer; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--txl); font-size: 15px; }
+.aim-vfield .cr-seatchip b { font: 600 var(--t13) var(--f); color: var(--txb); }
+.aim-vfield .cr-seatchip .cr-acc { font-size: var(--t12); color: var(--txd); }
+.cr-x { all: unset; cursor: pointer; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--txl); font-size: var(--t15); }
 .cr-x:hover { color: var(--txb); background: color-mix(in srgb, var(--txl) 14%, transparent); }
 .cr-add { height: 36px; padding: 0 12px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--acc) 55%, var(--l2)); background: transparent;
-  color: var(--acc); font: 600 12.5px var(--f); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  color: var(--acc); font: 600 var(--t125) var(--f); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .cr-add[aria-expanded="true"] { background: color-mix(in srgb, var(--acc) 12%, transparent); border-style: solid; }
 .cr-menu { position: absolute; z-index: 5; top: calc(100% - 6px); left: 0; width: 360px; max-width: 100%; padding: 6px; box-sizing: border-box; border-radius: 12px;
-  background: var(--panel); box-shadow: 0 0 0 1px var(--l2), 0 18px 40px -12px rgb(0 0 0 / 70%); }
-.aim-vfield .cr-mh { display: flex; align-items: center; gap: 7px; padding: 8px 8px 4px; font: 700 10.5px/1 var(--f); letter-spacing: 1.2px; color: var(--txl); }
-.cr-mh .cn-mk { width: 16px; height: 16px; border-radius: 4px; font-size: 8px; } .cr-mh .cn-mk svg { width: 10px; height: 10px; }
+  background: var(--panel); box-shadow: 0 0 0 1px var(--l2), 0 18px 40px -12px var(--shadow-pop); }
+.aim-vfield .cr-mh { display: flex; align-items: center; gap: 7px; padding: 8px 8px 4px; font: 700 var(--t105)/1 var(--f); letter-spacing: 1.2px; color: var(--txl); }
+.cr-mh .cn-mk { width: 16px; height: 16px; border-radius: 4px; font-size: var(--t8); } .cr-mh .cn-mk svg { width: 10px; height: 10px; }
 .cr-mr { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 0; border-radius: 7px; }
 .cr-mr:hover, .cr-mr:focus-within { background: color-mix(in srgb, var(--txl) 9%, transparent); }
 .cr-mr.hot { background: color-mix(in srgb, var(--acc) 10%, transparent); }
 .cr-mrb { all: unset; flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px; padding-left: 10px; cursor: pointer; border-radius: 7px; }
 .cr-mrb:focus-visible { outline: 1.5px solid var(--acc); outline-offset: -1.5px; }
-.aim-vfield .cr-mr .cr-name { width: 128px; flex: none; font: 500 12.5px var(--f); color: var(--tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aim-vfield .cr-mr .cr-st { flex: 1; min-width: 0; font-size: 11.5px; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aim-vfield .cr-mr .cr-name { width: 128px; flex: none; font: 500 var(--t125) var(--f); color: var(--tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aim-vfield .cr-mr .cr-st { flex: 1; min-width: 0; font-size: var(--t115); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aim-vfield .cr-mr .cr-st.warn { color: var(--warn); }
-.aim-vfield .cr-mr .cr-tick { width: 14px; flex: none; color: var(--acc); font: 700 13px var(--f); text-align: center; }
+.aim-vfield .cr-mr .cr-tick { width: 14px; flex: none; color: var(--acc); font: 700 var(--t13) var(--f); text-align: center; }
 .aim-vfield .cr-mr.off .cr-name { color: var(--txl); }
-.cr-si { all: unset; flex: none; cursor: pointer; color: var(--ask); font: 600 11.5px var(--f); }
+.cr-si { all: unset; flex: none; cursor: pointer; color: var(--ask); font: 600 var(--t115) var(--f); }
 .cr-si:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cr-si:focus-visible { outline: 1.5px solid var(--acc); outline-offset: 2px; }
 .cr-reads { border-top: 1px solid var(--l); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .cr-rd { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; }
-.cr-rd .cn-mk { width: 18px; height: 18px; border-radius: 5px; font-size: 9px; } .cr-rd .cn-mk svg { width: 11px; height: 11px; }
-.aim-vfield .cr-rd > .cr-lab { font: 500 12.5px var(--f); color: var(--txb); width: 92px; }
-.aim-vfield .cr-chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--f); padding: 4px 8px; border-radius: 999px;
+.cr-rd .cn-mk { width: 18px; height: 18px; border-radius: 5px; font-size: var(--t9); } .cr-rd .cn-mk svg { width: 11px; height: 11px; }
+.aim-vfield .cr-rd > .cr-lab { font: 500 var(--t125) var(--f); color: var(--txb); width: 92px; }
+.aim-vfield .cr-chip { display: inline-flex; align-items: center; gap: 5px; font: 600 var(--t11)/1 var(--f); padding: 4px 8px; border-radius: 999px;
   background: color-mix(in oklab, var(--acc) 16%, var(--panel)); color: var(--acc); white-space: nowrap; }
 .cr-chip button { all: unset; cursor: pointer; opacity: .7; } .cr-chip button:hover { opacity: 1; }
-.aim-vfield .cr-none { font-size: 12px; color: var(--txl); font-style: italic; }
-.aim-vfield .cr-pickp { width: auto; height: 24px; padding: 0 6px; border-radius: 7px; font: 600 11.5px var(--f); color: var(--acc); flex: none; }
-.aim-vfield .cr-foot { font-size: 12px; color: var(--txl); }
+.aim-vfield .cr-none { font-size: var(--t12); color: var(--txl); font-style: italic; }
+.aim-vfield .cr-pickp { width: auto; height: 24px; padding: 0 6px; border-radius: 7px; font: 600 var(--t115) var(--f); color: var(--acc); flex: none; }
+.aim-vfield .cr-foot { font-size: var(--t12); color: var(--txl); }
 
 /* === THE FAMILIES · PEBBLE · STANDARD ======================================
    The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block

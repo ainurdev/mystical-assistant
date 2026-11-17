@@ -112,7 +112,7 @@ import threading
 import time
 import types
 
-from . import accounts, acp, acp_agents, git, native, profiles, queue_manager, runner, state, store, usage, waits
+from . import accounts, acp, acp_agents, git, limits, native, profiles, queue_manager, runner, state, store, usage, waits
 
 DEFAULTS = {"bar": 9.0, "max_rounds": 5, "stop_early": True, "reviewers": [], "projects": {}}
 NEAR = 3
@@ -182,8 +182,9 @@ def _exists(key: str) -> bool:
     """A reviewer key ("claude:<slot>", "<agent>:<account id>", "<agent>:" for the
     agent's machine login) whose account is there now."""
     agent, _, acct = key.partition(":")
-    if agent == "claude":
-        return acct.isdigit() and any(a["slot"] == int(acct) for a in accounts.list_accounts())
+    if agent == "claude":       # slot 1 is the machine's own login: signed out, list_accounts leaves it out
+        return acct.isdigit() and (int(acct) == accounts.DEFAULT_SLOT
+                                   or any(a["slot"] == int(acct) for a in accounts.list_accounts()))
     p = acp_agents.preset(agent)
     return bool(p) and (not p["key_required"] if acct == "" else (acp_agents.account(acct) or {}).get("agent") == agent)
 
@@ -454,7 +455,7 @@ def seat_agent(agent: str, acct: str, prompt: str, cwd: str, timeout: float = SE
 def _seat_agent(agent: str, acct: str, prompt: str, cwd: str, timeout: float) -> dict:
     p, opts = acp_agents.preset(agent), _ask(agent, acct)
     if opts is None:
-        return {"ok": False, "error": f"{p['label']} has no read-only mode yet: run TEST on it in Settings"}
+        return {"ok": False, "error": f"{p['label']} has no read-only mode yet: run TEST on it in Settings", "out": True}
     job = types.SimpleNamespace(
         events=[], pending=[], texts=[], todos=[], awaiting=_Awaiting(), awaited=[],
         ctx_tokens=None, cost=None, result=None, error_msg=None, elapsed=None,
@@ -485,16 +486,12 @@ def _seat_agent(agent: str, acct: str, prompt: str, cwd: str, timeout: float) ->
         done.set()
     if cut:
         return {"ok": False, "error": "timed out"}
-    return _result(job.error_msg if job.status != "done" else job.result, job.status != "done")
+    r = _result(job.error_msg if job.status != "done" else job.result, job.status != "done")
+    # The prompt never went (its mode wouldn't take hold, no login, no start): it sat out, it didn't fail a read.
+    return r if r["ok"] else dict(r, out=not getattr(job.turn, "sid", None))
 
 
 SIGNED_OUT = "not signed in"        # the dashboard offers Sign in on this one
-
-
-def _back(iso) -> str:
-    t = usage.resets_epoch(iso)
-    return time.strftime(" · back at %H:%M" if t - time.time() < 86400 else " · back %a %H:%M",
-                         time.localtime(t)) if t else ""
 
 
 def _claude_why(a: "dict | None") -> str:
@@ -507,12 +504,19 @@ def _claude_why(a: "dict | None") -> str:
     path = accounts.credentials_path(a["slot"])
     if not usage.has_token(path) or a["slot"] in runner._auth_dead:    # noqa: SLF001 - as accounts.meter
         return SIGNED_OUT
-    b = accounts._tighter(usage.cached(path))                            # noqa: SLF001
-    return "out of usage" + _back(b.get("resets_at")) if b and b["percent"] >= accounts.EXHAUSTED else ""
+    # As limits._reset_epoch, from the cache: the latest reset of a spent window, only while it's ahead.
+    # A reading from before a window rolled over (an idle login's meter can't refresh) no longer counts.
+    m = usage.cached(path)
+    back = max((usage.resets_epoch(w.get("resets_at")) or 0 for w in (m.get("five_hour"), m.get("seven_day"))
+                if isinstance(w, dict) and (w.get("percent") or 0) >= accounts.EXHAUSTED), default=0)
+    return f"out of usage · back at {limits.when_str(back)}" if back > time.time() else ""
 
 
 def _agent_why(p: "dict | None", acct: str) -> str:
-    """The same for an outside agent's account, as its last TEST or turn found it."""
+    """The same for an outside agent's account, as its last TEST or turn found it.
+    shortcut: no usage check, since ACP reports no quota (usage_update is context and
+    cost); a spent account answers with its CLI's error and reads "didn't answer".
+    Check one here once an agent reports its limits."""
     if p is None or (p["key_required"] if not acct else (acp_agents.account(acct) or {}).get("agent") != p["id"]):
         return "account removed"
     if not p["installed"]:
@@ -529,6 +533,8 @@ def _who(key: str, logins: dict, agents: dict) -> tuple:
     agent, _, acct = key.partition(":")
     if agent == "claude":
         a = logins.get(int(acct)) if acct.isdigit() else None
+        if a is None and acct == str(accounts.DEFAULT_SLOT):
+            return agent, "", SIGNED_OUT        # listed only while its tokens read
         name = a and (a.get("alias") or (a.get("email") or "").split("@")[0] or f"account {a['slot']}")
         return agent, name or "", _claude_why(a)
     return agent, (acp_agents.account(acct) or {}).get("label", "") if acct else "", _agent_why(agents.get(agent), acct)
@@ -550,21 +556,24 @@ def seats_for(session: dict, s: dict) -> dict:
     return out
 
 
-def candidates() -> list:
+def candidates(on: list) -> list:
     """Every account that could review, for Settings ▸ Council's + Add a reviewer:
-    each Claude login, then each installed agent's machine login and every account
-    added for it. `status` says why it can't sit now, else how it signs in."""
+    each Claude login (the machine's own even signed out), then each installed
+    agent's machine login and every account added for it, then any reviewer in
+    `on` not listed yet (an agent since uninstalled). `status` says why it can't
+    sit now, else how it signs in; `signin`, that signing in fixes it."""
     logins = {a["slot"]: a for a in accounts.list_accounts()}
     agents = {p["id"]: p for p in acp_agents.available()}
-    keys = [(f"claude:{n}", "") for n in logins]
+    keys = [(f"claude:{n}", "") for n in sorted({accounts.DEFAULT_SLOT, *logins})]
     for p in agents.values():
         if p["installed"] and not p["key_required"]:
             keys.append((f"{p['id']}:", ""))
         keys += [(f"{p['id']}:{a['id']}", a.get("kind")) for a in acp_agents.accounts(p["id"])]
+    keys += [(k, "") for k in on if k not in {k for k, _ in keys}]
     rows = []
     for key, kind in keys:
         agent, label, why = _who(key, logins, agents)
-        rows.append({"key": key, "agent": agent, "label": label, "ok": not why,
+        rows.append({"key": key, "agent": agent, "label": label, "ok": not why, "signin": why == SIGNED_OUT,
                      "status": why or ("API key" if kind == "key" else "signed in")})
     return rows
 
@@ -737,7 +746,7 @@ def _round(sid: str) -> None:
         for k in on:
             r = got[k]
             seats[k] = {**seats[k], **(_seat("done", r["score"], r["summary"]) if r["ok"]
-                                       else _seat("error", error=r["error"]))}     # keeps its name
+                                       else _seat("out" if r.get("out") else "error", error=r["error"]))}
         ran = [k for k in on if got[k]["ok"]]
         if not ran:                 # each failed or sat out: the first one's why
             why = next((v["error"] for v in seats.values() if v["error"]), "")
@@ -894,29 +903,47 @@ def _stuck(c: dict) -> "dict | None":
     return best
 
 
+def ledger(c: dict) -> dict:
+    """The run's findings as one list, for the tab: what is still to fix, what was
+    fixed, and what the session answered (or you settled), each finding once as
+    its latest round left it, most urgent first: an agreed must-fix, then by
+    severity, then by how many flagged it. One the last round raised again is
+    still to fix, whatever the fix turn before said; an open one a later round
+    didn't raise again was let go, and leaves the list."""
+    rs, out, seen, agreed = c["rounds"], {"to_fix": [], "fixed": [], "answered": []}, [], set()
+    blocked = _blocks(c, rs[-1]) if rs else []
+    for r in reversed(rs):
+        agreed.update((r["n"], f["id"]) for f in blocking(r["findings"], _ran(r), []))    # as its own round saw it
+        for f in r["findings"]:
+            if any(same(f, g) for g in seen):
+                continue
+            seen.append(f)
+            k = ("answered" if f.get("dismissed") or f["state"] == "answered" else "fixed" if f["state"] == "fixed"
+                 else "to_fix" if r is rs[-1] else None)
+            if k:
+                out[k].append(dict(f, round=r["n"], blocking=f in blocked))
+    for v in out.values():
+        v.sort(key=lambda f: ((f["round"], f["id"]) not in agreed, _SEV.index(f["sev"]), -len(f["by"]), -f["round"]))
+    return out
+
+
 def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
     """What the tab draws: the run, or before one the settings and seats. Never stored."""
     c = get(sid)
     if c:
         rs = c["rounds"]
         last = rs[-1] if rs else None
-        blocked = _blocks(c, last) if last else []
-        found = [dict(f, blocking=f in blocked) for f in (last["findings"] if last else [])]
         out = {"status": c["status"], "reason": c.get("reason") or "", "round": c["round"],
                "max_rounds": c["max_rounds"], "bar": c["bar"], "score": last["score"] if last else None,
                "rounds": [{"n": r["n"], "score": r["score"], "blocking": r["blocking"], "ran": _ran(r)} for r in rs],
-               "seats": c["seats"], "findings": found,
-               "previous": rs[-2]["findings"] if len(rs) > 1 else [], "stuck": _stuck(c),
-               "advice": [f for f in found if not f["blocking"] and not f.get("dismissed")],
-               "fixed_total": sum(f["state"] == "fixed" for r in rs for f in r["findings"]),
+               "seats": c["seats"], "stuck": _stuck(c), **ledger(c),
                "advice_sent": bool(c.get("advice_sent")),
                "elapsed": int((time.time() if _busy(c) else c["at"]) - c["since"])}
     else:
         s = settings()
         out = {"status": "idle", "reason": "", "round": 0, "max_rounds": s["max_rounds"], "bar": s["bar"],
-               "score": None, "rounds": [], "findings": [], "previous": [], "stuck": None, "advice": [],
-               "fixed_total": 0, "advice_sent": False, "elapsed": 0,
-               "seats": seats_for(store.get_session(sid) or {}, s)}
+               "score": None, "rounds": [], "stuck": None, "to_fix": [], "fixed": [], "answered": [],
+               "advice_sent": False, "elapsed": 0, "seats": seats_for(store.get_session(sid) or {}, s)}
     if full and cwd:
         try:
             m = counts(cwd)
