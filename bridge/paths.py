@@ -139,7 +139,11 @@ _STEPDONE = ('When you finish a step of a path and need nothing more from the us
              'that can be built at the same time; a chain, where each part waits on the one before, is "here". '
              'Say which and why in one line before StepDone. When the next step builds (after a grill, a design '
              'or a ticket breakdown), pass branch too: the feature branch, named for what is being built. '
-             'Never call StepDone while waiting on the user.')
+             'Never call StepDone while waiting on the user. Once your ticket breakdown builds, its tickets run '
+             'in sessions of their own: never build one in the chat that wrote them. More work for a set still '
+             'building goes in a new ticket file beside the others (the next number, its Blocked by, Status '
+             'ready-for-agent); it starts when your turn ends and its blockers are done, and a ticket that '
+             'hasn\'t started takes its file\'s new Blocked by.')
 
 
 def pack_text() -> str:

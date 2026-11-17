@@ -504,6 +504,44 @@ def test_other_sessions_are_not_tickets(make_set):
     assert tickets.after_turn(job) is False and s.status("01") == "running"
 
 
+# --- tickets written into a building set (2026-11-17: the NR super session built its new 21-24 itself) ---
+
+def _flow_turn_ends(s, interrupted=False):
+    return tickets.after_turn(SimpleNamespace(store_session_id=s.flow, id="t", status="done",
+                                              interrupted=interrupted, runtime=None, chat_id=1))
+
+
+def test_a_ticket_the_flow_writes_into_a_building_set_joins_it(make_set):
+    s = make_set({"01": None, "02": "#01"})
+    _write(s.folder, "03", "T03", "#01")
+    _write(s.folder, "04", "T04")
+    _write(s.folder, "02", "T02", "#01, #03")      # not started yet: it may wait for a new one too
+    _write(s.folder, "01", "T01", "#04")           # started: its graph stays as approved
+    assert _flow_turn_ends(s, interrupted=True) is False and "03" not in s.state["tickets"]   # after a Stop nothing moves
+    assert _flow_turn_ends(s) is False             # the flow's session is still no ticket's
+    assert s.status("04") == "running" and s.status("03") == "queued"
+    assert s.state["tickets"]["03"]["branch"] == "tk/x/03-x"
+    assert s.state["tickets"]["02"]["blocked_by"] == ["01", "03"] and s.state["tickets"]["01"]["blocked_by"] == []
+    s.finish("01")
+    assert s.status("03") == "running" and s.status("02") == "queued"
+    s.finish("03")
+    assert s.status("02") == "running"
+
+
+def test_a_new_ticket_built_elsewhere_stays_out_and_its_dependent_says_why_once(make_set):
+    s = make_set({"01": None})
+    _write(s.folder, "02", "T02")
+    with open(s.path("02")) as f:
+        body = f.read().replace("ready-for-agent", "done (branch tk/x-02, unpushed)")
+    with open(s.path("02"), "w") as f:
+        f.write(body)
+    _write(s.folder, "03", "T03", "#02")
+    before = s.kinds.count("tickets")
+    _flow_turn_ends(s)
+    _flow_turn_ends(s)
+    assert sorted(s.state["tickets"]) == ["01"] and s.kinds.count("tickets") == before + 1
+
+
 def test_turn_end_reaches_the_scheduler(monkeypatch):
     seen = []
     monkeypatch.setattr(tickets, "after_turn", seen.append)

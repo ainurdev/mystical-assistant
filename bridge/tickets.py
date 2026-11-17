@@ -30,8 +30,15 @@ Several are separated by commas or "and".
 Not built: titles containing a comma or " and " can't be referenced by title; use the number.
 
 The scheduler. BUILD (start_build) freezes the graph into set.json at approval, so a
-ticket file edited later can't rewire a running set; one deleted or renamed is
-`missing` when its turn to start comes, and holds its dependents. A ticket session is
+ticket file edited later can't rewire what has started; one deleted or renamed is
+`missing` when its turn to start comes, and holds its dependents. While the set builds,
+every tick (and the end of each turn of the flow's own session) reads the folder again
+(_refresh): a ticket file with a new number joins as `queued` when it waits for an agent
+(Status ready-for-agent, or none: one that says done was built elsewhere), and a ticket
+that hasn't started takes its file's Blocked by. A change that breaks the graph applies
+nothing and says why once. Before this the folder was read only at approval, and on
+2026-11-17 a super session that wrote tickets 21-24 into its building set built them
+itself, because nothing would ever start them. A ticket session is
 an ordinary session (origin "ticket", "#NN Title") in its own worktree, put on a
 one-step `implement` path before its first turn: that way its StepDone lands in
 flows.json like any path's, and its typed /implement can't join the FEATURE path
@@ -143,6 +150,8 @@ _TAIL = re.compile(r"(?:\.+|\s*\([^)]*\))+\s*$")
 _NUM = re.compile(r"^#?(\d{1,2})$")
 _ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?!\[[ xX]\])(.+?)\s*$")   # a checkbox is no ref
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
+_STATUS_LINE = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?status(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
+                          re.M | re.I)
 _REPOS = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?repos?(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
                     re.M | re.I)
 _HUMAN = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?status(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*`?ready-for-human\b",
@@ -168,7 +177,8 @@ def _repo_paths(n: str, text: str) -> tuple:
     return tuple(out)
 
 
-def parse_dir(folder: str) -> list:
+def parse_dir(folder: str, also=()) -> list:
+    """`also`: ticket numbers that exist without a file here (a building set's, deleted since)."""
     raw = []   # (n, title, path, refs)
     repos = {}
     for name in sorted(os.listdir(folder)):
@@ -200,7 +210,7 @@ def parse_dir(folder: str) -> list:
         raw.append((h.group(1).zfill(2), h.group(2), path, refs))
         repos[h.group(1).zfill(2)] = _repo_paths(h.group(1).zfill(2), text)
     by_title = {t.strip().lower(): n for n, t, _, _ in raw}
-    known = {n for n, *_ in raw}
+    known = {n for n, *_ in raw} | set(also)
     out = []
     for n, title, path, refs in raw:
         deps = []
@@ -439,10 +449,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
             register(folder, sess.get("project") or "", slug)
             notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {e}")
             return str(e)
-        st["tickets"] = {t.n: {"status": "queued", "title": t.title, "path": t.path,
-                               "blocked_by": list(t.blocked_by), "branch": _ticket_branch(slug, t),
-                               "builds_in": list(t.repos),
-                               "worktree": "", "session_id": "", "base": ""} for t in tks}
+        st["tickets"] = {t.n: _row(slug, t) for t in tks}
         if wait:
             st["status"] = "approve"
         save(folder, st)
@@ -465,6 +472,49 @@ def _ticket_branch(slug: str, t: Ticket) -> str:
     """tk/<the set>/<NN>-<the ticket file's name>; the number alone when the name leaves nothing."""
     name = flowbranch.short_name(_FILE.sub("", os.path.splitext(os.path.basename(t.path))[0], count=1).lower())
     return f"tk/{slug}/{t.n}" + (f"-{name}" if name else "")
+
+
+def _row(slug: str, t: Ticket) -> dict:
+    """A ticket's state in set.json until it first starts."""
+    return {"status": "queued", "title": t.title, "path": t.path, "blocked_by": list(t.blocked_by),
+            "branch": _ticket_branch(slug, t), "builds_in": list(t.repos),
+            "worktree": "", "session_id": "", "base": ""}
+
+
+def _for_an_agent(path: str) -> bool:
+    """A ticket file added to a building set waits for an agent: Status ready-for-agent, or none.
+    shortcut: a new ready-for-human ticket stays out (master would hand it to an agent); admit it
+    once feat/tickets-of-yours lands, whose tick holds one for you."""
+    with open(path, encoding="utf-8") as f:
+        m = _STATUS_LINE.search(f.read())
+    return not m or m.group(1).strip("* ").lower().startswith("ready-for-agent")
+
+
+def _refresh(folder: str, st: dict) -> None:
+    """The ticket files of a building set, read again: new numbers join, unstarted tickets take
+    their file's Blocked by, all or nothing. A change that can't apply says why once."""
+    tks = st["tickets"]
+    try:
+        parsed = {t.n: t for t in parse_dir(folder, also=tks)}
+        new = {n: t for n, t in parsed.items() if n not in tks and _for_an_agent(t.path)}
+        deps = {n: parsed[n].blocked_by if n in parsed and t["status"] == "queued" else tuple(t["blocked_by"])
+                for n, t in tks.items()}
+        deps.update({n: t.blocked_by for n, t in new.items()})
+        gone = next((f"#{n} is blocked by #{b}, which isn't in the set" for n, bs in deps.items()
+                     for b in bs if b not in deps), "")
+        if gone:
+            raise TicketError(gone)
+        order([Ticket(n, "", "", bs) for n, bs in deps.items()])
+    except (OSError, TicketError) as e:
+        if st.get("refresh_error") != str(e):   # each tick reads it again: say it once
+            st["refresh_error"] = str(e)
+            notices.emit("tickets", st["parent_session"], body=f"New or changed tickets wait: {e}.")
+        return
+    st.pop("refresh_error", None)
+    for n, bs in deps.items():
+        if n in tks:
+            tks[n]["blocked_by"] = list(bs)
+    tks.update({n: _row(st["slug"], t) for n, t in new.items()})
 
 
 def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
@@ -670,6 +720,7 @@ def tick(folder: str) -> None:
         tks = st.get("tickets") or {}
         if st.get("status") != "building" or not tks:
             return
+        _refresh(folder, st)
         for n in sorted(tks, key=lambda k: (tks[k]["status"] != "retry", k)):   # a retry was promised the next slot
             t = tks[n]
             if t["status"] not in ("queued", "missing", "retry") or \
@@ -1113,7 +1164,8 @@ def _find(sid: str):
 
 def after_turn(job) -> bool:
     """A turn ended in a ticket's session: judge its ticket, then start what that
-    frees. True when the session was a ticket's."""
+    frees. True when the session was a ticket's. A turn of the flow's own session
+    ticks its building set, so ticket files it wrote start without waiting for one."""
     try:
         sid = job.store_session_id
         origin = (store.get_session(sid) or {}).get("origin") if sid else None
@@ -1121,6 +1173,9 @@ def after_turn(job) -> bool:
             _merge_turn(job)
             return True
         if origin != "ticket":
+            own = summary_for(sid) if sid and not job.interrupted else None
+            if own and own.get("status") == "building":
+                tick(own["folder"])   # ticket files the flow's session wrote join its set (_refresh)
             return False
         with _build:
             hit = _find(sid)
