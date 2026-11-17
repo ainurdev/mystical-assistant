@@ -480,7 +480,8 @@ export function SessionPanel({
   const ws = trackWidths(track.map((g) => g.secs), width);
   const lastOf = (g: TrackSeg) => g.runs[g.runs.length - 1];
   const segName = (g: TrackSeg) => `${flowName(flows[lastOf(g)])}${g.runs.length > 1 ? ` ×${g.runs.length}` : ""}`;
-  const openSeg = open.flows ? track.find((g) => g.key === pick) ?? track.find((g) => stateOf(lastOf(g)) === "now") ?? track[track.length - 1] : undefined;
+  // Opened with no pick: the newest flow but the active one, whose steps NOW already shows.
+  const openSeg = open.flows ? track.find((g) => g.key === pick) ?? [...track].reverse().find((g) => stateOf(lastOf(g)) !== "now") ?? track[track.length - 1] : undefined;
   const tap = (g: TrackSeg) => {
     if (open.flows && openSeg?.key === g.key) { flip("flows"); return; }
     setPick(g.key);
@@ -750,8 +751,9 @@ export function SessionPanel({
     <span className="sq-pill"><span className="caps">{flowName(flow)}</span>
       {onStep && <> · step {v.stations.indexOf(onStep) + 1} of {v.stations.length}</>}</span>
   );
-  const steps = nowSeg && nowSeg.runs.length === 1 && v.stations.length > 1 && detail(nowSeg, true);
-  const nowCard = (hero || bar || steps) && (
+  // A one-step flow has no line of stops to draw, only its NEXT and AUTO.
+  const steps = nowSeg && nowSeg.runs.length === 1 && (v.stations.length > 1 ? detail(nowSeg, true) : nextLine);
+  const nowCard = (hero || steps) && (
     <section className="sq-isl sq-now">
       <div className="ss-hero" ref={heroRef}>
         <div className="ss-top">
@@ -762,7 +764,6 @@ export function SessionPanel({
           )}
         </div>
         {hero}
-        {bar}
         {steps}
       </div>
     </section>
@@ -783,6 +784,8 @@ export function SessionPanel({
           <div className="tn-hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> jump · <kbd>esc</kbd> close</div>
         </>
       )}
+      {/* the now bar stays in sight while the turns scroll */}
+      {bar}
       <div className="mscroll">
         {find === null && nowCard}
         {find === null && (flowsBlock || timeBlock || onWhat || helpers) && <div className="sq-isl sq-list">{flowsBlock}{timeBlock}{onWhat}{helpers}</div>}
