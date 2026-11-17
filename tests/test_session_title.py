@@ -43,6 +43,14 @@ def test_start_turn_does_not_overwrite_existing_title():
     assert got["title"] == "first prompt"          # 2nd turn leaves the title alone
 
 
+def test_start_turn_title_leaves_out_the_no_path_line():
+    # The bridge's order to the paths pack, not the user's words: it was the name whenever the titler failed.
+    from bridge import paths
+    s = store.create_session(1, "/p")
+    store.start_turn(s["id"], s["id"] + "-t1", paths.NO_PATH + "lets merge these three buttons", None)
+    assert store.get_session(s["id"])["title"] == "lets merge these three buttons"
+
+
 def test_set_subject_title_overwrites_auto():
     s = store.create_session(1, "/p")
     store.start_turn(s["id"], s["id"] + "-t1", "help me center a div in CSS", None)

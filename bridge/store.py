@@ -1096,8 +1096,10 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
+            # paths.NO_PATH is the bridge's order, not the user's words: never the name.
+            title = prompt.strip().removeprefix("No path for this message.").strip()
             c.execute("UPDATE sessions SET title=?, title_source='auto' WHERE id=?",
-                      (prompt.strip()[:60] or "New chat", session_id))
+                      (title[:60] or "New chat", session_id))
         c.execute("COMMIT")
 
 
