@@ -14,6 +14,7 @@ import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
 import { fmtTokens } from "../lib/week";
 import { useMultiOn } from "../lib/multistore";
+import { useChatImages } from "../lib/chatimages";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
@@ -870,7 +871,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
    *  what the agent made of its newest ones, when it has said.
    *  ponytail: one strip, so one note; each picture's own is in the lightbox. A zone
    *  that looked at several things in turn may want a strip per note. */
-  looked?: { note: string };
+  /** `shown`: how many of the pictures it showed you (Gallery only), which it didn't just look at. */
+  looked?: { note: string; shown: number };
   /** The rows for a filter other than all, and how many each would keep (lib/rowfilter). */
   filtered?: (f: RowFilter) => ReactNode[];
   filterCounts?: () => Record<RowFilter, number>;
@@ -1132,9 +1134,9 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
             {!open ? ind : null}
             {pics.length && looked ? (
               <div className="ma-looked">
-                <div className="ma-looked-lab">Looked at {picsWord}</div>
+                <div className="ma-looked-lab">{looked.shown ? picsWord : `Looked at ${picsWord}`}</div>
                 <div className="ma-looked-body">
-                  <ShotRow pics={pics} shut={!open} label={`Looked at ${picsWord}`} onOpen={setZoom} />
+                  <ShotRow pics={pics} shut={!open} label={looked.shown ? picsWord : `Looked at ${picsWord}`} onOpen={setZoom} />
                   {looked.note ? <p className="ma-looked-note">{looked.note}</p> : null}
                 </div>
               </div>
@@ -2455,6 +2457,10 @@ export const RunStream = memo(function RunStream({
   const multiOn = useMultiOn();
   const dossier = toolStyle === "dossier";
   const mx = multiOn && dossier;
+  // SYSTEM ▸ Pictures it shows you: Gallery only files what it shows you (lib/pictures) in
+  // the WORK strip with what it looked at; components/Proof says it in one line.
+  const shownTo = useChatImages().shown;
+  const galleryOnly = mx && shownTo === "gallery";
   const clockAt = (e: TimedEvent): string | undefined => {
     if (turnStarted == null || e.at == null) return undefined;
     const s = Math.max(0, e.at - turnStarted);
@@ -2517,7 +2523,7 @@ export const RunStream = memo(function RunStream({
   /** A tool whose pictures are shown to you (lib/pictures), once it has come back with them. */
   const showAt = (i: number): boolean => {
     const e = events[i];
-    return mx && e?.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
+    return mx && !galleryOnly && e?.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
   };
   const turnWord = [turnNo ? `turn ${turnNo}` : "", turnStarted ? hhmm(turnStarted) : ""].filter(Boolean).join(" · ");
   const addShots = (ev: number, call: string, about: string, paths: string[] = [], clip?: Clip, at?: number) => {
@@ -2529,6 +2535,10 @@ export const RunStream = memo(function RunStream({
   events.forEach((e, i) => {
     if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
     else if (e.type === "tool" && !showAt(i)) { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
+    else if (galleryOnly && e.type === "figure") {
+      addShots(i, e.kind === "compare" ? "compare_images" : "show_image", "", e.images, undefined, e.at);
+      for (const s of shotsOf.get(i) ?? []) s.caption = e.caption;
+    }
   });
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
@@ -2571,7 +2581,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && (t === "figure" || t === "report" || t === "data" || t === "design" || showAt(i));
+    return !ended && ((t === "figure" && !galleryOnly) || t === "report" || t === "data" || t === "design" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2936,7 +2946,7 @@ export const RunStream = memo(function RunStream({
       case "tool_done":
         return null;
       case "figure": {
-        if (!mx || ended) return null;
+        if (!mx || ended || galleryOnly) return null;
         const item = proofs.find((p) => p.i === i);
         return item ? <ProofBlock key={i} items={[item]} all={proofs} turn={turnWord} /> : null;
       }
@@ -3198,7 +3208,7 @@ export const RunStream = memo(function RunStream({
     const cats: StepCat[] = [];
     const pics: Pic[] = [];
     const purposes: BashKind[] = [];
-    let lastPic = -1;
+    let lastPic = -1, shown = 0;
     let notes = 0, steps = 0, failed = 0, out = 0, said = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     let live: Extract<TimedEvent, { type: "tool" }> | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
@@ -3215,13 +3225,15 @@ export const RunStream = memo(function RunStream({
         if (mx && e.name === "Bash") purposes.push(bashKind(e.detail ?? e.summary));
         if (!d) { out++; live = e; openAt = e.at; }
         else if (d.is_error) failed++;
+        if (galleryOnly && isShowTool(e.name)) shown += d?.images?.length ?? 0;
         if (!showAt(i)) for (const p of d?.images ?? []) { lastPic = i; pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) }); }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
+      else if (galleryOnly && e.type === "figure") for (const p of e.images ?? []) shown++, pics.push({ path: p, name: e.caption || "Shown", unseen: shotUnseen(p, e.at) });
     }
     const secs = first != null && last != null ? last - first : 0;
     const lookNote = noteLine(looked?.get(lastPic) ?? "");
-    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "", purposes, lookNote };
+    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "", purposes, lookNote, shown };
   };
   /** A chapter's name: the note it opens on (lib/dossier cuts there), else
    *  the first words or call in it — one line, without the code ticks. */
@@ -3329,7 +3341,7 @@ export const RunStream = memo(function RunStream({
     return `z${start}`;
   };
   const workZone = (zsegs: Seg[], lastZone: boolean, lastWork = lastZone) => {
-    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span, purposes, lookNote } = tally(zsegs);
+    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span, purposes, lookNote, shown } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
@@ -3386,7 +3398,7 @@ export const RunStream = memo(function RunStream({
       <WorkZone
         key={zoneKey(zsegs[0].start)}
         purposes={mx ? purposes : undefined}
-        looked={mx ? { note: lookNote } : undefined}
+        looked={mx ? { note: lookNote, shown } : undefined}
         filtered={filtered}
         filterCounts={filterCounts}
         reveal={reveal && holds(zsegs, reveal.i) ? reveal.n : 0}

@@ -148,7 +148,7 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
             return _OFF
         return saved_views.listed(image_root(chat_id, _one(qs, "session"), _one(qs, "project")))
     if path == "chat-images":
-        return {"mode": chat_images.mode()}, 200
+        return {"mode": chat_images.mode(), "shown": chat_images.shown()}, 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
                     "mcp-share", "skill-share", "agent-tools", "rules", "rules/log", "mystical-dir",
                     "mystical-dir/read", "chat-search", "chat-report", "hooks"):
@@ -245,7 +245,18 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return _OFF
     if path == "chat-images":
         try:
-            return {"mode": chat_images.set_mode(str(body.get("mode") or ""))}, 200
+            if "mode" not in body and "shown" not in body:
+                raise ValueError("send mode or shown")
+            # Both checked before either is kept, so a bad pair changes nothing.
+            if "mode" in body and body["mode"] not in chat_images.MODES:
+                raise ValueError("mode must be attachment or inline")
+            if "shown" in body and body["shown"] not in chat_images.SHOWN:
+                raise ValueError("shown must be chat or gallery")
+            if "mode" in body:
+                chat_images.set_mode(body["mode"])
+            if "shown" in body:
+                chat_images.set_shown(body["shown"])
+            return {"mode": chat_images.mode(), "shown": chat_images.shown()}, 200
         except ValueError as e:
             return {"error": str(e)}, 400
     if path == "chat-images/upload":

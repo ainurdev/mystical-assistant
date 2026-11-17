@@ -40,6 +40,7 @@ import time
 from bridge import config, experimental
 
 MODES = ("attachment", "inline")
+SHOWN = ("chat", "gallery")
 SERVABLE = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp")
 _EXT = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/gif": "gif",
         "image/webp": "webp", "image/avif": "avif", "image/bmp": "bmp"}
@@ -54,24 +55,51 @@ def _path() -> str:
     return os.path.join(os.path.dirname(config.BRIDGE_DB), "chat_images.json")
 
 
+def _read() -> dict:
+    try:
+        with open(_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _write(key: str, value: str) -> None:
+    with _lock:
+        tmp = _path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({**_read(), key: value}, f)
+        os.replace(tmp, _path())
+
+
 def mode() -> str:
     if not experimental.enabled():
         return "attachment"
-    try:
-        with open(_path(), encoding="utf-8") as f:
-            m = json.load(f).get("mode")
-    except (OSError, ValueError, AttributeError):
-        return "attachment"
+    m = _read().get("mode")
     return m if m in MODES else "attachment"
 
 
 def set_mode(value: str) -> str:
     if value not in MODES:
         raise ValueError("mode must be attachment or inline")
-    tmp = _path() + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"mode": value}, f)
-    os.replace(tmp, _path())
+    _write("mode", value)
+    return value
+
+
+def shown() -> str:
+    """Where a picture the agent shows you (show_image, Attach) draws: large in the chat,
+    or in the WORK zone's gallery with one line in the chat. Only the dashboard reads it;
+    Telegram still gets the photo."""
+    if not experimental.enabled():
+        return "chat"
+    v = _read().get("shown")
+    return v if v in SHOWN else "chat"
+
+
+def set_shown(value: str) -> str:
+    if value not in SHOWN:
+        raise ValueError("shown must be chat or gallery")
+    _write("shown", value)
     return value
 
 
