@@ -321,7 +321,7 @@ def waiting() -> dict:
 
 def approval_line(n: int) -> str:
     """What a set waiting for Approve & build says: its notice, its Needs-you row, Telegram."""
-    return f"{n} ticket{'s wait' if n != 1 else ' waits'} for your approval"
+    return f"{n} part{'s wait' if n != 1 else ' waits'} for your approval"
 
 
 def summary_for(session_id: str):
@@ -384,7 +384,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
     co = flowbranch._checkout(sess)  # noqa: SLF001
     folder = folder or (_flow_folder(flow_session_id, co, since) if co else "")
     if not folder:
-        msg = "no ticket files were written since this path began"
+        msg = "no parts were written since this flow began"
         notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {msg}.")
         return msg
     slug = flowbranch.feature_slug(os.path.basename(folder))
@@ -433,7 +433,7 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         from bridge import runner  # local import: runner<->tickets cycle
         body = approval_line(len(tks))
         try:
-            runner._notify(sess.get("chat_id"), f"▦ Tickets need you — {runner._session_label(flow_session_id)}\n{body}",  # noqa: SLF001
+            runner._notify(sess.get("chat_id"), f"▦ Parts need you — {runner._session_label(flow_session_id)}\n{body}",  # noqa: SLF001
                            runner._session_kb(sess.get("chat_id"), flow_session_id, "🛠 Open session"),  # noqa: SLF001
                            kind="tickets_wait", sid=flow_session_id, body=body)
         except Exception as e:  # noqa: BLE001 — the set waits either way
@@ -562,7 +562,7 @@ def _settle(st: dict, n: str, status: str) -> None:
     notices.emit("tickets", st["parent_session"],
                  body=f"#{n} {t['title']} needs a fix: {t.get('why') or 'it did not finish'}."
                  + (f" {', '.join('#' + k for k in held)} wait{'s' if len(held) == 1 else ''} for it." if held else "")
-                 + " Retry it in TICKETS.")
+                 + " Retry it in PARTS.")
 
 
 def _start_ticket(folder: str, st: dict, n: str) -> None:
@@ -790,7 +790,7 @@ def _merge_end(sid: str, status: str, chat_id=None, carry: bool = True) -> None:
             if kept:
                 notices.emit("tickets", st["parent_session"], body=f"After the merge, {', '.join(kept)} "
                              f"kept {'its' if len(kept) == 1 else 'their'} worktree: uncommitted work there, or a "
-                             "session still at work. Clean up in the ticket map tries again.")
+                             "session still at work. Clean up in PARTS tries again.")
         except Exception as e:  # noqa: BLE001 — a failed clean-up never holds the flow up
             print(f"[tickets] clean-up of {folder} failed: {e}", file=sys.stderr)
         paths.advance(st["parent_session"], "merge", st.get("flow_at"))

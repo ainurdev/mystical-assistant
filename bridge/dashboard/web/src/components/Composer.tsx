@@ -84,8 +84,8 @@ const KIND_ICON: Record<KindId, LucideIcon> = { design: DraftingCompass, build: 
 export const FLOW_ICON: Record<string, LucideIcon> = KIND_ICON;
 // The FLOWS sheet's line beside the picked flow's name.
 const FLOW_ABOUT: Record<string, string> = {
-  design: "grill, then draw it, then build", build: "grill, then build: here, or as tickets",
-  refactor: "improve, then build as tickets", fix: "find the cause, fix it, then review",
+  design: "grill, then draw it, then build", build: "grill, then build: here, or in parts",
+  refactor: "improve, then build in parts", fix: "find the cause, fix it, then review",
   ship: "merge, check, clean up", ask: "an answer, nothing changed",
 };
 // PRESET names a run's fields as the box does; the bridge's flow settings as they do (lib/flowruns).
@@ -500,24 +500,24 @@ function FlowSeg<T extends string | boolean>({ label, value, opts, set }: { labe
   );
 }
 
-/** Why AS TICKETS (design-drafts/flow-sheet a4-tickets-tip): hovering it says what tickets give over sub agents. */
+/** Why IN PARTS (design-drafts/flow-sheet a4-tickets-tip): hovering it says what parts give over sub agents. */
 const WHY_TICKETS = (
   <span className="fs-why">
-    <b className="caps">Why tickets instead of sub agents</b>
+    <b className="caps">Why parts instead of sub agents</b>
     <ul>
-      <li><b>Their own chat.</b> Each ticket is a real session. You can open it, watch it work, and answer its questions directly.</li>
-      <li><b>Their own branch.</b> Parallel work doesn't collide, and each ticket's changes are merged on purpose.</li>
-      <li><b>A plan you can see.</b> Tickets are drawn as waves, and a ticket starts only after the tickets it depends on are done.</li>
-      <li><b>They can be retried.</b> A failed ticket can be run again without redoing the rest.</li>
-      <li><b>They last.</b> A ticket keeps its record after the turn ends. A sub agent is gone when the turn ends.</li>
+      <li><b>Their own chat.</b> Each part is a real session. You can open it, watch it work, and answer its questions directly.</li>
+      <li><b>Their own branch.</b> Parallel work doesn't collide, and each part's changes are merged on purpose.</li>
+      <li><b>A plan you can see.</b> Parts are drawn as waves, and a part starts only after the parts it depends on are done.</li>
+      <li><b>They can be retried.</b> A failed part can be run again without redoing the rest.</li>
+      <li><b>They last.</b> A part keeps its record after the turn ends. A sub agent is gone when the turn ends.</li>
     </ul>
-    <span>Sub agents are still best for quick lookups, searches and reviews. Use tickets when two or more parts can be built at the same time.</span>
+    <span>Sub agents are still best for quick lookups, searches and reviews. Build in parts when two or more of them can be built at the same time.</span>
   </span>
 );
 
 /** Why a switched-on step may still not run: PONYTAIL is off. "" when it runs as set. */
 const ponyNote = (st: FlowStep) => st.ponytail_off === true ? "PONYTAIL is off: this step doesn't run"
-  : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after tickets merge still runs)" : "";
+  : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after the parts merge still runs)" : "";
 
 const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -582,10 +582,10 @@ function FlowDetail({ f, change, models, runsOpen, onRuns, flat }: { f: FlowSett
             <div className="fs-build">
               <FlowSeg label={`${name}: build`} value={f.tickets} set={(v) => change({ flow: f.id, key: "tickets", value: v })} opts={[
                 [false, "Here", "builds in this session"],
-                [true, "As tickets", WHY_TICKETS]]} />
+                [true, "In parts", WHY_TICKETS]]} />
               {f.tickets && (
-                <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
-                  <Switch on={!f.approve} label={`${name}: start tickets without asking`}
+                <label className="fs-sw" title="new parts start building by themselves, without waiting for Approve & build">
+                  <Switch on={!f.approve} label={`${name}: start parts without asking`}
                     onClick={() => change({ flow: f.id, key: "approve", value: !f.approve })} />start without asking</label>
               )}
             </div>
@@ -1610,7 +1610,7 @@ export function Composer({
       <div className="pb-pr"><b>Step</b>
         <div className="pb-flow-acts">
           <button type="button" disabled={fchip.skipTo === null} onClick={() => flowSkip(fchip.skipTo!)}
-            title={fchip.skipTo === null ? "the tickets are still at work" : `pass over ${fchip.next.label.toUpperCase()}`}>
+            title={fchip.skipTo === null ? "the parts are still at work" : `pass over ${fchip.next.label.toUpperCase()}`}>
             <SkipForward size={11} strokeWidth={2.2} aria-hidden />SKIP {fchip.next.label.toUpperCase()}</button>
           <div className="pb-flow-jump">
             <button type="button" disabled={!fchip.jumps.length} aria-haspopup="menu" aria-expanded={ppList === "jump"}

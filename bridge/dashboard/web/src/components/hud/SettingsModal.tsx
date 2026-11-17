@@ -267,7 +267,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
-  { tab: "aimgmt", sec: "FLOWS", terms: "flows flow steps grill design build refactor fix ship ask review retro audit tickets guess compact wait go on" },
+  { tab: "aimgmt", sec: "FLOWS", terms: "flows flow steps grill design build refactor fix ship ask review retro audit tickets parts guess compact wait go on" },
   { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens concise replies subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
   { tab: "aimgmt", sec: "COUNCIL", terms: "council review reviewers codex claude bar score pass rounds stop early origin push code-review" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
@@ -1235,7 +1235,7 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
     ["parked", "Paused by the usage limit", "it resumes on its own at the reset"],
     ["resumed", "Resumed or retrying on its own", "after a restart, a limit reset, an API error or a sign-in; a Rivendell link back"],
     ["started", "Started elsewhere", "Telegram, Rivendell, a goal's next turn"],
-    ["tickets", "Tickets", "a set waits for Approve & build (only this one goes to Telegram), a ticket needs a fix, or a set stops"]] },
+    ["tickets", "Parts", "a task's parts wait for Approve & build (only this one goes to Telegram), a part needs a fix, or the parts stop"]] },
   { head: "RIVENDELL", rows: [
     ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],
     ["rv_done", "Job done", "PR review, implementation, todolist, changelog…"],

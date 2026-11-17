@@ -114,6 +114,8 @@ export function setNeeds(n: Need[] | undefined) { needs = n ?? []; emit(); }
 /** The Rivendell connections, for the RIVENDELL filter's link bar. */
 export function setLinks(l: RivendellInstance[]) { links = l; emit(); }
 const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn); }; };
+/** The NEEDS YOU list as it stands, re-rendering on every poll (the WORK panel's Needs you). */
+export const useNeeds = () => useSyncExternalStore(subscribe, () => needs);
 
 // ---- copy and colour ------------------------------------------------------------
 

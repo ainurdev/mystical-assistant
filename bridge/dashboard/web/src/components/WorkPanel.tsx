@@ -1,50 +1,45 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowRight, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, Circle, Ellipsis, Eye, Inbox, ListPlus, LoaderCircle, MessageSquare, Pencil, Plus, SkipForward, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
-import { useRefSession, workCall, WorkPicture, workGet, workSources } from "../lib/readapi";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Inbox, ListPlus, LoaderCircle, MessageSquare, Pencil, Plus, SkipForward, Sparkles, Trash2, X } from "lucide-react";
+import { useRefSession, workCall, workGet, workSources } from "../lib/readapi";
 import { wordDiff } from "../lib/worddiff";
-import { Dialog } from "./DesignSystem";
 import { Markdown } from "./Markdown";
 
-// The project's work list (bridge/worklist.py) and its run (bridge/workrun.py). Same file in both apps.
+// The project's work: tasks (bridge/worklist.py), each built by a flow in a session of its own, in
+// parts. Same file in both apps.
 //
-// Every card says its state in words, with an icon and a colored edge, since "what's this doing?" is
-// what the panel is for. Refining, editing and adding each take over the panel rather than expand in it:
-// you always know which mode you're in, and the list never gets pushed around. It also keeps one scroller,
-// the panel's: WebKitGTK, the Linux window's engine, holds a wheel gesture on a box that scrolls, even at
-// its end, so a box that scrolls inside a list leaves the list stuck under the pointer (fitBox).
+// One row per task, grouped by what it needs from you: Needs you, Building, Up next, Done (folded).
+// Line 1 is a dot, the title and a bar per part; line 2 what it does now, or the question a part asks
+// in amber with Answer. A started row opens its session; ▸ Start opens under an Up next row, where the
+// flow and the branch are picked before anything starts (decided 2026-11-17, design A · Rows in
+// .mystical/design-drafts/work-tickets). Refining, editing and adding each take over the panel rather
+// than expand in it: you always know which mode you're in, and the list never gets pushed around. It
+// also keeps one scroller, the panel's: WebKitGTK, the Linux window's engine, holds a wheel gesture on
+// a box that scrolls, even at its end, so a box that scrolls inside a list leaves the list stuck under
+// the pointer (fitBox).
 
 type Source = { kind?: string; ref?: string; url?: string } | null;
 type Message = { role: "user" | "agent" | "error"; text: string; options?: string[]; proposal?: { title: string; detail: string }; used?: boolean };
+type Part = { n: string; title: string; status: string; session_id: string };
+type Flow = "build" | "fix" | "design";
 type Item = {
   id: string; title: string; detail: string; source: Source; depends_on: string[]; state: string; note: string; group: string;
-  helper?: string; session_id?: string; refining?: boolean; refine?: { messages: Message[] };
-  report?: string; summary?: string; decisions?: string[]; unverified?: string[]; commit?: string | null;
-  evidence?: { dir: string; files: number; pictures: string[] };
+  session_id?: string; refining?: boolean; refine?: { messages: Message[] };
+  kind?: Flow; branch?: string; armed?: boolean; now?: string; parts?: Part[]; sessions?: string[];
 };
-type Check = { state: "running" | "done" | "failed"; command?: string; ok?: boolean; new?: string[]; same?: number; passed?: number | null; failed?: number | null; failures?: string[]; code?: number; log?: string };
-type Run = {
-  id: string; chat: string; chat_title: string; state: "running" | "paused" | "finished"; branch: string; into: string; parallel: number;
-  summary?: string; paused_why?: string; dirty?: boolean; items: string[]; merged: number;
-  baseline?: Check; check?: Check; leftovers?: { path: string; why: string }[];
-};
+/** A question waiting on you (the dashboard's Needs you list): its session, and what it asks. */
+export type Asking = { subject: string; body: string };
 type PlanStatus = "pending" | "in_progress" | "completed" | "skipped";
 type PlanStep = { id: string; title: string; status: PlanStatus; detail?: string; note?: string; substeps?: { title: string; status: PlanStatus }[]; started_at?: number; done_at?: number };
 type Plan = { steps: PlanStep[]; pending: { at: number; step: string; summary: string }[]; source: string; started?: number | null; updated?: number | null };
-type Listing = { items: Item[]; project: string; runs?: Run[]; plan?: Plan | null };
-type Screen = { k: "plan-change"; step: string } | { k: "plan-ask"; step: string } | { k: "plan-whole" } | { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" } | { k: "land"; run: string };
+type Listing = { items: Item[]; project: string; plan?: Plan | null };
+type Screen = { k: "plan-change"; step: string } | { k: "plan-ask"; step: string } | { k: "plan-whole" } | { k: "list" } | { k: "refine"; id: string } | { k: "edit"; id: string } | { k: "add"; tab: "write" | "bring" };
 type Call = (path: string, body: Record<string, unknown>) => Promise<boolean>;
 
-const ICON = { size: 13, strokeWidth: 2, "aria-hidden": true } as const;
-const STATE: Record<string, { label: string; icon: ReactNode }> = {
-  blocked: { label: "Needs you", icon: <TriangleAlert {...ICON} /> },
-  doing: { label: "Working", icon: <LoaderCircle {...ICON} /> },
-  review: { label: "In review", icon: <Eye {...ICON} /> },
-  todo: { label: "Not started", icon: <Circle {...ICON} /> },
-  done: { label: "Done", icon: <CircleCheck {...ICON} /> },
-  dropped: { label: "Dropped", icon: <Ban {...ICON} /> },
+const STATE: Record<string, { label: string }> = {
+  blocked: { label: "Needs you" }, doing: { label: "Working" }, review: { label: "In review" },
+  todo: { label: "Not started" }, done: { label: "Done" }, dropped: { label: "Dropped" },
 };
-const ORDER = ["blocked", "doing", "review", "todo", "done", "dropped"];
-const GROUP_ORDER = ["blocked", "doing", "review", "next", "later", "here"];
+const GROUPS = [["needs", "Needs you"], ["building", "Building"], ["next", "Up next"], ["done", "Done"]] as const;
 const errorOf = (e: unknown) => (e instanceof Error ? e.message : "That didn't work.");
 
 /** As tall as its text, so it never scrolls. */
@@ -54,136 +49,107 @@ const fitBox = (el: HTMLTextAreaElement | null) => {
   el.style.height = `${el.scrollHeight + 2}px`;
 };
 
-const StateTag = ({ state, count }: { state: string; count?: number }) => (
-  <span className="wl-st" data-s={state}>{STATE[state]?.icon}{count ?? STATE[state]?.label ?? state}</span>
-);
-
 function Head({ title, onBack }: { title: string; onBack: () => void }) {
   return <div className="wl-sheet-h"><button type="button" className="wl-ic" aria-label="Back to the list" onClick={onBack}><ChevronLeft size={16} aria-hidden /></button><b>{title}</b></div>;
 }
 
-/** What the finished branch's checks found, against where it started. */
-function checkWords(c?: Check): { tone: "ok" | "warn" | "wait"; text: string } | null {
-  if (!c) return null;
-  if (c.state === "running") return { tone: "wait", text: "Running the checks on the whole branch…" };
-  if (c.state === "failed") return { tone: "warn", text: "The checks couldn't finish, so this branch is unchecked." };
-  const n = [c.passed != null ? `${c.passed} passed` : "", c.failed ? `${c.failed} failed` : ""].filter(Boolean).join(", ");
-  if (c.ok) return { tone: "ok", text: `Checks: ${n || "passed"}${c.same ? `. The same ${c.same} failed where the run started, so none are new.` : "."}` };
-  if (c.new?.length) return { tone: "warn", text: `Checks: ${n}. New failures: ${c.new.slice(0, 5).join(", ")}${c.new.length > 5 ? ` and ${c.new.length - 5} more` : ""}.` };
-  return { tone: "warn", text: `The checks failed with exit code ${c.code}, and their output couldn't be read.${c.log ? ` See ${c.log}.` : ""}` };
-}
+// ------- a task's row -----------------------------------------------------------------------
 
-function Evidence({ item, session }: { item: Item; session: string | null }) {
-  const e = item.evidence;
-  if (!e) return null;
+const FLOWS: { id: Flow; label: string; type: string; what: string }[] = [
+  { id: "build", label: "Build", type: "feat", what: "Grills the plan, then splits it into parts. One part starts at once; more wait for your approval." },
+  { id: "fix", label: "Fix", type: "fix", what: "Finds the cause and fixes it, then reviews the fix." },
+  { id: "design", label: "Design", type: "feat", what: "Grills, then draws it for your approval before any part is built." },
+];
+// shortcut: a smaller copy of lib/kinds.ts's FIX and DESIGN rules, as the Mini App has no kinds.ts; a wrong guess costs one tap.
+const guessFlow = (t: string): Flow =>
+  /\b(bug|broken|fix|fail\w*|error|crash\w*|wrong|missing|twice|not working|doesn'?t work|can'?t|won'?t)\b/i.test(t) ? "fix"
+    : /\b(re-?design|mock-?ups?|look and feel|restyle|layout)\b/i.test(t) ? "design" : "build";
+// shortcut: the bridge's title_slug in short (no check-ref-format); the branch the session gets is the bridge's, and says so after.
+const slug = (t: string) => {
+  const s = t.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return (s.length > 40 ? s.slice(0, 41).replace(/-[^-]*$/, "") : s) || "task";
+};
+
+function Meter({ parts }: { parts: Part[] }) {
+  const done = parts.filter((p) => p.status === "done").length;
   return (
-    <div className="wl-ev">
-      <small>{e.files} file{e.files === 1 ? "" : "s"} kept in {e.dir}</small>
-      {e.pictures.length ? <div className="wl-pics">{e.pictures.map((p) => <WorkPicture key={p} session={session} path={p} alt={`From ${item.id}: ${p.split("/").pop()}`} />)}</div> : null}
-    </div>
+    <>
+      <span className="wl-m" aria-hidden>{parts.map((p) => <b key={p.n} data-p={p.status === "done" ? "ok" : p.status === "running" ? "run" : p.status === "fix" || p.status === "missing" ? "ask" : undefined} />)}</span>
+      <span className="wl-n" aria-label={`${done} of ${parts.length} parts done`}>{done}/{parts.length}</span>
+    </>
   );
 }
 
-/** What a helper said you'd want to know: decisions, what it couldn't check, then the whole reply. */
-function Report({ item, session }: { item: Item; session: string | null }) {
-  if (!item.report) return <Evidence item={item} session={session} />;
+function Start({ item, items, call, close }: { item: Item; items: Item[]; call: Call; close: () => void }) {
+  const [kind, setKind] = useState<Flow>(() => item.kind ?? guessFlow(`${item.title} ${item.detail}`));
+  const f = FLOWS.find((x) => x.id === kind)!;
+  const waits = item.depends_on.filter((d) => items.find((i) => i.id === d)?.state !== "done");
   return (
-    <div className="wl-report">
-      {item.decisions?.length ? <div><h6>Decisions to check</h6><ul>{item.decisions.map((d, i) => <li key={i}>{d}</li>)}</ul></div> : null}
-      {item.unverified?.length ? <div data-warn=""><h6>Not verified</h6><ul>{item.unverified.map((d, i) => <li key={i}>{d}</li>)}</ul></div> : null}
-      <Evidence item={item} session={session} />
-      <details className="wl-full"><summary>The helper's full report</summary><p>{item.report}</p></details>
-    </div>
-  );
-}
-
-function Land({ run, items, session, onRun, onOpen, back }: { run: Run; items: Item[]; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void; back: () => void }) {
-  const inRun = items.filter((i) => run.items.includes(i.id));
-  const done = inRun.filter((i) => i.state === "done");
-  const rest = inRun.filter((i) => i.state !== "done");
-  const check = checkWords(run.check);
-  const bad = check?.tone === "warn";
-  return (
-    <div className="wl-sheet">
-      <Head title={`Merge into ${run.into || "your branch"}`} onBack={back} />
-      <div className="wl-sheet-b">
-        <p className="wl-lede">From <span className="wl-branch">{run.branch}</span>. Merging is local, and nothing is pushed. Uncommitted work in your folder is left alone: git refuses rather than touch it.</p>
-        {check ? <p className={`wl-check wl-${check.tone}`} role="status">{check.text}</p> : <p className="wl-check wl-warn">No check command is set for this project, so nothing checked the whole branch.</p>}
-        {done.map((i) => (
-          <div key={i.id} className="wl-land" data-s="done">
-            <StateTag state="done" />
-            <b>{i.title}</b>
-            <small>{i.id}{i.session_id && onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(i.session_id!)}>open its chat</button></> : null}</small>
-            {i.summary ? <p>{i.summary}</p> : null}
-            <Report item={i} session={session} />
-          </div>
-        ))}
-        {rest.length ? <div className="wl-land-rest"><h6>Not in this merge</h6><ul>{rest.map((i) => <li key={i.id}>{i.id}: {i.title} ({STATE[i.state]?.label ?? i.state})</li>)}</ul></div> : null}
+    <div className="wl-start">
+      <div className="wl-seg" role="radiogroup" aria-label="Flow">
+        {FLOWS.map((x) => <button key={x.id} type="button" role="radio" aria-checked={kind === x.id} onClick={() => setKind(x.id)}>{x.label}</button>)}
       </div>
-      <div className="wl-sheet-f wl-row">
-        <button type="button" className="dg-send wl-grow" disabled={!run.merged} onClick={() => { onRun("land"); back(); }}>{bad ? "Merge anyway" : `Merge ${done.length} task${done.length === 1 ? "" : "s"}`}</button>
-        <button type="button" className="dg-btn" onClick={back}>Not yet</button>
-      </div>
-    </div>
-  );
-}
-
-function RunCard({ run, session, onRun, onOpen, onLand }: { run: Run; session: string | null; onRun: (path: string) => void; onOpen?: (id: string) => void; onLand: () => void }) {
-  const [sure, setSure] = useState(false);
-  const check = checkWords(run.check);
-  const here = run.chat === session;
-  const n = `${run.merged} of ${run.items.length} merged`;
-  return (
-    <section className="wl-run" data-state={run.state} aria-live="polite">
-      <div><b>{run.state === "running" ? "Run going" : run.state === "paused" ? "Run paused" : "Run finished"}</b> · {n}</div>
-      <small className="wl-branch">{run.branch}{run.state !== "finished" ? ` · up to ${run.parallel} at once` : ""}</small>
-      {run.state !== "finished" && !here ? <small>Managed in {onOpen ? <button type="button" className="au-link" onClick={() => onOpen(run.chat)}>{run.chat_title || "another chat"}</button> : run.chat_title || "another chat"}</small> : null}
-      {run.paused_why ? <small className="wl-warn">{run.paused_why}</small> : null}
-      {run.summary ? (run.summary.length > 200
-        ? <details className="wl-more"><summary>{run.summary.slice(0, 160).trimEnd()}…</summary><small>{run.summary}</small></details>
-        : <small>{run.summary}</small>) : null}
-      {run.baseline?.state === "running" ? <small>Checking the starting point before the helpers begin…</small> : null}
-      {check ? <small className={check.tone === "warn" ? "wl-warn" : undefined}>{check.text}</small> : null}
-      {run.state === "finished" ? <small>Your branch hasn't moved. Merging is local, and nothing is pushed.</small> : null}
-      {run.leftovers?.map((l) => <small key={l.path} className="wl-warn">Left behind: {l.path}. {l.why}</small>)}
+      <p className="wl-lede">New session on <b className="wl-branch">{f.type}/{slug(item.title)}</b>. {f.what}{waits.length ? ` It starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done.` : ""}</p>
       <div className="wl-row">
-        {run.state === "running" ? <button type="button" className="dg-btn" onClick={() => onRun("pause")}>Pause</button> : null}
-        {run.state === "paused" ? <button type="button" className="dg-send" disabled={!session} onClick={() => onRun("resume")}>{here ? "Resume" : "Take over here"}</button> : null}
-        {run.state !== "finished" ? <button type="button" className="dg-btn" onClick={() => onRun("stop")}>Stop helpers</button> : null}
-        {run.state === "paused" ? <button type="button" className="dg-btn" onClick={() => onRun("end")}>End the run</button> : null}
-        {run.state === "finished" ? <button type="button" className="dg-send" disabled={!run.merged} onClick={onLand}>Review and merge</button> : null}
-        {run.state === "finished" ? (sure
-          ? <button type="button" className="dg-btn dg-danger" onClick={() => onRun("discard")}>Really discard the code</button>
-          : <button type="button" className="dg-btn" onClick={() => setSure(true)}>Discard</button>) : null}
+        <button type="button" className="dg-send wl-grow" onClick={async () => { if (await call("start", { id: item.id, kind })) close(); }}>{waits.length ? "Start after" : "Start"} {f.label.toLowerCase()}</button>
+        <button type="button" className="dg-btn" onClick={close}>Cancel</button>
       </div>
-    </section>
+    </div>
   );
 }
 
-function Starter({ items, onStart, onClose }: { items: Item[]; onStart: (ids: string[], parallel: number) => void; onClose: () => void }) {
-  const [picked, setPicked] = useState(() => new Set(items.map((i) => i.id)));
-  const [parallel, setParallel] = useState(2);
-  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+function Row({ item, group, ask, items, canUp, canDown, onOpen, call, go, onMove }: {
+  item: Item; group: string; ask?: Asking; items: Item[]; canUp: boolean; canDown: boolean; onOpen?: (id: string) => void; call: Call; go: (s: Screen) => void; onMove: (up: boolean) => void;
+}) {
+  const [open, setOpen] = useState<"" | "start" | "more">("");
+  const [sure, setSure] = useState(false);
+  const parts = item.parts ?? [];
+  const sid = item.session_id;
+  const source = item.source;
+  const dot = group === "needs" ? "ask" : item.state === "review" ? "rev" : group === "building" ? "run" : group === "done" ? "ok" : "q";
+  const asker = ask ? parts.find((p) => p.session_id === ask.subject) : undefined;
+  const talked = !!item.refine?.messages.length;
+  const waits = item.depends_on.filter((d) => items.find((i) => i.id === d)?.state !== "done");
+  const toggle = () => (sid && onOpen ? onOpen(sid) : setOpen((v) => (v === "more" ? "" : "more")));
   return (
-    <Dialog title="Run the work list" onClose={onClose}>
-      <div className="au-form">
-        <p className="dg-empty">This chat's agent manages it. Each task gets a helper in its own worktree, and finished ones merge into a new branch from your last commit. Your branch doesn't move until you merge it, and uncommitted changes in your folder stay out.</p>
-        <fieldset className="wl-pick">
-          <legend>Tasks</legend>
-          {items.map((i) => <label key={i.id}><input type="checkbox" checked={picked.has(i.id)} onChange={() => toggle(i.id)} /> <span>{i.title}</span></label>)}
-        </fieldset>
-        <div className="ds-f"><span>Helpers at once</span>
-          <div className="ds-chips" role="radiogroup" aria-label="Helpers at once">
-            {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" role="radio" aria-checked={parallel === n} className="dg-chip" onClick={() => setParallel(n)}>{n}</button>)}
-          </div>
-          <small className="au-hint">More is faster and uses your limits faster. Helpers can't go above this chat's permission level, and anything needing approval asks you.</small>
-        </div>
-        <div className="ds-do au-save">
-          <button type="button" className="dg-send" disabled={!picked.size} onClick={() => onStart(items.filter((i) => picked.has(i.id)).map((i) => i.id), parallel)}>Start {picked.size} task{picked.size === 1 ? "" : "s"}</button>
-          <button type="button" className="dg-btn" onClick={onClose}>Cancel</button>
-        </div>
+    <li className="wl-r" data-s={item.state} data-open={open || undefined}>
+      <div className="wl-l1">
+        <i className="wl-dot" data-d={dot} aria-hidden />
+        <button type="button" className="wl-t" title={item.title} aria-expanded={sid ? undefined : open === "more"} onClick={toggle}>
+          <span className="sr-only">{STATE[item.state]?.label ?? item.state}: </span>{item.title}
+        </button>
+        {parts.length ? <Meter parts={parts} /> : null}
+        {group === "next" ? (item.armed
+          ? <span className="wl-after">after {waits.join(", ") || "its blocker"}</span>
+          : <button type="button" className="wl-play" aria-expanded={open === "start"} onClick={() => setOpen((v) => (v === "start" ? "" : "start"))}>▸ Start</button>) : null}
       </div>
-    </Dialog>
+      <div className={ask ? "wl-l2 wl-asks" : "wl-l2"}>
+        {ask ? <span className="wl-w">{asker ? <em>#{asker.n} </em> : null}{ask.body}</span>
+          : <span className={item.note && !item.now ? "wl-w wl-warn" : "wl-w"}>{item.now ?? (item.note || [item.id, source?.ref ? `${source.kind ?? ""} ${source.ref}`.trim() : "", item.armed && waits.length ? `starts when ${waits.join(", ")} ${waits.length === 1 ? "is" : "are"} done` : ""].filter(Boolean).join(" · "))}</span>}
+        {ask && onOpen ? <button type="button" className="dg-btn wl-ans" onClick={() => onOpen(ask.subject)}>Answer</button> : null}
+      </div>
+      {open === "start" ? <Start item={item} items={items} call={call} close={() => setOpen("")} /> : null}
+      {open === "more" ? (
+        <div className="wl-start">
+          {item.detail ? <p className="wl-detail">{item.detail}</p> : null}
+          {source?.url ? <a className="au-link" href={source.url} target="_blank" rel="noreferrer">{source.kind ? `${source.kind} ` : ""}{source.ref || source.url}</a> : null}
+          <div className="wl-row">
+            {item.state === "todo" ? <button type="button" className="dg-send wl-i" onClick={() => go({ k: "refine", id: item.id })}><Sparkles size={13} aria-hidden />{talked ? "Keep refining" : "Refine"}</button> : null}
+            <button type="button" className="dg-btn wl-i" onClick={() => go({ k: "edit", id: item.id })}><Pencil size={13} aria-hidden />Edit</button>
+            {item.state === "done" || item.state === "dropped" || item.state === "blocked" ? <button type="button" className="dg-btn" onClick={() => void call("update", { items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
+            <span className="wl-gap" />
+            {item.state === "todo" ? <>
+              <button type="button" className="wl-ic" aria-label={`Move ${item.title} up`} title="Move up" disabled={!canUp} onClick={() => onMove(true)}><ArrowUp size={14} aria-hidden /></button>
+              <button type="button" className="wl-ic" aria-label={`Move ${item.title} down`} title="Move down" disabled={!canDown} onClick={() => onMove(false)}><ArrowDown size={14} aria-hidden /></button>
+            </> : null}
+            {item.state !== "done" ? <button type="button" className="wl-ic" aria-label={`Mark ${item.title} done`} title="Mark done" onClick={() => void call("update", { items: [{ id: item.id, state: "done" }] })}><Check size={15} aria-hidden /></button> : null}
+            {sure
+              ? <button type="button" className="dg-btn dg-danger" onClick={() => void call("remove", { ids: [item.id] })}>Really delete</button>
+              : <button type="button" className="wl-ic" aria-label={`Delete ${item.title}`} title="Delete" onClick={() => setSure(true)}><Trash2 size={14} aria-hidden /></button>}
+          </div>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -338,71 +304,6 @@ function PlanAsk({ step, n, call, back }: { step?: PlanStep; n?: number; call: C
   );
 }
 
-function Card({ item, session, canUp, canDown, activeRun, onOpen, call, go, onMove }: {
-  item: Item; session: string | null; canUp: boolean; canDown: boolean; activeRun?: Run; onOpen?: (id: string) => void; call: Call; go: (s: Screen) => void; onMove: (up: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [sure, setSure] = useState(false);
-  const [answering, setAnswering] = useState(false);
-  const [answer, setAnswer] = useState("");
-  const todo = item.state === "todo";
-  const live = item.state === "doing" || item.state === "review";
-  const inRun = !!activeRun?.items.includes(item.id);
-  const source = item.source;
-  const talked = !!item.refine?.messages.length;
-  const sendAnswer = async () => {
-    if (await call("run/answer", { run: activeRun?.id, id: item.id, text: answer })) { setAnswer(""); setAnswering(false); }
-  };
-  return (
-    <li className="wl-card" data-s={item.state}>
-      <div className="wl-ch">
-        <StateTag state={item.state} />
-        {todo ? (
-          <span className="wl-ord">
-            <button type="button" className="wl-ic" aria-label={`Move ${item.title} up`} title="Move up" disabled={!canUp} onClick={() => onMove(true)}><ArrowUp size={14} aria-hidden /></button>
-            <button type="button" className="wl-ic" aria-label={`Move ${item.title} down`} title="Move down" disabled={!canDown} onClick={() => onMove(false)}><ArrowDown size={14} aria-hidden /></button>
-          </span>
-        ) : null}
-      </div>
-      <button type="button" className="wl-title" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{item.title}</button>
-      {item.note ? <small className={item.state === "blocked" ? "wl-warn" : undefined}>{item.note}</small> : null}
-      <small>
-        {item.id}
-        {item.group === "later" ? " · not in this run" : ""}
-        {item.depends_on.length ? ` · after ${item.depends_on.join(", ")}` : ""}
-        {item.session_id && onOpen ? <> · <button type="button" className="au-link" onClick={() => onOpen(item.session_id!)}>open its chat</button></> : null}
-      </small>
-      {source?.url || source?.ref ? <small>{source.url ? <a className="au-link" href={source.url} target="_blank" rel="noreferrer">{source.kind ? `${source.kind} ` : ""}{source.ref || source.url}</a> : `${source.kind ? `${source.kind} ` : ""}${source.ref}`}</small> : null}
-      {item.state === "blocked" && inRun && !open ? <div className="wl-row"><button type="button" className="dg-btn" onClick={() => { setOpen(true); setAnswering(true); }}>Answer</button></div> : null}
-      {open ? (
-        <>
-          {item.summary ? <p className="wl-detail wl-said">{item.summary}</p> : null}
-          {item.detail ? <p className="wl-detail">{item.detail}</p> : null}
-          <Report item={item} session={session} />
-          {answering ? (
-            <form onSubmit={(e) => { e.preventDefault(); void sendAnswer(); }}>
-              <label className="wl-f"><span>What it needs to know</span><textarea ref={fitBox} rows={2} autoFocus value={answer} onChange={(e) => { setAnswer(e.target.value); fitBox(e.target); }} /></label>
-              <div className="wl-row"><button type="submit" className="dg-send" disabled={!answer.trim()}>Send</button><button type="button" className="dg-btn" onClick={() => setAnswering(false)}>Cancel</button></div>
-            </form>
-          ) : (
-            <div className="wl-row">
-              {todo ? <button type="button" className="dg-send wl-i" onClick={() => go({ k: "refine", id: item.id })}><Sparkles size={13} aria-hidden />{talked ? "Keep refining" : "Refine"}</button> : null}
-              {item.state === "blocked" && inRun ? <button type="button" className="dg-send" onClick={() => setAnswering(true)}>Answer</button> : null}
-              <button type="button" className="dg-btn wl-i" onClick={() => go({ k: "edit", id: item.id })}><Pencil size={13} aria-hidden />Edit</button>
-              {item.state === "done" || item.state === "dropped" || (item.state === "blocked" && !inRun) ? <button type="button" className="dg-btn" onClick={() => void call("update", { items: [{ id: item.id, state: "todo" }] })}>Back to the list</button> : null}
-              <span className="wl-gap" />
-              {!live && item.state !== "done" ? <button type="button" className="wl-ic" aria-label={`Mark ${item.title} done`} title="Mark done" onClick={() => void call("update", { items: [{ id: item.id, state: "done" }] })}><Check size={15} aria-hidden /></button> : null}
-              {!live ? (sure
-                ? <button type="button" className="dg-btn dg-danger" onClick={() => void call("remove", { ids: [item.id] })}>Really delete</button>
-                : <button type="button" className="wl-ic" aria-label={`Delete ${item.title}`} title="Delete" onClick={() => setSure(true)}><Trash2 size={14} aria-hidden /></button>) : null}
-            </div>
-          )}
-        </>
-      ) : null}
-    </li>
-  );
-}
-
 function Diff({ before, after }: { before: string; after: string }) {
   return <>{wordDiff(before, after).map((p, i) => (p.kind === "add" ? <ins key={i}>{p.text}</ins> : p.kind === "del" ? <del key={i}>{p.text}</del> : <span key={i}>{p.text}</span>))}</>;
 }
@@ -489,7 +390,7 @@ function Edit({ item, items, call, back }: { item: Item; items: Item[]; call: Ca
       <div className="wl-editing"><Pencil size={14} aria-hidden /><b>Editing {item.id}</b><span>Not saved yet</span></div>
       <div className="wl-sheet-b">
         <label className="wl-f"><span>Title</span><input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <label className="wl-f"><span>Details</span><textarea ref={fitBox} rows={4} value={detail} placeholder="Anything a helper would need to know" onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} /></label>
+        <label className="wl-f"><span>Details</span><textarea ref={fitBox} rows={4} value={detail} placeholder="Anything its session would need to know" onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} /></label>
         <After items={items} self={item.id} value={deps} onChange={setDeps} />
       </div>
       <div className="wl-sheet-f wl-row">
@@ -530,7 +431,7 @@ function Add({ tab, items, session, call, onAsk, back, setTab }: { tab: "write" 
         {tab === "write" ? (
           <>
             <label className="wl-f"><span>Title</span><input autoFocus value={title} placeholder="What needs doing" onChange={(e) => setTitle(e.target.value)} /></label>
-            <label className="wl-f"><span>Details <em>optional</em></span><textarea ref={fitBox} rows={4} value={detail} placeholder="Anything a helper would need to know" onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} /></label>
+            <label className="wl-f"><span>Details <em>optional</em></span><textarea ref={fitBox} rows={4} value={detail} placeholder="Anything its session would need to know" onChange={(e) => { setDetail(e.target.value); fitBox(e.target); }} /></label>
             <After items={items} value={deps} onChange={setDeps} />
           </>
         ) : (
@@ -556,14 +457,13 @@ function Add({ tab, items, session, call, onAsk, back, setTab }: { tab: "write" 
   );
 }
 
-export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string | null; chat?: string | null; onAsk?: (text: string) => void; onOpen?: (sessionId: string) => void }) {
+export function WorkPanel({ project, chat, asking = [], onAsk, onOpen }: { project?: string | null; chat?: string | null; asking?: Asking[]; onAsk?: (text: string) => void; onOpen?: (sessionId: string) => void }) {
   // The dashboard's rail sits outside the chat's scope, so it says which chat; the Mini App's page reads it.
   const scoped = useRefSession();
   const session = chat ?? scoped;
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState("");
   const [screen, setScreen] = useState<Screen>({ k: "list" });
-  const [starting, setStarting] = useState(false);
   const load = useCallback(() => {
     workGet<Listing>(session, project).then((r) => { setData(r); setError(""); }, (e) => setError(errorOf(e)));
   }, [session, project]);
@@ -586,9 +486,6 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
     }
   };
   const items = data?.items ?? [];
-  const runs = data?.runs ?? [];
-  const activeRun = runs.find((r) => r.state !== "finished");
-  const upNext = items.filter((i) => i.group === "next");
   const back = () => setScreen({ k: "list" });
   const failed = error ? <p className="ds-err wl-err" role="alert">{error}</p> : null;
 
@@ -612,15 +509,6 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
       </div>
     );
   }
-  if (screen.k === "land") {
-    const run = runs.find((r) => r.id === screen.run);
-    if (run) return (
-      <div className="ds wl" data-sheet="">
-        {failed}
-        <Land run={run} items={items} session={session} onOpen={onOpen} back={back} onRun={(path) => void call(`run/${path}`, { run: run.id })} />
-      </div>
-    );
-  }
   if (screen.k === "add") return (
     <div className="ds wl" data-sheet="">
       {failed}
@@ -628,8 +516,9 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
     </div>
   );
 
-  const shown = items.filter((i) => GROUP_ORDER.includes(i.group)).sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group));
-  const earlier = items.filter((i) => !GROUP_ORDER.includes(i.group));
+  // A task whose session, part or merge asks you something moves to Needs you, with the question.
+  const askOf = (i: Item) => asking.find((a) => i.sessions?.includes(a.subject));
+  const groupOf = (i: Item) => (askOf(i) ? "needs" : i.group);
   const todoIds = items.filter((i) => i.state === "todo").map((i) => i.id);
   const move = (item: Item, up: boolean) => {
     const at = todoIds.indexOf(item.id), to = at + (up ? -1 : 1);
@@ -638,39 +527,31 @@ export function WorkPanel({ project, chat, onAsk, onOpen }: { project?: string |
     [next[at], next[to]] = [next[to], next[at]];
     void call("reorder", { ids: next });
   };
-  const card = (i: Item) => {
+  const row = (i: Item) => {
     const at = todoIds.indexOf(i.id);
-    return <Card key={i.id} item={i} session={session} canUp={at > 0} canDown={at >= 0 && at < todoIds.length - 1} activeRun={activeRun} onOpen={onOpen} call={call} go={setScreen} onMove={(up) => move(i, up)} />;
+    return <Row key={i.id} item={i} group={groupOf(i)} ask={askOf(i)} items={items} canUp={at > 0} canDown={at >= 0 && at < todoIds.length - 1} onOpen={onOpen} call={call} go={setScreen} onMove={(up) => move(i, up)} />;
   };
-  const counts = ORDER.map((s) => [s, items.filter((i) => i.state === s).length] as const).filter(([, n]) => n);
   return (
     <div className="ds wl">
-      <div className="wl-top">
-        <b>Work list{data ? <span> · {data.project}</span> : null}</b>
-        {!activeRun && upNext.length ? <button type="button" className="dg-send" disabled={!session} title={session ? undefined : "Open a chat: its agent manages the run"} onClick={() => setStarting(true)}>Run</button> : null}
-      </div>
+      <div className="wl-top"><b>Work{data ? <span> · {data.project}</span> : null}</b></div>
       {failed}
-      {runs.map((r) => <RunCard key={r.id} run={r} session={session} onOpen={onOpen} onLand={() => setScreen({ k: "land", run: r.id })} onRun={(path) => void call(`run/${path}`, { run: r.id })} />)}
       {data?.plan?.steps.length ? <PlanView plan={data.plan} call={call} go={setScreen} /> : null}
-      {data?.plan?.steps.length ? <div className="wl-top wl-sub"><b>Project work list</b></div> : null}
-      {counts.length ? (
-        <div className="wl-sum">
-          <div className="wl-bar" aria-hidden>{counts.map(([s, n]) => <i key={s} data-s={s} style={{ flex: n }} />)}</div>
-          <div className="wl-leg" role="group" aria-label="Tasks by state">{counts.map(([s, n]) => <span key={s} title={STATE[s].label} aria-label={`${n} ${STATE[s].label}`}><StateTag state={s} count={n} /></span>)}</div>
-        </div>
-      ) : null}
+      {data?.plan?.steps.length ? <div className="wl-top wl-sub"><b>Project tasks</b></div> : null}
       <div className="wl-body">
-        {data && !items.length ? <p className="dg-empty">Nothing yet. Add tasks yourself, or ask an agent to bring them in from a tracker or your notes. Agents only change this list when you ask.</p> : null}
-        <ul className="wl-cards">{shown.map(card)}</ul>
-        {earlier.length ? (
-          <details className="wl-earlier"><summary>Earlier · {earlier.length}</summary><ul className="wl-cards">{earlier.map(card)}</ul></details>
-        ) : null}
+        {data && !items.length ? <p className="dg-empty">Nothing yet. Add tasks yourself, or ask an agent to bring them in from a tracker or your notes. Agents only change this list when you ask, and only you start a task.</p> : null}
+        {GROUPS.map(([g, label]) => {
+          const rows = items.filter((i) => groupOf(i) === g);
+          if (!rows.length) return null;
+          const list = <ul className="wl-rows">{rows.map(row)}</ul>;
+          return g === "done"
+            ? <details key={g} className="wl-g-done"><summary className="wl-g">{label} <i>{rows.length}</i><ChevronRight size={13} aria-hidden /></summary>{list}</details>
+            : <section key={g} aria-label={label}><h3 className="wl-g" data-g={g}>{label} <i>{rows.length}</i></h3>{list}</section>;
+        })}
       </div>
       <div className="wl-dock">
         <button type="button" className="dg-btn wl-i" onClick={() => setScreen({ k: "add", tab: "write" })}><Plus size={14} aria-hidden />New task</button>
         <button type="button" className="dg-btn wl-i" onClick={() => setScreen({ k: "add", tab: "bring" })}><Inbox size={14} aria-hidden />Bring in</button>
       </div>
-      {starting ? <Starter items={upNext} onClose={() => setStarting(false)} onStart={(ids, parallel) => { setStarting(false); void call("run/start", { ids, parallel }); }} /> : null}
     </div>
   );
 }

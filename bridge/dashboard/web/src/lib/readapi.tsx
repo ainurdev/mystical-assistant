@@ -57,16 +57,10 @@ export const autoGet = <T,>() => req<T>("/local/automations");
 export const autoCall = <T,>(path: string, body: Record<string, unknown> = {}) =>
   req<T>(`/local/automations/${path}`, { method: "POST", body });
 
-/** The project's work list and its run (bridge/worklist.py, workrun.py). */
+/** The project's work: its tasks and this chat's plan (bridge/worklist.py, chatplan.py). */
 export const workGet = <T,>(session: string | null, project?: string | null) =>
   req<T>(`/local/worklist?session=${encodeURIComponent(session ?? "")}&project=${encodeURIComponent(project ?? "")}`);
 export const workCall = <T,>(path: string, session: string | null, project: string | null | undefined, body: Record<string, unknown> = {}) =>
   req<T>(`/local/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await req<{ sources: string[] }>(`/local/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
-
-/** A picture a run kept (bridge/workrun.py _keep_evidence). */
-export function WorkPicture({ session, path, alt }: { session: string | null; path: string; alt: string }) {
-  const url = `/local/chat-images/file?${new URLSearchParams({ path, session: session ?? "" })}`;
-  return <a href={url} target="_blank" rel="noreferrer"><img className="wl-pic" src={url} alt={alt} loading="lazy" /></a>;
-}

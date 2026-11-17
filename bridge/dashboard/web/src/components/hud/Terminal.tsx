@@ -646,8 +646,8 @@ export function Terminal({
             </button>
           )}
           {selected?.ticket_of && (
-            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "its super session"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
-              <span aria-hidden>‹</span> {superTitle || "super session"}
+            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
+              <span aria-hidden>‹</span> {superTitle || "its session"}
             </button>
           )}
           <button
@@ -720,9 +720,9 @@ export function Terminal({
           </span>
         )}
         {isChat && !!tset && !grid && sessionId && (
-          <span className="ma-viewsw" role="group" aria-label="Chat or its tickets">
+          <span className="ma-viewsw" role="group" aria-label="Chat or its parts">
             <button type="button" aria-pressed={!tkLive && !team} onClick={() => setTeam(false)}>CHAT</button>
-            <button type="button" aria-pressed={tkLive} onClick={() => { setTeam(false); setLivePick({ id: sessionId, on: true }); }}><span className="caps">Tickets</span> {tset.done}/{tset.total}</button>
+            <button type="button" aria-pressed={tkLive} onClick={() => { setTeam(false); setLivePick({ id: sessionId, on: true }); }}><span className="caps">Parts</span> {tset.done}/{tset.total}</button>
           </span>
         )}
         <ViewTabs view={view} onView={onView} />

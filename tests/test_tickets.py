@@ -1083,7 +1083,7 @@ def test_a_waiting_set_needs_you_until_approved_and_rings_once(make_set, monkeyp
     monkeypatch.setattr(notices, "emit", _EMIT)
     waits = lambda: [(n["kind"], n["verb"], n["body"]) for n in notices.needs({}) if n["session_id"] == s.flow]  # noqa: E731
     assert s.build() == ""
-    assert waits() == [("tickets_wait", "TICKETS", "2 tickets wait for your approval")]
+    assert waits() == [("tickets_wait", "PARTS", "2 parts wait for your approval")]
     assert s.build() == ""                                  # built again while it waits: no second ring
     assert [r["kind"] for r in notices.feed() if r["subject"] == s.flow] == ["tickets_wait"]
     assert tickets.approve(s.folder) == ""
@@ -1093,7 +1093,7 @@ def test_a_waiting_set_needs_you_until_approved_and_rings_once(make_set, monkeyp
 def test_a_waiting_set_outlives_its_notice(make_set):
     s = make_set({"01": None}, on="approve")               # the recorder: no feed row, as once it is a day old
     [n] = [n for n in notices.needs({}) if n["session_id"] == s.flow]
-    assert (n["kind"], n["body"]) == ("tickets_wait", "1 ticket waits for your approval")
+    assert (n["kind"], n["body"]) == ("tickets_wait", "1 part waits for your approval")
     assert n["at"] == tickets.sets()[0]["created"]          # when it began to wait, from the set itself
     asking = {s.flow: {"state": "awaiting", "kind": "question", "label": "which one?"}}
     assert [n["kind"] for n in notices.needs(asking) if n["session_id"] == s.flow] == ["question"]   # one row a session
@@ -1258,8 +1258,8 @@ def test_a_fix_tells_the_flow_session_why(make_set, monkeypatch):
     monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
     s.finish("01", commit=False)
     s.fail("02")
-    assert said == [("tickets", s.flow, "#01 T01 needs a fix: StepDone, but no commit. #04 waits for it. Retry it in TICKETS."),
-                    ("tickets", s.flow, "#02 T02 needs a fix: its turn failed. Retry it in TICKETS.")]
+    assert said == [("tickets", s.flow, "#01 T01 needs a fix: StepDone, but no commit. #04 waits for it. Retry it in PARTS."),
+                    ("tickets", s.flow, "#02 T02 needs a fix: its turn failed. Retry it in PARTS.")]
     assert s.state["tickets"]["02"]["why"] == "its turn failed"
     tickets.retry(s.folder, "02")
     assert "why" not in s.state["tickets"]["02"]              # running again: the old reason is gone

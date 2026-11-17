@@ -1,8 +1,10 @@
-# Work list and runs
+# Work: tasks and their flows
 
-A project keeps a list of tasks. Agents fill and change it when you ask, from wherever you
-name. When you say go, a manager agent works through it with helpers in their own worktrees,
-and the right sidebar shows all of it live.
+A project keeps a list of tasks: what you want done, and in which order. Agents fill and change
+it when you ask, from wherever you name. A task is built by a flow: its Start opens a session of
+its own on BUILD, FIX or DESIGN, which may split it into parts, and the WORK panel shows where
+each task's flow stands, live. Until 2026-11-17 a run (a manager agent with helpers) built the
+list instead; it overlapped the flows' parts and was retired (docs/adr/0004).
 
 ## Why not the existing pieces
 
@@ -19,8 +21,10 @@ It belongs to the project, in `.mystical/worklist.json` at the main checkout, so
 worktree of a repo sees one list and it outlives any chat. An item is a title, a detail, an
 optional source (`kind`, `ref`, `url`), dependencies, a state and a note.
 
-States: `todo`, `doing`, `review`, `blocked`, `done`, `dropped`. The sidebar shows them as up
-next, in progress, in review, blocked, done in this chat, not in this run, and already done.
+States: `todo`, `doing`, `review`, `blocked`, `done`, `dropped`. A started task's state is its
+flow's: spec, parts or build `doing`; parts waiting for approval or one needing a fix `blocked`;
+merging or the council's review `review`; the flow's end `done`. It is read live for the panel
+and written back at every turn's end.
 
 Agents use one tool, `work_list`, with `read`, `add`, `update`, `remove`, `replace` and
 `reorder`. `replace` is "create it anew": items it names by id or source ref keep their state,
@@ -28,8 +32,9 @@ unnamed open items go, and finished ones stay unless told otherwise. Helpers don
 
 ## The panel
 
-Every task says its state in words, with an icon and a colored edge, and a count bar sits on top.
-Refining, editing and adding each take over the panel instead of expanding in it, so the mode is
+One row per task, grouped Needs you, Building, Up next and Done (folded). Line 1 is a state dot,
+the title and a bar per part with n/m; line 2 what it does now, or the question one of its sessions
+asks, in amber with Answer. A started row opens its session. Refining, editing and adding each take over the panel instead of expanding in it, so the mode is
 never in doubt and the panel stays the only scroller. That last part isn't taste: WebKitGTK, the
 Linux window's engine, holds a whole wheel gesture on a box that scrolls, even at its end.
 
@@ -54,68 +59,22 @@ The agent owns its plan, so changing a step, asking about it, doing it sooner, s
 the whole plan reaches it as a message from you, pending until it next writes the plan. Copying a step
 to the work list is yours alone. Kept per chat in `.mystical/plans/` (`bridge/chatplan.py`).
 
-## A run
+## Starting a task
 
-Only you start one: the sidebar's Run, `/work run` in the composer, or `/work run` on Telegram.
-No agent tool can, because a tracker's text must not be able to set work going.
+Only you start one, from ▸ Start on its row: no agent tool can, because a tracker's text must not
+be able to set work going. Start opens under the row with the flow guessed from the task (a bug
+reads as FIX) and the branch it will get, `feat/` or `fix/` and the title. Starting makes a session
+named for the task, on that branch (FIX gets its worktree at once, as its first step already fixes),
+and sends the task's title and detail as the flow's first prompt.
 
-```
-your branch ──●
-               \
-run branch      ●───M(w1)───M(w2)───  ← you merge this, or discard it
-                 \  /      /
-item worktrees    w1      /
-                   \     /
-                    w2 ─┘             ← later items start from the run branch
-```
-
-- **The run branch** is `mystical/work-<mon><day>-<n>-items`, from your folder's last commit, with its own
-  worktree. Uncommitted work in your folder isn't in it, and the start says so.
-- **Each item** gets a helper in its own worktree, from the run branch as it stands then. Later
-  items see earlier work.
-- **Merging an item** commits what the helper left and merges into the run branch with
-  `--no-ff`, so `git log --first-parent` reads one commit per item. A conflict aborts cleanly
-  and the item goes back to its helper, whose copy merges the run branch and resolves it.
-- **Your branch doesn't move** until you press Merge, which is a local merge that refuses
-  rather than touching uncommitted work. Discard removes the branch and returns its done items
-  to the list. Nothing here pushes.
-
-### The manager
-
-The chat's main agent. It holds statuses, not code: it picks the next items, writes briefs,
-reads diffs, merges or sends back. Its tool is `work_run`: `status`, `start_item`, `review_item`,
-`merge_item`, `send_back`, `block_item`, `restart_item`, `finish`.
-
-Because the state lives in the list, a manager that loses its context or its chat can be picked
-up: Resume in another chat moves the run and its helpers there.
-
-### Asking for one in words
-
-An agent can't start a run. If you ask it to, `work_run propose` shows a card naming the tasks and
-where the run starts, and only your tap starts it.
-
-### What a run leaves you
-
-- **Reports.** A helper's final reply stays on its task, with its decisions and what it couldn't check
-  pulled out. They show on the card and on the Merge screen, and go in the commit.
-- **Evidence.** A merge removes the helper's copy, so its screenshots and logs move to
-  `.mystical/runs/<run>/<item>` first. Anything that can't be removed is listed on the run.
-- **Checks.** The project's check command runs on the starting commit before any helper, so helpers are
-  told what already fails, and on the finished branch, compared with that. It never blocks a merge.
-
-### Brakes
-
-- Parallel helpers: 1 to 5, default 2, on top of the chat's own helper limits.
-- Helpers are off in a chat, or the chat is read only: the run refuses to start.
-- Dependencies: an item can't start until what it depends on is done.
-- Nudges replace the goal loop's turn count: a manager that ends a turn with work open and no
-  helper running is nudged, and three in a row with no item changing pauses the run and pings
-  you. Progress resets it, so a long list isn't cut off at some number of turns.
-- A blocked item waits for you and pings you. The others carry on.
-- Permissions only narrow, as for any helper.
+- A task's one part starts without the approval more parts wait for: its Start was the approval.
+- A task after another (`depends_on`) can be started early: it is armed, reads `after w15`, and
+  starts when that one is done. A dependency alone never starts anything.
+- Every part's final reply ends with Decisions and Not verified, and the merge session runs the
+  tests before and after merging and says what changed: the two things the run gave you that a
+  task still needs.
 
 ## Not built
 
 - Writing back to trackers on its own. An agent can, when you ask.
 - Rewind and fork, which were split off and dropped.
-- Two runs at once in one project. They'd fight over what "the run branch" means.

@@ -69,7 +69,7 @@ function Graph({ set, kinds, status, big, sel, onPick }: {
     : `WAVE ${c + 1}${g.nodes.every((x) => x.col !== c || kinds[x.n] === "done") ? " ✓" : c === now ? " · NOW" : ""}`);
   return (
     <svg className={`tm-graph${big ? " big" : ""}`} viewBox={`0 0 ${W} ${H}`} style={big ? { "--min-w": `${W}px` } as CSSProperties : undefined}
-         role="group" aria-label={`Dependency graph of ${ns.length} tickets in ${g.cols - 1} waves, then merge`}>
+         role="group" aria-label={`Dependency graph of ${ns.length} parts in ${g.cols - 1} waves, then merge`}>
       {Array.from({ length: g.cols }, (_, c) => (
         <g key={`w${c}`} className={`tm-wave${c === now ? " now" : ""}`}>
           <rect x={X(c) - colW / 2 + 5} y={top - (big ? 30 : 24)} width={colW - 10} height={H - top + (big ? 22 : 20)} />
@@ -168,7 +168,7 @@ function AutoStart({ onErr }: { onErr: (text: string) => void }) {
   const flip = async () => { for (const f of flows) await changeFlows({ flow: f.id, key: "approve", value: on }); };
   return (
     <label className="fs-sw tm-auto" title="later sets in DESIGN, BUILD and REFACTOR start by themselves; this one still waits for Approve & build">
-      <Switch on={on} label="Auto-start later ticket sets" onClick={() => void flip().catch((e: Error) => onErr(e.message))} /><span className="caps">Auto-start</span></label>
+      <Switch on={on} label="Auto-start later tasks' parts" onClick={() => void flip().catch((e: Error) => onErr(e.message))} /><span className="caps">Auto-start</span></label>
   );
 }
 
@@ -202,7 +202,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     approve: () => act(api.approveTickets(set.folder), "approve failed"),
     decline: () => act(api.declineTickets(set.folder), "not now failed"),
     clean: async () => {
-      if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; their .mystical/ scratch moves to .mystical/archive/, other ignored files (.env) go with them.`, { ok: "Clean up" }))) return;
+      if (!(await askConfirm(`Remove ${name}'s part worktrees and branches? Anything unmerged or uncommitted stays; their .mystical/ scratch moves to .mystical/archive/, other ignored files (.env) go with them.`, { ok: "Clean up" }))) return;
       try {
         const r = await api.cleanupTickets(set.folder);
         setNote(`removed ${r.removed.length}${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}`);
@@ -264,19 +264,19 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   return (
     <>
     <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} />
-    <div className="tm-card" role="region" aria-label={`Tickets: ${name}`}>
+    <div className="tm-card" role="region" aria-label={`Parts: ${name}`}>
       <div className="tm-row">
-        <Ticket size={15} aria-hidden className="tm-ic" /><span className="caps tm-k">Tickets</span><span className="tm-nm">{name}</span>
+        <Ticket size={15} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span><span className="tm-nm">{name}</span>
         <span className="tm-div" />
         {dots}
         <span className="tm-c">{facts}</span>
         {call && <><span className="tm-div" />{call}</>}
         <span style={{ flex: 1 }} />
         {action}
-        <button className="tm-btn ghost" onClick={toggle} aria-expanded={wide} aria-label={wide ? "Fold the ticket graph" : "Show the ticket graph"} title={wide ? "Fold" : "Show the graph"}>
+        <button className="tm-btn ghost" onClick={toggle} aria-expanded={wide} aria-label={wide ? "Fold the parts graph" : "Show the parts graph"} title={wide ? "Fold" : "Show the graph"}>
           {wide ? <ChevronUp size={15} aria-hidden /> : <ChevronDown size={15} aria-hidden />}
         </button>
-        <button className="tm-btn acc" onClick={() => showTicketsLive(true)} aria-label="Show the ticket sessions"><span className="tm-open-w">Sessions</span> <Radio size={11} aria-hidden /></button>
+        <button className="tm-btn acc" onClick={() => showTicketsLive(true)} aria-label="Show the parts' sessions"><span className="tm-open-w">Sessions</span> <Radio size={11} aria-hidden /></button>
       </div>
       {wide && (
         <>
@@ -308,7 +308,7 @@ export function TicketList({ sessionId, status, onOpenSession }: {
 }) {
   const [set, reload] = useTicketSet(sessionId);
   const v = useSetView(set, status, reload, onOpenSession);
-  if (!v) return <div className="tl-live"><div className="tl-empty">No ticket set in this session.</div></div>;
+  if (!v) return <div className="tl-live"><div className="tl-empty">No parts in this session.</div></div>;
   const { ns, kinds, name, facts, ops, call, action, dots } = v;
   const tk = v.set.tickets;
   const now = (n: string) => {
@@ -324,15 +324,15 @@ export function TicketList({ sessionId, status, onOpenSession }: {
   const mergeSid = v.set.merge_session;
   const into = v.set.feature_branch || "the feature branch";
   return (
-    <div className="tl-live" role="region" aria-label={`Tickets: ${name}`}>
+    <div className="tl-live" role="region" aria-label={`Parts: ${name}`}>
       <div className="tl-bar">
-        <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Tickets</span>
+        <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span>
         {dots}<span className="tm-c">{facts}</span>
         {call && <><span className="tm-div" />{call}</>}
         <span style={{ flex: 1 }} />
         {action}
         {v.set.status === "merged" && <button className="tm-btn ghost" onClick={() => void ops.clean()}>Clean up</button>}
-        {/* The way back where the header's CHAT | TICKETS has no room (COMPACT). */}
+        {/* The way back where the header's CHAT | PARTS has no room (COMPACT). */}
         <button className="tm-btn ghost" onClick={() => showTicketsLive(false)} title="Back to this session's chat">Chat</button>
       </div>
       <div className="tl-list">
@@ -364,7 +364,7 @@ export function TicketList({ sessionId, status, onOpenSession }: {
           );
         })}
       </div>
-      {v.set.status === "approve" && <div className="tl-empty">Approve the tickets to start them.</div>}
+      {v.set.status === "approve" && <div className="tl-empty">Approve the parts to start them.</div>}
     </div>
   );
 }
@@ -381,10 +381,10 @@ export function TicketBrief({ superId, sessionId, superTitle }: { superId: strin
   const t = n ? set.tickets[n] : null;
   const into = set.feature_branch || "the feature branch";
   return (
-    <div className="tk-brief" role="note" aria-label={t ? `Ticket #${n} of ${ns.length}` : "The merge of this ticket set"}>
-      <div className="k"><Ticket size={12} aria-hidden /><span className="caps">{t ? `Ticket #${n}` : "Merge"}</span>
-        <em>{t ? `of ${ns.length}` : `${ns.length} tickets`} · from “{superTitle || set.slug.replace(/-/g, " ")}”</em></div>
-      <p>{t ? t.title : `One pass of every ticket branch into ${into}.`}</p>
+    <div className="tk-brief" role="note" aria-label={t ? `Part #${n} of ${ns.length}` : "The merge of these parts"}>
+      <div className="k"><Ticket size={12} aria-hidden /><span className="caps">{t ? `Part #${n}` : "Merge"}</span>
+        <em>{t ? `of ${ns.length}` : `${ns.length} parts`} · from “{superTitle || set.slug.replace(/-/g, " ")}”</em></div>
+      <p>{t ? t.title : `One pass of every part's branch into ${into}.`}</p>
       {t && <div className="f">
         <span>needs <b>{t.blocked_by.length ? t.blocked_by.map((b) => `#${b}`).join(", ") : "nothing"}</b></span>
         <span>branch <b>{t.branch}</b></span>
@@ -427,7 +427,7 @@ function TicketAsks({ set, kinds, status, onOpenSession, except }: {
     .sort((a, b) => (status.get(set.tickets[a].session_id)?.since ?? 0) - (status.get(set.tickets[b].session_id)?.since ?? 0));
   if (!asking.length) return null;
   return (
-    <div className="tk-asks" role="region" aria-label={`${asking.length} ticket${asking.length === 1 ? "" : "s"} waiting on you`}>
+    <div className="tk-asks" role="region" aria-label={`${asking.length} part${asking.length === 1 ? "" : "s"} waiting on you`}>
       <div className="tk-asks-h"><Hand size={12} aria-hidden /><span className="caps">Needs you</span><span>{asking.length}</span></div>
       {asking.map((n) => <AskRow key={n} n={n} title={set.tickets[n].title} sid={set.tickets[n].session_id} st={status.get(set.tickets[n].session_id)}
                                  onOpen={() => onOpenSession(set.tickets[n].session_id)} />)}

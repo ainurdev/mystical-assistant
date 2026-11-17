@@ -25,27 +25,27 @@ One part of a **Flow** (grill, design, build, review, retro…): done, running, 
 _Avoid_: station, phase, stage
 
 **Council**:
-The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its tickets, its review **Step** is a council on the merged work.
+The reviewers that read the work a **Session** would push, score it and list what to fix; the session fixes it, round by round, until the score passes or the council stops and it **Needs you**. After a **Flow** merges its **Parts**, its review **Step** is a council on the merged work.
 _Avoid_: panel, jury, review loop
 
 **Feature branch**:
 The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**; when a task covers the work, the task's key leads the name. The session's title names it only when the agent gave no name.
 _Avoid_: flow branch, session branch
 
-**Ticket**:
-One part of a feature that a **Flow** split off to be built beside the others, in a **Session** and worktree of its own.
-_Avoid_: task, sub-task, issue
+**Task**:
+Something you want done in a project, kept on its work list (the WORK panel) until it is done: what and when. Only you start one, and starting it opens its own **Session** on the **Flow** you pick (build, fix or design), whose progress it then shows.
+_Avoid_: work item, ticket, todo
 
-**Ticket set**:
-All the **Tickets** one **Flow** split a feature into. Every ticket whose blockers are done builds at once, and one session merges them all at the end. A new set waits for your approval before any ticket starts, unless its flow has **Auto-start** on.
-_Avoid_: ticket map, batch, plan
+**Part**:
+One piece of a **Task** that its **Flow** split off to be built beside the others, in a **Session** and worktree of its own. Every part whose blockers are done builds at once, and one session merges them all at the end. A task's parts wait for your approval before any starts, unless its flow has **Auto-start** on or there is only one.
+_Avoid_: ticket, ticket set, sub-task, issue
 
 **Super session**:
-The **Session** whose **Flow** made a **Ticket set**. Its row in the sidebar stands for the whole set; its tickets' sessions fold under it instead of having rows of their own.
+The **Session** whose **Flow** split the work into **Parts**: for a **Task**, the task's session. Its row in the sidebar stands for all the parts; their sessions fold under it instead of having rows of their own.
 _Avoid_: parent session, flow session
 
 **Auto-start**:
-A flow's setting that lets its new **Ticket sets** start building without waiting for your approval.
+A flow's setting that lets its new **Parts** start building without waiting for your approval.
 _Avoid_: approve before build, auto-approve
 
 **Mystical MCP**:
@@ -65,7 +65,7 @@ A message Mystical sends a session on its own, marked as Mystical's, after the s
 _Avoid_: nudge, "go", auto-resume
 
 **Needs you**:
-Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Ticket set** waiting for your approval. It is worked out fresh each time, and a reply's to-dos are not part of it.
+Everything waiting on you right now, across sessions: an open Ask, a Rivendell job still on offer, a session asking you to log in, a **Task**'s **Parts** waiting for your approval. It is worked out fresh each time, and a reply's to-dos are not part of it.
 _Avoid_: notifications, alerts
 
 **WAITING ON YOU panel**:

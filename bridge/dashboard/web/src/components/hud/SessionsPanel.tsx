@@ -97,7 +97,7 @@ const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "branch", label: "branch", tip: "Print the branch on every row" },
   { k: "wt", label: "worktree", tip: "Mark rows working in a worktree rather than the main checkout" },
   { k: "agents", label: "agents", tip: "List a session's agents under its row" },
-  { k: "tickets", label: "tickets", tip: "List a super session's ticket sessions under its row" },
+  { k: "tickets", label: "parts", tip: "List a session's parts under its row" },
 ];
 /** PROJECTS rows sit under a header that already names the project, so that tick
  *  is not offered there — the other two tabs mix projects and need it. Agents is
@@ -490,7 +490,7 @@ function SessionRow({
 /** A super session's tickets at its row's edge: how many ask you, how many are done. */
 function TicketPips({ tk }: { tk: { asks: number; done: number; total: number } }) {
   return (
-    <span className="tk-pips" title={`${tk.done} of ${tk.total} tickets done${tk.asks ? `, ${tk.asks} asking you` : ""}`}>
+    <span className="tk-pips" title={`${tk.done} of ${tk.total} parts done${tk.asks ? `, ${tk.asks} asking you` : ""}`}>
       {tk.asks > 0 && <span className="w"><Hand size={9} strokeWidth={2.4} aria-hidden />{tk.asks}</span>}
       <span>{tk.done}/{tk.total}</span>
     </span>
@@ -807,7 +807,7 @@ export function SessionsPanel(props: Props) {
     const kids = props.ticketKids?.get(s.id);
     if (s.tickets?.status === "approve") {
       const n = s.tickets.total;
-      if (views.get(s.id)?.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${n} ticket${n === 1 ? " waits" : "s wait"} for your approval`, chip: "Approve" });
+      if (views.get(s.id)?.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${n} part${n === 1 ? " waits" : "s wait"} for your approval`, chip: "Approve" });
       tkOf.set(s.id, { asks: 0, done: s.tickets.done, total: n });
       continue;
     }
@@ -815,8 +815,8 @@ export function SessionsPanel(props: Props) {
     const kv = kids.map((k) => resolve(status.get(k.id), false, flags.get(k.id)));
     const own = views.get(s.id) ?? SV.idle;
     const asks = kv.filter((v) => v.lane === "ask").length;
-    if (asks && own.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${asks} ticket${asks === 1 ? "" : "s"} asking you` });
-    else if (own.lane !== "ask" && own.lane !== "work" && kv.some((v) => v.lane === "work")) views.set(s.id, { ...SV.working, t: "its tickets are working" });
+    if (asks && own.lane !== "ask") views.set(s.id, { ...SV.asking, t: `${asks} part${asks === 1 ? "" : "s"} asking you` });
+    else if (own.lane !== "ask" && own.lane !== "work" && kv.some((v) => v.lane === "work")) views.set(s.id, { ...SV.working, t: "its parts are working" });
     tkOf.set(s.id, { asks, done: s.tickets?.done ?? 0, total: s.tickets?.total ?? kids.length });
   }
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
