@@ -1639,7 +1639,7 @@ class Handler(BaseHTTPRequestHandler):
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
         if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build", "/local/tickets/approve",
-                    "/local/tickets/decline"):
+                    "/local/tickets/decline", "/local/tickets/go"):
             from bridge import tickets
             folder = body.get("folder")
             if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()} \
@@ -1661,11 +1661,13 @@ class Handler(BaseHTTPRequestHandler):
                                                                    folder) or "Building."})
                 except Exception as e:  # noqa: BLE001
                     return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
-            if path == "/local/tickets/retry":
+            if path in ("/local/tickets/retry", "/local/tickets/go"):   # go: a ticket of yours is done
                 n = body.get("n")
                 if not isinstance(n, str) or not n:
                     return self._json({"error": "n is required"}, 400)
                 try:
+                    if path == "/local/tickets/go":
+                        return self._json({"text": tickets.go(folder, n) or "Done."})
                     return self._json({"text": tickets.retry(folder, n) or "Started."})
                 except Exception as e:  # noqa: BLE001
                     return self._json({"error": f"{type(e).__name__}: {e}"}, 400)

@@ -1235,7 +1235,7 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
     ["parked", "Paused by the usage limit", "it resumes on its own at the reset"],
     ["resumed", "Resumed or retrying on its own", "after a restart, a limit reset, an API error or a sign-in; a Rivendell link back"],
     ["started", "Started elsewhere", "Telegram, Rivendell, a goal's next turn"],
-    ["tickets", "Tickets", "a set waits for Approve & build (only this one goes to Telegram), a ticket needs a fix, or a set stops"]] },
+    ["tickets", "Tickets", "a set waits for Approve & build or a ticket of yours for Go (only these go to Telegram), a ticket needs a fix, or a set stops"]] },
   { head: "RIVENDELL", rows: [
     ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],
     ["rv_done", "Job done", "PR review, implementation, todolist, changelog…"],

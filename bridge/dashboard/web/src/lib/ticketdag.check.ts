@@ -7,6 +7,7 @@ console.assert(k("running") === "run" && k("running", "working") === "run", "a r
 console.assert(k("running", undefined, true) === "idle" && k("running", "done", true) === "idle", "a stalled ticket is idle");
 console.assert(k("running", "asking") === "ask" && k("running", "awaiting", true) === "ask", "an ask wins over idle");
 console.assert(k("fix", "asking", true) === "fix" && k("done", "asking", true) === "done", "fix and done win over the session's state");
+console.assert(k("yours") === "you", "a ticket of yours waits for Go, not in the queue");
 
 const T = (n: string, ...blockedBy: string[]) => ({ n, blockedBy });
 const g = dagLayout([T("01"), T("02"), T("03"), T("04"), T("05", "04"), T("06", "02", "03")]);

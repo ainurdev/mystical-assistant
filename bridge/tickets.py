@@ -89,6 +89,15 @@ the one way out short of building it. The wait rings once (`tickets_wait`) and s
 Needs you until then, read live (notices.needs), unless its session is abandoned. boot()
 and tick() leave an `approve` set alone.
 
+TICKETS OF YOURS: a ticket whose file says `**Status:** ready-for-human` (a step only you can
+take, such as a look and a go between two phases) never gets a session. Once its blockers are
+done, tick makes it `yours`: it rings once (`tickets_yours`, with its open to-dos) and stays in
+Needs you until go() (TICKETS' Go) marks it done, which starts what waits on it. It has no
+branch, so a ticket blocked by it starts from what it was blocked by in turn (_bases). Its file
+is read when its turn comes, as for `missing`, so a set approved earlier holds too. Until
+2026-11-17 such a ticket went to an agent like any other, and the gate it stood for was the
+agent's to skip (staging-world #17, the go between its two phases).
+
 Asking what a set is doing: `bin/ticket-status [slug]` prints each ticket's state and why,
 and how its session's last turn ended (StepDone or not, the last tool, the last words). It
 reads the registry, set.json and the DB read-only: run it first, before any query by hand.
@@ -136,6 +145,9 @@ _ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?!\[[ xX]\])(.+?)\s*$")   # 
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
 _REPOS = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?repos?(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
                     re.M | re.I)
+_HUMAN = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?status(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*`?ready-for-human\b",
+                    re.M | re.I)
+_TODO = re.compile(r"^[ \t]*[-*+][ \t]+\[ \][ \t]+(.+?)\s*$", re.M)   # an open checkbox
 
 
 def _repo_paths(n: str, text: str) -> tuple:
@@ -307,7 +319,8 @@ def owners() -> "tuple[dict, dict]":
         if st.get("merge_session"):
             of[st["merge_session"]] = parent
         counts[parent] = {"done": sum(1 for t in ts.values() if isinstance(t, dict) and t.get("status") == "done"),
-                          "total": len(ts), "status": st.get("status") or "", "at": at(r)}
+                          "total": len(ts), "status": st.get("status") or "", "at": at(r),
+                          "yours": sorted(n for n, t in ts.items() if isinstance(t, dict) and t.get("status") == "yours")}
     return of, counts
 
 
@@ -320,6 +333,17 @@ def waiting() -> dict:
 def approval_line(n: int) -> str:
     """What a set waiting for Approve & build says: its notice, its Needs-you row, Telegram."""
     return f"{n} ticket{'s wait' if n != 1 else ' waits'} for your approval"
+
+
+def yours() -> dict:
+    """{super session: owners()' counts} for each whose newest set has tickets of yours waiting
+    for Go, read live like waiting(): what Needs you lists."""
+    return {p: c for p, c in owners()[1].items() if c["yours"]}
+
+
+def yours_line(ns: list) -> str:
+    """What tickets of yours say in Needs you: which, and what ends the wait."""
+    return f"{' and '.join('#' + n for n in ns)} {'is' if len(ns) == 1 else 'are'} yours: Go in TICKETS once done"
 
 
 def summary_for(session_id: str):
@@ -494,7 +518,7 @@ def _elsewhere(st: dict, n: str) -> str:
     worktree_path_for gives that repo, on this ticket's branch name, so _repos finds it.
     Also the lines every ticket prompt ends with."""
     t = st["tickets"][n]
-    base = ", ".join(st["tickets"][b]["branch"] for b in t["blocked_by"])
+    base = ", ".join(_bases(st, t["blocked_by"]))
     return (f"\nIf the ticket needs another repo, work there in a worktree at "
             f"{os.path.join(config.BASE_PATH, '.worktrees', '<repo>', git.slug(t['branch']))} on branch {t['branch']} "
             + (f"(start from {base} there if it exists, else from that repo's up-to-date main)"
@@ -590,13 +614,25 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
     save(folder, st)
 
 
+def _bases(st: dict, ns, have=None) -> list:
+    """The branches of the tickets `ns` (only those in `have`, when given), in order. A ticket
+    of yours has no branch, so the ones it was blocked by stand in for it."""
+    out: list = []
+    for x in ns:
+        t = st["tickets"][x]
+        for b in (_bases(st, t["blocked_by"], have) if t.get("human") else [t["branch"]]):
+            if (have is None or b in have) and b not in out:
+                out.append(b)
+    return out
+
+
 def _worktree(st: dict, t: dict, repo: str, home: str) -> tuple:
     """(path, clash) of ticket t's worktree in `repo`, made on its first start. Base: its one
     blocker's branch there, or with several the first's with the others merged in (--no-ff,
     a clash is its first job); with none there, the feature branch at home, elsewhere that
     repo's up-to-date default branch. Kept at worktree_path_for's place so _repos finds it."""
     have = git.branches(repo)
-    blockers = [b for b in (st["tickets"][x]["branch"] for x in t["blocked_by"]) if b in have]
+    blockers = _bases(st, t["blocked_by"], have)
     if blockers:
         base = blockers[0]
     elif repo == home:
@@ -644,12 +680,47 @@ def tick(folder: str) -> None:
             elif not os.path.isfile(t["path"]):
                 t["status"] = "missing"   # deleted or renamed after approval: held, and its dependents
             else:
-                _start_ticket(folder, st, n)
+                with open(t["path"], encoding="utf-8") as f:
+                    text = f.read()
+                if _HUMAN.search(text):
+                    _hand_over(st, n, _TODO.findall(text))
+                else:
+                    _start_ticket(folder, st, n)
         save(folder, st)
         if all(t["status"] == "done" for t in tks.values()):
             # only now: FLOW shows BUILD running while tickets build, and after MERGE comes REVIEW or RETRO
             paths.mark_done(st["parent_session"], "build", st.get("flow_at"))
             start_merge(folder)
+
+
+def _hand_over(st: dict, n: str, todos: list) -> None:
+    """Ticket n is yours: no session, no worktree. It rings once with its open to-dos and
+    waits in Needs you (yours()) until go()."""
+    from bridge import runner  # local import: runner<->tickets cycle
+    t = st["tickets"][n]
+    t.update(status="yours", human=True)
+    sid = st["parent_session"]
+    chat = (store.get_session(sid) or {}).get("chat_id")
+    body = (f"#{n} {t['title']} is yours. Tap Go in TICKETS once it's done"
+            + (":\n" + "\n".join(f"- {x}" for x in todos) if todos else "."))
+    # shortcut: rings under the set lock, so an unreachable Telegram (30 s timeout) holds other
+    # tickets' turn ends that long; send it after the lock if that ever bites.
+    runner._notify(chat, f"▦ #{n} is yours — {runner._session_label(sid)}\n{body}",  # noqa: SLF001
+                   runner._session_kb(chat, sid, "🛠 Open session"),  # noqa: SLF001
+                   kind="tickets_yours", sid=sid, body=body)
+
+
+def go(folder: str, n: str) -> str:
+    """You finished ticket n, one of yours: it is done, and what waits on it starts. "" once done."""
+    with _build:
+        st = load(folder)
+        t = (st.get("tickets") or {}).get(n)
+        if not t or t.get("status") != "yours":
+            return f"#{n} isn't waiting on you"
+        t["status"] = "done"
+        save(folder, st)
+        tick(folder)
+        return ""
 
 
 def _merge_prompt(st: dict, tks: dict) -> str:
@@ -943,7 +1014,7 @@ def _verdict(st: dict, t: dict, status: str) -> "str | None":
         return "fix"
     if status != "done" or not (paths.get(sid) or {}).get("done"):
         return None
-    blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
+    blockers = _bases(st, t["blocked_by"])
     home = git.main_checkout(st["feature_checkout"])
     cand = _repos(st, t["branch"]) + [r for r in t.get("builds_in") or [] if r != home]
     t["repos"] = [r for r in dict.fromkeys(cand) if _own(r, t["branch"], blockers + ["--remotes"])]

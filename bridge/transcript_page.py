@@ -60,6 +60,20 @@ def first_line(text: str) -> str:
     return next((ln.strip() for ln in lines if ln.strip()), "")
 
 
+def todo(text: str) -> str:
+    """The to-do box an answer opens with (`> [!IMPORTANT]`) as one line: its first item and
+    how many more, or "" without one. first_line skips the box; a ticket's finished turn
+    shows it instead (runner.notify_turn_done), since nobody reads a ticket session."""
+    lines = (text or "").strip().splitlines()
+    if not lines or not re.fullmatch(r">\s*\[!important\]", lines[0].strip(), re.I):
+        return ""
+    box = [ln.strip() for ln in lines[1:]]
+    box = box[:next((i for i, ln in enumerate(box) if not ln.startswith(">")), len(box))]
+    items = [m[1] for ln in box if (m := re.match(r">\s*[-*+]\s+(.+)", ln))] \
+        or [x for x in (re.sub(r"^>\s*", "", ln) for ln in box) if x][:1]
+    return (items[0] + (f" (+{len(items) - 1} more)" if len(items) > 1 else "")) if items else ""
+
+
 def summarize(data: dict) -> dict:
     """Gives every turn a `sum`: the outline the TURNS tab draws for it whether or
     not its events are on the client — the first line of its last result that

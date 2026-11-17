@@ -84,6 +84,7 @@ CATALOG = {
     "saver_trial": ("bridge", "news", "bridge"),    # a Savers trial reached its sessions (savers.py)
     "tickets": ("tickets", "news", "session"),      # a ticket set stopped before BUILD (tickets.py)
     "tickets_wait": ("tickets", "needs", "session"),  # ...or waits for Approve & build
+    "tickets_yours": ("tickets", "needs", "session"),  # ...or holds a ticket of yours until Go
     "updated": ("updates", "news", "bridge"),
     "coming": ("updates", "news", "bridge"),       # an update waiting upstream, before it is taken
 }
@@ -101,7 +102,7 @@ VERBS = {
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT", "saver_trial": "TRIAL DONE",
-    "tickets": "TICKETS", "tickets_wait": "TICKETS",
+    "tickets": "TICKETS", "tickets_wait": "TICKETS", "tickets_yours": "YOURS",
     "updated": "UPDATED", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED", "design-build": "BUILT"}
@@ -412,8 +413,9 @@ def needs(status: dict) -> list:
     """Everything waiting on you right now, newest first: sessions blocked on a
     card or a question (the status map), teammates' Rivendell jobs still held for
     a tap, and sessions whose newest notice asks you to sign in, pick a limit
-    route or unblock a goal that is still blocked, and ticket sets waiting for
-    Approve & build. The feed only lends the detail — the card's command, the question."""
+    route or unblock a goal that is still blocked, ticket sets waiting for
+    Approve & build, and tickets of yours waiting for Go. The feed only lends the
+    detail — the card's command, the question."""
     try:
         rows = store.list_notices(time.time() - KEEP_S, LIMIT)
     except Exception:  # noqa: BLE001
@@ -462,13 +464,17 @@ def needs(status: dict) -> list:
     listed = {n["subject"] for n in out}
     try:
         from bridge import tickets                # local import: tickets imports this
-        waiting = tickets.waiting()
+        waiting, mine = tickets.waiting(), tickets.yours()
     except Exception:  # noqa: BLE001 — never the bell's whole list for one bad set.json
-        waiting = {}
+        waiting, mine = {}, {}
     for sid, c in waiting.items():
         if sid not in listed and (sess := store.get_session(sid)) and not sess.get("archived"):
             out.append(_need("tickets_wait", sid, sid, sess.get("title") or "", tickets.approval_line(c["total"]),
                              c["at"] or None, {"project": sess.get("project")}))
+    for sid, c in mine.items():
+        if sid not in listed and (sess := store.get_session(sid)) and not sess.get("archived"):
+            out.append(_need("tickets_yours", sid, sid, sess.get("title") or "", tickets.yours_line(c["yours"]),
+                             (of_kind.get((sid, "tickets_yours")) or {}).get("at"), {"project": sess.get("project")}))
     try:
         from bridge import rivendell, rivendell_instances   # local import: rivendell is heavy
         held = rivendell.queue()

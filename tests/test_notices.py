@@ -250,6 +250,17 @@ def test_turn_done_line_is_the_answer_under_the_to_do_box(monkeypatch, sent):
     assert notices.feed()[0]["body"] == "The box is built."
 
 
+def test_a_ticket_turn_line_is_its_to_do(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess(origin="ticket")                     # nobody reads a ticket session: its to-do is the news
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 9, "outcome": None})
+    runner.notify_turn_done(555, sid, False, body="> [!IMPORTANT]\n> - Decide the sign-in rule.\n> - Say go.\n\nTicket 13 is done.")
+    assert notices.feed()[0]["body"] == "To do: Decide the sign-in rule. (+1 more)"
+    assert sent and sent[0].endswith("\nTo do: Decide the sign-in rule. (+1 more)")   # Telegram hears it too
+    runner.notify_turn_done(555, sid, False, body="Ticket 14 is done.")
+    assert notices.feed()[0]["body"] == "Ticket 14 is done." and "\n" not in sent[-1]
+
+
 def test_plugin_session_turn_emits_nothing(monkeypatch, sent):
     from bridge import runner
     sid = _sess(origin="rivendell:prod")

@@ -800,7 +800,8 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   // A super session works while any of its tickets does, and wants you when one asks, or
-  // while its set waits for Approve & build: that set has no ticket sessions yet.
+  // while its set waits for Approve & build: that set has no ticket sessions yet. A ticket
+  // of yours has no session either, so it lifts the row by itself.
   const tkOf = new Map<string, { asks: number; done: number; total: number }>();
   for (const s of sorted) {
     const kids = props.ticketKids?.get(s.id);
@@ -810,6 +811,9 @@ export function SessionsPanel(props: Props) {
       tkOf.set(s.id, { asks: 0, done: s.tickets.done, total: n });
       continue;
     }
+    const yours = s.tickets?.yours ?? [];
+    if (yours.length && views.get(s.id)?.lane !== "ask")
+      views.set(s.id, { ...SV.asking, t: `#${yours.join(" and #")} ${yours.length === 1 ? "is" : "are"} yours`, chip: "Go" });
     if (!kids?.length) continue;
     const kv = kids.map((k) => resolve(status.get(k.id), false, flags.get(k.id)));
     const own = views.get(s.id) ?? SV.idle;

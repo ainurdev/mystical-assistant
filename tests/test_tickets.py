@@ -77,7 +77,7 @@ def test_owners_maps_ticket_and_merge_sessions_to_the_super_session(tmp_path):
     tickets.register(d, "proj", "own")
     of, counts = tickets.owners()
     assert of["t1"] == of["t2"] == of["m1"] == "sup" and "sup" not in of
-    assert counts["sup"] == {"done": 1, "total": 3, "status": "building",
+    assert counts["sup"] == {"done": 1, "total": 3, "status": "building", "yours": [],
                              "at": next(r["created"] for r in tickets.sets() if r["folder"] == d)}
 
 
@@ -720,7 +720,7 @@ def _dpost(path, body, chat=1):
 
 def test_ticket_endpoints_only_take_registered_folders(make_set, tmp_path):
     s = make_set({"01": None})
-    for p in ("/local/tickets/retry", "/local/tickets/cleanup"):
+    for p in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/go"):
         for body in ({"folder": str(tmp_path), "n": "01"}, {"n": "01"}, {"folder": 5}):
             r = _dpost(p, body)
             assert r["code"] == 404 and "error" in r["obj"]
@@ -1661,3 +1661,42 @@ def test_cleanup_leaves_a_ticket_whose_session_is_at_work(make_set):
     tickets.save(s.folder, {**st, "status": "merged"})
     s.hand_turn("01")                                                  # you typed into the ticket's session
     assert tickets.cleanup(s.folder) == ([], ["tk/x/01-x"]) and os.path.isdir(st["tickets"]["01"]["worktree"])
+
+
+def _yours(s, n):
+    """Ticket n's file says it is the user's, with a second open to-do."""
+    with open(s.path(n)) as f:
+        text = f.read()
+    with open(s.path(n), "w") as f:
+        f.write(text.replace("ready-for-agent", "ready-for-human") + "- [x] already done\n- [ ] say go\n")
+
+
+def test_a_status_line_of_yours_reads_in_every_shape():
+    for line in ("**Status:** ready-for-human", "Status: ready-for-human", "- **Status**: `ready-for-human`"):
+        assert tickets._HUMAN.search(f"# 17: Go\n\n{line}\n"), line
+    assert not tickets._HUMAN.search("**Status:** ready-for-agent\n\nready-for-human later")
+
+
+def test_a_ticket_of_yours_waits_on_you_until_go(make_set, monkeypatch):
+    s = make_set({"01": None, "02": "#01", "03": "#02"}, build=False)
+    _yours(s, "02")
+    said = []
+    monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
+    assert s.build() == ""
+    s.finish("01")
+    t = s.state["tickets"]["02"]
+    assert (t["status"], t["session_id"], t["worktree"]) == ("yours", "", "")      # no agent, no worktree
+    assert [x["sid"] for x in s.starts] == [s.sid("01")] and not s.worktree_add_calls("02")
+    assert said == [("tickets_yours", s.flow, "#02 T02 is yours. Tap Go in TICKETS once it's done:\n- ok\n- say go")]
+    mine = lambda: [(n["kind"], n["verb"], n["body"]) for n in notices.needs({}) if n["session_id"] == s.flow]  # noqa: E731
+    assert mine() == [("tickets_yours", "YOURS", "#02 is yours: Go in TICKETS once done")]
+    assert tickets.retry(s.folder, "02") == "#02 isn't waiting for a retry"      # Retry never hands it to an agent
+    tickets.boot()
+    assert s.status("02") == "yours" and s.status("03") == "queued"
+    assert tickets.go(s.folder, "01") == "#01 isn't waiting on you"
+    assert _dpost("/local/tickets/go", {"folder": s.folder, "n": "02"})["obj"] == {"text": "Done."}
+    assert (s.status("02"), s.status("03")) == ("done", "running") and mine() == []
+    assert s.state["tickets"]["03"]["base"] == "tk/x/01-x"       # #02 has no branch: what it waited on stands in
+    assert "start from tk/x/01-x there" in s.starts[-1]["prompt"]
+    s.finish("03", commit=False)                                  # #01's commits are not #03's own
+    assert s.status("03") == "fix"
