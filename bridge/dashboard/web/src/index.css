@@ -8360,11 +8360,15 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
    map it opens. The graph's columns are waves that run together: the first unfinished one
    is lit, edges into running tickets march. A · WAVES, picked 2026-11-12. Corners follow
    the theme family (--f-rad). */
-.tm-card { container-type: inline-size; margin: 0 18px 10px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px); background: color-mix(in srgb, var(--panel2) 92%, var(--canvas)); overflow: hidden; }
-.tm-row { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 8px 6px 14px; flex-wrap: nowrap; min-width: 0; }
+.tm-card { container-type: inline-size; margin: 0 18px 10px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px); background: color-mix(in srgb, var(--panel2) 92%, var(--canvas)); overflow: hidden;
+  display: flex; flex-direction: column; flex: 0 1 auto; min-height: 48px; }
+/* The chat header floats over the transcript's top 78px (Terminal's ISLE_EDGE 50 + its LAST row, PEEK_H 28): with a ticket card in
+   the column the transcript keeps that much, so a short window shrinks the card's graph (it scrolls) instead of pushing the card under the header. */
+[data-ctx-type="terminal"]:has(> .tm-card) > .swapwrap { min-height: 78px !important; }   /* over its inline minHeight: 0 */
+.tm-row { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 8px 6px 14px; flex-wrap: nowrap; min-width: 0; flex: none; }
 .tm-ic { color: var(--acc2, var(--acc)); flex: none; }
 .tm-k { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; color: var(--acc2, var(--acc)); flex: none; }
-.tm-nm { font-size: var(--t13); font-weight: 700; color: var(--txb); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; }
+.tm-card .tm-nm { font-size: var(--t13); font-weight: 700; color: var(--txb); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 14ch; }   /* scoped: team.css's Agents-view .tm-nm (min-width: 0) loads later and cut the name to "St…" */
 .tm-div { width: 1px; height: 18px; background: var(--line2); flex: none; }
 .tm-dots { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .tm-wv { display: inline-flex; gap: 3px; padding: 3px 4px; border: 1px solid transparent; border-radius: var(--f-rad-s, 4px); }
@@ -8385,13 +8389,15 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
-.tm-body-s { border-top: 1px solid var(--line); }
+.tm-body-s { border-top: 1px solid var(--line); max-height: 221px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .tm-graph { display: block; width: 100%; height: auto; max-height: 220px; }
 .tm-graph text { font-family: inherit; }
 .tm-wave rect { fill: color-mix(in srgb, var(--acc) 2%, transparent); }
-.tm-wave text { font-size: 10.5px; letter-spacing: .16em; fill: var(--txl); }
+.tm-wave text { font-size: 10.5px; letter-spacing: .06em; fill: var(--txl); }
+.tm-graph.big .tm-wave text { letter-spacing: .16em; }
 .tm-wave.now rect { fill: color-mix(in srgb, var(--acc) 7%, transparent); stroke: color-mix(in srgb, var(--acc) 35%, transparent); stroke-dasharray: 2 4; }
 .tm-wave.now text { fill: var(--acc2, var(--acc)); }
+.tm-graph:not(.big) .tm-wave.now text { font-weight: 700; }   /* the compact NOW stands alone */
 .tm-node { cursor: pointer; outline: none; }
 .tm-node:hover > circle:not(.tm-live), .tm-node:focus-visible > circle:not(.tm-live) { stroke: var(--txb); }
 .tm-lab { font-size: 11.5px; fill: var(--txd); }
@@ -8400,7 +8406,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-flow { animation: tmflow .9s linear infinite; }
 @keyframes tmpulse { 50% { opacity: .35; } }
 @keyframes tmflow { to { stroke-dashoffset: -10; } }
-.tm-ft { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: var(--t12); color: var(--txd); }
+.tm-ft { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: var(--t12); color: var(--txd); }
 .tm-line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tm-line b { color: var(--acc2, var(--acc)); font-weight: 700; }
 .tm-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 13px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 999px);

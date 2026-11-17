@@ -49,3 +49,16 @@ export function dagLayout(tickets: DagIn[]): { nodes: DagNode[]; edges: { from: 
   nodes.push({ n: "MERGE", col: cols, row: 0 });
   return { nodes, edges, cols: cols + 1 };
 }
+
+/** A wave column's label; the last column is MERGE. The compact graph has ~52 units a column at
+ *  11 waves, so it says `W2` and `NOW` (the strip carries "wave 2/11"); the full map spells it out. */
+export function waveLabel(c: number, cols: number, state: "done" | "now" | "", big: boolean): string {
+  if (c === cols - 1) return "MERGE";
+  if (!big && state === "now") return "NOW";
+  return `${big ? "WAVE " : "W"}${c + 1}${state === "done" ? " ✓" : state === "now" ? " · NOW" : ""}`;
+}
+
+/** The graph's viewBox width: a column is at least 150 units (big) or 48 (compact), so labels never
+ *  overlap; past that the graph grows and its box scrolls sideways. */
+export const graphWidth = (cols: number, big: boolean) =>
+  big ? Math.max(640, 2 * 80 + (cols - 1) * 150) : Math.max(680, 2 * 54 + (cols - 1) * 48);
