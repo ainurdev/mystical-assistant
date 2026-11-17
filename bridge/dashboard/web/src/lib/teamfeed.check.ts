@@ -41,10 +41,10 @@ ok(c?.kind === "share" && c.r.id === "new", "an unopened inbox share is today's 
 ok(f.today.length === 1, "continued old item and old send are not today");
 const lines = f.earlier.filter((x) => x.kind === "line");
 ok(lines.length === 2 && f.earlier.length === 2, "two earlier lines");
-const sent = lines.find((x) => x.kind === "line" && x.icon === "send");
+const sent = lines.find((x) => x.kind === "line" && x.text.startsWith("You sent"));
 ok(sent?.kind === "line" && sent.status === "OPENED ✓✓" && sent.tone === "ok", "an opened send reads OPENED ✓✓, ok");
 ok(sent?.kind === "line" && sent.text === "You sent EFAS Pentest to Erfan", "send line text");
-const cont = lines.find((x) => x.kind === "line" && x.icon === "msg");
+const cont = lines.find((x) => x.kind === "line" && x.text.startsWith("You continued"));
 ok(cont?.kind === "line" && cont.text === "You continued Mahdi's NR Kantoor Project Status · v2", "continued item line text");
 ok(!JSON.stringify(f).includes("Gone"), "a dismissed send is absent");
 ok(f.earlier[0].at >= f.earlier[1].at, "newest first");

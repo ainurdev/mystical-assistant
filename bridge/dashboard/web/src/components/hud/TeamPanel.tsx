@@ -63,7 +63,7 @@ export const Pill = ({ children, c }: { children: ReactNode; c: string }) => (
 
 /** A day in the STREAM: its name in small caps, a hairline to the edge. */
 const Day = ({ label }: { label: string }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px", fontSize: "var(--t9)", letterSpacing: 2, color: "var(--txl)", textTransform: "uppercase" }}>
+  <div className="caps" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px", fontSize: "var(--t9)", fontWeight: 700, letterSpacing: 2, color: "var(--txl)" }}>
     {label}<span style={{ flex: 1, height: 1, background: mix("var(--line)", 60) }} />
   </div>
 );
@@ -112,7 +112,6 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
 
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);
-    const c = personTint(r.from.id || r.from.name);
     const thread = typeof r.meta.thread === "string" ? r.meta.thread : undefined;
     const rel = relationLine(r, now, r.relation === "back" ? sentBefore(data?.outbox ?? [], thread, r.from.id)?.last : null, h12);
     return (
@@ -142,7 +141,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
           </button>
         )}
         {r.note && (
-          <div style={{ marginTop: 7, padding: "1px 0 1px 9px", borderLeft: `2px solid ${mix(c, 45)}`, fontFamily: UI, fontSize: "var(--t11)", lineHeight: 1.45, color: "var(--txm)", overflowWrap: "anywhere" }}>{r.note}</div>
+          <div style={{ marginTop: 7, fontStyle: "italic", fontFamily: UI, fontSize: "var(--t11)", lineHeight: 1.45, color: "var(--txm)", overflowWrap: "anywhere" }}>{r.note}</div>
         )}
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)" }}>
           {f.project && <span style={{ color: "var(--info)", fontFamily: UI }}>{f.project}</span>}
@@ -252,7 +251,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
     const st = w.task?.implementation?.status;
     const busy = st === "IN_PROGRESS" || st === "PENDING";
     const name = t.name.trim().split(/\s+/)[0] || t.name;
-    const send = sessionTitle ? `Send “${sessionTitle}” to ${name}` : "Open a session of yours to send it";
+    const send = sessionTitle ? `Send “${sessionTitle}” to ${name}` : `${name}: open a session of yours to send it`;
     const at = t.lastSeenAt ? Date.parse(t.lastSeenAt) / 1000 : NaN;
     const sub = w.task ? `${w.task.key || splitTitle(w.task.name).title}${busy ? ` · ${st === "PENDING" ? "queued" : "running"}` : ""}`
       : Number.isNaN(at) ? "not linked" : `${t.online ? "on" : "off"} · ${stamp(at)}`;
@@ -282,7 +281,7 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
         {data.error && <Empty title="No roster right now" text={data.error} />}
         {!data.error && !roster.length && !days.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
         {days.map((d, i) => (
-          <div key={d.label}>
+          <div key={`${i}-${d.label}`}>
             <Day label={d.label} />
             {i === 0 && d.label === "Today" && coming.map(incoming)}
             {d.items.map(feedRow)}

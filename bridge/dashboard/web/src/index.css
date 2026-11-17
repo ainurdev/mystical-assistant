@@ -8342,7 +8342,7 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .dk-then:hover, .dk-then:focus-visible { background: var(--wash); color: var(--txh); }
 .dk-then span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dk-then small { flex: none; font: 600 var(--t9)/1 var(--mono); color: var(--txg); }
-/* TEAM tab: PEOPLE rows (TeamPanel person), TODAY / EARLIER feed (a card, then one-line events), the send bar at the foot.
+/* TEAM tab, STREAM (TeamPanel): faces to send to, then one timeline split by day (a card, then one-line events).
    Colours are tokens. */
 .tf-line { display: flex; align-items: center; gap: 9px; height: 30px; box-sizing: border-box; padding: 0 12px; min-width: 0; }
 .tf-line[data-act] { cursor: pointer; }
@@ -8353,7 +8353,7 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .tf-to > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tf-to b { color: var(--txh); font-weight: 700; }
 .tf-faces { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 4px; }
-.tf-face { appearance: none; border: 0; background: transparent; cursor: pointer; flex: 1 0 72px; max-width: 33.3%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 2px; font-family: inherit; }
+.tf-face { appearance: none; border: 0; background: transparent; cursor: pointer; flex: 1 0 72px; max-width: calc(33.3% - 3px); min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 2px; font-family: inherit; }
 .tf-face:disabled { cursor: default; }
 .tf-face[data-away] { opacity: .6; }
 .tf-face > span:first-child { transition: box-shadow .15s ease; }
@@ -8366,7 +8366,7 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .tf-btn { appearance: none; border: 0; padding: 0; background: transparent; text-align: left; font-family: inherit; cursor: pointer; }
 .tf-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
 .tf-tx b { color: var(--txh); font-weight: 700; }
-.tf-r { flex: none; min-width: 52px; display: flex; justify-content: flex-end; font: 700 var(--t8)/1 var(--mono); letter-spacing: .8px; white-space: nowrap; }
+.tf-r { flex: none; display: flex; justify-content: flex-end; font: 700 var(--t8)/1 var(--mono); letter-spacing: .8px; white-space: nowrap; }
 button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; background: transparent; font-family: inherit; font-size: var(--t95); letter-spacing: .1em; color: var(--txl); }
 
 /* The ticket map (components/hud/TicketMap.tsx): a flow chat's ticket set as a one-line
