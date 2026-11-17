@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
-import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
+import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
@@ -439,18 +439,19 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
   return EFFORTS.find((e) => e.id === effort) ?? EFFORTS[0];
 }
 
-/** The FLOWS sheet, for every session (bridge/flowsettings.py): in the gear's popover, hung from
- *  the card's left edge as PRESET hangs from its segment, and `inline` in SETTINGS ▸ AI MANAGEMENT,
- *  where SKILL PATHS was. A · STEP LIST (design-drafts/flow-sheet, 2026-11-16): the flows on the
- *  left, the picked one's numbered steps on the right, the global switches on a GENERAL page in
- *  plain words. The body's height is fixed, so picking a flow or opening Runs on never resizes it. */
+/** The FLOWS settings, for every session (bridge/flowsettings.py), drawn twice from the parts below:
+ *  FlowsSheet in the gear's popover (A · STEP LIST, design-drafts/flow-sheet, 2026-11-16) and
+ *  FlowsSettings in SETTINGS ▸ AI MANAGEMENT at the page's own scale (A · LIST + DETAIL,
+ *  design-drafts/flow-settings, 2026-11-17). Both keep one height whichever flow is picked. */
 type FlowChangeFn = (c: FlowChange) => void;
 
 /** The picked flow's run default for every session, folded to one line ("Opus 5.5 · Bypass · Max ·
  *  trim default"); open, PRESET's Model, Mode, Effort and Trim rows, drawn the same, with no profile
  *  marks (the default is no profile's). */
-function FlowRunRows({ f, change, models, open, onOpen }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[];
-  open: boolean; onOpen: () => void }) {
+function FlowRunRows({ f, change, models, open, onOpen, flat }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[];
+  open: boolean; onOpen: () => void;
+  /** SETTINGS: the picks in one row, always open, no summary line to fold them. */
+  flat?: boolean }) {
   const [list, setList] = useState<"" | keyof KindRun>("");
   const trim = useAiFeatures().ponytail;
   const val = flowRuns([f])[f.id];
@@ -467,11 +468,11 @@ function FlowRunRows({ f, change, models, open, onOpen }: { f: FlowSetting; chan
   return (
     <div className="fs-kv" data-top=""><span className="caps">Runs on</span>
       <div className="fs-runs-w">
-        <button type="button" className="fs-runs" aria-expanded={open} onClick={onOpen}>
+        {!flat && <button type="button" className="fs-runs" aria-expanded={open} onClick={onOpen}>
           {modelName(val.model)}<span>{[perm, effort, trim && `trim ${pony.toLowerCase()}`].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
           <ChevronDown size={11} strokeWidth={2} aria-hidden />
-        </button>
-        {open && (
+        </button>}
+        {(open || flat) && (
           <div className="fs-grid">
             {sel("model", "Model", models, modelName(val.model))}
             {sel("perm", "Mode", PERMS, perm)}
@@ -518,42 +519,109 @@ const WHY_TICKETS = (
 const ponyNote = (st: FlowStep) => st.ponytail_off === true ? "PONYTAIL is off: this step doesn't run"
   : st.ponytail_off ? "PONYTAIL is off: no REVIEW after a here build (the council's after tickets merge still runs)" : "";
 
-export function FlowsSheet({ initial, inline, models }: { initial?: string | null; inline?: boolean;
+const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+/** One flows editor's state: the bridge's settings, the picked flow (or "general"), the last refusal. */
+function useFlowsEdit(initial: string) {
+  const cfg = useFlowSettings();
+  const [sel, setSel] = useState(initial);
+  const [runsOpen, setRunsOpen] = useState(false);
+  const [err, setErr] = useState("");
+  const change: FlowChangeFn = (c) => { setErr(""); void changeFlows(c).catch((e: Error) => setErr(e.message)); };
+  const pick = (id: string) => { setSel(id); setRunsOpen(false); };
+  const f = cfg?.flows.find((x) => x.id === sel) ?? cfg?.flows[0];
+  return { cfg, sel, f, runsOpen, setRunsOpen, err, change, pick };
+}
+
+/** The switches every flow shares, as [title, hint, control]: the sheet's GENERAL page, SETTINGS' 2×2. */
+function generalRows(cfg: FlowSettings, change: FlowChangeFn): [string, string, ReactNode][] {
+  return [
+    ["Guess the flow as I type", "off: only a tap or Tab lights one",
+      <Switch on={cfg.guess === "auto"} label="Guess the flow as I type" onClick={() => change({ key: "guess", value: cfg.guess === "auto" ? "hand" : "auto" })} />],
+    ["A prompt with no flow lit", "from Telegram, or sent bare",
+      <FlowSeg label="A prompt with no flow lit" value={cfg.nokind} set={(v) => change({ key: "nokind", value: v })} opts={[
+        ["claude", "Claude picks", "Claude picks one of the flows that are on, or runs SHIP and ASK as the turn itself"],
+        ["typed", "As typed", "Claude picks nothing: the prompt goes as typed"]]} />],
+    ["Put safe commands in front", "five of them, without a tap",
+      <Switch on={cfg.autopick} label="Put safe commands in front" onClick={() => change({ key: "autopick", value: !cfg.autopick })} />],
+    ["Offer /compact past 150k", "and mark 150k on the meter",
+      <Switch on={cfg.smartzone} label="Offer /compact past 150k" onClick={() => change({ key: "smartzone", value: !cfg.smartzone })} />],
+  ];
+}
+
+/** The picked flow: its numbered steps (a fixed one always runs; the others switch, for every session
+ *  from its next step), After a step, Build, Runs on. The sheet's open Runs on takes the steps' room. */
+function FlowDetail({ f, change, models, runsOpen, onRuns, flat }: { f: FlowSetting; change: FlowChangeFn;
+  models: DropOption<string>[]; runsOpen: boolean; onRuns: () => void; flat?: boolean }) {
+  const name = flowName(f.id);
+  return (
+    <>
+      {!runsOpen && <>
+        <ol className="fs-steps" aria-label={`${name} steps`}>
+          {f.steps.map((st, i) => (
+            <li key={st.step} className="fs-st" data-off={runs(st) ? undefined : ""} data-pony={st.ponytail_off ? "" : undefined}
+              title={ponyNote(st) || undefined}>
+              <i>{i + 1}</i><b className="caps">{titleCase(st.step)}</b><span>{STEP_DOES[st.step] ?? ""}</span>
+              {st.fixed
+                ? <em title={`${name} always runs ${st.step.toUpperCase()}`} aria-label={`${st.step}: always runs`}><Lock size={11} strokeWidth={2.2} aria-hidden /></em>
+                : <Switch on={st.on} label={[st.step, ponyNote(st)].filter(Boolean).join(". ")}
+                    onClick={() => change({ flow: f.id, key: "step", step: st.step, value: !st.on })} />}
+            </li>
+          ))}
+        </ol>
+        {f.steps.length > 1 && (
+          <div className="fs-kv"><span className="caps">After a step</span>
+            <FlowSeg label={`${name}: after a step`} value={f.next} set={(v) => change({ flow: f.id, key: "next", value: v })} opts={[
+              [true, <><Zap size={10} strokeWidth={2.4} aria-hidden />Go on</>, "the next step starts by itself"],
+              [false, <><Hand size={10} strokeWidth={2.2} aria-hidden />Wait for me</>, "each step waits for you"]]} />
+          </div>
+        )}
+        {f.tickets !== undefined && (
+          <div className="fs-kv"><span className="caps">Build</span>
+            <div className="fs-build">
+              <FlowSeg label={`${name}: build`} value={f.tickets} set={(v) => change({ flow: f.id, key: "tickets", value: v })} opts={[
+                [false, "Here", "builds in this session"],
+                [true, "As tickets", WHY_TICKETS]]} />
+              {f.tickets && (
+                <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
+                  <Switch on={!f.approve} label={`${name}: start tickets without asking`}
+                    onClick={() => change({ flow: f.id, key: "approve", value: !f.approve })} />start without asking</label>
+              )}
+            </div>
+          </div>
+        )}
+      </>}
+      <FlowRunRows f={f} change={change} models={models} open={runsOpen} onOpen={onRuns} flat={flat} />
+    </>
+  );
+}
+
+export function FlowsSheet({ initial, models }: { initial?: string | null;
   /** The rows of the picked flow's Model select: Claude's, never an agent session's own. */
   models: DropOption<string>[] }) {
-  const flowCfg = useFlowSettings();
-  const [sheetFlow, setSheetFlow] = useState(initial ?? "build");   // a flow id, or "general"
-  const [runsOpen, setRunsOpen] = useState(false);
-  const [flowsErr, setFlowsErr] = useState("");
-  useEffect(() => { if (inline) void refreshFlowSettings(); }, [inline]);   // the popover re-reads as the gear opens it
-  const general = sheetFlow === "general";
-  const sheetPick = flowCfg?.flows.find((f) => f.id === sheetFlow) ?? flowCfg?.flows[0];
-  const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
-  const flowChange: FlowChangeFn = (c) => { setFlowsErr(""); void changeFlows(c).catch((e: Error) => setFlowsErr(e.message)); };
-  const pick = (id: string) => { setSheetFlow(id); setRunsOpen(false); };
-  if (!flowCfg || !sheetPick) return inline ? <div className="aim-hint">Reading the flow settings…</div> : null;
-  const SheetGlyph = FLOW_ICON[sheetPick.id] ?? RouteIcon;
-  const pickName = flowName(sheetPick.id);
-  const sentence = (title: string, hint: string, control: ReactNode) => (
-    <div className="fs-g"><div><b>{title}</b><span>{hint}</span></div>{control}</div>
-  );
+  const { cfg, sel, f, runsOpen, setRunsOpen, err, change, pick } = useFlowsEdit(initial ?? "build");
+  if (!cfg || !f) return null;
+  const general = sel === "general";
+  const Glyph = FLOW_ICON[f.id] ?? RouteIcon;
+  const pickName = flowName(f.id);
   return (
-    <div className="pb-pp fs-sheet" role={inline ? "group" : "dialog"} aria-label="Flows" data-inline={inline ? "" : undefined} style={{ overflow: "visible" }}>
+    <div className="pb-pp fs-sheet" role="dialog" aria-label="Flows" style={{ overflow: "visible" }}>
       <h4><Settings size={10} strokeWidth={2.2} aria-hidden />Flows
-        <span>for every session<Switch on={flowCfg.on} label="Flows on" onClick={() => flowChange({ key: "on", value: !flowCfg.on })} /></span></h4>
+        <span>on<Switch on={cfg.on} label="Flows on" onClick={() => change({ key: "on", value: !cfg.on })} /></span></h4>
       <div className="fs-body">
         <div className="fs-list" role="group" aria-label="Flows">
-          {flowCfg.flows.map((f) => {
-            const Icon = FLOW_ICON[f.id] ?? RouteIcon;
+          {cfg.flows.map((x) => {
+            const Icon = FLOW_ICON[x.id] ?? RouteIcon;
             return (
               // The name is the row's button (a row holding the switch can't be one); a click anywhere else picks it too.
-              <div key={f.id} className="fs-row" data-sel={!general && f.id === sheetPick.id ? "" : undefined}
-                data-off={f.on ? undefined : ""} onClick={() => pick(f.id)}>
+              <div key={x.id} className="fs-row" data-sel={!general && x.id === f.id ? "" : undefined}
+                data-off={x.on ? undefined : ""} onClick={() => pick(x.id)}>
                 <Icon size={14} strokeWidth={2} aria-hidden />
-                <button type="button" className="fs-name" aria-pressed={!general && f.id === sheetPick.id}>{flowName(f.id)}</button>
-                <small title="steps that run">{f.steps.filter(runs).length}/{f.steps.length}</small>
+                <button type="button" className="fs-name" aria-pressed={!general && x.id === f.id}>{flowName(x.id)}</button>
+                <small title="steps that run">{x.steps.filter(runs).length}/{x.steps.length}</small>
                 <span onClick={(e) => e.stopPropagation()}>
-                  <Switch on={f.on} label={`${flowName(f.id)} on`} onClick={() => flowChange({ flow: f.id, key: "on", value: !f.on })} />
+                  <Switch on={x.on} label={`${flowName(x.id)} on`} onClick={() => change({ flow: x.id, key: "on", value: !x.on })} />
                 </span>
               </div>
             );
@@ -564,67 +632,63 @@ export function FlowsSheet({ initial, inline, models }: { initial?: string | nul
             <ChevronRight size={11} strokeWidth={2} aria-hidden />
           </div>
         </div>
-        {general ? (
-          <div className="fs-pane">
+        <div className="fs-pane">
+          {general ? <>
             <div className="fs-dh"><Settings size={13} strokeWidth={2} aria-hidden /><b className="caps">General</b><span>for all flows</span></div>
             <div className="fs-gl">
-              {sentence("Guess the flow as I type", "off: only a tap or Tab lights one",
-                <Switch on={flowCfg.guess === "auto"} label="Guess the flow as I type" onClick={() => flowChange({ key: "guess", value: flowCfg.guess === "auto" ? "hand" : "auto" })} />)}
-              {sentence("A prompt with no flow lit", "from Telegram, or sent bare",
-                <FlowSeg label="A prompt with no flow lit" value={flowCfg.nokind} set={(v) => flowChange({ key: "nokind", value: v })} opts={[
-                  ["claude", "Claude picks", "Claude picks one of the flows that are on, or runs SHIP and ASK as the turn itself"],
-                  ["typed", "As typed", "Claude picks nothing: the prompt goes as typed"]]} />)}
-              {sentence("Put safe commands in front", "five of them, without a tap",
-                <Switch on={flowCfg.autopick} label="Put safe commands in front" onClick={() => flowChange({ key: "autopick", value: !flowCfg.autopick })} />)}
-              {sentence("Offer /compact past 150k", "and mark 150k on the meter",
-                <Switch on={flowCfg.smartzone} label="Offer /compact past 150k" onClick={() => flowChange({ key: "smartzone", value: !flowCfg.smartzone })} />)}
+              {generalRows(cfg, change).map(([t, h, c]) => <div key={t} className="fs-g"><div><b>{t}</b><span>{h}</span></div>{c}</div>)}
             </div>
-          </div>
-        ) : (
-          <div className="fs-pane">
-            <div className="fs-dh"><SheetGlyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[sheetPick.id]}</span></div>
-            {!runsOpen && <>
-              {/* A fixed step always runs; the others switch on and off, for every session from its next step. */}
-              <ol className="fs-steps" aria-label={`${pickName} steps`}>
-                {sheetPick.steps.map((st, i) => (
-                  <li key={st.step} className="fs-st" data-off={runs(st) ? undefined : ""} data-pony={st.ponytail_off ? "" : undefined}
-                    title={ponyNote(st) || undefined}>
-                    <i>{i + 1}</i><b>{st.step.toUpperCase()}</b><span>{STEP_DOES[st.step] ?? ""}</span>
-                    {st.fixed
-                      ? <em title={`${pickName} always runs ${st.step.toUpperCase()}`} aria-label={`${st.step}: always runs`}><Lock size={11} strokeWidth={2.2} aria-hidden /></em>
-                      : <Switch on={st.on} label={[st.step, ponyNote(st)].filter(Boolean).join(". ")}
-                          onClick={() => flowChange({ flow: sheetPick.id, key: "step", step: st.step, value: !st.on })} />}
-                  </li>
-                ))}
-              </ol>
-              {sheetPick.steps.length > 1 && (
-                <div className="fs-kv"><span className="caps">After a step</span>
-                  <FlowSeg label={`${pickName}: after a step`} value={sheetPick.next} set={(v) => flowChange({ flow: sheetPick.id, key: "next", value: v })} opts={[
-                    [true, <><Zap size={10} strokeWidth={2.4} aria-hidden />Go on</>, "the next step starts by itself"],
-                    [false, <><Hand size={10} strokeWidth={2.2} aria-hidden />Wait for me</>, "each step waits for you"]]} />
-                </div>
-              )}
-              {sheetPick.tickets !== undefined && (
-                <div className="fs-kv" data-top=""><span className="caps">Build</span>
-                  <div className="fs-build">
-                    <FlowSeg label={`${pickName}: build`} value={sheetPick.tickets} set={(v) => flowChange({ flow: sheetPick.id, key: "tickets", value: v })} opts={[
-                      [false, "Here", "builds in this session"],
-                      [true, "As tickets", WHY_TICKETS]]} />
-                    {sheetPick.tickets && (
-                      <label className="fs-sw" title="new ticket sets start building by themselves, without waiting for Approve & build">
-                        <Switch on={!sheetPick.approve} label={`${pickName}: start tickets without asking`}
-                          onClick={() => flowChange({ flow: sheetPick.id, key: "approve", value: !sheetPick.approve })} />start tickets without asking</label>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>}
-            <FlowRunRows f={sheetPick} change={flowChange} models={models} open={runsOpen} onOpen={() => setRunsOpen((o) => !o)} />
-          </div>
-        )}
+          </> : <>
+            <div className="fs-dh"><Glyph size={13} strokeWidth={2} aria-hidden />{pickName}<span>{FLOW_ABOUT[f.id]}</span></div>
+            <FlowDetail f={f} change={change} models={models} runsOpen={runsOpen} onRuns={() => setRunsOpen((o) => !o)} />
+          </>}
+        </div>
       </div>
-      <div className="pb-pf">{flowsErr ? <span data-tone="err">{flowsErr}</span> : "Every session. PRESET changes one."}
-        {!general && <button type="button" onClick={() => flowChange({ reset: sheetPick.id })}><RotateCcw size={10} strokeWidth={2.2} aria-hidden />Reset {pickName}</button>}
+      <div className="pb-pf">{err ? <span data-tone="err">{err}</span> : "Every session. PRESET changes just this one."}
+        {!general && <button type="button" onClick={() => change({ reset: f.id })}><RotateCcw size={10} strokeWidth={2.2} aria-hidden />Reset {pickName}</button>}
+      </div>
+    </div>
+  );
+}
+
+/** SETTINGS ▸ AI MANAGEMENT ▸ Flows, at the page's scale (design-drafts/flow-settings a1, a2): the
+ *  shared switches as a 2×2 of the page's rows, then the flows as cards beside the picked one. The
+ *  master switch is the fold's own (SettingsModal). */
+export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
+  const { cfg, f, err, change, pick } = useFlowsEdit("build");
+  useEffect(() => { void refreshFlowSettings(); }, []);   // another browser or app may have changed them
+  if (!cfg || !f) return <div className="aim-hint">Reading the flow settings…</div>;
+  return (
+    <div className="fss">
+      <div className="aim-sub"><b>For every flow</b></div>
+      <div className="aim-vfields two">
+        {generalRows(cfg, change).map(([t, h, c]) => <div key={t} className="aim-vfield row"><div><b>{t}</b><span>{h}</span></div>{c}</div>)}
+      </div>
+      <div className="aim-sub"><b>Each flow</b><span className="aim-hint">pick one to change its steps</span></div>
+      {err && <div className="aim-xerr">{err}</div>}
+      <div className="fss-body">
+        <div className="fss-list" role="group" aria-label="Flows">
+          {cfg.flows.map((x) => {
+            const Icon = FLOW_ICON[x.id] ?? RouteIcon;
+            const name = titleCase(flowName(x.id));
+            return (
+              <div key={x.id} className="fss-fr" data-sel={x.id === f.id ? "" : undefined} data-off={x.on ? undefined : ""} onClick={() => pick(x.id)}>
+                <span className="aim-xic"><Icon size={14} strokeWidth={1.7} aria-hidden /></span>
+                <button type="button" aria-pressed={x.id === f.id}><b>{name}</b>
+                  <small>{x.steps.filter(runs).length} of {x.steps.length} step{x.steps.length === 1 ? "" : "s"}</small></button>
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Switch on={x.on} label={`${name} on`} onClick={() => change({ flow: x.id, key: "on", value: !x.on })} />
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="fss-det">
+          <div className="fss-dh"><b>{titleCase(flowName(f.id))}</b><span className="aim-hint">{FLOW_ABOUT[f.id]}</span>
+            <button type="button" className="aim-xbtn" onClick={() => change({ reset: f.id })}><RotateCcw size={11} strokeWidth={2} aria-hidden />Reset</button>
+          </div>
+          <FlowDetail f={f} change={change} models={models} runsOpen={false} onRuns={() => {}} flat />
+        </div>
       </div>
     </div>
   );
