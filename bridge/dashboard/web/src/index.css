@@ -8344,10 +8344,24 @@ button.gl-tag { cursor: pointer; } button.gl-tag:hover { color: var(--txb); }
 .dk-then small { flex: none; font: 600 var(--t9)/1 var(--mono); color: var(--txg); }
 /* TEAM tab: PEOPLE rows (TeamPanel person), TODAY / EARLIER feed (a card, then one-line events), the send bar at the foot.
    Colours are tokens. */
-.tf-line { display: flex; align-items: center; gap: 9px; height: 34px; box-sizing: border-box; padding: 0 12px; min-width: 0; border-bottom: 1px solid var(--line); }
+.tf-line { display: flex; align-items: center; gap: 9px; height: 30px; box-sizing: border-box; padding: 0 12px; min-width: 0; }
 .tf-line[data-act] { cursor: pointer; }
 .tf-line[data-act]:hover { background: var(--wash); }
-.tf-ic { flex: none; display: flex; color: var(--txl); }
+.tf-tm { flex: none; width: 34px; font: 500 var(--t85)/1 var(--mono); color: var(--txg); white-space: nowrap; }
+/* TEAM · STREAM (TeamPanel): the send line, then the faces to tap */
+.tf-to { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 8px 2px 12px; font-size: var(--t10); color: var(--txl); min-width: 0; }
+.tf-to > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-to b { color: var(--txh); font-weight: 700; }
+.tf-faces { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 4px; }
+.tf-face { appearance: none; border: 0; background: transparent; cursor: pointer; flex: 1 0 72px; max-width: 33.3%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 2px; font-family: inherit; }
+.tf-face:disabled { cursor: default; }
+.tf-face[data-away] { opacity: .6; }
+.tf-face > span:first-child { transition: box-shadow .15s ease; }
+.tf-face:not(:disabled):hover > span:first-child, .tf-face:focus-visible > span:first-child { box-shadow: 0 0 0 3px var(--canvas, var(--bg)), 0 0 0 4.5px var(--acc); }
+.tf-face:focus-visible { outline: none; }
+.tf-face b { font-size: var(--t105); font-weight: 700; color: var(--txh); }
+.tf-face:not(:disabled):hover b { color: var(--acc); }
+.tf-face small { max-width: 100%; font: 500 var(--t85)/1.2 var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tf-tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--t11); font-weight: 600; color: var(--txm); }
 .tf-btn { appearance: none; border: 0; padding: 0; background: transparent; text-align: left; font-family: inherit; cursor: pointer; }
 .tf-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }

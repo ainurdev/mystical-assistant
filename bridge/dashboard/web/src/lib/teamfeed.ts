@@ -26,3 +26,16 @@ export function teamFeed(team: TeamOverview, now: number): { today: FeedItem[]; 
   const today = items.filter((i) => day(i.at) === day(now));
   return { today, earlier: items.filter((i) => !today.includes(i)) };
 }
+
+/** STREAM (TeamPanel): the feed split by local day, "Today" and then each older day by
+ *  its date. Items keep their order, so newest first in, newest first out. */
+export function byDay(items: FeedItem[], now: number): { label: string; items: FeedItem[] }[] {
+  const out: { label: string; items: FeedItem[] }[] = [];
+  for (const it of items) {
+    const label = day(it.at) === day(now) ? "Today"
+      : new Date(it.at * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+    if (out.at(-1)?.label === label) out.at(-1)!.items.push(it);
+    else out.push({ label, items: [it] });
+  }
+  return out;
+}
