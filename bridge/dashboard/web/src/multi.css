@@ -296,8 +296,8 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-rc-list > li[data-tone="ok"] > span { color: var(--ok); }
 .ma-rc-list code { color: var(--txl); }
 .ma-rc-new { margin: 2px 0 2px 12px; padding: 0; list-style: none; color: var(--err); }
-.ma-rc-fail { display: flex; align-items: flex-start; gap: 7px; padding: 3px 0; color: var(--err); }
-.ma-rc-fail > svg { flex: none; margin-top: 3px; }
+.ma-rc-fail { display: flex; align-items: flex-start; gap: 5px; padding: 3px 0; color: var(--err); }
+.ma-rc-fail > svg { flex: none; margin-top: 4px; }
 .ma-rc-fail-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ma-rc-fail-t b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ma-rc-fail-t span { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: color-mix(in srgb, var(--err) 75%, var(--txm)); font-size: var(--t11); }

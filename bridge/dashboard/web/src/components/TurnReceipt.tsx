@@ -92,7 +92,7 @@ export function TurnReceipt({ r, onJump }: { r: Receipt; onJump: (i: number) => 
       )}
       {r.unresolved.map((f) => (
         <div key={f.id} className="ma-rc-fail" role="note">
-          <CircleX size={13} aria-hidden />
+          <CircleX size={11} aria-hidden />
           <span className="ma-rc-fail-t">
             <b title={f.what}>{f.what.replace(/\s+/g, " ") || f.name}</b>
             {f.text && <span>{f.text}</span>}
