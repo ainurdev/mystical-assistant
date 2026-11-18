@@ -8191,11 +8191,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ask-mark-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; cursor: pointer;
   font: inherit; font-size: var(--t12); font-weight: 700; color: var(--rc-ink); }
 .res-askmark { padding: 0 16px 12px; }
-/* … and what it left: one line, ▸ opens the whole card */
+/* … and what it left: a question, one header and a chip per answer (a chip opens its question);
+   a permission, one line and ▸ */
 .ask-rec { margin: 8px 0; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line); background: color-mix(in oklab, var(--panel) 72%, transparent);
   font-family: var(--ui-font, inherit); font-size: var(--t13); }
 .ask-rec-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 7px 10px 7px 8px; }
-.ask-rec-row + .ask-rec-row { border-top: 1px solid var(--rc-line); }
 .ask-rec-ic { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--ok); background: color-mix(in oklab, var(--ok) 15%, transparent); }
 .ask-rec[data-state="no"] .ask-rec-ic { color: var(--err); background: color-mix(in oklab, var(--err) 15%, transparent); }
 .ask-rec:is([data-state="gone"], [data-state="open"]) .ask-rec-ic { color: var(--txl); background: color-mix(in oklab, var(--txl) 15%, transparent); }
@@ -8206,8 +8206,17 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ask-rec-v[data-mono] { font: 500 var(--t12)/1.3 var(--mono); color: var(--txb); }
 .ask-rec-v i { font-style: normal; font-weight: 500; color: var(--txm); }
 .ask-rec-v q { font-weight: 600; }
-.ask-rec-tag, .ask-rec-note { flex: none; font-size: var(--t85); font-weight: 800; letter-spacing: .13em; color: var(--txl); padding: 1px 6px; border-radius: calc(var(--rc-r) * 100); border: 1px solid var(--rc-line2); }
-.ask-rec-note { letter-spacing: .04em; font-weight: 650; }
+.ask-rec-note { flex: none; font-size: var(--t85); font-weight: 650; color: var(--txl); }
+.ask-rec-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--txm); }
+.ask-rec-at { margin-left: auto; flex: none; font-size: var(--t115); color: var(--txl); font-variant-numeric: tabular-nums; }
+/* the chips start where the header's words do: row padding + icon + gap */
+.ask-rec-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 8px 37px; }
+.ask-rec-chip { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 3px 10px;
+  border: 1px solid var(--rc-line2); background: var(--panel); }
+.ask-rec-chip:hover { border-color: var(--txl); }
+.ask-rec-chip[aria-expanded="true"] { border-color: color-mix(in oklab, var(--ok) 55%, var(--rc-line2)); }
+.ask-rec-chip .ask-rec-tp { max-width: none; }
+.ask-rec-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .ask-rec-open { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; border: 0; background: none; cursor: pointer;
   font: inherit; font-size: var(--t115); color: var(--txl); font-variant-numeric: tabular-nums; }
 .ask-rec-open:hover { color: var(--txh); }

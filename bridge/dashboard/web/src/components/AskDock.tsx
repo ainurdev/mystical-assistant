@@ -727,53 +727,64 @@ function RecordQuestions({ questions, answered }: { questions: Question[]; answe
   );
 }
 
-/** What an answered (or never answered) card leaves: one line per question, and
- *  ▾ opens the whole card read-only — every option, the ones you skipped and
- *  their pictures included. */
+/** What an answered (or never answered) card leaves: one header (its state, how
+ *  many questions, when) and a chip per question with your pick. A chip opens
+ *  just that question read-only — every option, the ones you skipped and their
+ *  pictures included; a permission keeps its one line and ▸. */
 export function AskRecord(p:
   | { kind: "question"; questions: Question[]; answered?: AnswerSelection[]; stale?: boolean; at?: number }
   | { kind: "permission"; tool: string; summary: string; detail?: string; resolved?: "allow" | "deny"; stale?: boolean; at?: number }) {
   const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState<number | null>(null);
   const h12 = useClock12();
-  const toggle = (
-    <button type="button" className="ask-rec-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-      title={open ? "Fold it" : p.kind === "question" ? "Open the card: every option, the skipped ones too" : "Show what it asked"}>
-      {p.at ? clock(p.at, h12) : ""}<ChevronRight size={13} strokeWidth={2.2} aria-hidden className="ask-rec-car" />
-    </button>
-  );
   if (p.kind === "question") {
+    const task = isTask(p.questions);
     const rows = p.questions.map((q, qi) => {
       const given = p.answered?.[qi]?.header === q.header ? p.answered[qi] : p.answered?.find((x) => x.header === q.header);
       const names = (given?.labels ?? []).map((l) => optionKey(l, q.options.findIndex((o) => o.label === l)));
       return { q, given, names, rec: names.some((n) => n.rec) };
     });
     const state = p.answered ? "ok" : p.stale ? "gone" : "open";
+    const n = p.questions.length;
+    const one = shown === null ? null : rows[shown];
     return (
-      <div className="ask-rec" data-state={state} data-open={open ? "" : undefined}>
-        {rows.map(({ q, given, names, rec }, qi) => (
-          <div key={qi} className="ask-rec-row">
-            <span className="ask-rec-ic" aria-hidden>{state === "ok" ? <Check size={12} strokeWidth={3} /> : state === "gone" ? <Ban size={12} strokeWidth={2.4} /> : <CircleQuestionMark size={12} />}</span>
-            <span className="ask-rec-k">{state === "gone" ? "Never answered" : p.questions.length > 1 ? "Questions" : "Question"}</span>
-            <span className="ask-rec-tp">{isTask(p.questions) ? "Task" : q.header}</span>
-            <span className="ask-rec-ar" aria-hidden>›</span>
-            <span className="ask-rec-v">
-              {state === "gone" ? <i>the run ended before you answered</i>
-                : names.length ? names.map((n) => n.name).join(", ")
-                : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
-            </span>
-            {rec && <span className="ask-rec-tag caps">Suggested</span>}
-            {given?.notes && names.length > 0 && <span className="ask-rec-note" title={given.notes}>+ note</span>}
-            {qi === 0 && toggle}
-          </div>
-        ))}
-        {open && (
+      <div className="ask-rec" data-state={state}>
+        <div className="ask-rec-row">
+          <span className="ask-rec-ic" aria-hidden>{state === "ok" ? <Check size={12} strokeWidth={3} /> : state === "gone" ? <Ban size={12} strokeWidth={2.4} /> : <CircleQuestionMark size={12} />}</span>
+          <span className="ask-rec-k">{state === "ok" ? "Answered" : state === "gone" ? "Never answered" : n > 1 ? "Questions" : "Question"}</span>
+          {(state === "gone" || n > 1) && <span className="ask-rec-n">{state === "gone" ? "the run ended first" : `${n} questions`}</span>}
+          {p.at ? <span className="ask-rec-at">{clock(p.at, h12)}</span> : null}
+        </div>
+        <div className="ask-rec-chips">
+          {rows.map(({ q, given, names, rec }, qi) => (
+            <button key={qi} type="button" className="ask-rec-chip" aria-expanded={shown === qi}
+              onClick={() => setShown((s) => (s === qi ? null : qi))}
+              title={shown === qi ? "Fold it" : "Open the question: every option, the skipped ones too"}>
+              <span className="ask-rec-tp">{task ? "Task" : q.header}</span>
+              {state !== "gone" && (
+                <span className="ask-rec-v">
+                  {names.length ? names.map((x) => x.name).join(", ") : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
+                </span>
+              )}
+              {rec && <span className="ask-rec-dot" role="img" aria-label="Suggested" title="Suggested" />}
+              {given?.notes && names.length > 0 && <span className="ask-rec-note" title={given.notes}>+ note</span>}
+            </button>
+          ))}
+        </div>
+        {one && (
           <div className="ask-rec-body">
-            <RecordQuestions questions={p.questions} answered={p.answered} />
+            <RecordQuestions questions={[one.q]} answered={one.given && [one.given]} />
           </div>
         )}
       </div>
     );
   }
+  const toggle = (
+    <button type="button" className="ask-rec-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+      title={open ? "Fold it" : "Show what it asked"}>
+      {p.at ? clock(p.at, h12) : ""}<ChevronRight size={13} strokeWidth={2.2} aria-hidden className="ask-rec-car" />
+    </button>
+  );
   const state = p.resolved === "allow" ? "ok" : p.resolved === "deny" ? "no" : p.stale ? "gone" : "open";
   const plan = p.tool === "ExitPlanMode";
   const word = state === "ok" ? (plan ? "Approved" : "Allowed") : state === "no" ? (plan ? "Kept planning" : "Denied") : state === "gone" ? "Never answered" : "Permission";
