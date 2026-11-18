@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
 import { TicketBrief, TicketList, TicketPart } from "./TicketMap";
 import { AgentsView } from "../AgentsView";
@@ -34,6 +34,7 @@ import { isDeviceRun } from "../../lib/devicerun";
 import { readOnly } from "../../lib/team";
 import { DeviceTile } from "../DeviceRunPlate";
 import { EarlierPlate, TeamTile } from "../TeamBar";
+import { LiveHostCtx, type LiveHost } from "../LiveRow";
 
 /** The header is an island this far in from the chat column's top and sides;
  *  16 clears the ScrollRail on the right edge. */
@@ -228,7 +229,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
-  run, onOpenRun, onDropFiles, chrome, onSendText, onSteerText, onStopTurn, onArchive, onStartHere, teamMe,
+  run, onOpenRun, onDropFiles, chrome, onSendText, onSteerText, onStopTurn, onArchive, onStartHere, teamMe, paused, onTogglePause,
   limit, logins, status, savers, gridMain, statusAll, superTitle,
 }: {
   /** Every session's status: TICKETS colours a super session's ticket rows from it. */
@@ -300,8 +301,11 @@ export function Terminal({
   onSendText?: (text: string) => void;
   /** Into the running turn when there is one, else a new turn: what the Agents view's box sends. */
   onSteerText?: (text: string) => void;
-  /** Stop the running turn (the Agents view's "Stop everything"). */
+  /** Stop the running turn (the Agents view's "Stop everything", the live row's Stop). */
   onStopTurn?: () => void;
+  /** The queue's hold: the live row's Pause (LiveRow). */
+  paused?: boolean;
+  onTogglePause?: () => void;
   /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
   onStartHere?: (text: string) => void;
   /** The PR chip's ARCHIVE SESSION, after a merge. */
@@ -547,6 +551,10 @@ export function Terminal({
 
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
+  const [liveHost, setLiveHost] = useState<HTMLElement | null>(null);
+  const live = useMemo<LiveHost>(() => ({ host: liveHost, atBottom, onJump: onJumpBottom,
+    onStop: theirs ? undefined : onStopTurn, paused, onTogglePause: theirs ? undefined : onTogglePause }),
+  [liveHost, atBottom, onJumpBottom, theirs, onStopTurn, paused, onTogglePause]);
   const body = (
     <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || tkLive || team ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
@@ -588,6 +596,7 @@ export function Terminal({
             <ChatImagesScope remote={!theirs && !deviceRun && !selected?.parent_session && !(selected && isJob(selected))}>
             {multiOn ? <SelectionPop root="[data-chat-read]" onQuote={theirs ? undefined : onQuote} canTranslate={aiFeatures.translate !== false} canExplain={aiFeatures.explain !== false} /> : null}
             <div data-chat-read="" style={{ display: "contents" }}>
+            <LiveHostCtx.Provider value={live}>
             <Transcript agentSession={!!selected?.agent && selected.agent !== "claude"} turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
@@ -596,9 +605,12 @@ export function Terminal({
               unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
               limit={theirs ? null : limit} logins={logins}
               status={status} onSend={theirs ? undefined : onSendText} savers={savers} />
+            </LiveHostCtx.Provider>
             </div>
             </ChatImagesScope>
           )}
+          {/* the running turn's current action, the chat's last row (LiveRow): sticky, so it stays when you scroll up */}
+          <div ref={setLiveHost} className="live-host" />
         </div>
       </div>
       {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}

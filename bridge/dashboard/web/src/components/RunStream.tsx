@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
@@ -8,6 +8,7 @@ import {
 import { api, type AnswerSelection, type CardAnswer, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { Markdown, type OpenFile } from "./Markdown";
+import { LiveHostCtx, LiveRow, type LiveHost } from "./LiveRow";
 import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
@@ -1056,9 +1057,12 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // played out (NowLine `gone`).
   const lastNow = useRef(now);
   if (now) lastNow.current = now;
+  // Under Terminal the line is the chat's last row (LiveRow), not a line in this header.
+  const host = useContext(LiveHostCtx);
+  const liveAt = host?.host ? (host as LiveHost & { host: HTMLElement }) : null;
   const [wasLive, setWasLive] = useState(!!now);
   const [fading, setFading] = useState(false);
-  if (wasLive !== !!now) { setWasLive(!!now); setFading(!now); }
+  if (wasLive !== !!now) { setWasLive(!!now); setFading(!now && !liveAt); }
   const line = now ?? (fading ? lastNow.current : null);
   // The cat, hosted by the plate: shut, under the header; open, at the foot.
   const ind = state && hud?.indicator === "nyan" ? (
@@ -1078,7 +1082,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
       data-ind={orbit ? "orbit" : undefined}
-      data-now={line ? "" : undefined}
+      data-now={line && !liveAt ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
       style={enter ? { animation: enter } : undefined}
@@ -1126,8 +1130,12 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           ) : null}
           <ChevronDown size={13} aria-hidden className={`dwork-chev transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
-        {line ? <NowLine now={line} secs={secs} gone={!now} onGone={() => setFading(false)} /> : null}
+        {line && !liveAt ? <NowLine now={line} secs={secs} gone={!now} onGone={() => setFading(false)} /> : null}
       </button>
+      {now && liveAt ? (
+        <LiveRow live={liveAt} turnSecs={started ? Math.max(0, Math.floor(clockAt - started)) : null}
+          line={<NowLine now={now} secs={secs} gone={false} onGone={() => {}} />} />
+      ) : null}
       {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
       {/* Mid-glide both parts are here, the one you left marked data-leaving.
           The shut part stays mounted while open, hidden: remounted on shutting,
@@ -3213,7 +3221,10 @@ export const RunStream = memo(function RunStream({
   // the cards, your steers, and what ends a turn. Everything else is work.
   const topAt = (i: number): boolean => {
     const e = events[i];
-    if (e.type === "text") return i === finalText || asksNext(i);
+    // Claude's notes between steps are said to you, so they sit in the chat and cut the
+    // work there (Worked → note → Worked); thoughts stay folded. A non-Claude agent's
+    // hundreds of notes keep their own tier (zonesWithSaid).
+    if (e.type === "text") return i === finalText || asksNext(i) || (!saidTier && !!e.text && !resultTexts.has(e.text.trim()));
     if (mx && (e.type === "secret_request" || shownLive(i))) return true;
     return TOP_TYPES.has(e.type);
   };
@@ -3376,8 +3387,8 @@ export const RunStream = memo(function RunStream({
     // while open (lib/dossier chapterStarts); a chapter opens on a note.
     const starts = chapterStarts(
       zsegs.map((s) => s.idx.filter((i) => isStep(events[i])).length),
-      // With the notes in their own tier, a thought is what's left to open a chapter on.
-      zsegs.map((s) => s.kind === "prose" && (events[s.idx[0]].type === "text" || (saidTier && events[s.idx[0]].type === "thinking"))),
+      // With the notes in the chat (topAt) or their own tier, a thought is what's left to open a chapter on.
+      zsegs.map((s) => s.kind === "prose" && (events[s.idx[0]].type === "text" || events[s.idx[0]].type === "thinking")),
     );
     const chapter = (segs: Seg[], k: number, count: number, build: () => ReactNode[]) => {
       const c = tally(segs);
@@ -3417,7 +3428,8 @@ export const RunStream = memo(function RunStream({
       <WorkZone
         key={zoneKey(zsegs[0].start)}
         purposes={mx ? purposes : undefined}
-        looked={mx ? { note: lookNote, shown } : undefined}
+        // the note on what it looked at is in the chat now (topAt), unless it's an agent's said tier
+        looked={mx ? { note: saidTier ? lookNote : "", shown } : undefined}
         filtered={filtered}
         filterCounts={filterCounts}
         reveal={reveal && holds(zsegs, reveal.i) ? reveal.n : 0}
