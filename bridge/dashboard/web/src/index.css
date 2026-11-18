@@ -8721,16 +8721,20 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 
 /* The world clocks pinned beside the Clock (Strip.tsx). The box takes the row's
    spare width; when that is too narrow for them they go whole, before the
-   clock or the bell move. A query container has no width of its own, so it
+   clock or the bell move: they wrap to a second line, below the box's 26px
+   floor (the empty ::before holds the first line, since a line's first item
+   never wraps). So they go only when their own width doesn't fit, 12H or 24H
+   at any base font. A fixed 74px cutoff (two 12H pins) hid 46px of 24H pins in
+   a 65px box, so they came and went with the weekday and weather words beside
+   the Clock. The box has no width of its own (inline-size containment), so it
    borrows 84px: in the chat header (the right panel folded), whose row is only
-   as wide as what's in it, that is the room the pins get.
-   shortcut: fixed 84/74px fit two 12H pins at the default type size, measure if pins clip at big base fonts. */
-.stp-pinbox { flex: 1 1 auto; min-width: 0; height: 26px; display: flex; align-items: center; container-type: inline-size; contain-intrinsic-inline-size: 84px; }
+   as wide as what's in it, that is the room the pins get. */
+.stp-pinbox { flex: 1 1 auto; min-width: 0; height: 26px; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; overflow: hidden; contain: inline-size; contain-intrinsic-inline-size: 84px; }
+.stp-pinbox::before { content: ""; height: 26px; }
 .stp-pins { display: flex; flex-direction: column; justify-content: center; gap: 2px; font-family: var(--mono); font-size: var(--t85); line-height: 1; color: var(--txm); }
 .stp-pins > span { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 .stp-pins em { font-style: normal; font-size: var(--t75); letter-spacing: 1px; color: var(--txd); }
 .stp-pins small { font-size: var(--t7); color: var(--txd); }
-@container (max-width: 74px) { .stp-pins { display: none; } }
 
 /* SETTINGS' search-as-you-type picker (SettingsModal SearchPick): the weather city, the world clocks' zones. */
 .set-pick { position: relative; flex: none; }
