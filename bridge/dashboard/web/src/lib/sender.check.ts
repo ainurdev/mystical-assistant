@@ -35,6 +35,9 @@ eq(mysticalNote({ prompt: "⏮ Your previous turn was cut off by an error. Conti
 eq(mysticalNote({ prompt: "⏮ The usage limit was reached and the work resumed on another account." }), null,
   "a limit carry-on keeps its own card");
 eq(mysticalNote({ prompt: "[goal 2/5] Ship it\n…" }), null, "a goal keeps its stamp");
+eq(mysticalNote({ prompt: "/mattpocock-skills:implement Work in /w/x on branch feat/y, and commit there." })?.kind, "step", "an old build-here step");
+eq(mysticalNote({ prompt: "/compact Keep the decisions so far; the next step is build-here." })?.kind, "step", "an old compact before a step");
+eq(mysticalNote({ prompt: "/mattpocock-skills:implement the login fix" }), null, "you running the skill yourself is you");
 
 // --- via ---------------------------------------------------------------------------
 eq(viaTag("telegram"), "via Telegram", "Telegram");

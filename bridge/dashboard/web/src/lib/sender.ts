@@ -24,6 +24,9 @@ function sniff(p: string): string | null {
   if (p.startsWith("⧖ ") || p.startsWith("Mystical stopped what you were waiting on")) return "wait";
   if (p.startsWith("[from the chat \"")) return "chat";
   if (p.startsWith("⏮ ") && !limitNudge(p)) return "resume";
+  // bridge/paths.py's next step: build-here's order, and the compact before a step
+  if (/^\/mattpocock-skills:implement Work in .* on branch .*, and commit there\.$/.test(p)
+    || /^\/compact Keep the decisions so far; the next step is [\w-]+\.$/.test(p)) return "step";
   return null;
 }
 

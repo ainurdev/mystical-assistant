@@ -145,6 +145,56 @@
 [data-fam] [data-style="dossier"][data-isle] :is(.ma-looked-note, .pl-line) { font-family: var(--ui-font); letter-spacing: 0; }
 [data-fam] [data-style="dossier"][data-isle] .pl-line { border-left: 0; border-radius: 10px; background: color-mix(in oklab, var(--txl) 6%, transparent); }
 
+/* ── the work as a ledger (A · LEDGER, .mystical/design-drafts/session-chat-items): every step a sentence,
+   "Ran npm run check", on the zone's inner track. No kind tags or kind hues: the icons are neutral tiles,
+   a failure is red, a running step is you. The header and each note's tally say their counts in words.
+   Live, one calm line in a soft panel says what runs now. What hangs under a step (output, a diff)
+   sits in a soft panel. The words spans are RunStream's, hidden off the spine. */
+.ax-verb, .dwork-words, .wtally-words { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-verb {
+  display: inline; margin-right: 6px; font-family: var(--ui-font); font-weight: 600; color: var(--txm);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err] .ax-verb { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-obj { font-family: var(--ui-font); font-size: var(--t13); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-obj :is(code, .mono) { font-family: var(--mono); font-size: var(--t12); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ma-purp { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-bar > svg {
+  width: 13px; height: 13px; padding: 3px; border-radius: 6px; color: var(--txd); background: var(--sp-gnd);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-bar > svg[data-m]:not([data-m="fail"]) { color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err] .ax-bar > svg { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err]::after { background: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-drawer {
+  background: var(--sp-card); border-color: var(--line); border-radius: 10px;
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-head :is(.dwork-kinds, .dwork-right > .dwork-k[data-m="fail"]) { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-words {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-err] .dwork-words { color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .wtally > .dwork-k { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .wtally-words { display: inline; font-family: var(--ui-font); font-size: var(--t11); font-weight: 600; color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .wtally[data-err] .wtally-words { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .wtally { gap: 4px; padding: 0 6px 0 8px; }
+/* live: one line in a soft panel, a dot that breathes, the verb in plain ink, the clock at its edge */
+[data-fam] [data-style="dossier"][data-isle] .dwork-now {
+  grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; height: 34px; margin-top: 8px; padding: 0 12px 0 8px;
+  background: var(--sp-card); border: 1px solid var(--line); border-radius: 10px;
+}
+[data-fam] [data-style="dossier"][data-isle] .now-ic { width: 18px; height: 18px; color: var(--txd); background: none; box-shadow: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-ic::before,
+[data-fam] [data-style="dossier"][data-isle] .dwork-now[data-st="work"] > .now-ic::after { content: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-now[data-st="work"] > .now-ic { color: var(--sp-you); }
+[data-fam] [data-style="dossier"][data-isle] .now-line { font-family: var(--ui-font); font-size: var(--t13); line-height: 32px; }
+[data-fam] [data-style="dossier"][data-isle] .now-tx { height: 32px; }
+[data-fam] [data-style="dossier"][data-isle] .now-v { font-weight: 600; color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .now-line[data-st="think"] .now-v { -webkit-text-fill-color: currentColor; background: none; animation: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-o code:first-child { color: var(--txh); }
+[data-fam] [data-style="dossier"][data-isle] .now-caret { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-t { color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-open][data-now] { --dwork-hh: 72px; }
+
 /* ── the answer: an ok ring, Answer · how long … ✓ done · when, then the card ── */
 [data-fam] [data-style="dossier"][data-isle] .resblk { position: relative; z-index: 1; padding-left: var(--sp-in); }
 [data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node { display: block; left: var(--sp-nx); top: 0; transform: none; border-color: var(--ok); }

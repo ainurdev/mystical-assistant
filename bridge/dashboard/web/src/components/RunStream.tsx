@@ -1112,6 +1112,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
               <KindChip key={k.m} m={k.m} n={k.n} title={k.m.startsWith("p-") ? `${k.n} · ${k.m.slice(2)}` : undefined} />
             ))}
           </span>
+          {/* the session's spine says it in words instead (spine.css, A · LEDGER) */}
+          <span className="dwork-words" aria-hidden>{words}</span>
         </span>
         <span className="dwork-right">
           {failed ? <KindChip m="fail" n={failed} title={`${failed} failed`} /> : null}
@@ -1333,6 +1335,8 @@ function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows,
         <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
       ))}
       {failed ? <span className="dwork-k" data-m="fail"><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+      {/* the session's spine says it in words instead (spine.css, A · LEDGER) */}
+      <span className="wtally-words" aria-hidden>{what}</span>
       <ChevronDown size={10} strokeWidth={2.4} aria-hidden className="wtally-chev" />
     </button>
   ) : null;
@@ -1607,6 +1611,17 @@ function LogRow({ src, label, text, error, animate }:
  *  that would have to know what a block is. */
 const BULK = "ax-bulk";
 
+/** The verb a row says on the session's spine, where it reads as a sentence
+ *  ("Ran npm run check") instead of wearing its tag (A · LEDGER, spine.css).
+ *  An agent or a skill names itself; a run's members hang off a head that said it. */
+const MARK_VERB: Partial<Record<Mark, string>> = {
+  command: "Ran", read: "Read", edit: "Edited", write: "Wrote", search: "Searched", fetch: "Looked up",
+  call: "Called", step: "Called", hook: "Hook", log: "Logged",
+};
+const verbOf = (mark: Mark | undefined, error?: boolean): string | undefined =>
+  !mark || mark === "agent" || mark === "skill" ? undefined
+    : error ? "Failed" : mark.startsWith("p-") ? "Ran" : MARK_VERB[mark];
+
 function ActionRow({
   tier,
   shape,
@@ -1709,7 +1724,7 @@ function ActionRow({
             </span>
           )}
         </span>
-        <span className="ax-obj">{children}</span>
+        <span className="ax-obj">{verbOf(mark, error) ? <span className="ax-verb">{verbOf(mark, error)}</span> : null}{children}</span>
         <span className="ax-stat">{stat}</span>
         <span className="ax-chev">
           {drawer && (
