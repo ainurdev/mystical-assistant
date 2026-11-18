@@ -244,6 +244,45 @@
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-open { font-family: var(--mono); font-size: var(--t11); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 6px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
 
+/* ── Mystical (A · SIGIL, .mystical/design-drafts/session-chat-items): a prompt the bridge sent, not you.
+   A diamond node in its own phosphor, then one line: Mystical, the kind, the first line, when; tapped open,
+   the words that went and why. shortcut: --sp-my is the brand teal, which some themes also use as their
+   accent; there the diamond and the word tell it from you. Give it a theme token if that confuses. */
+.pmy { --sp-my: #7fe9d8; position: relative; font-family: var(--ui-font, inherit); }
+.pmy-node { display: none; }
+.pmy-row {
+  all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 26px; cursor: pointer;
+  font-size: var(--t13); color: var(--txm);
+}
+.pmy-who { flex: none; font-size: var(--t12); font-weight: 800; color: var(--sp-my); }
+.pmy-kd {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 6px; border-radius: 999px; line-height: 20px; white-space: nowrap;
+  font-size: var(--t11); font-weight: 700; color: var(--sp-my);
+  background: color-mix(in oklab, var(--sp-my) 9%, transparent); border: 1px solid color-mix(in oklab, var(--sp-my) 20%, transparent);
+}
+.pmy-tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmy-t { flex: none; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
+.pmy-chev { flex: none; color: var(--txl); }
+.pmy-row:hover .pmy-tx { color: var(--txh); }
+.pmy-row:focus-visible { outline: 2px solid var(--sp-my); outline-offset: 2px; border-radius: 6px; }
+.pmy-sent {
+  margin: 8px 0 2px; overflow: hidden; border-radius: 4px 12px 12px 12px;
+  background: color-mix(in oklab, var(--sp-my) 5%, transparent); border: 1px solid color-mix(in oklab, var(--sp-my) 16%, transparent);
+}
+.pmy-q { padding: 10px 14px; font: var(--t12)/1.6 var(--mono); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; }
+.pmy-why {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--sp-my) 12%, transparent); font-size: var(--t12); color: var(--txl);
+}
+.pmy-why b { font-weight: 700; color: var(--txm); }
+.pmy-r { margin-left: auto; }
+[data-fam] [data-style="dossier"][data-isle] .pmy-node {
+  display: block; position: absolute; z-index: 1; left: calc(var(--sp-nx) - var(--sp-in) + 4px); top: 4px; width: 18px; height: 18px;
+  fill: var(--sp-gnd); stroke: var(--sp-my); stroke-width: 2; stroke-linejoin: round;
+}
+/* where you sent it from, when it wasn't here: beside You */
+.pvia { display: inline-flex; align-items: center; gap: 4px; color: var(--txl); }
+
 /* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
 .composer[data-pb] .pb-isles { justify-content: flex-start; padding-left: 0; }

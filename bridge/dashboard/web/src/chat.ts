@@ -32,6 +32,9 @@ export interface Turn {
   model?: string | null;
   effort?: string | null;
   permission_mode?: string | null;
+  // Who sent it when you didn't type it (StoreTurn.sent_by, lib/sender).
+  sent_by?: string | null;
+  sent_why?: string | null;
   // Total tokens this turn spent, or null when it never reported usage —
   // which must read as unknown, not as free.
   tokens?: number | null;
@@ -99,9 +102,11 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
           || ex.runtime !== st.runtime || ex.sha !== st.sha
           || ex.model !== st.model || ex.effort !== st.effort || ex.permission_mode !== st.permission_mode
+          || ex.sent_by !== st.sent_by
           || ex.outcome?.code !== st.outcome?.code || ex.elapsed !== st.elapsed || ex.sum !== sum)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
                          sha: st.sha, model: st.model, effort: st.effort, permission_mode: st.permission_mode,
+                         sent_by: st.sent_by, sent_why: st.sent_why,
                          tokens: tokensOf(st), outcome: st.outcome, elapsed: st.elapsed, sum });
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
@@ -117,6 +122,8 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         model: st.model,
         effort: st.effort,
         permission_mode: st.permission_mode,
+        sent_by: st.sent_by,
+        sent_why: st.sent_why,
         started: st.started,
         tokens: tokensOf(st),
         outcome: st.outcome,

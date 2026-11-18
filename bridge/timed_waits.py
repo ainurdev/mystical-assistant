@@ -140,7 +140,8 @@ def _wake(sid: str, w: dict, said: str) -> None:
     text = f"⧖ {said}\n\nYou were waiting to: {w['then']}. Carry on."
     queue_manager.enqueue(sid, text=text, prompt=text, images=[], model=None, effort=None, permission_mode=None,
                           width=None, sel=[], surface="wait", chat_id=w["chat_id"],
-                          project=sess.get("cwd") or sess.get("project") or "")
+                          project=sess.get("cwd") or sess.get("project") or "",
+                          sent_by="mystical:wait", sent_why=f"Claude asked to wait, then: {w['then']}")
 
 
 def _tick() -> None:

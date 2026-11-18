@@ -198,6 +198,10 @@ export interface StoreTurn {
   model?: string | null;
   effort?: string | null;
   permission_mode?: string | null;
+  // Who sent the prompt when you didn't type it (lib/sender): 'telegram',
+  // 'miniapp', 'mystical:<kind>', and the sender's why. null = you, or older.
+  sent_by?: string | null;
+  sent_why?: string | null;
   // What the turn spent. All four null = never reported (unknown, not zero).
   tok_in?: number | null;
   tok_out?: number | null;

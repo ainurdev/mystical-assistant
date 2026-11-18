@@ -177,7 +177,8 @@ def _wake(waiter: str, w: dict, text: str, body: str) -> None:
     sess = store.get_session(waiter) or {}
     queue_manager.enqueue(waiter, text=text, prompt=text, images=[], model=None, effort=None,
                           permission_mode=None, width=None, sel=[], surface="wait",
-                          chat_id=w["chat_id"], project=sess.get("project") or "")
+                          chat_id=w["chat_id"], project=sess.get("project") or "",
+                          sent_by="mystical:wait", sent_why=body)
     runner.notify_woken(w["chat_id"], waiter, body)
 
 

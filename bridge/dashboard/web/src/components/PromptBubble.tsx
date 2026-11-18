@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { ArrowRight, Bot, ChevronDown, ChevronRight, Clock, Cpu, Flag, Leaf, ListTodo, MessageSquare, Plug, RotateCw, Send, Ticket, Webhook, Zap, type LucideIcon } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { EFFORTS, PERMS } from "./Composer";
 import type { SlashCommand } from "../api";
@@ -9,6 +10,45 @@ import { leadCommand } from "../lib/slash";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { saverTag } from "../lib/savers";
 import { parseCouncilPrompt, sevCount } from "../lib/council";
+import type { MysticalNote as Note } from "../lib/sender";
+
+const KIND_ICON: Record<string, LucideIcon> = {
+  mcp: Plug, nudge: Flag, wait: Clock, resume: RotateCw, automation: Zap, chat: MessageSquare,
+  step: ArrowRight, device: Cpu, ticket: Ticket, work: ListTodo, job: Leaf, api: Webhook,
+};
+
+/** A prompt the bridge sent, not you (lib/sender): a diamond node on the spine,
+ *  Mystical, what kind of note it is and its first line; tapped open, the exact
+ *  words that went to Claude and the sender's why (.mystical/design-drafts/
+ *  session-chat-items, A · SIGIL; spine.css .pmy). */
+export function MysticalNote({ note, text, at }: { note: Note; text: string; at?: number }) {
+  const h12 = useClock12();
+  const [open, setOpen] = useState(false);
+  const Icon = KIND_ICON[note.kind] ?? Bot;
+  return (
+    <div className="pmy" data-open={open || undefined}>
+      <svg className="pmy-node" viewBox="0 0 24 24" aria-hidden>
+        <path d="M12 2.5l8.5 9.5-8.5 9.5L3.5 12z" /><circle cx="12" cy="12" r="2.3" />
+      </svg>
+      <button type="button" className="pmy-row" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <b className="pmy-who">Mystical</b>
+        <span className="pmy-kd"><Icon size={11} strokeWidth={2.4} aria-hidden />{note.label}</span>
+        <span className="pmy-tx">{note.line}</span>
+        {at != null && <span className="pmy-t">{hhmm(at, h12)}</span>}
+        {open ? <ChevronDown size={13} aria-hidden className="pmy-chev" /> : <ChevronRight size={13} aria-hidden className="pmy-chev" />}
+      </button>
+      {open && (
+        <div className="pmy-sent">
+          <div className="pmy-q">{text}</div>
+          <div className="pmy-why">
+            {note.why && <span><b>Why</b> {note.why}</span>}
+            <span className="pmy-r">Sent as a prompt · not typed by you</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Run = Pick<Turn, "model" | "effort" | "permission_mode">;
 
@@ -24,16 +64,18 @@ function parseNudge(text: string): { n?: string; max?: string; title?: string; o
 
 /** What you said — a prompt, or a steer sent into a turn already running. A
  *  node on the session's spine (spine.css, .mystical/design-drafts/session-one-feel,
- *  C · SPINE) and a bubble: one header line — who (You, Steer, Wait over, Goal,
- *  Council, a teammate's name), the /command it ran, the account or agent when it
+ *  C · SPINE) and a bubble: one header line — who (You, Steer, Goal,
+ *  Council, a teammate's name), where you sent it from (via Telegram), the /command it ran, the account or agent when it
  *  wasn't the default (lib/agents runtimeBadge), the model · effort · permission
  *  the turn ran with, and when; a Savers trial's saver says so ("Concise · trial").
  *  A value that moved since the turn before is lit; a turn from before turns
  *  recorded effort and mode shows only its model — nothing is borrowed from the
  *  session's current picks. Then your words. Geometry and colour live in
  *  `.pbub` / `.pline` / `.pmeta` (index.css, DOSSIER tier 1; spine.css). */
-export function PromptBubble({ text, at, runtime, run, prev, steer, who, commands, savers, children }: {
+export function PromptBubble({ text, at, runtime, run, prev, steer, who, via, commands, savers, children }: {
   text: string;
+  /** Where you sent it from when it wasn't the dashboard (lib/sender viaTag). */
+  via?: string | null;
   /** The Savers trials this session drew the saver in (Transcript.savers). */
   savers?: string[];
   at?: number;
@@ -53,29 +95,27 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
 }) {
   const h12 = useClock12();
   const ran = runtime ? runtimeBadge(runtime) : null;
-  // The bridge's wake-up for a session that waited on another (bridge/waits.py):
-  // its words, but not yours.
-  const wake = !steer && text.startsWith("⧖ ");
-  const nudge = steer || wake ? null : parseNudge(text);
+  const nudge = steer ? null : parseNudge(text);
   // The council's own prompts (bridge/council.py): stamped like a goal's re-prompt.
-  const council = steer || wake || nudge ? null : parseCouncilPrompt(text);
+  const council = steer || nudge ? null : parseCouncilPrompt(text);
   const councilTag = !council ? "" : "advice" in council ? "Council · advice"
     : `Council ${council.round}/${council.max} · ${"fix" in council ? "fix" : `${council.score.toFixed(1)} of ${council.bar.toFixed(1)}`}`;
   const [brief, setBrief] = useState(false);
-  const purple = wake ? { color: "var(--purple)" } : nudge || council ? { color: "var(--acc)" } : undefined;
-  const glyph = wake ? "⧖" : steer ? "↳" : nudge ? "◎" : council ? "⚖" : null;
-  const cmd = steer || wake || nudge || council || !commands ? null : leadCommand(text, undefined, commands);
+  const purple = nudge || council ? { color: "var(--acc)" } : undefined;
+  const glyph = steer ? "↳" : nudge ? "◎" : council ? "⚖" : null;
+  const cmd = steer || nudge || council || !commands ? null : leadCommand(text, undefined, commands);
   // Pips lit = the effort's place in the picker (Auto 0 … Max 5); an agent's own
   // effort id isn't on that ladder and reads as its word alone.
   const lvl = run?.effort ? EFFORTS.findIndex((e) => e.id === (run.effort === "auto" ? "" : run.effort)) : -1;
   // Lit only when both turns recorded it: an older turn's unknown is no change.
   const moved = (k: keyof Run) => (prev?.[k] && run?.[k] && prev[k] !== run[k]) || undefined;
   // Which node the session's spine draws for it (spine.css).
-  const kind = wake ? "wake" : steer ? "steer" : nudge ? "goal" : council ? "council" : who ? "who" : "you";
+  const kind = steer ? "steer" : nudge ? "goal" : council ? "council" : who ? "who" : "you";
   const meta = [
     <b key="who" style={purple}>
-      {wake ? "Wait over" : steer ? "Steer" : nudge ? `Goal${nudge.n ? ` · auto ${nudge.n}/${nudge.max}` : ""}` : council ? councilTag : who || "You"}
+      {steer ? "Steer" : nudge ? `Goal${nudge.n ? ` · auto ${nudge.n}/${nudge.max}` : ""}` : council ? councilTag : who || "You"}
     </b>,
+    via && <span key="via" className="pvia"><Send size={11} aria-hidden />{via}</span>,
     cmd && <span key="cmd" className="pcmd" title={cmd.desc}>/{cmd.name}</span>,
     ...(run ? savers ?? [] : []).map((k) => (
       <span key={`saver-${k}`} className="psaver" title="this session drew the saver in a Savers trial (SETTINGS ▸ AI management ▸ Savers)">
@@ -129,7 +169,7 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
               </>
             ) : (
               /* Rendered as the same markdown the composer let you write it in. */
-              <Markdown breaks typed={!wake && !who} className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : wake ? text.slice(2) : text}</Markdown>
+              <Markdown breaks typed={!who} className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : text}</Markdown>
             )}
             {children}
           </div>

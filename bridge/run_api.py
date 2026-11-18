@@ -500,6 +500,8 @@ def _start(run: dict) -> "str | None":
         origin=origin,
         model=run.get("model"),
         effort=run.get("effort"),
+        sent_by="mystical:api",
+        sent_why=f"{run['client']} started it through the run API",
     )
     if job is None:  # shutting down; a fresh session is never busy
         store.delete_session(s["id"])

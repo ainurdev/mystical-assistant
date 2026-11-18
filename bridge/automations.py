@@ -368,7 +368,8 @@ def fire(a: dict, why: str, context: str = "") -> "str | None":
     if context:
         prompt += f"\n\n{context}"
     prompt += f"\n\n(This is the automation \"{a['name']}\", which ran because of: {why}. Nobody is watching this chat as it runs.)"
-    job = runner.start_streaming_job(chat_id, prompt, [], project=a["project"], permission_mode=a["mode"], session_id=sid, origin="automation")
+    job = runner.start_streaming_job(chat_id, prompt, [], project=a["project"], permission_mode=a["mode"], session_id=sid, origin="automation",
+                                     sent_by="mystical:automation", sent_why=f"the automation \"{a['name']}\" ran because of: {why}")
     if job is None or getattr(job, "refusal", None):
         _update(a["id"], note="It couldn't start: that chat is busy." if job is None else f"It couldn't start: {job.refusal}")
         return None
@@ -568,7 +569,8 @@ def write_script(body: dict) -> dict:
               f"folder, every time the timer goes, for at most {CHECK_TIMEOUT_S} seconds, with nobody there to answer it.\n\n"
               f"Draft it somewhere temporary, run it and show me the script and what it returned. We'll go back and forth. Only when I "
               f"say to save it, write it to {real} and make it executable.")
-    job = runner.start_streaming_job(chat_id, prompt, [], project=str(body["project"]), permission_mode="acceptEdits", session_id=s["id"], origin="automation")
+    job = runner.start_streaming_job(chat_id, prompt, [], project=str(body["project"]), permission_mode="acceptEdits", session_id=s["id"], origin="automation",
+                                     sent_by="mystical:automation", sent_why="you asked for a script for an automation's timer")
     if job is None or getattr(job, "refusal", None):
         raise Refused("That chat couldn't start.")
     return {"session_id": s["id"], "path": where}

@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS turns (
   tok_cache_w INTEGER,
   tok_cache_r INTEGER,
   effort      TEXT,
-  permission_mode TEXT
+  permission_mode TEXT,
+  sent_by     TEXT,
+  sent_why    TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -288,6 +290,12 @@ def init() -> None:
         # The effort and permission mode the turn ran with, beside its model, for
         # the prompt plate. effort 'auto' = no --effort went; NULL = predates this.
         for col in ("effort", "permission_mode"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE turns ADD COLUMN {col} TEXT")
+        # Who sent the prompt when it wasn't typed in the dashboard: 'telegram',
+        # 'miniapp', or 'mystical:<kind>' for the bridge's own prompts, with the
+        # sender's one-line why. NULL = you, or a turn from before this.
+        for col in ("sent_by", "sent_why"):
             if col not in cols:
                 c.execute(f"ALTER TABLE turns ADD COLUMN {col} TEXT")
         # (Old DBs may carry a dead last_auto_resume column from the retired
@@ -1080,7 +1088,8 @@ def prompt_history(limit: int = 200) -> list[str]:
 def start_turn(session_id: str, turn_id: str, prompt: str,
                attachments: list[str] | None, model: str | None = None,
                runtime: str | None = None, sha: str | None = None,
-               effort: str | None = None, permission_mode: str | None = None) -> None:
+               effort: str | None = None, permission_mode: str | None = None,
+               sent_by: str | None = None, sent_why: str | None = None) -> None:
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -1088,11 +1097,11 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
                         (session_id,)).fetchone()["n"]
         c.execute(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-            "elapsed,started,model,runtime,sha,effort,permission_mode) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "elapsed,started,model,runtime,sha,effort,permission_mode,sent_by,sent_why) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (turn_id, session_id, seq, prompt, json.dumps(attachments or []),
              "running", None, None, now, model, runtime, sha or None, effort,
-             permission_mode))
+             permission_mode, sent_by, sent_why))
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
@@ -1206,11 +1215,12 @@ def duplicate(session_id: str) -> dict | None:
             idmap[t["id"]] = uuid.uuid4().hex
             c.execute(
                 "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-                "elapsed,started,model,runtime,sha,effort,permission_mode) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "elapsed,started,model,runtime,sha,effort,permission_mode,sent_by,sent_why) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (idmap[t["id"]], copy["id"], t["seq"], t["prompt"], t["attachments"],
                  t["status"], t["cost"], t["elapsed"], t["started"], t["model"],
-                 t["runtime"], t["sha"], t["effort"], t["permission_mode"]))
+                 t["runtime"], t["sha"], t["effort"], t["permission_mode"],
+                 t["sent_by"], t["sent_why"]))
         for e in c.execute("SELECT * FROM events WHERE session_id=? ORDER BY seq",
                            (session_id,)).fetchall():
             c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "
@@ -1234,10 +1244,11 @@ def copy_turns(src_id: str, dst_id: str, rewrite: "tuple[str, str] | None" = Non
         idmap = {t["id"]: uuid.uuid4().hex for t in turns}
         c.executemany(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,elapsed,started,"
-            "model,runtime,sha,effort,permission_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "model,runtime,sha,effort,permission_mode,sent_by,sent_why) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [(idmap[t["id"]], dst_id, t["seq"], t["prompt"], t["attachments"], t["status"], t["cost"],
               t["elapsed"], t["started"], t["model"], t["runtime"], t["sha"], t["effort"],
-              t["permission_mode"]) for t in turns])
+              t["permission_mode"], t["sent_by"], t["sent_why"]) for t in turns])
         old, new = rewrite or ("", "")
         c.executemany(
             "INSERT INTO events(session_id,turn_id,seq,type,payload,ts) VALUES(?,?,?,?,?,?)",

@@ -1826,7 +1826,8 @@ class Worker:
                 q.enqueue(sid, text=name, prompt=step["prompt"], images=[], model=self.model,
                           effort=None, permission_mode="bypassPermissions", width=0, sel=[],
                           surface="rivendell", chat_id=config.DASH_CHAT_ID, project=workdir,
-                          label=f"{name} · {i + 1}/{len(steps)}", link=step.get("url"), ref=ref)
+                          label=f"{name} · {i + 1}/{len(steps)}", link=step.get("url"), ref=ref,
+                          sent_by="mystical:job", sent_why=f"step {i + 1} of {len(steps)} of a Rivendell batch")
             print(f"rivendell[{self.name}]: implementation {request_id} queued as "
                   f"{len(steps)} turns in session {sid}")
             ok, text = self._wait_queue(sid, ref, self.inst.get("impl_timeout", 10800))

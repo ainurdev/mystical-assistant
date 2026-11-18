@@ -2092,7 +2092,10 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         job2 = start_streaming_job(
             job.chat_id, ECHO_NUDGE if echoed else TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
             project=cwd, session_id=sid, model=model, effort=effort,
-            account_slot=job.account_slot, runtime=job.runtime)
+            account_slot=job.account_slot, runtime=job.runtime, sent_by="mystical:resume",
+            sent_why="the turn stopped on a repeated system reminder" if echoed
+            else "the turn went silent and the watchdog restarted it" if job.timed_out
+            else "an error cut the turn off")
     except Exception as e:  # noqa: BLE001
         print(f"[auto-resume] failed for {sid}: {e}", file=sys.stderr)
         return False
@@ -2205,7 +2208,8 @@ def resume_after_agent_login(agent: str, acct: str) -> bool:
         return False
     try:
         job = start_streaming_job(e["chat_id"], AGENT_AUTH_NUDGE, [], project=e["cwd"],
-                                  session_id=e["sid"], model=e["model"], effort=e["effort"])
+                                  session_id=e["sid"], model=e["model"], effort=e["effort"],
+                                  sent_by="mystical:resume", sent_why="the agent's login came back")
     except Exception as ex:  # noqa: BLE001
         print(f"[reauth] agent resume failed for {e['sid']}: {ex}", file=sys.stderr)
         return False
@@ -2228,7 +2232,8 @@ def resume_after_login(slot: "int | None") -> bool:
     try:
         job = start_streaming_job(e["chat_id"], AUTH_NUDGE, [], project=e["cwd"],
                                   session_id=e["sid"], model=e["model"],
-                                  effort=e["effort"], account_slot=e["slot"])
+                                  effort=e["effort"], account_slot=e["slot"],
+                                  sent_by="mystical:resume", sent_why="you signed in again")
     except Exception as ex:  # noqa: BLE001
         print(f"[reauth] resume failed for {e['sid']}: {ex}", file=sys.stderr)
         return False
@@ -2663,7 +2668,9 @@ def _bg_expired_prompt(job: Job, tasks: list) -> None:
             sess = store.get_session(sid) or {}
             queue_manager.enqueue(sid, text=text, prompt=text, images=[], model=None, effort=None,
                                   permission_mode=None, width=None, sel=[], surface="background",
-                                  chat_id=job.chat_id, project=sess.get("project") or "")
+                                  chat_id=job.chat_id, project=sess.get("project") or "",
+                                  sent_by="mystical:wait",
+                                  sent_why=f"its background wait ran out after {mins} min")
         except Exception as e:  # noqa: BLE001 - a wake-up is never worth a crash
             print(f"[runner] background wake-up dropped: {e}", file=sys.stderr)
 
@@ -3676,7 +3683,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         hang_timeout: float | None = None,
                         skip_pack: bool = False,
                         native_resume: bool = False,
-                        flow: str | None = None, flow_by: str | None = None) -> Job | None:
+                        flow: str | None = None, flow_by: str | None = None,
+                        sent_by: str | None = None, sent_why: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -3700,6 +3708,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
+
+    sent_by / sent_why go on the turn row (store.start_turn): who sent a prompt you
+    didn't type ('telegram', 'miniapp', 'mystical:<kind>') and the sender's why.
 
     native_resume is boot recovery's run of a turn a restart cut: `prompt` is only
     the turn row's marker (recovery.CONTINUED), nothing is sent, and Claude Code
@@ -3799,7 +3810,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd),
-                         effort=effort or "auto", permission_mode=perm)
+                         effort=effort or "auto", permission_mode=perm,
+                         sent_by=sent_by, sent_why=sent_why)
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again

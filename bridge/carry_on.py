@@ -100,7 +100,11 @@ def after_turn(job, resumed: bool) -> bool:
             sid, text=text, prompt=text, images=[], model=None, effort=None,
             permission_mode=None, width=None, sel=[], surface="carry-on",
             chat_id=job.chat_id if job.chat_id is not None else sess.get("chat_id"),
-            project=sess.get("project") or "")
+            project=sess.get("project") or "",
+            sent_by="mystical:mcp" if raw is not None else "mystical:nudge",
+            sent_why="; ".join(filter(None, (
+                raw is not None and f"you turned {', '.join(json.loads(raw))} on while Claude was working",
+                lost and "the turn ended with a background command still running"))))
         return True
     except Exception as e:  # noqa: BLE001
         print(f"[carry_on] failed: {e}", file=sys.stderr)

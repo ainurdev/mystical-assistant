@@ -705,7 +705,8 @@ def _message_chat(s: dict, job, a: dict) -> dict:
     msg = f"[from the chat \"{s.get('title') or s['id'][:8]}\"] {body}"
     queue_manager.enqueue(o["id"], text=msg, prompt=msg, images=[], model=None, effort=None,
                           permission_mode=None, width=None, sel=[], surface="carry-on",
-                          chat_id=s["chat_id"], project=o.get("project") or "")
+                          chat_id=s["chat_id"], project=o.get("project") or "", sent_by="mystical:chat",
+                          sent_why=f"the chat \"{s.get('title') or s['id'][:8]}\" sent it with send_message")
     return _text(f"Queued in \"{o.get('title')}\": it runs as that chat's next turn.")
 
 

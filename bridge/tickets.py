@@ -665,7 +665,8 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
         t.update(status="running", worktree=wt, session_id=s["id"], nudges=0)
         save(folder, st)   # before the turn: from here on a restart never starts it again
         if runner.start_streaming_job(parent["chat_id"], _prompt(st, n, clash), [], project=wt,
-                                      session_id=s["id"], origin="ticket") is None:
+                                      session_id=s["id"], origin="ticket", sent_by="mystical:ticket",
+                                      sent_why=f"ticket #{n} of {st['slug']} started") is None:
             raise RuntimeError("the bridge refused the run")
     except Exception as e:  # noqa: BLE001 — one ticket failing to start never stops the others
         print(f"[tickets] #{n} of {st['slug']} didn't start: {e}", file=sys.stderr)
@@ -845,7 +846,8 @@ def start_merge(folder: str) -> None:
             save(folder, st)   # before the turn: a restart never opens a second merge session
             if runner.start_streaming_job(parent["chat_id"], _merge_prompt(st, st["tickets"]), [],
                                           project=st["feature_checkout"], session_id=s["id"],
-                                          origin="ticket-merge") is None:
+                                          origin="ticket-merge", sent_by="mystical:ticket",
+                                          sent_why=f"every ticket of {st['slug']} is built") is None:
                 raise RuntimeError("the bridge refused the run")
         except Exception as e:  # noqa: BLE001 — the merge didn't start: fix, retry() starts it again
             print(f"[tickets] merge of {st['slug']} didn't start: {e}", file=sys.stderr)
@@ -1152,7 +1154,8 @@ def _nudge(own: dict, sid: str, what: str, chat_id=None) -> None:
         sid, text=text, prompt=text, images=[], model=None, effort=None,
         permission_mode=None, width=None, sel=[], surface="carry-on",
         chat_id=chat_id if chat_id is not None else sess.get("chat_id"),
-        project=sess.get("project") or "")
+        project=sess.get("project") or "", sent_by="mystical:nudge",
+        sent_why=f"the {what} ended without StepDone · {n + 1} of {NUDGES} nudges")
 
 
 def _stopped(sid: str) -> bool:
@@ -1226,7 +1229,8 @@ def _rerun(folder: str, st: dict, n: str, word: str = "Try this ticket again") -
         s = store.get_session(t["session_id"]) or {}
         _one_step(t["session_id"], st, n)   # before the turn: a StepDone it records at once must count
         job = runner.start_streaming_job(s.get("chat_id"), _again(st, n, word), [], project=t["worktree"],
-                                         session_id=t["session_id"], origin="ticket")
+                                         session_id=t["session_id"], origin="ticket", sent_by="mystical:ticket",
+                                         sent_why=f"ticket #{n} was sent back to run again")
         err = "" if job else "the bridge refused the run"
     except Exception as e:  # noqa: BLE001 — a retry that can't start is fix again
         err = str(e) or type(e).__name__
@@ -1255,7 +1259,8 @@ def _retry_merge(folder: str, st: dict) -> str:
         s = store.get_session(sid) or {}
         paths.set_path(sid, "one", f"merge {st['slug']}", "rule", skill="merge")   # before the turn: its StepDone must count
         job = runner.start_streaming_job(s.get("chat_id"), _merge_prompt(st, st["tickets"]), [],
-                                         project=st["feature_checkout"], session_id=sid, origin="ticket-merge")
+                                         project=st["feature_checkout"], session_id=sid, origin="ticket-merge",
+                                         sent_by="mystical:ticket", sent_why="the merge was sent back to run again")
         err = "" if job else "the bridge refused the run"
     except Exception as e:  # noqa: BLE001
         err = str(e) or type(e).__name__
