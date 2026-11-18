@@ -702,7 +702,7 @@ export function App() {
         if (v) tokens[k] = v;
       }
       if (!tokens["--ui-font"]) tokens["--ui-font"] = cs.fontFamily;
-      void req("/local/design-theme", { method: "POST", body: { theme: settings.theme, light: isLight(settings.theme), tokens } }).catch(() => undefined);
+      void req("/local/design-theme", { method: "POST", body: { theme: settings.theme, fam: family(settings.theme), light: isLight(settings.theme), tokens } }).catch(() => undefined);
     }, 400);
     return () => window.clearTimeout(t);
   }, [multiOn, settings.theme, settings.font]);

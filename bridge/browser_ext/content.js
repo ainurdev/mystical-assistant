@@ -1,8 +1,12 @@
 // The Mystical browser's comment tool, on every page (bridge/site_browser.py).
 // Closed, it's a thin tab halfway up the right edge (never a corner: apps keep their own buttons
-// there). C or + Comment starts picking: hover outlines an element and names it, a drag draws an
+// there). Open, it's a card in the top right that holding its head moves (kept for every site, ↗ puts
+// it back), and it steps aside while you pick or write, so nothing on the page is out of its reach.
+// C or + Comment starts picking: hover outlines an element and names it, a drag draws an
 // area, a click or a finished drag opens the box to write in. Pins are kept per page until Send all
 // puts them in a chat as one turn, each with a crop of what it points at.
+// It wears the theme the dashboard last saved (GET /theme): its tokens go on the host over the
+// AURORA look :host spells out, which also keeps the page's own CSS variables from reaching in.
 // Everything lives in a shadow root so the page's CSS can't reach it, and the page's own keys
 // and clicks are left alone unless you're picking.
 (() => {
@@ -15,41 +19,44 @@
   host.style.cssText = "all:initial;position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647";
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `<style>
-    :host{--p:#7fe9d8;--bg:#060a0a;--pop:rgba(7,13,13,.97);--fg:#bfe6de;--fgb:#dff8f2;--dim:#6f938d;--b:rgba(127,233,216,.16);--bb:rgba(127,233,216,.4);--bad:#e0897a}
-    *{box-sizing:border-box;font:12px/1.45 ui-monospace,"JetBrains Mono",Menlo,monospace;color:var(--fg)}
+    :host{--acc:#7fe9d8;--acc-on:#060a0a;--canvas:#060a0a;--panel:rgba(7,13,13,.97);--tx:#bfe6de;--txb:#dff8f2;--txd:#6f938d;--border:rgba(127,233,216,.16);--border-bright:rgba(127,233,216,.4);--err:#e0897a;--ui-font:ui-monospace,"JetBrains Mono",Menlo,monospace;--prad:0px}
+    *{box-sizing:border-box;font:12px/1.45 var(--ui-font);color:var(--tx)}
     button{all:unset;cursor:pointer}
-    .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--p)}
-    .tab{position:fixed;right:0;top:50%;transform:translateY(-50%);background:var(--bg);border:1px solid var(--bb);border-right:0;padding:10px 5px;writing-mode:vertical-rl;letter-spacing:3px;font-size:10px;color:var(--p);text-transform:uppercase;width:22px;transition:width .12s}
-    .tab:hover,.tab:focus-visible{width:28px;outline:none;box-shadow:0 0 10px rgba(127,233,216,.35)}
-    .tray{position:fixed;top:60px;right:0;bottom:12px;width:300px;background:var(--pop);border:1px solid var(--bb);border-right:0;display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.5)}
-    .hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--b)}
+    .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--acc)}
+    .tab{position:fixed;right:0;top:50%;transform:translateY(-50%);background:var(--canvas);border:1px solid var(--border-bright);border-right:0;border-radius:var(--prad) 0 0 var(--prad);padding:10px 5px;writing-mode:vertical-rl;letter-spacing:3px;font-size:10px;color:var(--acc);text-transform:uppercase;width:22px;transition:width .12s}
+    .tab:hover,.tab:focus-visible{width:28px;outline:none;box-shadow:0 0 10px color-mix(in srgb,var(--acc) 35%,transparent)}
+    .tab.on{background:var(--acc);color:var(--acc-on)}
+    .tray{position:fixed;top:60px;right:12px;width:300px;max-height:calc(100vh - 72px);background:var(--panel);border:1px solid var(--border-bright);border-radius:var(--prad);display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+    .hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:grab;user-select:none;touch-action:none}
     .sp{flex:1}
-    .x{color:var(--dim);padding:0 4px}.x:hover{color:var(--fgb)}
-    .add{margin:10px 12px;border:1px dashed var(--bb);padding:7px 10px;text-align:center;color:var(--p);letter-spacing:1.5px;font-size:11px;text-transform:uppercase}
-    .add[aria-pressed=true]{background:rgba(127,233,216,.1)}
-    .list{flex:1;overflow:auto}
-    .it{padding:9px 12px;border-top:1px solid var(--b);display:flex;gap:9px}
-    .it b{color:var(--p);font-weight:400}.it .w{color:var(--dim);font-size:10.5px;word-break:break-word}
-    .empty{padding:14px 12px;color:var(--dim);font-style:italic}
-    .ft{padding:10px 12px;border-top:1px solid var(--b);position:relative}
-    .split{display:flex}.send{flex:1;background:var(--p);color:var(--bg);text-align:center;padding:8px 6px;letter-spacing:1.5px;font-size:11px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .more{background:var(--p);color:var(--bg);border-left:1px solid var(--bg);padding:8px 10px}
+    .x{color:var(--txd);padding:0 4px}.x:hover{color:var(--txb)}
+    .add{margin:10px 12px;border:1px dashed var(--border-bright);border-radius:var(--prad);padding:7px 10px;text-align:center;color:var(--acc);letter-spacing:1.5px;font-size:11px;text-transform:uppercase}
+    .add[aria-pressed=true]{background:color-mix(in srgb,var(--acc) 10%,transparent)}
+    .list{flex:1 1 auto;min-height:0;overflow:auto}
+    .it{padding:9px 12px;border-top:1px solid var(--border);display:flex;gap:9px}
+    .it b{color:var(--acc);font-weight:400}.it .w{color:var(--txd);font-size:10.5px;word-break:break-word}
+    .empty{padding:14px 12px;color:var(--txd);font-style:italic}
+    .ft{padding:10px 12px;border-top:1px solid var(--border)}
+    .split{display:flex}.send{flex:1;background:var(--acc);color:var(--acc-on);border-radius:var(--prad) 0 0 var(--prad);text-align:center;padding:8px 6px;letter-spacing:1.5px;font-size:11px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .more{background:var(--acc);color:var(--acc-on);border-left:1px solid var(--panel);border-radius:0 var(--prad) var(--prad) 0;padding:8px 10px}
     .send[disabled],.more[disabled]{opacity:.4;cursor:default}
-    .menu{position:absolute;left:12px;right:12px;bottom:52px;background:var(--bg);border:1px solid var(--bb);max-height:320px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.5)}
-    .mi{display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid var(--b);width:100%}.mi:last-child{border-bottom:0}
-    .mi:hover,.mi[aria-checked=true]{background:rgba(127,233,216,.08)}
-    .mi .r{color:var(--p);width:12px}.mi .s{color:var(--dim);font-size:10.5px;display:block}
-    .note{margin-top:8px;font-size:11px;color:var(--dim)}.note.bad{color:var(--bad)}
-    .hover{position:fixed;border:2px solid var(--p);pointer-events:none;box-shadow:0 0 0 3px rgba(127,233,216,.18)}
-    .tag{position:fixed;background:var(--bg);color:var(--p);border:1px solid var(--bb);padding:2px 7px;font-size:10.5px;pointer-events:none;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}
-    .area{position:fixed;border:1.5px dashed var(--p);background:rgba(127,233,216,.08);pointer-events:none}
-    .pin{position:absolute;width:22px;height:22px;background:var(--bg);color:var(--p);border:1.5px solid var(--p);display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 0 8px rgba(127,233,216,.5)}
-    .box{position:fixed;width:280px;background:var(--pop);border:1px solid var(--bb);padding:10px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
-    .box textarea{all:unset;display:block;width:100%;min-height:64px;border:1px solid var(--b);padding:6px 8px;color:var(--fgb);white-space:pre-wrap;box-sizing:border-box}
-    .box .w{color:var(--dim);font-size:10.5px;margin-bottom:6px;word-break:break-word}
+    .menu{margin-bottom:8px;background:var(--canvas);border:1px solid var(--border-bright);border-radius:var(--prad);max-height:min(320px,40vh);overflow:auto}
+    .mi{display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);width:100%;box-sizing:border-box}.mi:last-child{border-bottom:0}
+    .mi:hover,.mi[aria-checked=true]{background:color-mix(in srgb,var(--acc) 8%,transparent)}
+    .mi .r{color:var(--acc);width:12px}.mi .s{color:var(--txd);font-size:10.5px;display:block}
+    .note{margin-top:8px;font-size:11px;color:var(--txd)}.note.bad{color:var(--err)}
+    .hover{position:fixed;border:2px solid var(--acc);pointer-events:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+    .tag{position:fixed;background:var(--canvas);color:var(--acc);border:1px solid var(--border-bright);border-radius:var(--prad);padding:2px 7px;font-size:10.5px;pointer-events:none;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis}
+    .area{position:fixed;border:1.5px dashed var(--acc);background:color-mix(in srgb,var(--acc) 8%,transparent);pointer-events:none}
+    .pin{position:absolute;width:22px;height:22px;background:var(--canvas);color:var(--acc);border:1.5px solid var(--acc);border-radius:var(--prad);display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 0 8px color-mix(in srgb,var(--acc) 50%,transparent)}
+    .box{position:fixed;width:280px;background:var(--panel);border:1px solid var(--border-bright);border-radius:var(--prad);padding:10px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+    .box textarea{all:unset;display:block;width:100%;min-height:64px;border:1px solid var(--border);border-radius:var(--prad);padding:6px 8px;color:var(--txb);white-space:pre-wrap;box-sizing:border-box}
+    .box .w{color:var(--txd);font-size:10.5px;margin-bottom:6px;word-break:break-word}
     .row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
-    .btn{border:1px solid var(--bb);color:var(--p);padding:4px 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase}.btn.solid{background:var(--p);color:var(--bg)}
-  </style><div class="marks"></div><div class="live"></div><div class="ui"></div>`;
+    .btn{border:1px solid var(--border-bright);border-radius:var(--prad);color:var(--acc);padding:4px 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase}.btn.solid{background:var(--acc);color:var(--acc-on)}
+    .plain :is(.tab,.add,.send,.btn){text-transform:none;letter-spacing:.02em;font-weight:600}
+  </style><div class="look"><div class="marks"></div><div class="live"></div><div class="ui"></div></div>`;
+  const look = root.querySelector(".look");
   const marks = root.querySelector(".marks");
   const live = root.querySelector(".live");
   const ui = root.querySelector(".ui");
@@ -62,6 +69,8 @@
   let target = { kind: "opener" };
   let note = null;             // {text, bad}
   let busy = false;
+  let spot = null;             // where you moved the tray (its top-left), kept for every site; null = its corner
+  const SPOT = "tray-spot";
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -80,7 +89,11 @@
     chrome.storage.local.set({ [KEY]: pins });
     ask({ kind: "api", path: "/pins", body: { url: location.href, count: pins.length } });
   };
-  chrome.storage.local.get(KEY, (got) => { pins = got[KEY] || []; draw(); });
+  chrome.storage.local.get([KEY, SPOT], (got) => { pins = got[KEY] || []; spot = got[SPOT] || null; draw(); });
+  ask({ kind: "api", path: "/theme" }).then((t) => {
+    for (const [k, v] of Object.entries(t.tokens || {})) host.style.setProperty(k, v);
+    look.classList.toggle("plain", !!t.fam && t.fam !== "aurora");      // AURORA's capitals, the others' sentence case
+  });
 
   // ------- the crop ---------------------------------------------------------------------
   async function crop(rect) {
@@ -119,8 +132,9 @@
 
   function showHover(el) {
     const r = el.getBoundingClientRect();
+    const side = r.left > innerWidth / 2 ? `right:${Math.max(4, innerWidth - r.right)}px` : `left:${Math.max(4, r.left)}px`;   // stays on screen at either edge
     live.innerHTML = `<div class="hover" style="left:${r.left - 3}px;top:${r.top - 3}px;width:${r.width + 6}px;height:${r.height + 6}px"></div>`
-      + `<div class="tag" style="left:${Math.max(4, r.left)}px;top:${Math.max(4, r.top - 28)}px">${esc(describe(el))} · click to comment</div>`;
+      + `<div class="tag" style="${side};top:${Math.max(4, r.top - 28)}px">${esc(describe(el))} · click to comment</div>`;
   }
 
   const areaOf = (a, b) => ({ left: Math.min(a.x, b.x), top: Math.min(a.y, b.y), right: Math.max(a.x, b.x), bottom: Math.max(a.y, b.y) });
@@ -245,6 +259,26 @@
     loadChats();
   }
 
+  // ------- moving it -------------------------------------------------------------------------
+  // While you pick or write, the tray steps aside to its tab, so what it covers can be pointed at.
+  const aside = () => picking || !!live.querySelector(".box");
+
+  function place(tray) {       // where you left it, kept on screen however big it is now
+    if (!spot) return;
+    spot = { x: Math.max(0, Math.min(spot.x, innerWidth - tray.offsetWidth)), y: Math.max(0, Math.min(spot.y, innerHeight - tray.offsetHeight)) };
+    Object.assign(tray.style, { left: `${spot.x}px`, top: `${spot.y}px`, right: "auto" });
+  }
+
+  function drag(e, tray) {     // holding the head moves it
+    if (e.button !== 0 || e.target.closest("button")) return;
+    const hd = e.currentTarget, r = tray.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    hd.setPointerCapture(e.pointerId);
+    hd.onpointermove = (m) => { spot = { x: m.clientX - dx, y: m.clientY - dy }; place(tray); };
+    hd.onpointerup = hd.onpointercancel = () => { hd.onpointermove = null; if (spot) chrome.storage.local.set({ [SPOT]: spot }); draw(); };
+  }
+
+  addEventListener("resize", () => { const t = ui.querySelector(".tray"); if (t) place(t); });
+
   // ------- drawing --------------------------------------------------------------------------
   function drawMarks() {
     marks.innerHTML = pins.map((p, i) => p.at ? `<div class="pin" style="left:${p.at.x - 11}px;top:${p.at.y - 11}px">${i + 1}</div>` : "").join("");
@@ -263,26 +297,31 @@
 
   function draw() {
     drawMarks();
-    if (!open) {
-      ui.innerHTML = `<button class="tab" aria-label="Mystical comments, ${pins.length} pinned">◈ Mystical${pins.length ? ` · ${pins.length}` : ""}</button>`;
-      ui.querySelector(".tab").onclick = () => { open = true; draw(); loadChats(); };
+    if (!open || aside()) {
+      ui.innerHTML = picking ? `<button class="tab on" aria-label="Stop picking">◈ Picking · Esc</button>`
+        : `<button class="tab" aria-label="Mystical comments, ${pins.length} pinned">◈ Mystical${pins.length ? ` · ${pins.length}` : ""}</button>`;
+      ui.querySelector(".tab").onclick = () => { if (picking) setPicking(false); else { open = true; draw(); loadChats(); } };
       return;
     }
     const list = pins.length ? pins.map((p, i) => `<div class="it"><b>${i + 1}</b><div class="sp">${esc(p.text)}<div class="w">${esc(p.where)}</div></div><button class="x" data-del="${i}" aria-label="Remove comment ${i + 1}">✕</button></div>`).join("")
       : `<div class="empty">point at what should change — press C, or + Comment.</div>`;
     ui.innerHTML = `<div class="tray" role="complementary" aria-label="Mystical comments">
-      <div class="hd"><span class="lbl">◈ Mystical · ${pins.length} pinned</span><span class="sp"></span><button class="x" data-a="close" aria-label="Close">✕</button></div>
+      <div class="hd" title="Hold to move"><span class="lbl">◈ Mystical · ${pins.length} pinned</span><span class="sp"></span>${spot ? `<button class="x" data-a="home" aria-label="Back to its corner" title="Back to its corner">↗</button>` : ""}<button class="x" data-a="close" aria-label="Close">✕</button></div>
       <button class="add" data-a="pick" aria-pressed="${picking}">${picking ? "Picking… Esc to stop" : "+ Comment (C)"}</button>
       <div class="list">${list}</div>
       <div class="ft">${menuHtml()}
         <div class="split"><button class="send" data-a="send" ${pins.length && !busy ? "" : "disabled"}>${esc(sendLabel())}</button><button class="more" data-a="menu" aria-label="Where to send" aria-haspopup="menu" aria-expanded="${menu}">▾</button></div>
         ${note ? `<div class="note${note.bad ? " bad" : ""}" role="status">${esc(note.text)}</div>` : ""}
       </div></div>`;
+    const tray = ui.querySelector(".tray");
+    place(tray);
+    tray.querySelector(".hd").onpointerdown = (e) => drag(e, tray);
     ui.querySelectorAll("[data-del]").forEach((b) => { b.onclick = () => { pins.splice(+b.dataset.del, 1); save(); draw(); }; });
     ui.querySelectorAll("[data-a]").forEach((b) => {
       b.onclick = () => {
         const a = b.dataset.a;
         if (a === "close") { open = false; menu = false; setPicking(false); }
+        else if (a === "home") { spot = null; chrome.storage.local.remove(SPOT); draw(); }
         else if (a === "pick") setPicking(!picking);
         else if (a === "send") sendAll();
         else if (a === "menu") { menu = !menu; draw(); if (menu && !chats) loadChats(); }

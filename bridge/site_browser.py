@@ -10,7 +10,8 @@ The extension talks to the small loopback server here, never the dashboard: the 
 takes POSTs from its own origin, and an extension's origin isn't that. The server wants a secret
 token (written into the extension's config.json, which only the extension and this machine can
 read) and its own Host, the same DNS-rebinding guard the design proxy has. Its port and token
-outlive a bridge restart, so a browser left open keeps working once the bridge is back.
+outlive a bridge restart, so a browser left open keeps working once the bridge is back. The
+tray wears the theme the dashboard last saved (bridge/design_board.save_theme), from GET /theme.
 
 A site remembers the chat that last opened it or was sent to: Send all goes there unless you pick another
 running chat or a new one on the same project. Comments arrive as one turn of yours, tagged
@@ -37,7 +38,7 @@ import urllib.parse
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from bridge import config, store
+from bridge import config, design_board, store
 from bridge.design_proxy import Refused, normalize
 
 EXT_SRC = os.path.join(os.path.dirname(__file__), "browser_ext")
@@ -208,6 +209,8 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/theme":
+            return self._out(200, design_board.theme())
         if u.path != "/chats":
             return self._out(404, {"error": "No such route."})
         self._out(200, chats((urllib.parse.parse_qs(u.query).get("url") or [""])[0]))
