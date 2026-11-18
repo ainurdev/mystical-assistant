@@ -5392,7 +5392,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── B · ISLAND (.mystical/design-drafts/prompt-box-wild): the lead floats over the card as one
    pill with a gap under it, so the card's top edge carries nothing. Its parts are segments split
-   by hairlines; a ticket's way back (‹ crumb) is in the chat header, not here. The login warning is a second pill beside it. ── */
+   by hairlines. The login warning is a second pill beside it. ── */
 @property --pb-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 .pb-isles { display: flex; justify-content: center; align-items: center; gap: 8px; min-width: 0; height: 30px; margin-bottom: 6px; padding: 0 12px; }
 .pb-tabs { display: flex; align-items: stretch; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 30px; box-sizing: border-box; padding: 0 4px;
