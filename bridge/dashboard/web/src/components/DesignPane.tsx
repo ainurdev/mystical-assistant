@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Columns2, RotateCw, Eraser, MessageSquare, Monitor, MousePointer2, Pencil, Smartphone, SlidersHorizontal, Tablet, X } from "lucide-react";
+import { AppWindow, Columns2, RotateCw, Eraser, MessageSquare, Monitor, MousePointer2, Pencil, Smartphone, SlidersHorizontal, Tablet, X } from "lucide-react";
 import {
   ASPECTS, SCRIPT, commentsMessage, frameDoc, remixMessage,
   type DesignBoard, type DesignComment,
@@ -91,6 +91,9 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
     window.setTimeout(() => setSaid((s) => (s === text ? "" : s)), 4000);
   }, []);
   const call = useCallback(<T,>(path: string, body: Record<string, unknown> = {}) => designCall<T>(session ?? "", path, { board: boardId, ...body }), [session, boardId]);
+  // A site whose sign-in or security won't work in a frame opens in a real window (bridge/site_browser.py).
+  const inBrowser = () => { if (live) call("browser", { op: "open", url: live }).then(() => tell("Opened in the Mystical browser."), (e) => tell(e instanceof Error ? e.message : "Couldn't open it.")); };
+  const browserBtn = <button type="button" className="dg-btn" onClick={inBrowser}><AppWindow size={14} aria-hidden />Open in Mystical browser</button>;
 
   // ---- the board, kept current ---------------------------------------------------------
   useEffect(() => {
@@ -331,6 +334,7 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
         <form className="dg-url" onSubmit={(e) => { e.preventDefault(); go(bar); }}>
           <input value={bar} placeholder="Open an address: localhost:5173" aria-label="Address" spellCheck={false} onChange={(e) => setBar(e.target.value)} />
           {live ? <button type="button" className="dg-btn" title="Reload" aria-label="Reload" onClick={() => setReload((n) => n + 1)}><RotateCw size={14} aria-hidden /></button> : null}
+          {live ? <button type="button" className="dg-btn" title="Open in the Mystical browser: a real window, for a site whose sign-in or security won't load here" aria-label="Open in Mystical browser" onClick={inBrowser}><AppWindow size={14} aria-hidden /></button> : null}
         </form>
         <div className="dg-group" role="radiogroup" aria-label="Tool">
           {tools.map((t) => (
@@ -361,10 +365,10 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
       </header>
       <div className="dg-main">
         <div className="dg-stage" ref={stage}>
-          {error ? <div className="dg-note">{error}</div> : null}
+          {error ? <div className="dg-note">{error}{live ? <> {browserBtn}</> : null}</div> : null}
           {missing ? <div className="dg-note">This page's file is gone.</div> : null}
           {live && !local ? <div className="dg-note">A page at an address opens on the computer running Mystical, not here.</div> : null}
-          {silent ? <div className="dg-note">The page stopped answering, so the tools can't reach it. It may have navigated away: switch pages to reload it.</div> : null}
+          {silent ? <div className="dg-note">The page stopped answering, so the tools can't reach it. It may have navigated away (a sign-in often does): switch pages to reload it, or {browserBtn}</div> : null}
           {!meta && !error ? <div className="dg-note">Opening…</div> : null}
           <div className="dg-sheet" style={w ? { width: w } : undefined}>
             {live && src ? (
@@ -539,6 +543,37 @@ export function DesignCard({ board, title, pages }: { board: string; title: stri
         <small>{pages.length > 1 ? `${pages.length} pages: ${pages.join(", ")}` : pages[0]}</small>
       </div>
       <button type="button" className="dg-send" onClick={() => window.dispatchEvent(new CustomEvent("mystical:design", { detail: { board } }))}>Preview design</button>
+    </div>
+  );
+}
+
+/** open_site's card (bridge/site_browser.py): the Mystical browser this chat opened, and its pins not sent yet. */
+export function BrowserCard({ session, url, profile }: { session?: string | null; url: string; profile: string }) {
+  const [st, setSt] = useState<{ running: boolean; pinned: number } | null>(null);
+  const [bad, setBad] = useState("");
+  const poll = useCallback(() => {
+    if (session) designCall<{ running: boolean; pinned: number }>(session, "browser", { op: "state" }).then(setSt, () => {});
+  }, [session]);
+  useEffect(() => {
+    poll();
+    const t = window.setInterval(poll, 4000);
+    return () => window.clearInterval(t);
+  }, [poll]);
+  const act = (op: string) => {
+    if (!session) return;
+    setBad("");
+    designCall(session, "browser", { op, url }).then(poll, (e) => setBad(e instanceof Error ? e.message : "Couldn't reach the browser."));
+  };
+  return (
+    <div className="dg-card dg-browser">
+      <div className="dg-card-text">
+        <b><span className="dg-browser-dot" data-on={st?.running ? "" : undefined} aria-hidden />Mystical browser{st ? (st.running ? " · live" : "") : ""}</b>
+        <small>{url}</small>
+        <small>{st?.pinned ? <span className="dg-browser-pins">{st.pinned} pinned, not sent · </span> : null}comments come to this chat · profile {profile}</small>
+      </div>
+      {st?.running ? <button type="button" className="dg-btn" title="Quits the Mystical browser, every tab" onClick={() => act("close")}>Close</button> : null}
+      <button type="button" className="dg-send" onClick={() => act(st?.running ? "front" : "open")}>{st?.running ? "Bring to front" : "Open again"}</button>
+      {bad ? <p className="ds-err" role="alert">{bad}</p> : null}
     </div>
   );
 }

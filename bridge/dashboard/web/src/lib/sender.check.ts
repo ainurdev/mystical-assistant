@@ -44,3 +44,5 @@ eq(viaTag("telegram"), "via Telegram", "Telegram");
 eq(viaTag("miniapp"), "via Mini App", "Mini App");
 eq(viaTag(null), null, "the dashboard says nothing");
 eq(viaTag("mystical:mcp"), null, "Mystical's notes aren't via anything");
+eq(viaTag("browser"), "via Mystical browser", "comments sent from the Mystical browser are yours, tagged where from");
+eq(mysticalNote({ prompt: "2 comments from the Mystical browser on https://x", sent_by: "browser" }), null, "and they draw as your bubble, not a note");

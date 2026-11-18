@@ -81,6 +81,10 @@
 .dg-card-text b { display: block; font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
 .dg-card-text small { display: block; margin-top: 2px; color: var(--txd); overflow-wrap: anywhere; }
 .dg-boards { padding: 8px 10px; }
+.dg-browser-dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--txd); vertical-align: 1px; }
+.dg-browser-dot[data-on] { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.dg-browser-pins { color: var(--warn); }
+.dg-note .dg-btn { margin-left: 4px; vertical-align: middle; }
 .dg-resize { width: 7px; cursor: col-resize; background: var(--border); touch-action: none; }
 .dg-resize:hover, .dg-resize:active { background: var(--acc); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

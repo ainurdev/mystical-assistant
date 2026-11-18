@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Mystical comments",
+  "version": "1.0.0",
+  "description": "Pin comments on a page and send them to a Mystical chat.",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ]
+}

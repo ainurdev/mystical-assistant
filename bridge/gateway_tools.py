@@ -182,8 +182,13 @@ SCREENSHOT = _t("screenshot", "Look at a page: returns a screenshot to you alone
 RECORD = _t("record", "Record a page to a video and put it in the chat. Returns its final frame. It runs up to 40 s.",
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
+OPEN_SITE = _t("open_site", "Open a site for the user in the Mystical browser: a real window on their screen, on a profile of its "
+               "own that keeps their sign-ins, with Mystical's comment tool. They pin comments on the page and send them "
+               "here as a message naming each element, with a picture of it. Use it when they want to look at or comment "
+               "on a site, staging or live, or when show_design's view can't load it (its sign-in or security blocks a frame).",
+               {"url": {"type": "string", "description": "The address, like staging.example.com/planning."}}, ["url"])
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, DATA, DESIGN, OFFER, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, DESIGN, OFFER, CHECKS, DRIVE, OPEN_SITE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
@@ -380,6 +385,19 @@ def _show_design(s: dict, job, a: dict) -> dict:
     if down:
         said += f"Nothing is answering yet at {', '.join(down)}. Check the server is up.\n"
     return _text(f"{said}Let them comment. {_placed(job, ref)}")
+
+
+def _open_site(s: dict, job, a: dict) -> dict:
+    """The Mystical browser (bridge/site_browser.py), and its card in the chat."""
+    from bridge import site_browser
+    try:
+        got = site_browser.open_site(s["id"], str(a.get("url") or ""))
+    except site_browser.Refused as e:
+        return _text(str(e), error=True)
+    if job is not None:
+        job.add({"type": "browser", "url": got["url"], "profile": got["profile"]})
+    return _text(f"Opened {got['url']} in the Mystical browser. Their comments arrive here as a message when they press "
+                 "Send all; until then there's nothing to do.")
 
 
 def _design_context(s: dict, job, a: dict) -> dict:
@@ -857,7 +875,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
+    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "open_site": _open_site, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "message_chat": _message_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,

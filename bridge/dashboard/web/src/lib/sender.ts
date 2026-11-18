@@ -41,4 +41,4 @@ export function mysticalNote(t: { prompt: string; sent_by?: string | null; sent_
 
 /** The tag a prompt you sent from elsewhere wears beside You. */
 export const viaTag = (sentBy: string | null | undefined): string | null =>
-  sentBy === "telegram" ? "via Telegram" : sentBy === "miniapp" ? "via Mini App" : null;
+  sentBy === "telegram" ? "via Telegram" : sentBy === "miniapp" ? "via Mini App" : sentBy === "browser" ? "via Mystical browser" : null;
