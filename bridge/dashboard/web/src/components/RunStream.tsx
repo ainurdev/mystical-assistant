@@ -34,7 +34,7 @@ import { ROW_FILTERS, rowMatches, type RowFilter } from "../lib/rowfilter";
 import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./EvidenceRows";
 import { ProofBlock } from "./Proof";
 import { AnswerParts, DataView } from "./DataView";
-import { DesignCard } from "./DesignPane";
+import { BrowserCard, DesignCard } from "./DesignPane";
 import { OfferCard, offerOf } from "./OfferCard";
 import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
@@ -2598,7 +2598,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && ((t === "figure" && !galleryOnly) || t === "report" || t === "data" || t === "design" || showAt(i));
+    return !ended && ((t === "figure" && !galleryOnly) || t === "report" || t === "data" || t === "design" || t === "browser" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2606,7 +2606,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "offer" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "browser" && t !== "offer" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -2977,6 +2977,8 @@ export const RunStream = memo(function RunStream({
         return mx && !ended ? <DataView key={i} ev={event} /> : null;
       case "design":
         return mx && !ended ? <DesignCard key={i} board={event.board} title={event.title} pages={event.pages} /> : null;
+      case "browser":
+        return mx && !ended ? <BrowserCard key={i} session={sessionId} url={event.url} profile={event.profile} /> : null;
       case "report":
         return mx && !ended ? <ReportCard key={i} ev={event} session={sessionId} /> : null;
       case "secret_request": {
@@ -3506,7 +3508,8 @@ export const RunStream = memo(function RunStream({
     const above = proofs.filter((p) => !named.has(refOfEvent(p.i)));
     const dataAbove = events.flatMap((e, i) => (named.has((e as { ref?: string }).ref ?? "") ? []
       : e.type === "data" ? [<DataView key={`data${i}`} ev={e} />]
-      : e.type === "design" ? [<DesignCard key={`design${i}`} board={e.board} title={e.title} pages={e.pages} />] : []));
+      : e.type === "design" ? [<DesignCard key={`design${i}`} board={e.board} title={e.title} pages={e.pages} />]
+      : e.type === "browser" ? [<BrowserCard key={`browser${i}`} session={sessionId} url={e.url} profile={e.profile} />] : []));
     if (above.length || dataAbove.length) {
       rows.splice(answerZone >= 0 ? answerZone : rows.length, 0,
         <Fragment key="turn-shown">

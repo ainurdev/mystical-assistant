@@ -46,7 +46,7 @@ import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { useExperimental } from "../lib/multi";
 import { AnswerParts, DataView } from "./DataView";
-import { DesignCard } from "./DesignPane";
+import { BrowserCard, DesignCard } from "./DesignPane";
 import { OfferCard, offerOf } from "./OfferCard";
 import { viewsNamed } from "../lib/dataview";
 import { bashKind, bashLine, parseTests, testWords } from "../lib/bashkind";
@@ -687,7 +687,7 @@ const MULTI_ROW = new Set(["switch", "delegation", "merge", "plan"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
-const EVIDENCE_ROW = new Set(["figure", "data", "design", "offer", "checks", "report", "secret_request", "rule"]);
+const EVIDENCE_ROW = new Set(["figure", "data", "design", "browser", "offer", "checks", "report", "secret_request", "rule"]);
 const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
 
 /** Tool kinds that draw a block of their own, so they never fold into a
@@ -1443,7 +1443,8 @@ export const RunStream = memo(function RunStream({
           <Fragment key={i}>
           {i === lastResult && figures.some((f) => !named.has(refAt(f.at))) ? <Figures items={figures.filter((f) => !named.has(refAt(f.at)))} /> : null}
           {i === lastResult ? events.map((e, j) => (e.type === "data" && !named.has(e.ref ?? "") ? <DataView key={`data${j}`} ev={e} />
-            : e.type === "design" && !named.has(e.ref ?? "") ? <DesignCard key={`design${j}`} board={e.board} title={e.title} pages={e.pages} /> : null)) : null}
+            : e.type === "design" && !named.has(e.ref ?? "") ? <DesignCard key={`design${j}`} board={e.board} title={e.title} pages={e.pages} />
+            : e.type === "browser" ? <BrowserCard key={`browser${j}`} url={e.url} profile={e.profile} /> : null)) : null}
           <div className="relative -ml-3 pl-3">
             <RailNode />
             <FinalResult
@@ -1472,6 +1473,8 @@ export const RunStream = memo(function RunStream({
         return multiOn && lastResult < 0 ? <DataView key={i} ev={event} /> : null;
       case "design":
         return multiOn && lastResult < 0 ? <DesignCard key={i} board={event.board} title={event.title} pages={event.pages} /> : null;
+      case "browser":
+        return multiOn && lastResult < 0 ? <BrowserCard key={i} url={event.url} profile={event.profile} /> : null;
       case "checks":
         return <ChecksRow key={i} ev={event} />;
       case "report":

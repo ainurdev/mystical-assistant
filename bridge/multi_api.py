@@ -79,6 +79,25 @@ def _work_root(chat_id: int, session: "str | None", project: "str | None") -> "t
     return (image_root(chat_id, None, project), None) if config.is_owner(chat_id) else (None, None)
 
 
+def _post_browser(body: dict, chat: dict) -> "tuple[dict, int]":
+    """The Mystical browser (bridge/site_browser.py): open a site for this chat, and the card's buttons."""
+    from bridge import site_browser
+    op = body.get("op")
+    try:
+        if op == "open":
+            return site_browser.open_site(chat["id"], str(body.get("url") or "")), 200
+        if op == "state":
+            return site_browser.state(chat["id"], str(body.get("url") or "")), 200
+        if op == "front":
+            site_browser.front()
+            return {"ok": True}, 200
+        if op == "close":
+            return {"closed": site_browser.close()}, 200
+    except site_browser.Refused as e:
+        return {"error": str(e)}, 400
+    return {"error": "No such browser action."}, 400
+
+
 def _post_design(path: str, body: dict, s: dict, chat_id: int) -> "tuple[dict, int]":
     """The design view (bridge/design_board.py, design_audit.py)."""
     root = chat_images.root_of(s.get("cwd"))
@@ -316,6 +335,8 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
         return chat_aside.translate(body, chat_id, s.get("cwd"))
     if path == "chat/explain":
         return chat_aside.explain(body, chat_id, s.get("cwd"))
+    if path == "chat/browser":
+        return _post_browser(body, chat)
     if path.startswith("chat/design"):
         return _post_design(path, body, s, chat_id)
     if path in ("chat/docs", "chat/doc-read"):

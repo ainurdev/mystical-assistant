@@ -3182,6 +3182,8 @@ def start() -> ThreadingHTTPServer:
     global _httpd
     from bridge import newproject
     newproject.ensure_general()
+    from bridge import site_browser
+    site_browser.serve_if_used()      # a Mystical browser left open keeps reaching its chats
     _httpd = ThreadingHTTPServer((config.DASH_HOST, config.DASH_PORT), Handler)
     Thread(target=_httpd.serve_forever, daemon=True).start()
     return _httpd
