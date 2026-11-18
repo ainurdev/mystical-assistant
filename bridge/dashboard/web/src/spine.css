@@ -279,7 +279,7 @@
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="ok"] { color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="err"] { color: var(--err); }
 
-/* ── a question (live, docked or answered): an ok ring, Question, its topic › the answer ── */
+/* ── a question (live, docked or answered): an ok ring, the header, its answers as chips ── */
 [data-fam] [data-style="dossier"][data-isle] .dask { position: relative; padding-left: var(--sp-in); }
 [data-fam] [data-style="dossier"][data-isle] .dask::before { left: var(--sp-nx); top: 0; border-color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .dask::after {
@@ -288,15 +288,15 @@
 }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec { margin: 0; border: 0; background: none; border-radius: 0; font-size: var(--t13); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row { padding: 0; min-height: var(--sp-n); gap: 8px; }
-/* answered: its state (✓, ✕, never answered) is the node, over the ring */
-[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-row:first-child .ask-rec-ic {
+/* answered: its state (✓, ✕, never answered) is the node, over the ring; the header is the only row */
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-ic {
   position: absolute; z-index: 2; left: var(--sp-nx); top: 0; width: var(--sp-n); height: var(--sp-n);
   box-sizing: border-box; border: 2px solid currentColor; background: var(--sp-gnd);
 }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-k { font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh); }
-[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-tag { font-size: var(--t11); font-weight: 600; letter-spacing: 0; padding: 0 8px; border-radius: 999px; border-color: var(--line2); color: var(--txd); }
-[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-open { font-family: var(--mono); font-size: var(--t11); }
-[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 6px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
+[data-fam] [data-style="dossier"][data-isle] .dask :is(.ask-rec-open, .ask-rec-at) { font-family: var(--mono); font-size: var(--t11); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-chips { padding: 4px 0 0; }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 8px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
 
 /* ── Mystical (A · SIGIL, .mystical/design-drafts/session-chat-items): a prompt the bridge sent, not you.
    A diamond node in its own phosphor (--my, index.css), then one line: Mystical, the kind, the first line,

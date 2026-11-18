@@ -20,8 +20,9 @@ import { Keys, useAskKeys } from "./ui/Keys";
    (.mystical/design-drafts/response-cards, C · DOCK — the user's pick over an
    in-place card and a louder in-place one). The ask sits where your hands
    already are and never scrolls away; the transcript keeps a marker where it
-   was asked (AskMarker) and, once it's answered, a one-line record that opens
-   back into the full card (AskRecord) — every option, the skipped ones too.
+   was asked (AskMarker) and, once it's answered, a header and a chip per answer
+   (AskRecord); a chip opens its question read-only — every option, the skipped
+   ones too.
 
    The box is the answer: what you type goes back as your own answer (a
    question) or as the reason with a Deny (a permission), and its button names
@@ -690,90 +691,93 @@ export function AskMarker({ kind, topic }: { kind: "question" | "permission" | "
 
 /** An answered question read back: every option, yours lit, the skipped ones as
  *  readable as when they were asked — pictures open and page, nothing picks. */
-function RecordQuestions({ questions, answered }: { questions: Question[]; answered?: AnswerSelection[] }) {
+function RecordQuestion({ q, given, task }: { q: Question; given?: AnswerSelection; task: boolean }) {
+  const chosen = given?.labels ?? [];
+  const texts = previewTexts(q);
   return (
-    <div className="ask-recq">
-      {questions.map((q, qi) => {
-        const given = answered?.[qi]?.header === q.header ? answered[qi] : answered?.find((x) => x.header === q.header);
-        const chosen = given?.labels ?? [];
-        const texts = previewTexts(q);
-        return (
-          <div key={qi} className="ad-b">
-            {questions.length > 1 && <p className="ad-tail">{qi + 1} of {questions.length} · {q.header}</p>}
-            {isTask(questions) ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
-            {staged(q)
-              ? <Pictures q={q} chosen={chosen} onPick={() => {}} sending={false} readOnly />
-              : (
-                <div className="ad-rows">
-                  {q.options.map((o, i) => {
-                    const k = optionKey(o.label, i);
-                    const on = chosen.includes(o.label);
-                    return (
-                      <div key={o.label} className="ad-row" aria-pressed={on} data-ro="" data-multi={q.multiSelect ? "" : undefined}>
-                        <Key k={k.key} on={on} />
-                        <span className="ad-lab">{isTask(questions) ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug">Recommended</span>}</span>
-                        {o.description && <span className="ad-desc">{o.description}</span>}
-                      </div>
-                    );
-                  })}
+    <div className="ad-b">
+      {task ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
+      {staged(q)
+        ? <Pictures q={q} chosen={chosen} onPick={() => {}} sending={false} readOnly />
+        : (
+          <div className="ad-rows">
+            {q.options.map((o, i) => {
+              const k = optionKey(o.label, i);
+              const on = chosen.includes(o.label);
+              return (
+                <div key={o.label} className="ad-row" aria-pressed={on} data-ro="" data-multi={q.multiSelect ? "" : undefined}>
+                  <Key k={k.key} on={on} />
+                  <span className="ad-lab">{task ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug">Recommended</span>}</span>
+                  {o.description && <span className="ad-desc">{o.description}</span>}
                 </div>
-              )}
-            {texts && <TextPreview q={q} texts={texts} picked={chosen[0]} />}
-            {given?.notes && <p className="ad-hint">Your words: “{given.notes}”</p>}
+              );
+            })}
           </div>
-        );
-      })}
+        )}
+      {texts && <TextPreview q={q} texts={texts} picked={chosen[0]} />}
+      {given?.notes && <p className="ad-hint">Your words: “{given.notes}”</p>}
     </div>
   );
 }
 
-/** What an answered (or never answered) card leaves: one line per question, and
- *  ▾ opens the whole card read-only — every option, the ones you skipped and
- *  their pictures included. */
+/** What an answered (or never answered) card leaves: one header (its state, how
+ *  many questions, when) and a chip per question with your pick. A chip opens
+ *  just that question read-only — every option, the ones you skipped and their
+ *  pictures included; a permission keeps its one line and ▸. */
 export function AskRecord(p:
   | { kind: "question"; questions: Question[]; answered?: AnswerSelection[]; stale?: boolean; at?: number }
   | { kind: "permission"; tool: string; summary: string; detail?: string; resolved?: "allow" | "deny"; stale?: boolean; at?: number }) {
   const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState<number | null>(null);
   const h12 = useClock12();
-  const toggle = (
-    <button type="button" className="ask-rec-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-      title={open ? "Fold it" : p.kind === "question" ? "Open the card: every option, the skipped ones too" : "Show what it asked"}>
-      {p.at ? clock(p.at, h12) : ""}<ChevronRight size={13} strokeWidth={2.2} aria-hidden className="ask-rec-car" />
-    </button>
-  );
   if (p.kind === "question") {
+    const task = isTask(p.questions);
     const rows = p.questions.map((q, qi) => {
       const given = p.answered?.[qi]?.header === q.header ? p.answered[qi] : p.answered?.find((x) => x.header === q.header);
       const names = (given?.labels ?? []).map((l) => optionKey(l, q.options.findIndex((o) => o.label === l)));
       return { q, given, names, rec: names.some((n) => n.rec) };
     });
     const state = p.answered ? "ok" : p.stale ? "gone" : "open";
+    const count = p.questions.length;
+    const one = shown === null ? null : rows[shown];
     return (
-      <div className="ask-rec" data-state={state} data-open={open ? "" : undefined}>
-        {rows.map(({ q, given, names, rec }, qi) => (
-          <div key={qi} className="ask-rec-row">
-            <span className="ask-rec-ic" aria-hidden>{state === "ok" ? <Check size={12} strokeWidth={3} /> : state === "gone" ? <Ban size={12} strokeWidth={2.4} /> : <CircleQuestionMark size={12} />}</span>
-            <span className="ask-rec-k">{state === "gone" ? "Never answered" : p.questions.length > 1 ? "Questions" : "Question"}</span>
-            <span className="ask-rec-tp">{isTask(p.questions) ? "Task" : q.header}</span>
-            <span className="ask-rec-ar" aria-hidden>›</span>
-            <span className="ask-rec-v">
-              {state === "gone" ? <i>the run ended before you answered</i>
-                : names.length ? names.map((n) => n.name).join(", ")
-                : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
-            </span>
-            {rec && <span className="ask-rec-tag caps">Suggested</span>}
-            {given?.notes && names.length > 0 && <span className="ask-rec-note" title={given.notes}>+ note</span>}
-            {qi === 0 && toggle}
-          </div>
-        ))}
-        {open && (
+      <div className="ask-rec" data-state={state}>
+        <div className="ask-rec-row">
+          <span className="ask-rec-ic" aria-hidden>{state === "ok" ? <Check size={12} strokeWidth={3} /> : state === "gone" ? <Ban size={12} strokeWidth={2.4} /> : <CircleQuestionMark size={12} />}</span>
+          <span className="ask-rec-k">{state === "ok" ? "Answered" : state === "gone" ? "Never answered" : "Asked"}</span>
+          {(state === "gone" || count > 1) && <span className="ask-rec-n">{state === "gone" ? "the run ended first" : `${count} questions`}</span>}
+          {p.at ? <span className="ask-rec-at">{clock(p.at, h12)}</span> : null}
+        </div>
+        <div className="ask-rec-chips">
+          {rows.map(({ q, given, names, rec }, qi) => (
+            <button key={qi} type="button" className="ask-rec-chip" aria-expanded={shown === qi}
+              onClick={() => setShown((s) => (s === qi ? null : qi))}
+              title={shown === qi ? "Fold it" : "Open the question: every option, the skipped ones too"}>
+              <span className="ask-rec-tp">{task ? "Task" : q.header}</span>
+              {state !== "gone" && (
+                <span className="ask-rec-v">
+                  {names.length ? names.map((n) => n.name).join(", ") : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
+                </span>
+              )}
+              {rec && <span className="ask-rec-dot" role="img" aria-label="Suggested" title="Suggested" />}
+              {given?.notes && names.length > 0 && <span className="ask-rec-note" title={given.notes}>+ note</span>}
+            </button>
+          ))}
+        </div>
+        {one && (
           <div className="ask-rec-body">
-            <RecordQuestions questions={p.questions} answered={p.answered} />
+            <RecordQuestion q={one.q} given={one.given} task={task} />
           </div>
         )}
       </div>
     );
   }
+  const toggle = (
+    <button type="button" className="ask-rec-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+      title={open ? "Fold it" : "Show what it asked"}>
+      {p.at ? clock(p.at, h12) : ""}<ChevronRight size={13} strokeWidth={2.2} aria-hidden className="ask-rec-car" />
+    </button>
+  );
   const state = p.resolved === "allow" ? "ok" : p.resolved === "deny" ? "no" : p.stale ? "gone" : "open";
   const plan = p.tool === "ExitPlanMode";
   const word = state === "ok" ? (plan ? "Approved" : "Allowed") : state === "no" ? (plan ? "Kept planning" : "Denied") : state === "gone" ? "Never answered" : "Permission";
