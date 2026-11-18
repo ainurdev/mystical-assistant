@@ -2983,7 +2983,7 @@ export const RunStream = memo(function RunStream({
         if (!mx) return null;
         const live = !!onRespond && pendingIds.has(event.request_id);
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-k="secret" data-wait={live ? "" : undefined}>
             {live && askDocked ? <AskMarker kind="secret" topic={event.name} />
               : live ? <SecretCard ev={event} onRespond={(id, opts) => onRespond?.(id, opts)} />
               : <SecretRecord name={event.name} why={event.why} given={secretGiven.get(event.request_id)} stale={ended} />}
@@ -3057,14 +3057,15 @@ export const RunStream = memo(function RunStream({
       case "permission": {
         const live = !!onRespond && pendingIds.has(event.request_id);
         const plan = event.tool_name === "ExitPlanMode";
+        // .dask: a node on the session's spine (spine.css), amber while it waits on you
         if (live && askDocked) return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
             <AskMarker kind={plan ? "plan" : "permission"} topic={plan ? "ready to build"
               : event.tool_name.startsWith("mcp__") ? mcpParts(event.tool_name).server : event.tool_name} />
           </div>
         );
         if (!live) return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission">
             <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
               // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
               resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
@@ -3072,7 +3073,7 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
             <PermissionCard
               toolName={event.tool_name}
               summary={event.summary}
@@ -3086,7 +3087,7 @@ export const RunStream = memo(function RunStream({
       case "question": {
         const live = !!onRespond && pendingIds.has(event.request_id);
         if (live && askDocked) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
             <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
               : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
           </div>
@@ -3099,7 +3100,7 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
             <QuestionCard
               questions={event.questions}
               requestId={event.request_id}
@@ -3495,7 +3496,9 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {reports}
-        {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? <OfferCard offer={offerOf(events)!} onStart={onAnswer} /> : null}
+        {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? (
+          <div className="dask" data-k="review" data-wait=""><OfferCard offer={offerOf(events)!} onStart={onAnswer} /></div>
+        ) : null}
         {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
       </Fragment>);
     // What it showed comes first, then the answer that talks about it.

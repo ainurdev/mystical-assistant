@@ -173,6 +173,9 @@
   font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-err] .dwork-words { color: var(--txd); }
+/* the label keeps its width; the words give way, on the right, ending in an ellipsis */
+[data-fam] [data-style="dossier"][data-isle] .dwork-head { grid-template-columns: auto minmax(0, 1fr) auto; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-l2 { min-width: 0; justify-content: flex-end; text-align: right; }
 [data-fam] [data-style="dossier"][data-isle] .wtally > .dwork-k { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .wtally-words { display: inline; font-family: var(--ui-font); font-size: var(--t11); font-weight: 600; color: var(--txd); }
 [data-fam] [data-style="dossier"][data-isle] .wtally[data-err] .wtally-words { color: var(--err); }
@@ -332,6 +335,42 @@
 }
 /* where you sent it from, when it wasn't here: beside You */
 .pvia { display: inline-flex; align-items: center; gap: 4px; color: var(--txl); }
+
+/* ── waits on you (A · HANGING, .mystical/design-drafts/session-chat-items): a permission, a question, a
+   secret or an offered review is an amber node with a halo, its card hanging off it; answered, the record
+   is one line on an ok node (above). A docked ask leaves only its header line here. */
+[data-fam] [data-style="dossier"][data-isle] {
+  --sp-ic-shield: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'/></svg>");
+  --sp-ic-key: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><circle cx='8' cy='15' r='4'/><path d='M11 12l9-9M17 6l3 3'/></svg>");
+  --sp-ic-eye: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/></svg>");
+}
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="permission"]::after { -webkit-mask-image: var(--sp-ic-shield); mask-image: var(--sp-ic-shield); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="secret"]::after { -webkit-mask-image: var(--sp-ic-key); mask-image: var(--sp-ic-key); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"]::after { -webkit-mask-image: var(--sp-ic-eye); mask-image: var(--sp-ic-eye); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait]::before { border-color: var(--ask); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ask) 12%, transparent); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait]::after { background: var(--ask); }
+/* room for the halo: the turn's row is paint-contained (.vskip-card), and a wait is often its last block */
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] { padding-bottom: 4px; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .dask[data-k="review"] { margin: 14px 0 0; }
+/* a docked ask's marker: the node's header line, the card is at the prompt box */
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark {
+  margin: 0; min-height: var(--sp-n); padding: 0; border: 0; border-radius: 0; background: none; gap: 8px;
+  font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark .ad-g { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark .ad-kind {
+  font-family: var(--ui-font); font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh);
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-t { font-weight: 600; color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-w::before { content: "· "; }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-go { font-family: var(--ui-font); font-weight: 700; color: var(--ask); }
+/* a card in the turn hangs off its node: the small corner by it, amber while it waits */
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] :is(.chatcard, .dg-card) {
+  margin: 6px 0 0; border: 1px solid color-mix(in oklab, var(--ask) 30%, transparent); border-radius: 4px 14px 14px 14px;
+  background: color-mix(in oklab, var(--ask) 4%, var(--sp-card));
+}
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"] .dg-card { margin-top: 0; }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"] .dg-card-text b { font-weight: 700; color: var(--txh); }
 
 /* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
