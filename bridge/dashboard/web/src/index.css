@@ -5392,7 +5392,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── B · ISLAND (.mystical/design-drafts/prompt-box-wild): the lead floats over the card as one
    pill with a gap under it, so the card's top edge carries nothing. Its parts are segments split
-   by hairlines; the way back (‹ crumb) leads it. The login warning is a second pill beside it. ── */
+   by hairlines; a ticket's way back (‹ crumb) is in the chat header, not here. The login warning is a second pill beside it. ── */
 @property --pb-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 .pb-isles { display: flex; justify-content: center; align-items: center; gap: 8px; min-width: 0; height: 30px; margin-bottom: 6px; padding: 0 12px; }
 .pb-tabs { display: flex; align-items: stretch; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 30px; box-sizing: border-box; padding: 0 4px;
@@ -5400,7 +5400,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs, .pb-isles > .pb-dry { background: var(--pb-isle); box-shadow: 0 8px 22px -14px var(--shadow-pop); }
 /* outside .pb-isles (DeviceRunPlate) the pill centres itself */
 :not(.pb-isles) > .pb-tabs { width: fit-content; margin: 0 auto 6px; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task, .ma-crumb), .pb-tabs > :is(.ctrl-ctx, .pb-work, .pb-now) {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > :is(.ctrl-ctx, .pb-work, .pb-now) {
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 100% !important; margin: 0 !important;
   padding: 0 11px !important; border: 0 !important; border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)) !important;
   border-radius: 0 !important; background: none !important; }
@@ -5414,9 +5414,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
 .pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-left: 0 !important; }
 .pb-tabs .np-tile + .np-title-btn { padding-left: 6px !important; border-left: 0 !important; }
-/* a ticket's (or a helper's) way back leads the pill, its part count after the name */
-.pb-tabs .ma-crumb { order: -1; flex: 0 1 auto; min-width: 84px !important; max-width: 260px; border-left: 0 !important; gap: 5px; font-weight: 700; }
-.pb-tabs:has(.ma-crumb) .np-tile { border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)) !important; padding-left: 9px !important; }
+/* COMPACT: a ticket's (or a helper's) way back in the chat header, its part count after the name */
+[data-layout="compact"] .isle .ma-crumb { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; font-size: var(--t12); font-weight: 700; }
 .ma-crumb-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ma-crumb-n { flex: none; font-family: var(--mono, monospace); font-size: var(--t9); font-weight: 400; color: var(--txl); }
 /* the branch gives way only once the title has: a sliver of the shrink */
@@ -5488,9 +5487,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 @container (max-width: 560px) {
   .pb-tabs > .ctrl-ctx .cx-of { display: none; }
-  /* the island's narrow form: a ticket's crumb is its ‹ and part count, the warning its glyph and swap */
-  .pb-tabs .ma-crumb:has(.ma-crumb-n) { min-width: 0 !important; flex: none; }
-  .ma-crumb-t:has(+ .ma-crumb-n) { display: none; }
+  /* the island's narrow form: the warning is its glyph and swap */
   .pb-isles > .pb-dry { flex: none; min-width: 0; max-width: 108px; padding-left: 9px; }
   .pb-isles > .pb-dry > span { display: none; }
 }
