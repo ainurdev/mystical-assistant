@@ -2,14 +2,14 @@
    One line runs down the session and every block hangs off it as a node: your prompt (a filled
    accent node and a bubble), a steer (an accent ring), the work (a neutral ring, live: an accent
    ring with a halo), the answer and a question (ok rings). Every block opens with the same header
-   line: the node, a word (You, Steer, Worked, Answer, Question), its details in the light ink,
-   the facts on the right. Words in the UI face, mono only for code, paths and clocks; colour only
-   for meaning (accent = you, ask = waits on you, ok = done).
+   line: the node, a word (You, Steer, Answer, Question; the work: its tools' icons), its details in
+   the light ink, the facts on the right. Words in the UI face, mono only for code, paths and
+   clocks; colour only for meaning (accent = you, ask = waits on you, ok = done).
 
    Loaded last (main.tsx). The transcript rules are scoped to the session's own transcript
    (Terminal.tsx's scroller is the one dossier with data-isle), so the Agents view and Settings'
    samples keep their look; the For you callout, the Mystical note's line, the ledger's hidden word
-   spans and the prompt box rules are global.
+   spans, the work header's title and time spans and the prompt box rules are global.
    Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
    box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
    block is indented by --sp-in and draws its node in that margin, --sp-nx in so the live halo fits.
@@ -101,14 +101,19 @@
 [data-fam] [data-style="dossier"][data-isle] .pmeta .pacct { color: var(--txm); }
 [data-fam] [data-style="dossier"][data-isle] .ppips { display: none; }
 
-/* ── the work: a ring, Worked/Working, the steps, its counts and the chevron on the right ── */
+/* ── the work: a ring, its tools as icons with counts, the time and the chevron on the right ──
+   (B · BY TOOL, .mystical/design-drafts/worked-title): WORKED repeated down every turn split by notes.
+   The chips are RunStream's .dwork-tools, by tool (one terminal for every command), and say "Working"
+   or "Worked" only while there is nothing to count; .dwork-when is the time, with the chapters and
+   retries beside it. Both hidden off the spine. */
+.dwork-tools, .dwork-when { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork {
   --zpl: 0px; --zpr: 0px; --zg: var(--sp-gnd);
   background: none; border: 0; border-radius: 0; box-shadow: none; padding: 4px 0 0 var(--sp-in);
 }
 [data-fam] [data-style="dossier"][data-isle] .rstream > .dwork { margin-top: 14px; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-head {
-  position: relative; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 14px;
+  position: relative; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px;
   min-height: var(--sp-n); padding: 0; font-family: var(--ui-font);
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] > .dwork-head { position: sticky; min-height: 34px; background: var(--sp-gnd); }
@@ -122,20 +127,30 @@
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--acc) 16%, transparent);
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-shots="new"] .dwork-node { border-color: var(--acc); color: var(--acc); }
-[data-fam] [data-style="dossier"][data-isle] .dwork-l1 { grid-column: 1; grid-row: 1; align-items: baseline; gap: 8px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-l1 { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-lab {
   font-family: var(--ui-font) !important; font-size: var(--t13); font-weight: 700 !important; letter-spacing: 0 !important;
   text-transform: none !important; color: var(--txh) !important;
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork-ms { font-family: var(--ui-font) !important; font-size: var(--t12); letter-spacing: 0 !important; color: var(--txl); }
-[data-fam] [data-style="dossier"][data-isle] .dwork-l2 { grid-column: 2; grid-row: 1; margin: 0; min-height: 0; }
+/* the chips never wrap: past the time they clip, sideways only and from 8px out on the left, so a
+   growing chip's flare (index.css kbump, 7px) shows whole.
+   shortcut: a clipped chip is just cut, no "+N"; about ten kinds fit at an 1100px window and real
+   rows show up to seven, so add a +N when a row is seen cut. */
+[data-fam] [data-style="dossier"][data-isle] .dwork-l2 { grid-column: 1; grid-row: 1; margin: 0 0 0 -8px; padding-left: 8px; min-height: 0; overflow-x: clip; }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-l2 { display: flex; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-kinds { gap: 10px; }
-[data-fam] [data-style="dossier"][data-isle] .dwork-right { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 10px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-tools { display: flex; gap: 14px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-right { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 10px; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-when { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-chev { flex: none; color: var(--txl); }
 /* tool counts are neutral: the kind hue stays on the open spine's rows, not the header */
 [data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-k { color: var(--txd); }
 [data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-k > i { color: var(--txd); background: none; box-shadow: none; }
+/* the title's chips: the count in the mid ink, the bare icon lighter (the note keeps its small dot) */
+[data-fam] [data-style="dossier"][data-isle] .dwork-tools > .dwork-k { gap: 5px; font-family: var(--ui-font); font-size: var(--t13); font-weight: 600; color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-tools > .dwork-k > i { width: 15px; height: 15px; color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-tools > .dwork-k:not([data-m="note"]) > i > svg { width: 13px; height: 13px; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-now { grid-column: 1 / -1; grid-row: 2; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-ind { margin-left: 0; }
 [data-fam] [data-style="dossier"][data-isle] .ma-looked-lab {
@@ -148,10 +163,10 @@
 
 /* ── the work as a ledger (A · LEDGER, .mystical/design-drafts/session-chat-items): every step a sentence,
    "Ran npm run check", on the zone's inner track. No kind tags or kind hues: the icons are neutral tiles,
-   a failure is red, a running step is you. The header and each note's tally say their counts in words.
-   Live, one calm line in a soft panel says what runs now. What hangs under a step (output, a diff)
-   sits in a soft panel. The words spans are RunStream's, hidden off the spine. */
-.ax-verb, .dwork-words, .wtally-words { display: none; }
+   a failure is red, a running step is you. Each note's tally says its counts in words (the header's
+   are icons, B · BY TOOL above). Live, one calm line in a soft panel says what runs now. What hangs
+   under a step (output, a diff) sits in a soft panel. The words spans are RunStream's, hidden off the spine. */
+.ax-verb, .wtally-words { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-verb {
   display: inline; margin-right: 6px; font-family: var(--ui-font); font-weight: 600; color: var(--txm);
 }
@@ -169,14 +184,6 @@
   background: var(--sp-card); border-color: var(--line); border-radius: 10px;
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork-head :is(.dwork-kinds, .dwork-right > .dwork-k[data-m="fail"]) { display: none; }
-[data-fam] [data-style="dossier"][data-isle] .dwork-words {
-  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
-}
-[data-fam] [data-style="dossier"][data-isle] .dwork[data-err] .dwork-words { color: var(--txd); }
-/* the label keeps its width; the words give way, on the right, ending in an ellipsis */
-[data-fam] [data-style="dossier"][data-isle] .dwork-head { grid-template-columns: auto minmax(0, 1fr) auto; }
-[data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-l2 { min-width: 0; justify-content: flex-end; text-align: right; }
 [data-fam] [data-style="dossier"][data-isle] .wtally > .dwork-k { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .wtally-words { display: inline; font-family: var(--ui-font); font-size: var(--t11); font-weight: 600; color: var(--txd); }
 [data-fam] [data-style="dossier"][data-isle] .wtally[data-err] .wtally-words { color: var(--err); }
