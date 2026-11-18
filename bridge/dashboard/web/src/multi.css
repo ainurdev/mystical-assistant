@@ -230,9 +230,6 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-set-tool code { font-family: var(--mono); font-size: var(--t10); color: var(--tx); overflow-wrap: anywhere; }
 .ma-set-all { margin-top: 10px; }
 
-/* A turn the bridge sent to carry on: one line, not a message you wrote. */
-.ma-resumed { padding: 4px 0 4px var(--rail, 0); font-size: var(--t10); letter-spacing: .4px; color: var(--muted-2); }
-
 /* ---- what the agent shows you (components/Proof) ---- */
 .ma-proof { margin: 6px 0 2px var(--rail, 0); display: flex; flex-direction: column; gap: 12px; }
 .ma-proof-lab { font-family: var(--mono); font-size: var(--t9); letter-spacing: 2px; color: var(--txl); }

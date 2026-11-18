@@ -563,7 +563,8 @@ def _tell(rid, rec, frame):
     if sess:
         queue_manager.enqueue(sess["id"], text=text, prompt=text, images=images, model=None, effort=None,
                               permission_mode=None, width=None, sel=[], surface="rivendell",
-                              chat_id=sess["chat_id"], project=sess["project"])
+                              chat_id=sess["chat_id"], project=sess["project"], sent_by="mystical:device",
+                              sent_why="the device run this chat started has finished")
     else:
         telegram.send(config.DASH_CHAT_ID, head, silent=True)
 

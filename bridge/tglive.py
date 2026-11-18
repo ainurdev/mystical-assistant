@@ -94,7 +94,7 @@ def start(chat_id: int, session: dict, prompt: str, files: "list[str] | None" = 
                                      job_id=job_id, session_id=session["id"],
                                      # the session's (or its profile's) own mode wins
                                      permission_mode=None if eff["permission_mode"] else mode,
-                                     extra_args=rest)
+                                     extra_args=rest, sent_by="telegram")
     if job is None:
         for p in paths:      # kept for the next try, as the old path kept them
             from bridge import tgfiles  # local import: tgfiles pulls telegram state

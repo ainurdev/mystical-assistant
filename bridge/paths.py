@@ -755,7 +755,8 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
             session_id, text=text, prompt=text, images=[], model=None,
             effort=effort, permission_mode=None, width=None, sel=[], surface="flow",
             chat_id=chat_id if chat_id is not None else sess.get("chat_id"),
-            project=sess.get("project") or "")
+            project=sess.get("project") or "", sent_by="mystical:step",
+            sent_why=f"the flow's last step was done; next is {station}")
     return True
 
 

@@ -576,7 +576,8 @@ def test_a_finished_run_comes_back_as_a_turn_with_its_screens_and_into_the_pr(ri
     images = [os.path.join(up, "1.png"), os.path.join(up, "2.png")]
     assert guard.turns == [(chat.id, {
         "text": TEXT, "prompt": TEXT, "images": images, "model": None, "effort": None, "permission_mode": None,
-        "width": None, "sel": [], "surface": "rivendell", "chat_id": 555, "project": "ainurhq/app"})]
+        "width": None, "sel": [], "surface": "rivendell", "chat_id": 555, "project": "ainurhq/app",
+        "sent_by": "mystical:device", "sent_why": "the device run this chat started has finished"})]
     assert [open(p, "rb").read() for p in images] == [PNG + URL1.encode(), PNG + URL2.encode()]
     assert gh.calls[0] == (("gh", "pr", "view", "57", "-R", "ainurhq/app", "--json", "body", "-q", ".body"), 15)
     (edit, timeout), = gh.calls[1:]

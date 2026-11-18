@@ -1112,6 +1112,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
               <KindChip key={k.m} m={k.m} n={k.n} title={k.m.startsWith("p-") ? `${k.n} · ${k.m.slice(2)}` : undefined} />
             ))}
           </span>
+          {/* the session's spine says it in words instead (spine.css, A · LEDGER) */}
+          <span className="dwork-words" aria-hidden>{words}</span>
         </span>
         <span className="dwork-right">
           {failed ? <KindChip m="fail" n={failed} title={`${failed} failed`} /> : null}
@@ -1333,6 +1335,8 @@ function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows,
         <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
       ))}
       {failed ? <span className="dwork-k" data-m="fail"><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+      {/* the session's spine says it in words instead (spine.css, A · LEDGER) */}
+      <span className="wtally-words" aria-hidden>{what}</span>
       <ChevronDown size={10} strokeWidth={2.4} aria-hidden className="wtally-chev" />
     </button>
   ) : null;
@@ -1607,6 +1611,17 @@ function LogRow({ src, label, text, error, animate }:
  *  that would have to know what a block is. */
 const BULK = "ax-bulk";
 
+/** The verb a row says on the session's spine, where it reads as a sentence
+ *  ("Ran npm run check") instead of wearing its tag (A · LEDGER, spine.css).
+ *  An agent or a skill names itself; a run's members hang off a head that said it. */
+const MARK_VERB: Partial<Record<Mark, string>> = {
+  command: "Ran", read: "Read", edit: "Edited", write: "Wrote", search: "Searched", fetch: "Looked up",
+  call: "Called", step: "Called", hook: "Hook", log: "Logged",
+};
+const verbOf = (mark: Mark | undefined, error?: boolean): string | undefined =>
+  !mark || mark === "agent" || mark === "skill" ? undefined
+    : error ? "Failed" : mark.startsWith("p-") ? "Ran" : MARK_VERB[mark];
+
 function ActionRow({
   tier,
   shape,
@@ -1709,7 +1724,7 @@ function ActionRow({
             </span>
           )}
         </span>
-        <span className="ax-obj">{children}</span>
+        <span className="ax-obj">{verbOf(mark, error) ? <span className="ax-verb">{verbOf(mark, error)}</span> : null}{children}</span>
         <span className="ax-stat">{stat}</span>
         <span className="ax-chev">
           {drawer && (
@@ -2968,7 +2983,7 @@ export const RunStream = memo(function RunStream({
         if (!mx) return null;
         const live = !!onRespond && pendingIds.has(event.request_id);
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-k="secret" data-wait={live ? "" : undefined}>
             {live && askDocked ? <AskMarker kind="secret" topic={event.name} />
               : live ? <SecretCard ev={event} onRespond={(id, opts) => onRespond?.(id, opts)} />
               : <SecretRecord name={event.name} why={event.why} given={secretGiven.get(event.request_id)} stale={ended} />}
@@ -3042,14 +3057,15 @@ export const RunStream = memo(function RunStream({
       case "permission": {
         const live = !!onRespond && pendingIds.has(event.request_id);
         const plan = event.tool_name === "ExitPlanMode";
+        // .dask: a node on the session's spine (spine.css), amber while it waits on you
         if (live && askDocked) return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
             <AskMarker kind={plan ? "plan" : "permission"} topic={plan ? "ready to build"
               : event.tool_name.startsWith("mcp__") ? mcpParts(event.tool_name).server : event.tool_name} />
           </div>
         );
         if (!live) return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission">
             <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
               // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
               resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
@@ -3057,7 +3073,7 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         return (
-          <div key={i} className="ml-[var(--rail)]">
+          <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
             <PermissionCard
               toolName={event.tool_name}
               summary={event.summary}
@@ -3071,7 +3087,7 @@ export const RunStream = memo(function RunStream({
       case "question": {
         const live = !!onRespond && pendingIds.has(event.request_id);
         if (live && askDocked) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
             <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
               : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
           </div>
@@ -3084,7 +3100,7 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
             <QuestionCard
               questions={event.questions}
               requestId={event.request_id}
@@ -3100,7 +3116,8 @@ export const RunStream = memo(function RunStream({
             className="ev-stop ml-[var(--rail)] flex items-center gap-1.5 text-xs"
           >
             <CircleStop size={14} className="shrink-0" aria-hidden />
-            <span>{readOnly ? "Stopped" : "Stopped — send a message to continue."}</span>
+            {/* on the session's spine the node is the stop (spine.css, A · KNOTS) */}
+            <span><b>{readOnly ? "Stopped" : "You stopped it"}</b>{readOnly ? null : <span className="ev-stop-w"> · send a message to carry on from here</span>}</span>
           </div>
         );
       case "background": {
@@ -3480,7 +3497,9 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {reports}
-        {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? <OfferCard offer={offerOf(events)!} onStart={onAnswer} /> : null}
+        {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? (
+          <div className="dask" data-k="review" data-wait=""><OfferCard offer={offerOf(events)!} onStart={onAnswer} /></div>
+        ) : null}
         {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
       </Fragment>);
     // What it showed comes first, then the answer that talks about it.

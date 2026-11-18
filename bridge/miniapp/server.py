@@ -621,7 +621,7 @@ class Handler(BaseHTTPRequestHandler):
                                          job_id=job_id, model=model, effort=effort,
                                          permission_mode=permission_mode,
                                          session_id=session_id, profile_id=profile_id,
-                                         origin="miniapp", ponytail=ponytail)
+                                         origin="miniapp", ponytail=ponytail, sent_by="miniapp")
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -925,7 +925,7 @@ class Handler(BaseHTTPRequestHandler):
                 permission_mode=None,
                 width=0, sel=[], surface="miniapp", chat_id=chat_id,
                 project=project if browser.within_base(project) else None,
-                run_job_id=run_job_id)
+                run_job_id=run_job_id, sent_by="miniapp")
         elif op in ("pause", "resume", "clear_done"):
             getattr(queue_manager, op)(sid)
         elif op in ("remove", "bump", "cancel", "retry"):

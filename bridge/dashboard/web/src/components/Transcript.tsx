@@ -5,7 +5,8 @@ import { api, type AccountInfo, type CardAnswer, type RivendellJob, type Session
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
-import { PromptBubble } from "./PromptBubble";
+import { MysticalNote, PromptBubble } from "./PromptBubble";
+import { mysticalNote, viaTag } from "../lib/sender";
 import { JobPlate } from "./JobPlate";
 import { Markdown, type OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
@@ -19,7 +20,7 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, LimitCredits, useLeaveIt, type LimitLive } from "./LimitCard";
-import { limitNudge, resumeNudge } from "../lib/limit";
+import { limitNudge } from "../lib/limit";
 import { dropNoPath, parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
@@ -88,16 +89,22 @@ function Attachments({ items }: { items: string[] }) {
  *  runtime, so not even a row — and 384 error turns in the real store could not
  *  say which of them had actually delivered their answer. `delivered` and
  *  `interrupted` are good news, so they are not painted as errors. */
+/** bridge/outcomes.py's labels are capitals ("API OVERLOADED"); the spine reads them as a
+ *  sentence and the other looks set them back in capitals (.doutcome-l). Names keep theirs. */
+const sentenceCase = (s: string) =>
+  (s.charAt(0) + s.slice(1).toLowerCase()).replace(/\bapi\b/gi, "API").replace(/\bclaude code\b/gi, "Claude Code").replace(/\bclaude\b/gi, "Claude");
+
 function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
   const good = outcome.code === "delivered" || outcome.code === "interrupted";
   const tone = good ? "var(--warn)" : "var(--err)";
   return (
-    <div className="doutcome ml-[var(--rail)] flex flex-col gap-0.5">
+    <div className="doutcome ml-[var(--rail)] flex flex-col gap-0.5" data-code={outcome.code} data-good={good || undefined}>
       <span
         className="self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{ color: tone, borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
       >
-        {good ? "◇ " : "✕ "}{outcome.label}
+        {/* on the session's spine the node is the glyph and the label reads in sentence case (spine.css) */}
+        <span className="doutcome-g">{good ? "◇ " : "✕ "}</span><span className="doutcome-l">{sentenceCase(outcome.label)}</span>
       </span>
       <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
         {outcome.detail}
@@ -280,8 +287,9 @@ function TurnBlock({
   // Stopped on credits_required: its card (LimitCredits) says it, CLI's words and all.
   const credits = turn.outcome?.code === "credits";
   const nudge = limitNudge(turn.prompt);
-  // A Claude continuation (CONTINUED) already has its seam; this covers the other ⏮ resumes.
-  const resumed = useMultiOn() && !seam ? resumeNudge(turn.prompt) : null;
+  // The bridge's own prompts (lib/sender): a Mystical note, not your plate. A Claude
+  // continuation (CONTINUED) has its seam and a Rivendell job its plate instead.
+  const note = !seam && !nudge && !job ? mysticalNote(turn) : null;
   // ⇄: the channel handing this turn another agent's words (lib/multi parseFrame).
   const frame = parseFrame(turn.prompt);
   // Notes get their own tier only on another agent's turn, whatever the session
@@ -305,17 +313,17 @@ function TurnBlock({
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
-      data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam || resumed ? "" : undefined}
+      data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam ? "" : undefined}
       data-cut={carriedOn ? "" : undefined}
       data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
         style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-        {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
-        {turn.prompt && !nudge && !seam && !resumed && (
+        {turn.prompt && !nudge && !seam && (
           <div data-prompt-idx={promptIdx}>
-            {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
+            {note ? <MysticalNote note={note} text={dropNoPath(turn.prompt)} at={turn.started} />
+              : job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
               : frame && frame.kind !== "user" ? <IncomingNote frame={frame} at={turn.started} />
-              : <PromptBubble text={frame ? frame.body : dropNoPath(turn.prompt)} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} savers={savers} />}
+              : <PromptBubble text={frame ? frame.body : dropNoPath(turn.prompt)} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} via={viaTag(turn.sent_by)} savers={savers} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (

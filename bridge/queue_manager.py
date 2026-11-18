@@ -58,6 +58,8 @@ class QueueItem:
     agent: "str | None" = None      # who runs it (ladder.resolve_agent vocabulary)
     flow: "str | None" = None       # the prompt box's flow, started when this prompt runs (paths.start_flow)
     flow_by: "str | None" = None    # "you" | "guess"
+    sent_by: "str | None" = None    # who sent it when you didn't type it (store.start_turn)
+    sent_why: "str | None" = None
     # A Rivendell queue-mode batch's turns: what the row says, where it links,
     # and the "<instance id>:<request id>" its worker finds them by (also after
     # a restart — these persist with the item).
@@ -156,7 +158,7 @@ class PreviewQueue:
     def enqueue(self, sid: str, *, text, prompt, images, model, effort,
                 permission_mode, width, sel, surface, chat_id, project,
                 run_job_id=None, agent=None, label=None, link=None, ref=None,
-                flow=None, flow_by=None) -> str:
+                flow=None, flow_by=None, sent_by=None, sent_why=None) -> str:
         with self._lock:
             b = self._bucket(sid)
             item = QueueItem(
@@ -165,7 +167,7 @@ class PreviewQueue:
                 effort=effort, permission_mode=permission_mode, width=width,
                 sel=list(sel or []), surface=surface, run_job_id=run_job_id,
                 agent=agent, label=label, link=link, ref=ref, created=time.time(),
-                flow=flow, flow_by=flow_by)
+                flow=flow, flow_by=flow_by, sent_by=sent_by, sent_why=sent_why)
             b["items"].append(item)
             self._advance(sid, b)
             self._touch(sid, b)
@@ -462,7 +464,8 @@ def _default_run_fn(item: QueueItem):
         project=item.project, job_id=item.run_job_id, model=item.model,
         effort=item.effort, permission_mode=item.permission_mode,
         session_id=item.session_id, origin="preview-queue",
-        account_slot=slot, runtime=runtime, flow=item.flow, flow_by=item.flow_by)
+        account_slot=slot, runtime=runtime, flow=item.flow, flow_by=item.flow_by,
+        sent_by=item.sent_by, sent_why=item.sent_why)
     return job.id if job else None
 
 

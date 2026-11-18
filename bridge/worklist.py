@@ -364,7 +364,8 @@ def _launch(root: str, item: dict) -> None:
         prompt = item["title"] + (f"\n\n{item['detail']}" if item.get("detail") else "") + \
             f"\n\nThis is task {item['id']} on the project's work list."
         job = runner.start_streaming_job(item["chat_id"], prompt, [], project=cwd, session_id=sid,
-                                         origin="work", flow=kind, flow_by="you")
+                                         origin="work", flow=kind, flow_by="you", sent_by="mystical:work",
+                                         sent_why=f"you started task {item['id']} on the work list")
         if job is None or job.refusal:
             raise RuntimeError(job.refusal if job else "the bridge refused the run")
         paths.set_branch(sid, branch)

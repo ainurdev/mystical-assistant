@@ -8,13 +8,14 @@
 
    Loaded last (main.tsx). The transcript rules are scoped to the session's own transcript
    (Terminal.tsx's scroller is the one dossier with data-isle), so the Agents view and Settings'
-   samples keep their look; the For you callout and the prompt box rules at the end are global.
+   samples keep their look; the For you callout, the Mystical note's line, the ledger's hidden word
+   spans and the prompt box rules are global.
    Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
    box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
    block is indented by --sp-in and draws its node in that margin, --sp-nx in so the live halo fits.
    shortcut: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
-   stays as it was; a new block kind needs its own mask here. Move them into the markup if a
-   fourth kind needs one. */
+   stays as it was; a new block kind needs its own mask here. Nine now (session-chat-items added
+   the waits' and the endings'); move them into the markup when a block needs a live icon. */
 
 [data-fam] [data-style="dossier"][data-isle] {
   --sp-nx: 4px; --sp-in: 42px; --sp-n: 26px; --sp-x: 16px;
@@ -145,6 +146,59 @@
 [data-fam] [data-style="dossier"][data-isle] :is(.ma-looked-note, .pl-line) { font-family: var(--ui-font); letter-spacing: 0; }
 [data-fam] [data-style="dossier"][data-isle] .pl-line { border-left: 0; border-radius: 10px; background: color-mix(in oklab, var(--txl) 6%, transparent); }
 
+/* ── the work as a ledger (A · LEDGER, .mystical/design-drafts/session-chat-items): every step a sentence,
+   "Ran npm run check", on the zone's inner track. No kind tags or kind hues: the icons are neutral tiles,
+   a failure is red, a running step is you. The header and each note's tally say their counts in words.
+   Live, one calm line in a soft panel says what runs now. What hangs under a step (output, a diff)
+   sits in a soft panel. The words spans are RunStream's, hidden off the spine. */
+.ax-verb, .dwork-words, .wtally-words { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-verb {
+  display: inline; margin-right: 6px; font-family: var(--ui-font); font-weight: 600; color: var(--txm);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err] .ax-verb { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-obj { font-family: var(--ui-font); font-size: var(--t13); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-obj :is(code, .mono) { font-family: var(--mono); font-size: var(--t12); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ma-purp { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-bar > svg {
+  width: 13px; height: 13px; padding: 3px; border-radius: 6px; color: var(--txd); background: var(--sp-gnd);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-bar > svg[data-m]:not([data-m="fail"]) { color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err] .ax-bar > svg { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .actrow[data-err]::after { background: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-body .ax-drawer {
+  background: var(--sp-card); border-color: var(--line); border-radius: 10px;
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork-head :is(.dwork-kinds, .dwork-right > .dwork-k[data-m="fail"]) { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-words {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-err] .dwork-words { color: var(--txd); }
+/* the label keeps its width; the words give way, on the right, ending in an ellipsis */
+[data-fam] [data-style="dossier"][data-isle] .dwork-head { grid-template-columns: auto minmax(0, 1fr) auto; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-head .dwork-l2 { min-width: 0; justify-content: flex-end; text-align: right; }
+[data-fam] [data-style="dossier"][data-isle] .wtally > .dwork-k { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .wtally-words { display: inline; font-family: var(--ui-font); font-size: var(--t11); font-weight: 600; color: var(--txd); }
+[data-fam] [data-style="dossier"][data-isle] .wtally[data-err] .wtally-words { color: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .wtally { gap: 4px; padding: 0 6px 0 8px; }
+/* live: one line in a soft panel, a dot that breathes, the verb in plain ink, the clock at its edge */
+[data-fam] [data-style="dossier"][data-isle] .dwork-now {
+  grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; height: 34px; margin-top: 8px; padding: 0 12px 0 8px;
+  background: var(--sp-card); border: 1px solid var(--line); border-radius: 10px;
+}
+[data-fam] [data-style="dossier"][data-isle] .now-ic { width: 18px; height: 18px; color: var(--txd); background: none; box-shadow: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-ic::before,
+[data-fam] [data-style="dossier"][data-isle] .dwork-now[data-st="work"] > .now-ic::after { content: none; }
+[data-fam] [data-style="dossier"][data-isle] .dwork-now[data-st="work"] > .now-ic { color: var(--sp-you); }
+[data-fam] [data-style="dossier"][data-isle] .now-line { font-family: var(--ui-font); font-size: var(--t13); line-height: 32px; }
+[data-fam] [data-style="dossier"][data-isle] .now-tx { height: 32px; }
+[data-fam] [data-style="dossier"][data-isle] .now-v { font-weight: 600; color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .now-line[data-st="think"] .now-v { -webkit-text-fill-color: currentColor; background: none; animation: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-o code:first-child { color: var(--txh); }
+[data-fam] [data-style="dossier"][data-isle] .now-caret { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .now-t { color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-open][data-now] { --dwork-hh: 72px; }
+
 /* ── the answer: an ok ring, Answer · how long … ✓ done · when, then the card ── */
 [data-fam] [data-style="dossier"][data-isle] .resblk { position: relative; z-index: 1; padding-left: var(--sp-in); }
 [data-fam] [data-style="dossier"][data-isle] .resblk > .rail-node { display: block; left: var(--sp-nx); top: 0; transform: none; border-color: var(--ok); }
@@ -243,6 +297,142 @@
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-tag { font-size: var(--t11); font-weight: 600; letter-spacing: 0; padding: 0 8px; border-radius: 999px; border-color: var(--line2); color: var(--txd); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-open { font-family: var(--mono); font-size: var(--t11); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 6px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
+
+/* ── Mystical (A · SIGIL, .mystical/design-drafts/session-chat-items): a prompt the bridge sent, not you.
+   A diamond node in its own phosphor (--my, index.css), then one line: Mystical, the kind, the first line,
+   when; tapped open, the words that went and why. Unscoped like the prompt box rules: only the node needs
+   the spine. */
+.pmy { --sp-my: var(--my); position: relative; font-family: var(--ui-font, inherit); }
+.pmy-node { display: none; }
+.pmy-row {
+  all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 26px; cursor: pointer;
+  font-size: var(--t13); color: var(--txm);
+}
+.pmy-who { flex: none; font-size: var(--t12); font-weight: 800; color: var(--sp-my); }
+.pmy-kd {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 6px; border-radius: 999px; line-height: 20px; white-space: nowrap;
+  font-size: var(--t11); font-weight: 700; color: var(--sp-my);
+  background: color-mix(in oklab, var(--sp-my) 9%, transparent); border: 1px solid color-mix(in oklab, var(--sp-my) 20%, transparent);
+}
+.pmy-tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmy-t { flex: none; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
+.pmy-chev { flex: none; color: var(--txl); }
+.pmy-row:hover .pmy-tx { color: var(--txh); }
+.pmy-row:focus-visible { outline: 2px solid var(--sp-my); outline-offset: 2px; border-radius: 6px; }
+.pmy-sent {
+  margin: 8px 0 2px; overflow: hidden; border-radius: 4px 12px 12px 12px;
+  background: color-mix(in oklab, var(--sp-my) 5%, transparent); border: 1px solid color-mix(in oklab, var(--sp-my) 16%, transparent);
+}
+.pmy-q { padding: 10px 14px; font: var(--t12)/1.6 var(--mono); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; }
+.pmy-why {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--sp-my) 12%, transparent); font-size: var(--t12); color: var(--txl);
+}
+.pmy-why b { font-weight: 700; color: var(--txm); }
+.pmy-r { margin-left: auto; }
+[data-fam] [data-style="dossier"][data-isle] .pmy-node {
+  display: block; position: absolute; z-index: 1; left: calc(var(--sp-nx) - var(--sp-in) + 4px); top: 4px; width: 18px; height: 18px;
+  fill: var(--sp-gnd); stroke: var(--sp-my); stroke-width: 2; stroke-linejoin: round;
+}
+/* where you sent it from, when it wasn't here: beside You */
+.pvia { display: inline-flex; align-items: center; gap: 4px; color: var(--txl); }
+
+/* ── waits on you (A · HANGING, .mystical/design-drafts/session-chat-items): a permission, a question, a
+   secret or an offered review is an amber node with a halo, its card hanging off it; answered, the record
+   is one line on an ok node (above). A docked ask leaves only its header line here. */
+[data-fam] [data-style="dossier"][data-isle] {
+  --sp-ic-shield: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'/></svg>");
+  --sp-ic-key: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><circle cx='8' cy='15' r='4'/><path d='M11 12l9-9M17 6l3 3'/></svg>");
+  --sp-ic-eye: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/></svg>");
+}
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="permission"]::after { -webkit-mask-image: var(--sp-ic-shield); mask-image: var(--sp-ic-shield); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="secret"]::after { -webkit-mask-image: var(--sp-ic-key); mask-image: var(--sp-ic-key); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"]::after { -webkit-mask-image: var(--sp-ic-eye); mask-image: var(--sp-ic-eye); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait]::before { border-color: var(--ask); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ask) 12%, transparent); }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait]::after { background: var(--ask); }
+/* room for the halo: the turn's row is paint-contained (.vskip-card), and a wait is often its last block */
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] { padding-bottom: 4px; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .dask[data-k="review"] { margin: 14px 0 0; }
+/* a docked ask's marker: the node's header line, the card is at the prompt box */
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark {
+  margin: 0; min-height: var(--sp-n); padding: 0; border: 0; border-radius: 0; background: none; gap: 8px;
+  font-family: var(--ui-font); font-size: var(--t12); color: var(--txl);
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark .ad-g { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark .ad-kind {
+  font-family: var(--ui-font); font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh);
+}
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-t { font-weight: 600; color: var(--txm); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-w::before { content: "· "; }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-go { font-family: var(--ui-font); font-weight: 700; color: var(--ask); }
+/* a card in the turn hangs off its node: the small corner by it, amber while it waits */
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] :is(.chatcard, .dg-card) {
+  margin: 6px 0 0; border: 1px solid color-mix(in oklab, var(--ask) 30%, transparent); border-radius: 4px 14px 14px 14px;
+  background: color-mix(in oklab, var(--ask) 4%, var(--sp-card));
+}
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"] .dg-card { margin-top: 0; }
+[data-fam] [data-style="dossier"][data-isle] .dask[data-k="review"] .dg-card-text b { font-weight: 700; color: var(--txh); }
+
+/* ── how a turn ends, and the small marks (A · KNOTS, .mystical/design-drafts/session-chat-items): the
+   ending is a node in its colour — red for an error or a failed turn, a grey square for your stop, a dashed
+   phosphor ring where the bridge restarted — with one line beside it. The icon is the node's (a mask),
+   so the row's own glyph steps aside. */
+[data-fam] [data-style="dossier"][data-isle] {
+  --sp-ic-alert: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l10 18H2z'/><path d='M12 10v5M12 18h.01'/></svg>");
+  --sp-ic-stop: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2'/></svg>");
+  --sp-ic-refresh: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7'/></svg>");
+}
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam) {
+  --kx: calc(var(--sp-nx) - var(--sp-in)); position: relative; min-height: var(--sp-n); font-family: var(--ui-font); letter-spacing: 0;
+}
+/* the stream's own rows paint only inside their box (content-visibility): they take the indent as padding */
+[data-fam] [data-style="dossier"][data-isle] .rstream > :is(.ev-err, .ev-stop) { --kx: var(--sp-nx); margin-left: 0 !important; padding-left: var(--sp-in); }
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam)::before {
+  content: ""; position: absolute; z-index: 1; left: var(--kx); top: 0; box-sizing: border-box;
+  width: var(--sp-n); height: var(--sp-n); border-radius: 50%; border: 2px solid var(--sp-line); background: var(--sp-gnd);
+  flex: none; min-width: 0;
+}
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam)::after {
+  content: ""; position: absolute; z-index: 2; left: calc(var(--kx) + 6.5px); top: 6.5px; width: 13px; height: 13px;
+  flex: none; min-width: 0; -webkit-mask: var(--sp-ic-alert) center / contain no-repeat; mask: var(--sp-ic-alert) center / contain no-repeat;
+}
+/* an error, and a failed turn's outcome: red */
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .doutcome)::before { border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, var(--sp-gnd)); }
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .doutcome)::after { background: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .ev-err { align-items: center; padding-top: 3px; padding-bottom: 3px; border: 0; background: none; font-size: var(--t13); color: var(--tx); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome-g { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .doutcome-l { text-transform: none; }
+/* good news (the answer landed, or you interrupted it) is no failure: its ring is the badge's warn */
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-good]::before { border-color: var(--warn); background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-good]::after { background: var(--warn); }
+/* a limit or a full context waits on you: amber */
+[data-fam] [data-style="dossier"][data-isle] .doutcome:is([data-code="limit"], [data-code="credits"], [data-code="context"])::before { border-color: var(--ask); background: color-mix(in oklab, var(--ask) 10%, var(--sp-gnd)); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome:is([data-code="limit"], [data-code="credits"], [data-code="context"])::after { background: var(--ask); }
+/* stopped: your grey square */
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-code="stopped"]::before { border-color: var(--sp-line); border-radius: 7px; background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-code="stopped"]::after { background: var(--txm); -webkit-mask-image: var(--sp-ic-stop); mask-image: var(--sp-ic-stop); }
+[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop) > svg { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .doutcome { margin: 14px 0 0 var(--sp-in); padding: 2px 0 0; border: 0; justify-content: center; }
+[data-fam] [data-style="dossier"][data-isle] .doutcome > span:first-child {
+  border: 0 !important; padding: 0; font-size: var(--t13); font-weight: 700; letter-spacing: 0;
+}
+[data-fam] [data-style="dossier"][data-isle] .doutcome > span:nth-child(2) { font-size: var(--t12); opacity: 1; color: var(--txl) !important; }
+[data-fam] [data-style="dossier"][data-isle] .doutcome > button { border-radius: 9px; padding: 3px 10px; letter-spacing: 0; text-transform: none; font-weight: 700; }
+/* your stop: a grey square node */
+[data-fam] [data-style="dossier"][data-isle] .ev-stop::before { border-radius: 7px; }
+[data-fam] [data-style="dossier"][data-isle] .ev-stop::after { background: var(--txm); -webkit-mask-image: var(--sp-ic-stop); mask-image: var(--sp-ic-stop); }
+[data-fam] [data-style="dossier"][data-isle] .ev-stop { font-size: var(--t13); color: var(--txl); }
+[data-fam] [data-style="dossier"][data-isle] .ev-stop b { color: var(--txh); }
+[data-fam] [data-style="dossier"][data-isle] .resblk + .ev-stop { margin: 14px 0 0; padding: 0 0 0 var(--sp-in); border: 0; }
+/* the bridge restarted: a dashed phosphor ring, its line beside it rather than across the column */
+[data-fam] [data-style="dossier"][data-isle] .dseam { --sp-my: var(--my); gap: 8px; font-size: var(--t13); }
+[data-fam] [data-style="dossier"][data-isle] .dseam::before { flex: none; height: var(--sp-n); border-style: dashed; border-color: var(--sp-my); }
+[data-fam] [data-style="dossier"][data-isle] .dseam::after { flex: none; height: 13px; background: var(--sp-my); -webkit-mask-image: var(--sp-ic-refresh); mask-image: var(--sp-ic-refresh); }
+[data-fam] [data-style="dossier"][data-isle] .dseam[data-k="declined"]::before { border-color: var(--ask); }
+[data-fam] [data-style="dossier"][data-isle] .dseam[data-k="declined"]::after { background: var(--ask); }
+[data-fam] [data-style="dossier"][data-isle] .dseam > span[aria-hidden] { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .dseam b { color: var(--txh); }
+[data-fam] [data-style="dossier"][data-isle] .dseam-acts { justify-content: flex-start; margin: 8px 0 0 var(--sp-in); }
 
 /* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
