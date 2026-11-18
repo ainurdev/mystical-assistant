@@ -20,8 +20,9 @@ import { Keys, useAskKeys } from "./ui/Keys";
    (.mystical/design-drafts/response-cards, C · DOCK — the user's pick over an
    in-place card and a louder in-place one). The ask sits where your hands
    already are and never scrolls away; the transcript keeps a marker where it
-   was asked (AskMarker) and, once it's answered, a one-line record that opens
-   back into the full card (AskRecord) — every option, the skipped ones too.
+   was asked (AskMarker) and, once it's answered, a header and a chip per answer
+   (AskRecord); a chip opens its question read-only — every option, the skipped
+   ones too.
 
    The box is the answer: what you type goes back as your own answer (a
    question) or as the reason with a Deny (a permission), and its button names
@@ -690,39 +691,31 @@ export function AskMarker({ kind, topic }: { kind: "question" | "permission" | "
 
 /** An answered question read back: every option, yours lit, the skipped ones as
  *  readable as when they were asked — pictures open and page, nothing picks. */
-function RecordQuestions({ questions, answered }: { questions: Question[]; answered?: AnswerSelection[] }) {
+function RecordQuestion({ q, given, task }: { q: Question; given?: AnswerSelection; task: boolean }) {
+  const chosen = given?.labels ?? [];
+  const texts = previewTexts(q);
   return (
-    <div className="ask-recq">
-      {questions.map((q, qi) => {
-        const given = answered?.[qi]?.header === q.header ? answered[qi] : answered?.find((x) => x.header === q.header);
-        const chosen = given?.labels ?? [];
-        const texts = previewTexts(q);
-        return (
-          <div key={qi} className="ad-b">
-            {questions.length > 1 && <p className="ad-tail">{qi + 1} of {questions.length} · {q.header}</p>}
-            {isTask(questions) ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
-            {staged(q)
-              ? <Pictures q={q} chosen={chosen} onPick={() => {}} sending={false} readOnly />
-              : (
-                <div className="ad-rows">
-                  {q.options.map((o, i) => {
-                    const k = optionKey(o.label, i);
-                    const on = chosen.includes(o.label);
-                    return (
-                      <div key={o.label} className="ad-row" aria-pressed={on} data-ro="" data-multi={q.multiSelect ? "" : undefined}>
-                        <Key k={k.key} on={on} />
-                        <span className="ad-lab">{isTask(questions) ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug">Recommended</span>}</span>
-                        {o.description && <span className="ad-desc">{o.description}</span>}
-                      </div>
-                    );
-                  })}
+    <div className="ad-b">
+      {task ? <TaskQuestion text={q.question} /> : <AskText text={q.question} />}
+      {staged(q)
+        ? <Pictures q={q} chosen={chosen} onPick={() => {}} sending={false} readOnly />
+        : (
+          <div className="ad-rows">
+            {q.options.map((o, i) => {
+              const k = optionKey(o.label, i);
+              const on = chosen.includes(o.label);
+              return (
+                <div key={o.label} className="ad-row" aria-pressed={on} data-ro="" data-multi={q.multiSelect ? "" : undefined}>
+                  <Key k={k.key} on={on} />
+                  <span className="ad-lab">{task ? taskLabel(o.label) : k.name}{k.rec && <span className="ad-sug">Recommended</span>}</span>
+                  {o.description && <span className="ad-desc">{o.description}</span>}
                 </div>
-              )}
-            {texts && <TextPreview q={q} texts={texts} picked={chosen[0]} />}
-            {given?.notes && <p className="ad-hint">Your words: “{given.notes}”</p>}
+              );
+            })}
           </div>
-        );
-      })}
+        )}
+      {texts && <TextPreview q={q} texts={texts} picked={chosen[0]} />}
+      {given?.notes && <p className="ad-hint">Your words: “{given.notes}”</p>}
     </div>
   );
 }
@@ -745,14 +738,14 @@ export function AskRecord(p:
       return { q, given, names, rec: names.some((n) => n.rec) };
     });
     const state = p.answered ? "ok" : p.stale ? "gone" : "open";
-    const n = p.questions.length;
+    const count = p.questions.length;
     const one = shown === null ? null : rows[shown];
     return (
       <div className="ask-rec" data-state={state}>
         <div className="ask-rec-row">
           <span className="ask-rec-ic" aria-hidden>{state === "ok" ? <Check size={12} strokeWidth={3} /> : state === "gone" ? <Ban size={12} strokeWidth={2.4} /> : <CircleQuestionMark size={12} />}</span>
-          <span className="ask-rec-k">{state === "ok" ? "Answered" : state === "gone" ? "Never answered" : n > 1 ? "Questions" : "Question"}</span>
-          {(state === "gone" || n > 1) && <span className="ask-rec-n">{state === "gone" ? "the run ended first" : `${n} questions`}</span>}
+          <span className="ask-rec-k">{state === "ok" ? "Answered" : state === "gone" ? "Never answered" : "Asked"}</span>
+          {(state === "gone" || count > 1) && <span className="ask-rec-n">{state === "gone" ? "the run ended first" : `${count} questions`}</span>}
           {p.at ? <span className="ask-rec-at">{clock(p.at, h12)}</span> : null}
         </div>
         <div className="ask-rec-chips">
@@ -763,7 +756,7 @@ export function AskRecord(p:
               <span className="ask-rec-tp">{task ? "Task" : q.header}</span>
               {state !== "gone" && (
                 <span className="ask-rec-v">
-                  {names.length ? names.map((x) => x.name).join(", ") : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
+                  {names.length ? names.map((n) => n.name).join(", ") : given?.notes ? <q>{given.notes}</q> : <i>no pick</i>}
                 </span>
               )}
               {rec && <span className="ask-rec-dot" role="img" aria-label="Suggested" title="Suggested" />}
@@ -773,7 +766,7 @@ export function AskRecord(p:
         </div>
         {one && (
           <div className="ask-rec-body">
-            <RecordQuestions questions={[one.q]} answered={one.given && [one.given]} />
+            <RecordQuestion q={one.q} given={one.given} task={task} />
           </div>
         )}
       </div>

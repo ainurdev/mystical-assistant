@@ -279,7 +279,7 @@
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="ok"] { color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-cell[data-tone="err"] { color: var(--err); }
 
-/* ── a question (live, docked or answered): an ok ring, Question, its topic › the answer ── */
+/* ── a question (live, docked or answered): an ok ring, the header, its answers as chips ── */
 [data-fam] [data-style="dossier"][data-isle] .dask { position: relative; padding-left: var(--sp-in); }
 [data-fam] [data-style="dossier"][data-isle] .dask::before { left: var(--sp-nx); top: 0; border-color: var(--ok); }
 [data-fam] [data-style="dossier"][data-isle] .dask::after {
