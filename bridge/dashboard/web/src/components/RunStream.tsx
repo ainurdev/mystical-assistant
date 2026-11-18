@@ -843,6 +843,9 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
  *  and the figure on one line and the kind chips under it: the marks the rows
  *  inside wear on the spine, with a number; the old sentence is their tooltip.
+ *  On the session's spine (spine.css) the chips are the title, by tool (one
+ *  terminal for every command), and the time sits by the chevron: WORKED said
+ *  the same thing on every row down a turn split by notes (B · BY TOOL).
  *  Pictures are the one result a header loses, so the shut plate shows every
  *  one of them in one row of equal tiles that scrolls sideways, tap one to
  *  open it. While any is unseen
@@ -1073,6 +1076,14 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms both` : undefined));
   const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
+  const tools = kindsOf(cats, notes);
+  const lab = <span className="dwork-lab caps">{state ? "Working" : "Worked"}</span>;
+  const retry = retried ? (
+    <span className="dwork-retry" title={`Claude Code retried a request ${retried} time${retried === 1 ? "" : "s"} in this turn`}>
+      ↻ {retried} retr{retried === 1 ? "y" : "ies"}
+    </span>
+  ) : null;
+  const when = [chapters ? `${chapters} chapters` : "", span].filter(Boolean).join(" · ");
   const picsWord = `${pics.length} picture${pics.length === 1 ? "" : "s"}`;
   return (
     <div
@@ -1100,24 +1111,23 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           <Terminal size={13} strokeWidth={2.2} />
         </span>
         <span className="dwork-l1">
-          <span className="dwork-lab caps">{state ? "Working" : "Worked"}</span>
+          {lab}
           <span className="dwork-ms">
-            <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{chapters ? ` · ${chapters} chapters` : ""}{span ? ` · ${span}` : ""}
+            <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{when ? ` · ${when}` : ""}
           </span>
-          {retried ? (
-            <span className="dwork-retry" title={`Claude Code retried a request ${retried} time${retried === 1 ? "" : "s"} in this turn`}>
-              ↻ {retried} retr{retried === 1 ? "y" : "ies"}
-            </span>
-          ) : null}
+          {retry}
         </span>
         <span className="dwork-l2">
           <span className="dwork-kinds" title={words} aria-label={words}>
-            {(purposes ? kindsByPurpose(cats, purposes, notes) : kindsOf(cats, notes)).map((k) => (
+            {(purposes ? kindsByPurpose(cats, purposes, notes) : tools).map((k) => (
               <KindChip key={k.m} m={k.m} n={k.n} title={k.m.startsWith("p-") ? `${k.n} · ${k.m.slice(2)}` : undefined} />
             ))}
           </span>
-          {/* the session's spine says it in words instead (spine.css, A · LEDGER) */}
-          <span className="dwork-words" aria-hidden>{words}</span>
+          {/* the session's spine titles the work with these instead: by tool, the commands one
+              terminal, and the word only while there's nothing to count (spine.css, B · BY TOOL) */}
+          <span className="dwork-tools" title={words || undefined} aria-label={words || undefined}>
+            {tools.length ? tools.map((k) => <KindChip key={k.m} m={k.m} n={k.n} />) : lab}
+          </span>
         </span>
         <span className="dwork-right">
           {failed ? <KindChip m="fail" n={failed} title={`${failed} failed`} /> : null}
@@ -1128,6 +1138,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           ) : pics.length ? (
             <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={12} strokeWidth={2.2} /></i>{pics.length}</span>
           ) : null}
+          {/* and its time by the chevron, the chapters and retries beside it; the chips count the steps (spine.css) */}
+          {when || retry ? <span className="dwork-when">{retry}{when ? <span className="dwork-ms">{when}</span> : null}</span> : null}
           <ChevronDown size={13} aria-hidden className={`dwork-chev transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
         {line && !liveAt ? <NowLine now={line} secs={secs} gone={!now} onGone={() => setFading(false)} /> : null}
