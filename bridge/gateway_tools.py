@@ -391,7 +391,8 @@ def _open_site(s: dict, job, a: dict) -> dict:
     """The Mystical browser (bridge/site_browser.py), and its card in the chat."""
     from bridge import site_browser
     try:
-        got = site_browser.open_site(s["id"], str(a.get("url") or ""))
+        # The chat the user sees, not a helper inside it: its card asks after that one.
+        got = site_browser.open_site(s.get("parent_session") or s["id"], str(a.get("url") or ""))
     except site_browser.Refused as e:
         return _text(str(e), error=True)
     if job is not None:

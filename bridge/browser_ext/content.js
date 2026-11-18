@@ -231,7 +231,8 @@
     draw();
     const body = {
       url: location.href, viewport: `${innerWidth}×${innerHeight}`,
-      target: target.kind, chat: target.id || chats?.opener?.id || "",
+      // For a new chat, the one it copies its project from: the chat picked before, else the opener, else the latest.
+      target: target.kind, chat: target.id || chats?.opener?.id || chats?.chats?.[0]?.id || "",
       comments: pins.map((p) => ({ text: p.text, where: p.where, crop: p.crop })),
     };
     const got = await ask({ kind: "api", path: "/send", body });
@@ -256,7 +257,7 @@
     const rows = [];
     if (o) rows.push(row(target.kind === "opener", "opener", "This chat", o.title));
     for (const c of chats?.chats || []) rows.push(row(target.kind === "chat" && target.id === c.id, "chat", c.title, c.project || "another chat", c.id));
-    rows.push(row(target.kind === "new", "new", "New chat", o ? `on ${o.project || "the same project"}` : "on the project of the chat you pick first"));
+    rows.push(row(target.kind === "new", "new", "New chat", o ? `on ${o.project || "the same project"}` : `on ${(target.id ? chats?.chats?.find((c) => c.id === target.id) : chats?.chats?.[0])?.project || "the project of a chat you pick"}`));
     return `<div class="menu" role="menu">${rows.join("")}</div>`;
   }
 
@@ -285,7 +286,8 @@
         else if (a === "pick") setPicking(!picking);
         else if (a === "send") sendAll();
         else if (a === "menu") { menu = !menu; draw(); if (menu && !chats) loadChats(); }
-        else if (a === "opener" || a === "new") { target = { kind: a }; menu = false; draw(); }
+        else if (a === "opener") { target = { kind: a }; menu = false; draw(); }
+        else if (a === "new") { target = { kind: a, id: target.id }; menu = false; draw(); }
         else if (a === "chat") { const c = chats.chats.find((x) => x.id === b.dataset.id); target = { kind: "chat", id: c.id, title: c.title }; menu = false; draw(); }
       };
     });

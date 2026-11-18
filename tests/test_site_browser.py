@@ -58,7 +58,6 @@ def _fake_bin(p):
 
 
 def test_the_newest_playwright_chromium_is_picked(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYSTICAL_CHROMIUM", raising=False)
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "pw"))
     _fake_bin(tmp_path / "pw/chromium-1248/chrome-linux/chrome")
     new = _fake_bin(tmp_path / "pw/chromium-1254/chrome-linux/chrome")
@@ -66,11 +65,9 @@ def test_the_newest_playwright_chromium_is_picked(tmp_path, monkeypatch):
     assert sb.chromium() == new
 
 
-def test_mystical_chromium_wins_and_a_missing_one_is_none(tmp_path, monkeypatch):
-    own = _fake_bin(tmp_path / "mine/chrome")
-    monkeypatch.setenv("MYSTICAL_CHROMIUM", own)
-    assert sb.chromium() == own
-    monkeypatch.setenv("MYSTICAL_CHROMIUM", str(tmp_path / "nope"))
+def test_no_chromium_is_none(tmp_path, monkeypatch):
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(sb.os.path, "expanduser", lambda p: str(tmp_path / "nohome"))
     assert sb.chromium() is None
 
 
@@ -128,7 +125,7 @@ def test_send_all_goes_to_the_opener_as_one_turn_with_crops():
     s = _chat()
     sb.open_site(s["id"], "https://site.test/planning")
     sb.pinned({"url": "https://site.test/planning", "count": 2})
-    assert sb.state(s["id"])["pinned"] == 2
+    assert sb.state(s["id"], "https://site.test/")["pinned"] == 2
     code, got = _ask("POST", "/send", {"url": "https://site.test/planning", "viewport": "1440×900", "comments": [
         {"text": "nav should look active", "where": 'a.nav · "Planning"', "crop": PNG},
         {"text": "rows too tight", "where": "tr"}]})
@@ -139,7 +136,7 @@ def test_send_all_goes_to_the_opener_as_one_turn_with_crops():
     assert "1. nav should look active" in kw["prompt"] and "picture: comment-1.png" in kw["prompt"]
     assert "picture: comment-2.png" not in kw["prompt"]
     assert [os.path.basename(p).endswith("comment-1.png") for p in kw["images"]] == [True]
-    assert sb.state(s["id"])["pinned"] == 0
+    assert sb.state(s["id"], "https://site.test/")["pinned"] == 0
 
 
 def test_send_all_to_another_chat_and_it_becomes_the_default():
@@ -148,6 +145,8 @@ def test_send_all_to_another_chat_and_it_becomes_the_default():
     got = sb.send({"url": "https://site.test/", "target": "chat", "chat": b["id"], "comments": [{"text": "hi"}]})
     assert got["chat"]["id"] == b["id"] and sent[0][0] == b["id"]
     assert sb.opener("https://site.test/")["id"] == b["id"]
+    assert sb.state(a["id"], "https://site.test/")["to"] == "Other"      # a's card says where they go now
+    assert sb.state(b["id"], "https://site.test/")["to"] is None
 
 
 def test_send_all_to_a_new_chat_on_the_openers_project():
@@ -196,6 +195,30 @@ def test_the_card_route_opens_reports_and_refuses(monkeypatch):
     s = _chat()
     got, code = multi_api.post("chat/browser", {"session_id": s["id"], "op": "open", "url": "site.test"}, CHAT)
     assert code == 200 and got["url"] == "https://site.test" and sb.opener("https://site.test")["id"] == s["id"]
-    got, code = multi_api.post("chat/browser", {"session_id": s["id"], "op": "state"}, CHAT)
-    assert code == 200 and got == {"running": False, "pinned": 0}
+    got, code = multi_api.post("chat/browser", {"session_id": s["id"], "op": "state", "url": "https://site.test"}, CHAT)
+    assert code == 200 and got == {"running": False, "pinned": 0, "to": None}
     assert multi_api.post("chat/browser", {"session_id": s["id"], "op": "open", "url": ""}, CHAT)[1] == 400
+
+
+def test_a_helper_inside_a_chat_opens_the_site_for_that_chat():
+    from bridge import gateway_tools as gt
+    parent = _chat()
+    child = store.create_session(CHAT, parent["project"])
+    child = {**child, "parent_session": parent["id"]}
+    gt.call(child, None, "open_site", {"url": "https://site.test/"})
+    assert sb.opener("https://site.test/")["id"] == parent["id"]
+
+
+def test_the_turn_goes_under_the_chat_it_belongs_to(monkeypatch):
+    other_user = store.create_session(777, "/nr/kantoor")
+    sb.open_site(other_user["id"], "https://site.test/")
+    sb.send({"url": "https://site.test/", "comments": [{"text": "x"}]})
+    assert sent[0][1]["chat_id"] == 777
+
+
+def test_nonsense_from_the_extension_is_a_400_not_a_dropped_connection():
+    a = _chat()
+    sb.open_site(a["id"], "https://site.test/")
+    assert _ask("POST", "/send", {"url": "https://site.test/", "comments": ["just a string"]})[0] == 400
+    assert _ask("POST", "/pins", {"url": "https://site.test/", "count": "lots"})[0] == 400
+    assert sent == []

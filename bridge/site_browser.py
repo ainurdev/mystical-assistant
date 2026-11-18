@@ -16,9 +16,11 @@ A site remembers the chat that last opened it or was sent to: Send all goes ther
 running chat or a new one on the same project. Comments arrive as one turn of yours, tagged
 "via Mystical browser", each with a crop of what it points at attached as comment-N.png.
 
-ponytail: the opener is kept per origin, so two chats with tabs on one site share the last
-opener (the menu still picks either). Close quits the browser this bridge started, every tab.
-Stdlib only.
+shortcut: the opener is kept per origin, so two chats with tabs on one site share the last
+opener (the menu still picks either); key it by tab once that bites.
+shortcut: which window is up and what's pinned are only in memory, so after a bridge restart the
+card says the window is down (Open again just adds a tab) until a pin changes; keep them on disk
+if that confuses. Close quits only the browser this bridge started, every tab. Stdlib only.
 """
 
 import glob
@@ -44,7 +46,7 @@ _MAX_COMMENTS = 30
 _lock = threading.Lock()
 _server: "ThreadingHTTPServer | None" = None
 _procs: list = []
-_pins: dict = {}      # session id -> {url: pinned count}
+_pins: dict = {}      # page url -> pinned, not sent
 
 
 def home() -> str:
@@ -60,10 +62,7 @@ def _profile() -> str:
 
 
 def chromium() -> "str | None":
-    """Playwright's newest Chromium on this machine, or MYSTICAL_CHROMIUM when set."""
-    own = os.environ.get("MYSTICAL_CHROMIUM")
-    if own:
-        return own if os.path.isfile(own) else None
+    """Playwright's newest Chromium on this machine."""
     roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "",
              os.path.expanduser("~/Library/Caches/ms-playwright"), os.path.expanduser("~/.cache/ms-playwright")]
     found = []
@@ -108,6 +107,10 @@ def opener(url: str) -> "dict | None":
     sid = _openers().get(_origin(url))
     s = store.get_session(sid) if sid else None
     return s if s and not s.get("archived") else None
+
+
+def _clean(v, n: int) -> str:
+    return " ".join(str(v or "").split())[:n]
 
 
 def _brief(s: dict) -> dict:
@@ -214,7 +217,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            if n > _MAX_BODY:
+            if not 0 <= n <= _MAX_BODY:
                 return self._out(413, {"error": "Too much to send at once."})
             body = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(body, dict):
@@ -226,8 +229,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._out(200, pinned(body))
             if self.path == "/send":
                 return self._out(200, send(body))
-        except Refused as e:
-            return self._out(400, {"error": str(e)})
+        except (Refused, ValueError, TypeError) as e:
+            return self._out(400, {"error": str(e) if isinstance(e, Refused) else "That request didn't make sense."})
         self._out(404, {"error": "No such route."})
 
 
@@ -244,19 +247,21 @@ def chats(url: str) -> dict:
 
 def pinned(body: dict) -> dict:
     url = str(body.get("url") or "")
-    o = opener(url) if url else None
-    if o:
+    if url:
         with _lock:
-            _pins.setdefault(o["id"], {})[url] = max(0, int(body.get("count") or 0))
+            _pins[url] = max(0, int(body.get("count") or 0))
     return {"ok": True}
 
 
-def state(sid: str) -> dict:
-    """For the chat's BROWSER card: is the window up, and what's pinned and not sent."""
+def state(sid: str, url: str = "") -> dict:
+    """For the chat's BROWSER card: is the window up, what's pinned on that site and not sent,
+    and whether Send all would come to this chat (sending elsewhere moves it)."""
+    site = _origin(url) if url else ""
     with _lock:
-        pins = sum((_pins.get(sid) or {}).values())
+        pins = sum(n for u, n in _pins.items() if site and _origin(u) == site)
         up = any(p.poll() is None for p in _procs)
-    return {"running": up, "pinned": pins}
+    o = opener(url) if url else None
+    return {"running": up, "pinned": pins, "to": None if not o or o["id"] == sid else _brief(o)["title"]}
 
 
 def _prompt(url: str, comments: list, viewport: str) -> str:
@@ -286,10 +291,10 @@ def send(body: dict) -> dict:
         raise Refused(f"Send at most {_MAX_COMMENTS} comments at once.")
     comments = []
     for c in raw:
-        text = " ".join(str((c or {}).get("text") or "").split())[:2000]
+        text = _clean(c.get("text"), 2000) if isinstance(c, dict) else ""
         if text:
             crop = str(c.get("crop") or "")
-            comments.append({"text": text, "where": " ".join(str(c.get("where") or "").split())[:300],
+            comments.append({"text": text, "where": _clean(c.get("where"), 300),
                              "crop": crop if crop.startswith("data:image/png;base64,") else ""})
     if not comments:
         raise Refused("The comments are empty.")
@@ -320,15 +325,15 @@ def send(body: dict) -> dict:
         paths = _save_images(job, shots)
     except ValueError as e:
         raise Refused(str(e)) from e
-    prompt = _prompt(url, comments, " ".join(str(body.get("viewport") or "").split())[:20])
+    prompt = _prompt(url, comments, _clean(body.get("viewport"), 20))
     project = dest.get("cwd") or os.path.join(config.BASE_PATH, (dest.get("project") or "").lstrip("/"))
     queue_manager.enqueue(dest["id"], text=prompt, prompt=prompt, images=paths, model=None, effort=None,
-                          permission_mode=None, width=None, sel=[], surface="browser", chat_id=config.DASH_CHAT_ID,
+                          permission_mode=None, width=None, sel=[], surface="browser", chat_id=dest["chat_id"],
                           project=project, run_job_id=job, sent_by="browser")
     if target != "new":
         _remember(url, dest["id"])
     with _lock:
-        (_pins.get(o["id"] if o else "") or {}).pop(url, None)
+        _pins.pop(url, None)
     return {"chat": _brief(dest)}
 
 
@@ -369,7 +374,9 @@ def open_site(sid: str, url: str) -> dict:
 
 
 def front() -> None:
-    """Bring the window forward (macOS); elsewhere a new window on the same profile."""
+    """Bring the window forward (macOS); elsewhere a new window on the same profile.
+    shortcut: `open -a` raises any running copy of that app, so a headed Playwright run on the same
+    Chromium would come forward instead; find our window by its pid if that ever happens."""
     binary = chromium()
     app = binary and binary.split(".app/")[0] + ".app"
     if sys.platform == "darwin" and app and os.path.isdir(app):

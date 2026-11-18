@@ -87,7 +87,7 @@ def _post_browser(body: dict, chat: dict) -> "tuple[dict, int]":
         if op == "open":
             return site_browser.open_site(chat["id"], str(body.get("url") or "")), 200
         if op == "state":
-            return site_browser.state(chat["id"]), 200
+            return site_browser.state(chat["id"], str(body.get("url") or "")), 200
         if op == "front":
             site_browser.front()
             return {"ok": True}, 200

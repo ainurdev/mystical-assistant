@@ -548,12 +548,14 @@ export function DesignCard({ board, title, pages }: { board: string; title: stri
 }
 
 /** open_site's card (bridge/site_browser.py): the Mystical browser this chat opened, and its pins not sent yet. */
-export function BrowserCard({ session, url, profile }: { session?: string | null; url: string; profile: string }) {
-  const [st, setSt] = useState<{ running: boolean; pinned: number } | null>(null);
+export function BrowserCard({ session: given, url, profile }: { session?: string | null; url: string; profile: string }) {
+  const open = useRefSession();
+  const session = given ?? open;
+  const [st, setSt] = useState<{ running: boolean; pinned: number; to: string | null } | null>(null);
   const [bad, setBad] = useState("");
   const poll = useCallback(() => {
-    if (session) designCall<{ running: boolean; pinned: number }>(session, "browser", { op: "state" }).then(setSt, () => {});
-  }, [session]);
+    if (session) designCall<{ running: boolean; pinned: number; to: string | null }>(session, "browser", { op: "state", url }).then(setSt, () => {});
+  }, [session, url]);
   useEffect(() => {
     poll();
     const t = window.setInterval(poll, 4000);
@@ -569,10 +571,10 @@ export function BrowserCard({ session, url, profile }: { session?: string | null
       <div className="dg-card-text">
         <b><span className="dg-browser-dot" data-on={st?.running ? "" : undefined} aria-hidden />Mystical browser{st ? (st.running ? " · live" : "") : ""}</b>
         <small>{url}</small>
-        <small>{st?.pinned ? <span className="dg-browser-pins">{st.pinned} pinned, not sent · </span> : null}comments come to this chat · profile {profile}</small>
+        <small>{st?.pinned ? <span className="dg-browser-pins">{st.pinned} pinned, not sent · </span> : null}{st?.to ? `comments go to “${st.to}”` : "comments come to this chat"} · profile {profile}</small>
       </div>
-      {st?.running ? <button type="button" className="dg-btn" title="Quits the Mystical browser, every tab" onClick={() => act("close")}>Close</button> : null}
-      <button type="button" className="dg-send" onClick={() => act(st?.running ? "front" : "open")}>{st?.running ? "Bring to front" : "Open again"}</button>
+      <button type="button" className="dg-btn" disabled={!st?.running} title="Quits the Mystical browser, every tab" onClick={() => act("close")}>Close</button>
+      <button type="button" className="dg-send dg-browser-go" onClick={() => act(st?.running ? "front" : "open")}>{st?.running ? "Bring to front" : "Open again"}</button>
       {bad ? <p className="ds-err" role="alert">{bad}</p> : null}
     </div>
   );
