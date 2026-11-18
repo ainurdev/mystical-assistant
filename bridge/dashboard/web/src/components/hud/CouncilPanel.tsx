@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, Check, MessageSquare, Play, RotateCw, Send, Settings, Square, X } from "lucide-react";
 import { api, type CouncilBrief, type CouncilFinding } from "../../api";
-import { columns, hero, rules } from "../../lib/council";
+import { agreed, answered, coin, coinName, columns, hero, reviewerName, reviewers, rollWhy, rules, who } from "../../lib/council";
 import { ICON_BODY } from "../../lib/fileicons.gen";
 import { openSettings } from "../../lib/opensettings";
 import { notify } from "./Notifications";
@@ -10,9 +10,13 @@ import { FRAME, RULE } from "./SessionPanel";
 /* The COUNCIL tab (docs/superpowers/specs/council-tab.md; design:
    .mystical/design-drafts/council-tab, A · SCOREBOARD). The score leads: a
    230px board with the number, a column per round climbing to the bar's dashed
-   line, and the two pass rules. The reviewers' seats sit under it, or, when a
-   stopped run has a finding they keep raising, that finding and your two ways
-   out. Then the list the state is about, and its one or two moves, pinned.
+   line, and the two pass rules. The reviewers sit under it as a roll call
+   (design: council-reviewers, B · ROLL CALL): a coin per account at one height
+   for any count, and a line naming only who sat out or didn't answer. Or, when
+   a stopped run has a finding they keep raising, that finding and your two ways
+   out. Then the list: before a run what it would review, during and after one
+   the whole run as To fix, Fixed and Answered (council.py ledger), most urgent
+   first. Its one or two moves are pinned under it.
    It polls bridge/council.py's brief(): every 3 s while a run reviews or
    fixes, every 15 s otherwise, and only then `full`, whose git read is what
    RUN would review and what PUSH would send. Every read also goes up to App
@@ -26,32 +30,37 @@ const SAY: Record<string, string> = {
   nothing: "Nothing to review: no commits or changes ahead of origin.",
   action: "The council has moved on, so that can't be done now.",
 };
-const NAME: Record<string, string> = { claude: "Claude", codex: "Codex" };
 const SEV = { must: "MUST", should: "SHOULD", nit: "NIT" } as const;
 const H = 72;   // px a 10 reaches in the chart
-// Claude's mark is simple-icons' (as the PROFILE chip's); Codex's is the mockup's hexagon prompt. Settings' Council fold wears them too.
-export const MARK: Record<string, ReactNode> = {
+const LINE = { fill: "none", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round" } as const;
+// Claude's mark is simple-icons' (as the PROFILE chip's); Codex's is the mockup's hexagon prompt. Settings' Council fold wears them through Mark.
+// shortcut: Gemini's, Kimi's and opencode's are the mockup's stand-in glyphs; swap in their own once the icon set has them.
+const MARK: Record<string, ReactNode> = {
   claude: <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden dangerouslySetInnerHTML={{ __html: ICON_BODY["si:claude"] }} />,
   codex: (
     <svg viewBox="0 0 24 24" width={13} height={13} aria-hidden fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2.5 20.5 7.3v9.4L12 21.5 3.5 16.7V7.3Z" /><path d="m9 9.5 3 2.5-3 2.5M13 15h3" />
     </svg>
   ),
+  gemini: <svg viewBox="0 0 24 24" width={13} height={13} aria-hidden><path fill="currentColor" d="M12 2c.6 5.3 4.7 9.4 10 10-5.3.6-9.4 4.7-10 10-.6-5.3-4.7-9.4-10-10 5.3-.6 9.4-4.7 10-10Z" /></svg>,
+  kimi: <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden {...LINE} strokeWidth={2.6}><path d="M7 4v16M17 4l-7 8 7 8" /></svg>,
+  opencode: <svg viewBox="0 0 24 24" width={13} height={13} aria-hidden {...LINE} strokeWidth={2.4}><path d="M8 7 3.5 12 8 17M16 7l4.5 5-4.5 5" /></svg>,
 };
-const NOTE = <>Each round both review it fresh. <b>The session that wrote it</b> gets what they found as one prompt, fixes it or answers why not, and they review again.</>;
+/** An agent's mark on its plate; an agent with no glyph wears its initial. */
+export const Mark = ({ agent, dim }: { agent: string; dim?: boolean }) =>
+  <span className={`cn-mk ${agent}${dim ? " no" : ""}`} aria-hidden>{MARK[agent] ?? agent.charAt(0).toUpperCase()}</span>;
+const NOTE = <>Each round your reviewers read it fresh. <b>The session that wrote it</b> gets what they found as one prompt, fixes it or answers why not, and they read it again.</>;
 
 const live = (c: CouncilBrief | null) => c?.status === "reviewing" || c?.status === "fixing";
 const at = (f: CouncilFinding) => (f.line == null ? f.file : `${f.file}:${f.line}`);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 // A finding you sided with the session on never blocks again: it reads settled.
 const stateOf = (f: CouncilFinding) => (f.dismissed ? "settled" : f.state);
-/** How a round's findings stand: "4 fixed · 1 answered". */
-const tally = (fs: CouncilFinding[]) => ["fixed", "answered", "open", "settled"]
-  .map((st) => [st, fs.filter((f) => stateOf(f) === st).length] as const)
-  .filter(([, n]) => n).map(([st, n]) => `${n} ${st}`).join(" · ");
 
-function Finding({ f, right }: { f: CouncilFinding; right?: ReactNode }) {
+/** A finding: its marks, one per reviewer that answered (lit for those that flagged it), and "2/3". */
+function Finding({ f, ran, seats, right }: { f: CouncilFinding; ran: string[]; seats: CouncilBrief["seats"]; right?: ReactNode }) {
   const st = stateOf(f);
+  const n = f.by.filter((k) => ran.includes(k)).length;
   return (
     <div className={`cn-fd${st === "fixed" ? " done" : ""}`}>
       <span className={`cn-sev ${f.sev}`}>{SEV[f.sev]}</span>
@@ -59,11 +68,15 @@ function Finding({ f, right }: { f: CouncilFinding; right?: ReactNode }) {
         <div className="cn-t" title={f.title}>{f.title}</div>
         <div className="cn-s">
           <code>{at(f)}</code>
-          <span className={`cn-by${f.by.length > 1 ? " both" : ""}`}>{f.by.length > 1 ? "BOTH" : (f.by[0] ?? "").toUpperCase()}</span>
+          {ran.length > 0 && <span className="cr-who">
+            <span className="cr-by">{ran.map((k) => <Mark key={k} agent={who(k, seats[k]).agent} dim={!f.by.includes(k)} />)}</span>
+            <span className={`cr-n${agreed(f, ran) ? " maj" : ""}`}>{n}/{ran.length}<span className="sr-only"> reviewers flagged it</span></span>
+          </span>}
         </div>
         {f.answer && <div className="cn-ans">Session: {f.answer}</div>}
       </div>
-      {right ?? <span className="cn-fst" data-st={st}>{st === "fixed" && <Check size={12} strokeWidth={2.8} />}{st}</span>}
+      {/* in the run's list the group says the state: the row says its round (green ✓ fixed, yellow still open) */}
+      {right ?? <span className="cn-fst" data-st={st}>{st === "fixed" && <Check size={12} strokeWidth={2.8} />}{f.round == null ? st : st === "settled" ? `settled · R${f.round}` : `R${f.round}`}</span>}
     </div>
   );
 }
@@ -90,7 +103,6 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   const [fail, setFail] = useState("");
   const [doing, setDoing] = useState("");                             // the move in flight
   const [sent, setSent] = useState<Set<string>>(() => new Set());     // advice sent one at a time
-  const [prevOpen, setPrevOpen] = useState(false);
   const [nonce, setNonce] = useState(0);                              // bumped: read now
   // Bumped on both sides of every move. The server is threaded and brief() takes
   // its snapshot before a full read's git runs, so a read begun before a move
@@ -146,7 +158,7 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   };
   // One piece of advice, in the shape Send all's lines take (council.py _line).
   const sendOne = (f: CouncilFinding) => {
-    onSend?.(`[council advice]\n1. ${f.sev.toUpperCase()} · ${at(f)} · ${f.by.join("+")} · ${f.title}`);
+    onSend?.(`[council advice]\n1. ${f.sev.toUpperCase()} · ${at(f)} · ${f.by.length} of ${c ? answered(c).length : 0} · ${f.title}`);
     setSent((s) => new Set(s).add(`${at(f)} ${f.title}`));
   };
 
@@ -172,7 +184,7 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   const r = rules(c);
   const cols = columns(c);
   const last = c.rounds[c.rounds.length - 1];
-  const prev = c.rounds[c.rounds.length - 2];
+  const ran = answered(c);                       // a finding's marks and "2/3" count these
   const m = c.material;
   const stuck = c.status === "stopped" ? c.stuck : null;
   const dis = !!doing;
@@ -212,41 +224,39 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
         </span>
         <span className={r.shared == null ? "" : r.shared ? "y" : "no"}>
           {r.shared === false ? <X size={11} strokeWidth={2.6} /> : <Check size={11} strokeWidth={2.6} />}
-          <em>{r.shared === false ? `${last?.blocking} shared must-fix` : "no shared must-fix"}</em>
+          <em>{r.shared === false ? `${last?.blocking} agreed must-fix` : "no agreed must-fix"}</em>
         </span>
       </div>
     </section>
   );
 
+  const why = rollWhy(c);
   const seats = (
-    <div className="cn-seats">
-      {["claude", "codex"].filter((k) => c.seats[k]).map((k) => {
-        const s = c.seats[k];
-        const say = s.state === "running" ? "reviewing"
-          : s.state === "done" ? (c.status === "reviewing" ? "done" : `round ${last?.n ?? c.round}`)
-          : s.state === "error" ? s.error || "error"
-          : s.state === "on" ? "ready" : s.state === "not-allowed" ? "not allowed" : s.state;
-        return (
-          <div key={k} className={`cn-seat${s.state === "running" ? " busy" : s.state === "error" ? " err" : c.status === "passed" ? " okk" : ""}`}>
-            <span className={`cn-mk ${k}`}>{MARK[k]}</span>
-            <div className="cn-w">
-              <b>{NAME[k]}</b>
-              {s.state === "sign-in"
-                ? <button className="cn-signin" title="Settings ▸ AI management" onClick={() => openSettings("aimgmt")}>sign in ›</button>
-                : <small title={s.error || s.summary || undefined}>{say}</small>}
+    <>
+      <div className="cr-roll" role="list" aria-label="Reviewers">
+        {reviewers(c).map(([k, s]) => {
+          const w = who(k, s), look = coin(s, c.status === "passed");
+          return (
+            <div key={k} role="listitem" className={`cr-coin${look.cls && ` ${look.cls}`}`}
+              title={[reviewerName(w), s.summary || s.error].filter(Boolean).join(" — ")}>
+              <Mark agent={w.agent} />
+              <b>{look.mid === "spin" ? <span className="cn-spin" role="img" aria-label="reading" /> : look.mid}</b>
+              <em>{coinName(w)}</em>
             </div>
-            {s.state === "running" ? <span className="cn-spin" aria-hidden /> : s.score != null && <span className="cn-sc">{s.score.toFixed(1)}</span>}
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+      <div className="cr-why">
+        {why.odd.length ? why.odd.map((o, i) => <Fragment key={i}>{i > 0 && " · "}<b>{o.name}</b> {o.text}</Fragment>) : why.note}
+      </div>
+    </>
   );
 
   const needs = stuck && (
     <div className="cn-needs">
       <div className="k">THEY DISAGREE · {stuck.rounds + 1} ROUNDS</div>
       <div className="q">{stuck.finding.title}</div>
-      <code className="m">{at(stuck.finding)} · {stuck.finding.by.length > 1 ? "both reviewers" : stuck.finding.by[0]}</code>
+      <code className="m">{at(stuck.finding)} · {stuck.finding.by.length} of {ran.length} reviewers</code>
       {stuck.answer && <div className="cn-ans">Session: {stuck.answer}</div>}
       <div className="o">
         <button className="cn-btn soft sm grow" disabled={dis} onClick={() => void act("side", stuck.finding.id)}>Side with the session</button>
@@ -272,56 +282,34 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
         <div className="cn-note">{runHint || NOTE}</div>
       </>
     );
-  } else if (c.status === "passed") {
-    list = (
-      <>
-        {c.advice.length > 0 && (
-          <>
-            <div className="cn-lbl">LEFT AS ADVICE <span className="n">{c.advice.length}</span>
-              <button className="cn-btn ghost sm r" disabled={dis || c.advice_sent} onClick={() => void act("advice")}>
-                <Send size={11} strokeWidth={2} />{c.advice_sent ? "Sent" : "Send all"}
-              </button>
-            </div>
-            <div className="cn-rows">
-              {c.advice.map((f, i) => {
-                const done = sent.has(`${at(f)} ${f.title}`);
-                return <Finding key={i} f={f} right={onSend && (
-                  <button className="cn-btn ghost sm" disabled={done} onClick={() => sendOne(f)}><Send size={11} strokeWidth={2} />{done ? "Sent" : "Send"}</button>
-                )} />;
-              })}
-            </div>
-          </>
-        )}
-        {c.fixed_total > 0 && <div className="cn-fold"><b>Fixed on the way</b> {c.fixed_total}</div>}
-      </>
-    );
-  } else if (c.status === "stopped") {
-    const rest = stuck ? c.findings.filter((f) => f.id !== stuck.finding.id) : c.findings;
-    if (last && rest.length) list = (
-      <>
-        <div className="cn-lbl">ROUND {last.n}{stuck ? " · ALSO FOUND" : " FINDINGS"}<span className="r">{tally(rest)}</span></div>
-        <div className="cn-rows">{rest.map((f, i) => <Finding key={i} f={f} />)}</div>
-      </>
-    );
-  } else if (last) {
-    // A run in progress: what the last round found and how the session took it, the round before folded.
-    list = (
-      <>
-        <div className="cn-lbl">ROUND {last.n} FINDINGS<span className="r">{tally(c.findings)}</span></div>
-        {c.findings.length > 0 && <div className="cn-rows">{c.findings.map((f, i) => <Finding key={i} f={f} />)}</div>}
-        {prev && c.previous.length > 0 && (
-          <>
-            <button className="cn-fold" aria-expanded={prevOpen} onClick={() => setPrevOpen(!prevOpen)}>
-              <b>Round {prev.n}</b> {prev.score?.toFixed(1)}
-              <span className="r">{c.previous.length} found · {tally(c.previous)} <i>›</i></span>
-            </button>
-            {prevOpen && c.previous.map((f, i) => <Finding key={i} f={f} />)}
-          </>
-        )}
-      </>
-    );
   } else {
-    list = <div className="cn-note">{NOTE}</div>;
+    // A run: one list across its rounds (council.py ledger), each group most urgent first.
+    // Passed, what's left to fix is advice: Send each, or Send all. The finding they keep
+    // raising sits in its own card above, so the list leaves it out.
+    const toFix = stuck ? c.to_fix.filter((f) => f.id !== stuck.finding.id) : c.to_fix;
+    const groups = ([[stuck ? "Also to fix" : "To fix", toFix], ["Fixed", c.fixed], ["Answered", c.answered]] as const)
+      .filter(([, fs]) => fs.length);
+    const advice = c.status === "passed";
+    const marks = (f: CouncilFinding) => answered(c, c.rounds.find((r) => r.n === f.round));
+    list = groups.length ? groups.map(([label, fs]) => (
+      <Fragment key={label}>
+        <div className="cn-lbl"><span className="caps">{label}</span> <span className="n">{fs.length}</span>
+          {advice && fs === toFix && (
+            <button className="cn-btn ghost sm r" disabled={dis || c.advice_sent} onClick={() => void act("advice")}>
+              <Send size={11} strokeWidth={2} />{c.advice_sent ? "Sent" : "Send all"}
+            </button>
+          )}
+        </div>
+        <div className="cn-rows">
+          {fs.map((f) => {
+            const done = sent.has(`${at(f)} ${f.title}`);
+            return <Finding key={f.id} f={f} ran={marks(f)} seats={c.seats} right={advice && fs === toFix && onSend ? (
+              <button className="cn-btn ghost sm" disabled={done} onClick={() => sendOne(f)}><Send size={11} strokeWidth={2} />{done ? "Sent" : "Send"}</button>
+            ) : undefined} />;
+          })}
+        </div>
+      </Fragment>
+    )) : advice ? <div className="cn-note">Nothing left to fix.</div> : live(c) ? <div className="cn-note">{NOTE}</div> : null;
   }
 
   const pushBtn = (label: string, cls: string) => (

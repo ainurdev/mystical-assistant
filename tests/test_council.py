@@ -1,4 +1,6 @@
-from bridge import council, store
+import json
+
+from bridge import accounts, acp_agents, council, profiles, store, usage
 
 store.init()
 
@@ -22,12 +24,16 @@ def test_merge_joins_near_lines_and_keeps_the_higher_severity():
     assert [(f["sev"], f["file"], f["by"]) for f in m] == [("must", "git.py", ["claude", "codex"]), ("nit", "taskcheck.py", ["codex"])]
     assert m[0]["id"] == "git.py:584" and m[0]["title"] == "A"
 
-def test_blocking_needs_every_seat_that_ran_and_skips_dismissed():
-    both = {"id": "git.py:584", "sev": "must", "file": "git.py", "line": 584, "title": "A", "by": ["claude", "codex"]}
-    one = {"id": "x.py:1", "sev": "must", "file": "x.py", "line": 1, "title": "B", "by": ["claude"]}
-    assert council.blocking([both, one], ["claude", "codex"], []) == [both]
-    assert council.blocking([both, one], ["claude"], []) == [both, one]
-    assert council.blocking([both], ["claude", "codex"], ["git.py:586"]) == []
+def test_a_must_fix_blocks_when_more_than_half_of_those_that_answered_flag_it():
+    must = lambda *by: {"id": f"{len(by)}.py:1", "sev": "must", "file": f"{len(by)}.py", "line": 1, "title": "A", "by": list(by)}
+    one, two, three = must("claude:1"), must("claude:1", "codex:"), must("claude:1", "codex:", "kimi:")
+    assert council.blocking([one], ["claude:1"], []) == [one]                                   # 1 of 1
+    assert council.blocking([one, two], ["claude:1", "codex:"], []) == [two]                    # both of 2
+    assert council.blocking([one, two], ["claude:1", "codex:", "kimi:"], []) == [two]           # 2 of 3
+    assert council.blocking([two, three], ["claude:1", "codex:", "kimi:", "claude:2"], []) == [three]   # 3 of 4
+    should = dict(three, sev="should")
+    assert council.blocking([should], ["claude:1", "codex:", "kimi:"], []) == []
+    assert council.blocking([two], ["claude:1", "codex:"], ["2.py:3"]) == []                    # dismissed nearby
 
 def test_decide_covers_pass_max_stall_and_fixing():
     base = {"bar": 9.0, "max_rounds": 3, "stop_early": True}
@@ -39,18 +45,62 @@ def test_decide_covers_pass_max_stall_and_fixing():
     assert council.decide({**base, "round": 3, "rounds": [r(6), r(7), r(8)]}) == "stopped:max_rounds"
 
 def test_fix_prompt_and_answers():
-    c = {"round": 2, "max_rounds": 5, "bar": 9.0, "rounds": [{"score": 8.1, "findings": [
-        {"sev": "must", "file": "bridge/git.py", "line": 584, "title": "push() hides exit 1", "by": ["claude", "codex"], "state": "open"}]}]}
+    seats = {k: {"state": st} for k, st in (("claude:1", "done"), ("codex:", "done"), ("kimi:", "out"))}
+    c = {"round": 2, "max_rounds": 5, "bar": 9.0, "rounds": [{"score": 8.1, "seats": seats, "findings": [
+        {"sev": "must", "file": "bridge/git.py", "line": 584, "title": "push() hides exit 1", "by": ["claude:1", "codex:"], "state": "open"}]}]}
     p = council.fix_prompt(c)
     assert p.startswith("[council 2/5] 8.1 of 9.0\n")
-    assert "1. MUST · bridge/git.py:584 · claude+codex · push() hides exit 1" in p
+    assert "1. MUST · bridge/git.py:584 · 2 of 2 · push() hides exit 1" in p            # of those that answered
     assert council.answers("1. NO: not a bug, see runner.py:271\n2. fixed it\n3) NO - churn") == {1: "not a bug, see runner.py:271", 3: "churn"}
 
 def test_settings_clamp_and_round_trip():
-    s = council.save_settings({"bar": 12, "max_rounds": 0, "codex_projects": ["/a", 3], "junk": 1})
-    assert s["bar"] == 10.0 and s["max_rounds"] == 1 and s["codex_projects"] == ["/a"] and "junk" not in s
+    s = council.save_settings({"bar": 12, "max_rounds": 0, "projects": {"codex": ["/a", 3]}, "junk": 1})
+    assert s["bar"] == 10.0 and s["max_rounds"] == 1 and s["projects"] == {"codex": ["/a"]} and "junk" not in s
     assert council.save_settings({"bar": 8.7, "max_rounds": 5})["bar"] == 8.5
     store.set_setting("council", None)          # the test DB is shared: leave the defaults for the next test
+
+
+def test_only_accounts_that_exist_can_review(monkeypatch):
+    """A switch for a login that isn't there would turn on whichever login takes its slot next."""
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1}, {"slot": 2}])
+    monkeypatch.setattr(acp_agents, "account", lambda i: {"a_k": {"id": "a_k", "agent": "codex"}}.get(i))
+    s = council.save_settings({"reviewers": ["claude:2", "claude:9", "codex:", "codex:a_k", "kimi:a_k",
+                                             "gemini:", "x:", "claude:2", 7, "claude:"]})
+    assert s["reviewers"] == ["claude:2", "codex:", "codex:a_k"]        # gemini has no login of its own: keys only
+    s = council.save_settings({"projects": {"kimi": ["/k"], "claude": ["/c"], "gemini": "/g", "nope": ["/n"]}})
+    assert s["projects"] == {"kimi": ["/k"]}                             # Claude logins read every project
+    store.set_setting("council", None)
+
+
+def test_the_old_two_switches_become_accounts_once(monkeypatch):
+    """Claude's switch goes to the login new sessions start on, Codex's to its first account."""
+    codex = []
+    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [x for x in codex if a in (None, x["agent"])])
+    store.set_setting("council", None)                                  # never saved: both were on
+    assert council.settings()["reviewers"] == ["claude:1", "codex:"]    # no profile yet: this machine's logins
+    monkeypatch.setattr(profiles, "claude_slot_usable", lambda slot: True)
+    profiles.set_default_profile(profiles.create({"name": "work", "account": "2"})["id"])
+    codex.append({"id": "a_team", "agent": "codex", "label": "team"})
+    store.set_setting("council", json.dumps({"bar": 8.5, "codex": True, "codex_projects": ["/a"]}))
+    s = council.settings()
+    assert (s["reviewers"], s["projects"], s["bar"]) == (["claude:2", "codex:a_team"], {"codex": ["/a"]}, 8.5)
+    assert not {"claude", "codex", "codex_projects"} & set(s)
+    profiles.set_default_profile(profiles.create({"name": "spare", "account": "3"})["id"])
+    assert council.settings()["reviewers"] == ["claude:2", "codex:a_team"]   # moved once, not again
+    store.set_setting("council", json.dumps({"claude": False, "codex": False}))
+    assert council.settings()["reviewers"] == []
+    store.set_setting("council", None)
+
+def test_removing_an_account_takes_its_reviewer_off(monkeypatch):
+    """Its switch goes with it: a new login that takes the same Claude slot starts off."""
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1}, {"slot": 2}])
+    a = acp_agents.add_account("codex", "team", "key", "sk-test-0123456789")
+    council.save_settings({"reviewers": ["claude:1", "claude:2", f"codex:{a['id']}", "codex:"]})
+    accounts.remove(2)
+    acp_agents.remove_account(a["id"])
+    assert council.settings()["reviewers"] == ["claude:1", "codex:"]
+    store.set_setting("council", None)
+
 
 def test_store_council_column_round_trip():
     sid = store.create_session(555, "/counciltest", origin="dashboard")["id"]
@@ -88,9 +138,9 @@ def test_answers_do_not_cross_lines():
 
 
 def test_save_settings_survives_bad_input():
-    before = council.save_settings({"bar": 8, "max_rounds": 4, "codex_projects": ["/a"]})
-    s = council.save_settings({"bar": "x", "max_rounds": "y", "codex_projects": 5, "stop_early": "yes"})
-    assert (s["bar"], s["max_rounds"], s["codex_projects"]) == (8.0, 4, ["/a"])
+    before = council.save_settings({"bar": 8, "max_rounds": 4, "projects": {"codex": ["/a"]}})
+    s = council.save_settings({"bar": "x", "max_rounds": "y", "projects": 5, "reviewers": "claude:1", "stop_early": "yes"})
+    assert (s["bar"], s["max_rounds"], s["projects"], s["reviewers"]) == (8.0, 4, {"codex": ["/a"]}, before["reviewers"])
     assert council.save_settings({"bar": float("nan")})["bar"] == 8.0
     assert council.save_settings({"bar": float("inf")})["bar"] == 8.0
     assert council.save_settings({"bar": 1e308})["bar"] == 10.0
@@ -174,9 +224,8 @@ def test_seat_claude_parses_or_reports(monkeypatch):
 _MODES = {"mode": [{"value": "auto"}, {"value": "read-only"}]}
 
 
-def test_seat_codex_times_out_and_denies_requests(monkeypatch):
+def test_an_outside_reviewer_times_out_and_every_ask_is_refused(monkeypatch):
     stop, asked = threading.Event(), []
-    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
     monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
     monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
     monkeypatch.setattr(acp, "answer", lambda job, rid, allow: asked.append((rid, allow)))
@@ -186,47 +235,136 @@ def test_seat_codex_times_out_and_denies_requests(monkeypatch):
         job.awaiting["r1"] = {}
         stop.wait(5)
     monkeypatch.setattr(acp, "run_turn", hang)
-    assert council.seat_codex("p", "/tmp", timeout=0.3) == {"ok": False, "error": "timed out"}
+    assert council.seat_agent("kimi", "", "p", "/tmp", timeout=0.3) == {"ok": False, "error": "timed out"}
     assert ("r1", False) in asked
 
     def fine(job, **kw):
         job.result, job.status = '{"score": 9}', "done"
     monkeypatch.setattr(acp, "run_turn", fine)
-    r = council.seat_codex("p", "/tmp", timeout=5)
+    r = council.seat_agent("codex", "", "p", "/tmp", timeout=5)
     assert r["ok"] and r["score"] == 9.0
 
 
+def _bench(monkeypatch, opts):
+    """Four Claude logins, four agents and one Gemini key, as the accounts and the agents' caches know them."""
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [
+        {"slot": 1, "alias": None, "email": "me@x.org", "disabled": False},
+        {"slot": 2, "alias": "work", "email": "w@x.org", "disabled": False},
+        {"slot": 3, "alias": None, "email": None, "disabled": False},
+        {"slot": 4, "alias": "old", "email": None, "disabled": True}])
+    dead = {accounts.credentials_path(3)}
+    monkeypatch.setattr(usage, "has_token", lambda path: path not in dead)
+    at = lambda h: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() + h * 3600))
+    spent = {accounts.credentials_path(2): {"available": True, "seven_day": {"percent": 40, "resets_at": at(90)},
+                                            "five_hour": {"percent": 100, "resets_at": at(2)}},
+             # a reading from before its window rolled over: no longer out of usage
+             accounts.credentials_path(1): {"available": True, "seven_day": None,
+                                            "five_hour": {"percent": 100, "resets_at": at(-3)}}}
+    monkeypatch.setattr(usage, "cached", lambda path: spent.get(path, {"available": False}))
+    monkeypatch.setattr(acp_agents, "available", lambda: [
+        {"id": "codex", "label": "Codex", "key_required": False, "installed": True},
+        {"id": "opencode", "label": "opencode", "key_required": False, "installed": False},
+        {"id": "gemini", "label": "Gemini CLI", "key_required": True, "installed": True},
+        {"id": "kimi", "label": "Kimi Code", "key_required": False, "installed": True}])
+    keys = [{"id": "a_g", "agent": "gemini", "label": "AI Studio", "kind": "key"}]
+    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [k for k in keys if a in (None, k["agent"])])
+    monkeypatch.setattr(acp_agents, "account", lambda i: next((k for k in keys if k["id"] == i), None))
+    monkeypatch.setattr(acp_agents, "options_for",
+                        lambda a, acct: opts.get((a, acct)) or {"model": [], "mode": [], "effort": []})
+
+
 def test_seats_for(monkeypatch):
-    st = {"installed": True}
-    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
-    monkeypatch.setattr(acp_agents, "available", lambda: [{"id": "codex", **st}])
-    signed = {"mode": [{"value": "read-only"}]}
-    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: signed)
-    s, sess = dict(council.DEFAULTS, codex_projects=["p"]), {"project": "p"}
-    assert council.seats_for(sess, s) == {"claude": "on", "codex": "sign-in"}
-    signed["signed_in"] = True
-    assert council.seats_for(sess, s)["codex"] == "on"
-    signed["mode"] = []
-    assert council.seats_for(sess, s)["codex"] == "sign-in"
-    signed["mode"] = [{"value": "read-only"}]
-    st["installed"] = False
-    assert council.seats_for(sess, s)["codex"] == "sign-in"
-    assert council.seats_for({"project": "q"}, s)["codex"] == "not-allowed"
-    assert council.seats_for(sess, dict(s, codex=False, claude=False)) == {"claude": "off", "codex": "off"}
+    """Each reviewer that is on: ready, or why it sits this round out, never moved to another account."""
+    opts = {("codex", ""): {"signed_in": True, "mode": [{"value": "read-only"}]},
+            ("kimi", ""): {"signed_in": False}, ("gemini", "a_g"): {"signed_in": True}}
+    _bench(monkeypatch, opts)
+    on = ["claude:1", "claude:2", "claude:3", "claude:4", "codex:", "kimi:", "opencode:", "gemini:a_g"]
+    s = dict(council.DEFAULTS, reviewers=on, projects={a: ["p"] for a in ("codex", "kimi", "opencode", "gemini")})
+    got = council.seats_for({"project": "p"}, s)
+    assert got["claude:2"]["error"].startswith("out of usage · back at ")
+    got["claude:2"]["error"] = "out of usage"
+    assert {k: (v["state"], v["error"]) for k, v in got.items()} == {
+        "claude:1": ("on", ""), "claude:2": ("out", "out of usage"), "claude:3": ("out", "not signed in"),
+        "claude:4": ("out", "turned off in Accounts"), "codex:": ("on", ""), "kimi:": ("out", "not signed in"),
+        "opencode:": ("out", "not installed"), "gemini:a_g": ("on", "")}
+    assert [(got[k]["agent"], got[k]["label"]) for k in ("claude:1", "claude:2", "claude:3", "codex:", "gemini:a_g")] == [
+        ("claude", "me"), ("claude", "work"), ("claude", "account 3"), ("codex", ""), ("gemini", "AI Studio")]
+    # Client code stays with Claude: an outside agent reads only the projects listed for it.
+    q = council.seats_for({"project": "q"}, s)
+    assert q["codex:"]["error"] == "this project isn't on its list" and q["claude:1"]["state"] == "on"
+    opts[("codex", "")]["mode"] = []
+    assert council.seats_for({"project": "p"}, s)["codex:"]["error"].startswith("no read-only mode yet")
+    assert council.seats_for({"project": "p"}, dict(s, reviewers=[])) == {}
 
 
-def test_seat_codex_needs_a_read_only_mode_and_passes_it(monkeypatch):
+def test_the_bench_lists_every_account_that_could_review(monkeypatch):
+    """Settings' + Add a reviewer: each Claude login, then each installed agent's own
+    login and every account added for it. One that can't sit now says why."""
+    _bench(monkeypatch, {("codex", ""): {"signed_in": True, "mode": [{"value": "read-only"}]},
+                         ("gemini", "a_g"): {"signed_in": True}})
+    rows = council.candidates(["opencode:"])
+    assert rows[1]["status"].startswith("out of usage · back at ")
+    rows[1]["status"] = "out of usage"
+    assert [k for r in rows if r["signin"] for k in [r["key"]]] == ["claude:3", "kimi:"]   # a sign-in fixes these
+    assert [(r["key"], r["agent"], r["label"], r["status"], r["ok"]) for r in rows] == [
+        ("claude:1", "claude", "me", "signed in", True), ("claude:2", "claude", "work", "out of usage", False),
+        ("claude:3", "claude", "account 3", "not signed in", False),
+        ("claude:4", "claude", "old", "turned off in Accounts", False),
+        ("codex:", "codex", "", "signed in", True),                    # opencode isn't installed: not offered
+        ("gemini:a_g", "gemini", "AI Studio", "API key", True),         # Gemini signs in with keys only
+        ("kimi:", "kimi", "", "not signed in", False),
+        ("opencode:", "opencode", "", "not installed", False)]           # on, so it's listed with why it can't sit
+
+
+def test_a_signed_out_machine_login_stays_a_reviewer(monkeypatch):
+    """Slot 1 lists only while its tokens read: signed out, it sits out with a Sign in, never "removed"."""
+    _bench(monkeypatch, {})
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 2, "alias": "work", "email": None, "disabled": False}])
+    s = council.save_settings({"reviewers": ["claude:1", "claude:2"]})
+    assert s["reviewers"] == ["claude:1", "claude:2"]
+    seat = council.seats_for({}, s)["claude:1"]
+    assert (seat["state"], seat["error"]) == ("out", "not signed in")
+    assert [(r["key"], r["status"], r["signin"]) for r in council.candidates([])][:1] == [("claude:1", "not signed in", True)]
+    store.set_setting("council", None)
+
+
+def test_a_reviewer_that_never_got_the_prompt_sat_out(monkeypatch):
+    """Its asking mode wouldn't take hold, or it couldn't start: it never read the work."""
+    monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
+
+    def refused(job, **kw):
+        job.turn = SimpleNamespace(sid=None)
+        job.status, job.error_msg = "error", "Kimi Code wouldn't switch to mode 'default', so the prompt wasn't sent."
+    monkeypatch.setattr(acp, "run_turn", refused)
+    r = council.seat_agent("kimi", "", "p", "/tmp")
+    assert (r["ok"], r["out"]) == (False, True) and "wouldn't switch" in r["error"]
+
+    def crashed(job, **kw):
+        job.turn = SimpleNamespace(sid="s1")             # the prompt went: it read, then failed
+        job.status, job.error_msg = "error", "Kimi Code exited"
+    monkeypatch.setattr(acp, "run_turn", crashed)
+    assert council.seat_agent("kimi", "", "p", "/tmp")["out"] is False
+
+
+def test_each_outside_reviewer_reads_in_its_asking_mode_or_not_at_all(monkeypatch):
+    """The mode must take hold before the prompt goes (run_turn's "must"), never the default it falls back to."""
     called = []
-    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
     monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
     monkeypatch.setattr(acp, "run_turn", lambda job, **kw: (called.append(kw), setattr(job, "status", "done"),
                                                             setattr(job, "result", '{"score": 9}')))
     monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: {"mode": []})
-    r = council.seat_codex("p", "/tmp")
+    r = council.seat_agent("codex", "", "p", "/tmp")
     assert not r["ok"] and "no read-only mode" in r["error"] and not called
     monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
-    assert council.seat_codex("p", "/tmp")["ok"]
-    assert called[0]["opts"] == {"permission_mode": "read-only", "must": ("permission_mode",)}
+    for agent in ("codex", "gemini", "kimi", "opencode"):
+        assert council.seat_agent(agent, "", "p", "/tmp")["ok"]
+    must = ("permission_mode",)
+    assert [kw["opts"] for kw in called] == [{"permission_mode": "read-only", "must": must},
+                                             {"permission_mode": "default", "must": must},
+                                             {"permission_mode": "default", "must": must},
+                                             {}]                     # opencode asks by its preset's own env
+    assert [kw["label"] for kw in called] == ["Codex", "Gemini CLI", "Kimi Code", "opencode"]
 
 
 def test_the_read_only_mode_is_picked_from_the_cached_list(monkeypatch):
@@ -244,7 +382,7 @@ def test_seats_never_raise(monkeypatch):
         raise OSError("disk")
     monkeypatch.setattr(acp_agents, "options_for", boom)
     monkeypatch.setattr(runner, "run_blocking", boom)
-    assert council.seat_codex("p", "/tmp") == {"ok": False, "error": "disk"}
+    assert council.seat_agent("codex", "", "p", "/tmp") == {"ok": False, "error": "disk"}
     assert council.seat_claude("p", "/tmp", 1, None) == {"ok": False, "error": "disk"}
 
 
@@ -297,11 +435,19 @@ def rig(monkeypatch):
     monkeypatch.setattr(council, "material", lambda cwd: r.mat)
     monkeypatch.setattr(council, "counts", lambda cwd: r.mat)
     monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.claude.pop(0))
-    monkeypatch.setattr(council, "seat_codex", lambda *a, **k: r.codex.pop(0))
-    monkeypatch.setattr(council, "seats_for", lambda session, s: {"claude": "on", "codex": "on"})
+    monkeypatch.setattr(council, "seat_agent", lambda *a, **k: r.codex.pop(0))
+    monkeypatch.setattr(council, "seats_for", lambda session, s: _on("claude:1", "codex:"))
     r.session = store.create_session(555, "/counciltest", origin="dashboard")
     r.sid = r.session["id"]
     return r
+
+
+def _on(*keys, **out):
+    """seats_for's answer: these reviewers ready, and out=why for one that sits out."""
+    return {k.replace("_", ":"): dict(council._seat("out" if out.get(k.replace(":", "_")) else "on",
+                                                    error=out.get(k.replace(":", "_"), "")),
+                                      agent=k.split(":")[0], label="")
+            for k in [*keys, *(o.replace("_", ":") for o in out)]}
 
 
 def _spinning(b):
@@ -323,6 +469,36 @@ def test_start_scores_a_round_and_queues_the_fix_prompt(rig):
     assert len(rig.queued) == 1
     assert rig.queued[0]["prompt"].startswith("[council 1/5] 7.5 of 9.0") and rig.queued[0]["surface"] == "council"
     assert store.get_council(rig.sid)["item"] == "item-1"
+
+
+def test_each_account_reviews_and_more_than_half_must_agree(rig, monkeypatch):
+    """Two Claude logins, Codex, and Kimi out of usage: the score averages the three that
+    answered, a must-fix blocks at 2 of 3, and the one that sat out keeps its reason."""
+    monkeypatch.setattr(council, "seats_for", lambda session, s: _on("claude:1", "claude:2", "codex:", kimi_="out of usage"))
+    said, slots = {1: _said(7.0, ("must", "a.py", 1), ("must", "b.py", 5)), 2: _said(8.0, ("must", "a.py", 2))}, []
+    monkeypatch.setattr(council, "seat_claude", lambda prompt, cwd, chat, slot: slots.append(slot) or said[slot])
+    rig.codex = [_said(9.0)]
+    b = council.start(rig.session, "/tmp")
+    assert sorted(slots) == [1, 2]                                    # each login reads on its own account
+    assert b["score"] == 8.0 and (b["seats"]["kimi:"]["state"], b["seats"]["kimi:"]["error"]) == ("out", "out of usage")
+    assert [(f["file"], f["blocking"]) for f in b["to_fix"] if f["sev"] == "must"] == [("a.py", True), ("b.py", False)]
+    assert b["rounds"][0]["ran"] == ["claude:1", "claude:2", "codex:"] and b["rounds"][0]["blocking"] == 1
+    assert "\n1. MUST · a.py:1 · 2 of 3 · must at a.py:1\n2. MUST · b.py:5 · 1 of 3 · " in rig.queued[0]["prompt"]
+
+
+def test_a_round_nobody_can_read_stops_and_says_why(rig, monkeypatch):
+    monkeypatch.setattr(council, "seats_for", lambda session, s: _on(kimi_="out of usage"))
+    b = council.start(rig.session, "/tmp")
+    assert (b["status"], b["reason"]) == ("stopped", "no reviewer answered: out of usage")
+    monkeypatch.setattr(council, "seats_for", lambda session, s: {})
+    assert council.start(rig.session, "/tmp")["reason"] == "no reviewer is switched on"
+
+
+def test_a_reviewer_whose_mode_wont_take_hold_sits_the_round_out(rig):
+    rig.claude = [_said(7.0, _FIX)]
+    rig.codex = [{"ok": False, "error": "Codex wouldn't switch to mode 'read-only', so the prompt wasn't sent.", "out": True}]
+    b = council.start(rig.session, "/tmp")
+    assert b["seats"]["codex:"]["state"] == "out" and b["rounds"][0]["ran"] == ["claude:1"]
 
 
 def test_round_that_passes_notifies_once(rig):
@@ -370,17 +546,17 @@ def test_one_seat_failing_scores_on_the_other(rig, monkeypatch):
     rig.claude = [_said(7.0, ("must", "a.py", 1), ("must", "b.py", 9))]
     rig.codex = [{"ok": False, "error": "timed out"}]
     b = council.start(rig.session, "/tmp")
-    assert b["score"] == 7.0 and b["seats"]["codex"]["state"] == "error"
+    assert b["score"] == 7.0 and b["seats"]["codex:"]["state"] == "error"
     assert b["rounds"][0]["blocking"] == 2
     # A seat that never answers costs the round that seat, not the round.
     gate = threading.Event()
     monkeypatch.setattr(council, "SEAT_TIMEOUT", -29.8)              # the join waits 0.2 s
-    monkeypatch.setattr(council, "seat_codex", lambda *a, **k: gate.wait(5) and None)
+    monkeypatch.setattr(council, "seat_agent", lambda *a, **k: gate.wait(5) and None)
     rig.claude = [_said(8.0)]
     council.after_turn(_job(rig, "j1"))
     b = council.brief(rig.sid)
     gate.set()
-    assert b["rounds"][-1]["score"] == 8.0 and b["seats"]["codex"]["error"] == "timed out"
+    assert b["rounds"][-1]["score"] == 8.0 and b["seats"]["codex:"]["error"] == "timed out"
 
 
 def test_restart_marks_a_live_looking_run_stopped(rig):
@@ -425,7 +601,7 @@ def test_a_git_failure_stops_the_round_with_its_message(rig, monkeypatch):
     monkeypatch.setattr(council, "material", boom)
     b = council.start(rig.session, "/tmp")
     assert b["status"] == "stopped" and b["reason"] == "git diff: git timed out"
-    assert _spinning(b) == [] and b["seats"]["claude"]["state"] == "stopped"
+    assert _spinning(b) == [] and b["seats"]["claude:1"]["state"] == "stopped"
 
 
 def test_start_refuses_when_running_busy_or_empty(rig, monkeypatch):
@@ -521,7 +697,7 @@ def test_a_fix_turn_that_fails_stops_the_run(rig, monkeypatch):
 def test_brief_reads_the_run(rig):
     b = council.brief(rig.sid)
     assert b["status"] == "idle" and b["bar"] == 9.0 and b["score"] is None
-    assert b["seats"]["codex"]["state"] == "on"
+    assert b["seats"]["codex:"]["state"] == "on"
     must = ("must", "git.py", 578)
     rig.claude = [_said(7.0, must, ("should", "x.py", 1)), _said(7.5, must), _said(8.0, must, ("nit", "y.py", 2))]
     rig.codex = [_said(7.0, must), _said(7.5, must), _said(8.0, must)]
@@ -530,11 +706,38 @@ def test_brief_reads_the_run(rig):
     council.after_turn(_job(rig, "j2", result="1. NO: still not"))
     b = council.brief(rig.sid, "/tmp", full=True)
     assert [r["score"] for r in b["rounds"]] == [7.0, 7.5, 8.0] and b["score"] == 8.0
-    assert [(f["file"], f["blocking"]) for f in b["findings"]] == [("git.py", True), ("y.py", False)]
-    assert [f["file"] for f in b["advice"]] == ["y.py"] and b["previous"][0]["state"] == "answered"
+    assert [(f["file"], f["blocking"], f["round"]) for f in b["to_fix"]] == [("git.py", True, 3), ("y.py", False, 3)]
+    assert [(f["file"], f["round"]) for f in b["fixed"]] == [("x.py", 1)] and b["answered"] == []   # git.py: raised again
     assert b["stuck"]["rounds"] == 2 and b["stuck"]["answer"] == "still not"
-    assert b["fixed_total"] == 1 and b["elapsed"] >= 0
+    assert b["elapsed"] >= 0
     assert b["material"] == {"commits": [["abc", "fix push"]], "files": 2, "add": 9, "del": 3}
+
+
+def test_the_list_says_what_is_left_to_fix_what_was_fixed_and_what_was_answered(rig):
+    """One list across the run, each finding once as it stands at its latest round,
+    most urgent first: an agreed must-fix, then by severity. One the last round
+    raised again is still to fix, whatever the fix turn before said."""
+    a, b, x, y = ("must", "a.py", 1), ("should", "b.py", 5), ("nit", "x.py", 9), ("must", "y.py", 30)
+    rig.claude, rig.codex = [_said(6.0, a, b, x), _said(7.0, a, y)], [_said(6.0, a), _said(7.0, y)]
+    council.start(rig.session, "/tmp")                                # round 1: a (both), b, x
+    council.after_turn(_job(rig, "j1", result="3. NO: taste"))        # a and b fixed, x answered; round 2: a again, y
+    l = council.brief(rig.sid)
+    assert [(f["file"], f["round"], f["blocking"]) for f in l["to_fix"]] == [("y.py", 2, True), ("a.py", 2, False)]
+    assert [(f["file"], f["round"]) for f in l["fixed"]] == [("b.py", 1)]
+    assert [(f["file"], f["round"], f["answer"]) for f in l["answered"]] == [("x.py", 1, "taste")]
+    assert council.brief(council.store.create_session(555, "/counciltest", origin="dashboard")["id"])["to_fix"] == []
+
+
+def test_the_list_ranks_a_finding_by_how_its_own_round_agreed():
+    """1 of 1 agreed outranks 2 of 4 not, though more flagged the second."""
+    seats = lambda *keys: {k: {"state": "done"} for k in keys}
+    f = lambda file, by: {"id": f"{file}:1", "sev": "must", "file": file, "line": 1, "title": file, "by": by,
+                          "state": "fixed", "answer": ""}
+    c = {"dismissed": [], "rounds": [
+        {"n": 1, "seats": seats("a", "b", "c", "d"), "findings": [f("two-of-four.py", ["a", "b"])]},
+        {"n": 2, "seats": seats("a"), "findings": [f("one-of-one.py", ["a"])]},
+        {"n": 3, "seats": seats("a"), "findings": []}]}
+    assert [x["file"] for x in council.ledger(c)["fixed"]] == ["one-of-one.py", "two-of-four.py"]
 
 
 def test_council_prompts_do_not_rearm_goals():

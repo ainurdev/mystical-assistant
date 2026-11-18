@@ -582,6 +582,8 @@ def remove(slot: int) -> None:
         reg.pop(str(slot), None)
         _save(reg)
     _wipe(slot)
+    from bridge import council                  # lazy: council imports this module
+    council.forget(f"claude:{slot}")            # the next login in this slot starts off the council
 
 
 def _set_disabled(slot: int, value: bool) -> None:

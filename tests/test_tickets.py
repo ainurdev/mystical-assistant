@@ -1488,7 +1488,8 @@ def reviewed(make_set, monkeypatch):
     r = SimpleNamespace(s=s, merge=s.state["merge_session"], queued=[], kinds=[], said=[])
     monkeypatch.setattr(council, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(council, "settings", lambda: dict(council.DEFAULTS))
-    monkeypatch.setattr(council, "seats_for", lambda session, st: {"claude": "on", "codex": "off"})
+    monkeypatch.setattr(council, "seats_for",
+                        lambda session, st: {"claude:1": dict(council._seat("on"), agent="claude", label="")})
     monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.said.pop(0))
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: r.queued.append((sid, kw["prompt"])) or "item-1")
     monkeypatch.setattr(queue_manager, "snapshot",

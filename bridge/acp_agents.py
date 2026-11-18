@@ -236,6 +236,8 @@ def remove_account(acct_id: str) -> None:
         shutil.rmtree(home_dir(acct_id), ignore_errors=True)
     # ponytail: a separate login's home dir is left on disk; it holds that
     # CLI's own login, which `rm -r` (or the CLI's logout) is the honest way to end.
+    from bridge import council   # local: council imports this module at its own top
+    council.forget(f"{gone['agent']}:{acct_id}")
 
 
 # --- environment --------------------------------------------------------------
