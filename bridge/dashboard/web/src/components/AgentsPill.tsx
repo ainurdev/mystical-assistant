@@ -77,6 +77,9 @@ export function AgentsPill({
   }, [working]);
 
   const back = bgView(bg);
+  // Nothing left to show: shut the modal too, or it pops open again when the pill comes back.
+  const gone = dataFor === sessionId && !back && !data?.total;
+  useEffect(() => { if (gone) setOpen(false); }, [gone]);
   if (!sessionId || (!back && (!data || data.total === 0))) return null;
   const all = data ? [...data.agents, ...(data.workflows ?? []).flatMap((w) => w.agents)] : [];
   const live = all.filter((a) => a.status === "running");

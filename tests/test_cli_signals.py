@@ -72,6 +72,16 @@ def test_the_set_is_replaced_not_paired_and_an_empty_one_ends_background():
     runner._jobs.clear()
 
 
+def test_a_long_command_reaches_the_status_whole():
+    cmd = "cd apps/apex/src && export GOTOOLCHAIN=go1.26.10 && " + "go test ./... -short; " * 10
+    job = _job()
+    for d in (_state("running"), RESULT, _state("idle"),
+              {**_bg("a"), "tasks": [{**_bg("a")["tasks"][0], "description": cmd}]}):
+        runner._handle_event(job, d)
+    assert _status(job, "s-bg")["bg"][0]["desc"] == cmd   # the Agents modal's Command box shows all of it
+    runner._jobs.clear()
+
+
 def test_a_follow_up_turn_for_a_finished_task_reads_working_again():
     job = _job()
     for d in (RESULT, _state("idle"), _bg("a"), _bg(), _state("running")):

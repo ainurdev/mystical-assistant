@@ -2856,7 +2856,7 @@ def _handle_event(job: Job, d: dict):
             if tid:
                 live[tid] = job.bg.get(tid) or {
                     "type": _task_kind(task.get("task_type")),
-                    "desc": str(task.get("description") or "")[:120], "since": now}
+                    "desc": str(task.get("description") or "")[:2000], "since": now}
         job.bg = live
         job.bg_peak = max(job.bg_peak, len(live))
     elif t == "system" and d.get("subtype") == "api_retry":

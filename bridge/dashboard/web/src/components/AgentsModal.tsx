@@ -141,9 +141,11 @@ export function AgentsModal({
   const bgAll = (background ?? []).filter((t) => t.type !== "agent");
   const bgShown = bgAll.filter((t) => !q || t.desc.toLowerCase().includes(q));
   const keys = [...bgShown.map((t) => `bg:${t.id}`), ...shown.map((i) => i.key)];
-  // Open on what's working — the background list, then WORKING — else the newest.
-  const [selected, setSelected] = useState<string | null>(
-    () => initial ?? (bgAll[0] ? `bg:${bgAll[0].id}` : all[0]?.key) ?? null);
+  // Open on what's working — the background list, then WORKING — else the newest. A background
+  // task leaves the list when it ends, so a pick that's gone falls back the same way.
+  const [picked, setSelected] = useState<string | null>(initial ?? null);
+  const listed = (k: string | null) => all.some((i) => i.key === k) || bgAll.some((t) => `bg:${t.id}` === k);
+  const selected = listed(picked) ? picked : (bgAll[0] ? `bg:${bgAll[0].id}` : all[0]?.key) ?? null;
   const sel = all.find((i) => i.key === selected);
   const selBg = bgAll.find((t) => `bg:${t.id}` === selected);
   const [tick, setTick] = useState(0);
