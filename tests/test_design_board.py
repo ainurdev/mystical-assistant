@@ -247,6 +247,13 @@ def test_a_page_asks_for_the_live_theme_and_gets_it(repo, theme_file, monkeypatc
     assert db._with_theme("<head></head>", repo) == "<head></head>"       # not asked: left alone
 
 
+def test_the_theme_keeps_its_family(theme_file):
+    """The Mystical browser's tray sets its type by it: AURORA's capitals, the others' sentence case."""
+    db.save_theme({"theme": "osgiliath", "fam": "middle-earth", "tokens": {"--acc": "#6775de"}})
+    assert db.theme()["fam"] == "middle-earth"
+    db.save_theme({"theme": "osgiliath", "fam": "<b>", "tokens": {"--acc": "#6775de"}})
+    assert db.theme()["fam"] == ""
+
 def test_another_projects_design_is_its_own(repo, theme_file):
     """Mystical's theme says nothing about what you're building, even if a page asks for it."""
     db.save_theme({"theme": "flint-signal", "tokens": {"--acc": "#9ade4a"}})

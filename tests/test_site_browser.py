@@ -119,6 +119,16 @@ def test_chats_names_the_opener_first_and_the_others_apart():
     assert b["id"] in ids and a["id"] not in ids
 
 
+def test_the_tray_wears_the_theme_the_dashboard_last_saved(tmp_path, monkeypatch):
+    from bridge import design_board
+    monkeypatch.setattr(design_board, "_theme_path", lambda: str(tmp_path / "theme.json"))
+    assert _ask("GET", "/theme") == (200, {})                      # none saved: the tray keeps its own look
+    design_board.save_theme({"theme": "osgiliath", "fam": "middle-earth", "tokens": {"--acc": "#6775de"}})
+    code, got = _ask("GET", "/theme")
+    assert code == 200 and got["tokens"] == {"--acc": "#6775de"} and got["fam"] == "middle-earth"
+    assert _ask("GET", "/theme", token="nope")[0] == 403
+
+
 # ------- Send all ------------------------------------------------------------------------
 
 def test_send_all_goes_to_the_opener_as_one_turn_with_crops():

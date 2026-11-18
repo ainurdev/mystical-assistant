@@ -189,7 +189,9 @@ def save_theme(body: dict) -> "tuple[dict, int]":
         return {"error": "tokens must be an object."}, 400
     clean = {k: " ".join(str(v).split())[:200] for k, v in list(tokens.items())[:80]
              if isinstance(k, str) and re.fullmatch(r"--[\w-]{1,40}", k) and v and not re.search(r"[;{}<>]", str(v))}
-    data = {"name": str(body.get("theme") or "")[:60], "light": body.get("light") is True, "tokens": clean}
+    fam = str(body.get("fam") or "")       # the Mystical browser's tray sets its type by the family
+    data = {"name": str(body.get("theme") or "")[:60], "fam": fam if re.fullmatch(r"[a-z-]{1,20}", fam) else "",
+            "light": body.get("light") is True, "tokens": clean}
     with _lock:
         _write_json(_theme_path(), data)
     return {"ok": True}, 200
