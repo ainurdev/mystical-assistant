@@ -93,9 +93,10 @@ def after_turn(job, resumed: bool) -> bool:
         items = queue_manager.snapshot(sid).get("items") or []
         if any(i.get("status") in ("queued", "running") for i in items):
             return False
+        mcps = ", ".join(json.loads(raw)) if raw is not None else ""
         text = "\n\n".join(filter(None, (
             lost and _LOST.format(names="; ".join(lost)),
-            raw is not None and _TEXT.format(names=", ".join(json.loads(raw))))))
+            raw is not None and _TEXT.format(names=mcps))))
         queue_manager.enqueue(
             sid, text=text, prompt=text, images=[], model=None, effort=None,
             permission_mode=None, width=None, sel=[], surface="carry-on",
@@ -103,7 +104,7 @@ def after_turn(job, resumed: bool) -> bool:
             project=sess.get("project") or "",
             sent_by="mystical:mcp" if raw is not None else "mystical:nudge",
             sent_why="; ".join(filter(None, (
-                raw is not None and f"you turned {', '.join(json.loads(raw))} on while Claude was working",
+                raw is not None and f"you turned {mcps} on while Claude was working",
                 lost and "the turn ended with a background command still running"))))
         return True
     except Exception as e:  # noqa: BLE001

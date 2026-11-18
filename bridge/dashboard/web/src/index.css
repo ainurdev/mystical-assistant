@@ -43,6 +43,9 @@
   --brand-soft: var(--acc);
   --brand-bright: var(--txb);
   --brand-glow: color-mix(in srgb, var(--acc) 25%, transparent);
+  /* Mystical speaking in a session (spine.css .pmy, .dseam): a phosphor teal drawn from each
+     theme's own info and ok, so it holds on a light ground and stays apart from your accent */
+  --my: color-mix(in oklab, var(--info) 50%, var(--ok));
 
   --secondary: color-mix(in srgb, var(--acc) 8%, transparent);
   --secondary-foreground: var(--tx);
@@ -3702,6 +3705,7 @@ input {
 
 /* ── what ends a turn ── */
 [data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 9px 18px 11px; }
+.doutcome-l { text-transform: uppercase; }
 [data-style="dossier"] .doutcome { padding: 9px 18px 11px; margin: 0; border-top: 1px solid var(--d-hair); }
 
 /* ── the usage limit (components/LimitCard; design-drafts/limit-chat, B · CARD) ──

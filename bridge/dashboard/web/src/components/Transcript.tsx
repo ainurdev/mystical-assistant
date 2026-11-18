@@ -89,17 +89,22 @@ function Attachments({ items }: { items: string[] }) {
  *  runtime, so not even a row — and 384 error turns in the real store could not
  *  say which of them had actually delivered their answer. `delivered` and
  *  `interrupted` are good news, so they are not painted as errors. */
+/** bridge/outcomes.py's labels are capitals ("API OVERLOADED"); the spine reads them as a
+ *  sentence and the other looks set them back in capitals (.doutcome-l). Names keep theirs. */
+const sentenceCase = (s: string) =>
+  (s.charAt(0) + s.slice(1).toLowerCase()).replace(/\bapi\b/gi, "API").replace(/\bclaude code\b/gi, "Claude Code").replace(/\bclaude\b/gi, "Claude");
+
 function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
   const good = outcome.code === "delivered" || outcome.code === "interrupted";
   const tone = good ? "var(--warn)" : "var(--err)";
   return (
-    <div className="doutcome ml-[var(--rail)] flex flex-col gap-0.5">
+    <div className="doutcome ml-[var(--rail)] flex flex-col gap-0.5" data-code={outcome.code} data-good={good || undefined}>
       <span
         className="self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{ color: tone, borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
       >
         {/* on the session's spine the node is the glyph and the label reads in sentence case (spine.css) */}
-        <span className="doutcome-g">{good ? "◇ " : "✕ "}</span><span className="doutcome-l">{outcome.label}</span>
+        <span className="doutcome-g">{good ? "◇ " : "✕ "}</span><span className="doutcome-l">{sentenceCase(outcome.label)}</span>
       </span>
       <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
         {outcome.detail}

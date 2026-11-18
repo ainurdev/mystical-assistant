@@ -8,13 +8,14 @@
 
    Loaded last (main.tsx). The transcript rules are scoped to the session's own transcript
    (Terminal.tsx's scroller is the one dossier with data-isle), so the Agents view and Settings'
-   samples keep their look; the For you callout and the prompt box rules at the end are global.
+   samples keep their look; the For you callout, the Mystical note's line, the ledger's hidden word
+   spans and the prompt box rules are global.
    Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
    box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
    block is indented by --sp-in and draws its node in that margin, --sp-nx in so the live halo fits.
    shortcut: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
-   stays as it was; a new block kind needs its own mask here. Move them into the markup if a
-   fourth kind needs one. */
+   stays as it was; a new block kind needs its own mask here. Nine now (session-chat-items added
+   the waits' and the endings'); move them into the markup when a block needs a live icon. */
 
 [data-fam] [data-style="dossier"][data-isle] {
   --sp-nx: 4px; --sp-in: 42px; --sp-n: 26px; --sp-x: 16px;
@@ -298,10 +299,10 @@
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 6px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
 
 /* ── Mystical (A · SIGIL, .mystical/design-drafts/session-chat-items): a prompt the bridge sent, not you.
-   A diamond node in its own phosphor, then one line: Mystical, the kind, the first line, when; tapped open,
-   the words that went and why. shortcut: --sp-my is the brand teal, which some themes also use as their
-   accent; there the diamond and the word tell it from you. Give it a theme token if that confuses. */
-.pmy { --sp-my: #7fe9d8; position: relative; font-family: var(--ui-font, inherit); }
+   A diamond node in its own phosphor (--my, index.css), then one line: Mystical, the kind, the first line,
+   when; tapped open, the words that went and why. Unscoped like the prompt box rules: only the node needs
+   the spine. */
+.pmy { --sp-my: var(--my); position: relative; font-family: var(--ui-font, inherit); }
 .pmy-node { display: none; }
 .pmy-row {
   all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 26px; cursor: pointer;
@@ -400,8 +401,16 @@
 [data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .doutcome)::after { background: var(--err); }
 [data-fam] [data-style="dossier"][data-isle] .ev-err { align-items: center; padding-top: 3px; padding-bottom: 3px; border: 0; background: none; font-size: var(--t13); color: var(--tx); }
 [data-fam] [data-style="dossier"][data-isle] .doutcome-g { display: none; }
-[data-fam] [data-style="dossier"][data-isle] .doutcome-l { display: inline-block; text-transform: lowercase; }
-[data-fam] [data-style="dossier"][data-isle] .doutcome-l::first-letter { text-transform: uppercase; }
+[data-fam] [data-style="dossier"][data-isle] .doutcome-l { text-transform: none; }
+/* good news (the answer landed, or you interrupted it) is no failure: its ring is the badge's warn */
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-good]::before { border-color: var(--warn); background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-good]::after { background: var(--warn); }
+/* a limit or a full context waits on you: amber */
+[data-fam] [data-style="dossier"][data-isle] .doutcome:is([data-code="limit"], [data-code="credits"], [data-code="context"])::before { border-color: var(--ask); background: color-mix(in oklab, var(--ask) 10%, var(--sp-gnd)); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome:is([data-code="limit"], [data-code="credits"], [data-code="context"])::after { background: var(--ask); }
+/* stopped: your grey square */
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-code="stopped"]::before { border-color: var(--sp-line); border-radius: 7px; background: var(--sp-gnd); }
+[data-fam] [data-style="dossier"][data-isle] .doutcome[data-code="stopped"]::after { background: var(--txm); -webkit-mask-image: var(--sp-ic-stop); mask-image: var(--sp-ic-stop); }
 [data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop) > svg { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .doutcome { margin: 14px 0 0 var(--sp-in); padding: 2px 0 0; border: 0; justify-content: center; }
 [data-fam] [data-style="dossier"][data-isle] .doutcome > span:first-child {
@@ -416,7 +425,7 @@
 [data-fam] [data-style="dossier"][data-isle] .ev-stop b { color: var(--txh); }
 [data-fam] [data-style="dossier"][data-isle] .resblk + .ev-stop { margin: 14px 0 0; padding: 0 0 0 var(--sp-in); border: 0; }
 /* the bridge restarted: a dashed phosphor ring, its line beside it rather than across the column */
-[data-fam] [data-style="dossier"][data-isle] .dseam { --sp-my: #7fe9d8; gap: 8px; font-size: var(--t13); }
+[data-fam] [data-style="dossier"][data-isle] .dseam { --sp-my: var(--my); gap: 8px; font-size: var(--t13); }
 [data-fam] [data-style="dossier"][data-isle] .dseam::before { flex: none; height: var(--sp-n); border-style: dashed; border-color: var(--sp-my); }
 [data-fam] [data-style="dossier"][data-isle] .dseam::after { flex: none; height: 13px; background: var(--sp-my); -webkit-mask-image: var(--sp-ic-refresh); mask-image: var(--sp-ic-refresh); }
 [data-fam] [data-style="dossier"][data-isle] .dseam[data-k="declined"]::before { border-color: var(--ask); }
