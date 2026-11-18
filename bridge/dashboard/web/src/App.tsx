@@ -3601,6 +3601,7 @@ export function App() {
                 onSendText={(text) => void send(text, [], { force: true })}
                 onSteerText={(text) => { void queue.steer(text, []).then((ok) => { if (!ok) void send(text, [], { force: true }); }, () => void send(text, [], { force: true })); }}
                 onStopTurn={() => void stop()}
+                paused={queue.paused} onTogglePause={queue.togglePause}
                 onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
                 // RESOLVE IN A NEW SESSION: a fresh session in this session's own
                 // checkout (its worktree, else the project), the prompt as its first turn.
@@ -3723,8 +3724,6 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      activity={running ? latestActivity(turns[turns.length - 1]?.events ?? []) : ""}
-                      turnStarted={running ? turns[turns.length - 1]?.started : undefined}
                       routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={boxChip?.opts.smartzone.on ?? ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
                       flowChip={boxChip} runningFlow={runningFlow(boxFlow)} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}

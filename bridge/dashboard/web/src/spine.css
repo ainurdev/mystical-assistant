@@ -437,22 +437,113 @@
 /* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
 .composer[data-pb] .pb-isles { justify-content: flex-start; padding-left: 0; }
-.composer[data-pb] .pb-isles > .pb-tabs { margin-left: 3px; padding-left: 2px; border-color: var(--line2); }
+.composer[data-pb] .pb-isles > .pb-tabs { margin-left: 3px; padding-left: 3px; border-color: var(--line2); }
 .composer[data-pb] .pb-isles > .pb-dry { border: 1px solid var(--line2); }
 .composer[data-pb] .pb-isles > .pb-dry > svg { color: var(--ask, var(--warn)); }   /* usage waits on you */
+/* A · TILE (.mystical/design-drafts/chat-notes-live): the project's own tile, a rounded square inset
+   evenly in the pill, its logo whole (the old ring sat 2px off the pill's edge and cut wide logos) */
 .composer[data-pb] .pb-isles .pb-tabs .np-tile {
-  box-sizing: border-box; flex: none; width: 26px; height: 26px !important; margin: 1px 0 !important; padding: 0 !important; justify-content: center;
-  border-radius: 50% !important; border: 2px solid var(--acc) !important; background: var(--panel) !important; overflow: hidden;
+  box-sizing: border-box; flex: none; width: 22px; height: 22px !important; margin: 0 !important; padding: 0 !important; justify-content: center;
+  border-radius: 6px !important; border: 1px solid color-mix(in oklab, var(--acc) 35%, transparent) !important;
+  background: color-mix(in oklab, var(--acc) 14%, var(--panel)) !important; overflow: hidden; transition: box-shadow .3s;
 }
 .composer[data-pb] .pb-isles .pb-tabs .np-tile > * { max-width: 16px; max-height: 16px; }
 .composer[data-pb] .pb-isles .pb-tabs .np-tile + .np-title-btn { padding-left: 9px !important; }
 .composer[data-pb] .pb-isles .pb-tabs .np-title { font-family: var(--ui-font) !important; font-weight: 700 !important; color: var(--txh); }
-/* live: only the pill shines, in the accent (you), and the emblem wears a halo */
-.composer[data-pb] .pb-tabs[data-now]::before {
+/* live: only the pill shines, in the accent (you), and the tile glows */
+.composer[data-pb] .pb-tabs[data-live]::before {
   background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
     var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
 }
-.composer[data-pb] .pb-isles .pb-tabs[data-now] .np-tile { box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 22%, transparent); overflow: visible; }
+.composer[data-pb] .pb-isles .pb-tabs[data-live] .np-tile {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 30%, transparent), 0 0 10px color-mix(in oklab, var(--acc) 50%, transparent);
+}
 /* the flow chip and the rail say their words in natural case, and a segment never wraps */
 .pb-flow-n { font-size: var(--t11); letter-spacing: 0; font-weight: 600; }
 .pb-rail, .pb-rail .pb-seg, .pb-rail .pb-seg * { white-space: nowrap; }
+
+/* ── the live row (LiveRow, .mystical/design-drafts/chat-notes-live): the running turn's current action as
+   the chat's last row, its node on the line; the host is sticky, so scrolled up the row stays at the
+   foot over a fade, with the way back down. The ring is the prompt pill's light (--pb-a, index.css). ── */
+/* bottom: the prompt pill's band (30px pill + 6px gap, .pb-isles) floats over the scroller's foot */
+.live-host { position: sticky; bottom: 36px; z-index: 5; }
+.live-host:empty { display: none; }
+[data-style="dossier"] .live-row {
+  --lr-in: var(--sp-in, 42px); --lr-n: var(--sp-n, 26px); --lr-gnd: var(--sp-gnd, var(--panel2));
+  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) both;
+}
+[data-style="dossier"] .live-row { position: relative; }
+[data-style="dossier"] .live-row[data-away] { background: var(--lr-gnd); }
+/* scrolled up, a fade above the row (drawn outside it, so its height never changes at the bottom edge) */
+[data-style="dossier"] .live-row[data-away]::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 22px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--lr-gnd));
+}
+[data-style="dossier"] .live-ring {
+  position: relative; border-radius: 12px; padding: 1.5px;
+  background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
+    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
+  box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
+  animation: pb-orbit 3.2s linear infinite;
+}
+[data-style="dossier"] .live-card {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
+  background: color-mix(in oklab, var(--acc) 6%, var(--panel2));
+}
+/* the node on the line: a comet on its ring, a lit core */
+[data-style="dossier"] .live-node {
+  position: absolute; z-index: 1; left: calc(var(--sp-nx, 4px) - var(--lr-in)); top: 50%; translate: 0 -50%;
+  width: var(--lr-n); height: var(--lr-n); border-radius: 50%; background: var(--lr-gnd); display: grid; place-items: center;
+}
+[data-style="dossier"] .live-node::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2px;
+  background: conic-gradient(from var(--pb-a), transparent 0 55%, var(--acc) 85%, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: pb-orbit 1.4s linear infinite;
+}
+[data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
+/* the zone's NowLine, as the card's line */
+[data-style="dossier"] .live-row .live-card > .dwork-now {
+  flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; height: 32px; border: 0; background: none;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+[data-fam] [data-style="dossier"] .live-row .live-card > .dwork-now { background: none; border: 0; padding: 0; margin: 0; }
+[data-style="dossier"] .live-row .live-card > .dwork-now > .now-ic::before,
+[data-style="dossier"] .live-row .live-card > .dwork-now > .now-ic::after { content: none; }
+[data-fam] [data-style="dossier"] .live-row .live-card .now-v { color: var(--acc); font-weight: 700; }
+[data-style="dossier"] .live-turn { flex: none; font: var(--t105) var(--mono); color: var(--txl, var(--txm)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+[data-style="dossier"] .live-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; min-width: 28px; padding: 0 8px;
+  border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); color: var(--txm); cursor: pointer;
+  font: 700 var(--t11) var(--ui-font, inherit);
+}
+[data-style="dossier"] .live-btn:hover { color: var(--txh); border-color: color-mix(in oklab, var(--acc) 45%, var(--line2)); }
+[data-style="dossier"] .live-btn[data-armed] { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 50%, transparent); }
+[data-style="dossier"] .live-jump { color: var(--txh); border-color: color-mix(in oklab, var(--acc) 45%, var(--line2)); }
+[data-style="dossier"] .live-jump > svg { color: var(--acc); }
+/* the row is the way back down while a turn runs: the corner's ↓ Latest would repeat it */
+.swapwrap:has(.live-host:not(:empty)) .jump-latest { display: none !important; }
+[data-style="dossier"] .live-row[data-away] .live-card { cursor: pointer; }
+/* mid-turn the pill is logo + title + ctx; its Pause/Stop give way to the live row's while that row is on screen */
+.composer[data-pb] .pb-tabs[data-live] .np-branch { display: none !important; }
+.pb-hold { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 4px; }
+.pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
+.pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }
+body:has(.swapwrap:not([style*="display: none"]) .live-host:not(:empty)) .pb-hold { display: none; }
+@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-ring, [data-style="dossier"] .live-node::before { animation: none; } }
+
+/* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the
+   line with a small ring in the Mystical colour, no bubble ── */
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg { padding-left: 0; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > :is(.rail-node, .rail-stub) { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg::before {
+  content: ""; position: absolute; z-index: 1; box-sizing: border-box; left: calc(var(--sp-nx) - var(--sp-in) + (var(--sp-n) - 12px) / 2); top: 6px;
+  width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--my, var(--info)); background: var(--sp-gnd);
+}
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .abub {
+  max-width: 100%; padding: 0; border: 0; background: none; box-shadow: none;
+  font-family: var(--ui-font); font-size: var(--t14); line-height: 1.6; color: var(--tx, var(--txh));
+}
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .abub .md { font-family: var(--ui-font); }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .abub .md > :first-child { margin-top: 0; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .abub .md > :last-child { margin-bottom: 0; }

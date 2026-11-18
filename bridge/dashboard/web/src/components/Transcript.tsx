@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SessionStatus, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
@@ -24,6 +24,14 @@ import { limitNudge } from "../lib/limit";
 import { dropNoPath, parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
+
+/** The virtualizer's window plus the last row: a running turn's WORK zone feeds the live row
+ *  (LiveRow), which has to keep going while you read an older turn. Module scope: the
+ *  virtualizer memoizes on this function. */
+const keepLast = (range: Range) => {
+  const r = defaultRangeExtractor(range);
+  return range.count && !r.includes(range.count - 1) ? [...r, range.count - 1] : r;
+};
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
 // leadCommand), checked against the project's command list: read once per
@@ -551,6 +559,7 @@ export function Transcript({
       ?? Math.min(20000, 80 + (rows[i].kind === "turn"
         ? Math.min(rows[i].turn.events.length, TURN_TAIL) * 20 : 0)),
     overscan: 2,
+    rangeExtractor: keepLast,
     // A jump aims a turn at the list's top, which sits under Terminal's content
     // padding (62px). This lowers it to 86px, clear of the header island with
     // its LAST row open: the line scroll-mt-[86px] draws for scrollIntoView.

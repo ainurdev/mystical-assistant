@@ -28,7 +28,7 @@ import { useAiFeatures } from "../lib/ai";
 import { promptSteps, runs, STEP_DOES } from "../lib/flowsteps";
 import { flowRuns, saveRun } from "../lib/flowruns";
 import { askConfirm } from "./ui/Ask";
-import { deckView, enterTarget, turnClock, type EnterMode } from "../lib/boxdeck";
+import { deckView, enterTarget, type EnterMode } from "../lib/boxdeck";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 import { HelpersRow } from "./HelpersRow";
@@ -699,7 +699,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  activity = "", turnStarted, dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
   /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
   words?: string[];
@@ -778,10 +778,6 @@ export function Composer({
   fileSink?: { current: ((files: FileList | File[]) => void) | null };
   /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
   placeholder?: string;
-  /** What the running turn did last, in a line (lib/multi latestActivity): the box's now strip. */
-  activity?: string;
-  /** Epoch seconds the running turn opened: the now strip's clock. */
-  turnStarted?: number;
   /** What the session waits on you for (AskDock), hung on the box's top edge in every layout. */
   dock?: ReactNode;
   /** While it waits, the box answers it: its text and its button belong to the ask. */
@@ -824,13 +820,6 @@ export function Composer({
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
   // NOW|NEXT (B · DECK): what Enter does with the text while a turn runs. Alt+Enter does the other.
   const [enterMode, setEnterMode] = useState<EnterMode>("next");
-  const [nowSec, setNowSec] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    if (!running || !turnStarted) return;
-    setNowSec(Date.now() / 1000);
-    const t = window.setInterval(() => setNowSec(Date.now() / 1000), 1000);
-    return () => window.clearInterval(t);
-  }, [running, turnStarted]);
   // NOW is picked for one turn: the next turn, or another session, starts back on NEXT.
   useEffect(() => { if (!running) setEnterMode("next"); }, [running, sessionId]);
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
@@ -1849,19 +1838,9 @@ export function Composer({
     </div>
   );
   // B · DECK (.mystical/design-drafts/prompt-box-v2): mid-turn the box says what the turn is
-  // doing now, with its clock and Pause/Stop, so the keys keep one job:
+  // doing now, with its clock and Pause/Stop (now the chat's live row, LiveRow), so the keys keep one job:
   // Enter's target, picked by NOW|NEXT. The queue stacks above the box as a deck, NEXT nearest.
   const deckRun = shelled && running && !askBtn;
-  const nowStrip = deckRun && (
-    <div className="pb-now" role="status">
-      <i className="pb-now-dot" aria-hidden />
-      <span className="pb-now-what" title={activity || undefined}>{activity || "working…"}</span>
-      {bg > 0 && <span className="pb-now-bg">+ {bg} background</span>}
-      {turnStarted ? <span className="pb-now-clock">{turnClock(nowSec - turnStarted)}</span> : null}
-      {pauseBtn}
-      {stopBtn}
-    </div>
-  );
   const steers = enterTarget(enterMode, false, !!onSteer) === "steer";
   // CTRL+ENTER mode sends on Ctrl+Enter, so the other target is Ctrl+Alt+Enter there.
   const otherKey = sendKey === "ctrl-enter" ? "Ctrl+Alt+Enter" : "Alt+Enter";
@@ -2271,12 +2250,14 @@ export function Composer({
   // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
   // arrives flattened from Terminal; .pb-lead lays it out in index.css.
   // B · ISLAND (.mystical/design-drafts/prompt-box-wild): the lead floats over the card as one
-  // pill; mid-turn the now strip joins it (data-now) and only it shines, so the card keeps its
-  // height. The login warning floats beside it as a second pill.
+  // pill; mid-turn only it shines (data-live), so the card keeps its height; what the turn is
+  // doing is the chat's live row (LiveRow). The login warning floats beside it as a second pill.
   const shell =
       <>
         <div className="pb-isles">
-          <div className="pb-tabs pb-lead" data-now={nowStrip ? "" : undefined}>{lead}{workTab}{queuedList}{nowStrip}{ctxBlock}</div>
+          <div className="pb-tabs pb-lead" data-live={deckRun ? "" : undefined}>{lead}{workTab}{queuedList}{ctxBlock}
+            {/* the live row carries these; while it isn't on screen (background tasks, a card, a grid view) the pill does (spine.css) */}
+            {deckRun && <span className="pb-hold">{pauseBtn}{stopBtn}</span>}</div>
           {dryPill}
         </div>
         {dock}

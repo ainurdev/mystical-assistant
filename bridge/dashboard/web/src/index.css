@@ -4867,7 +4867,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.ptile, .isle-pill, [data-style="dossier"] .dprompt, [data-style="dossier"] .dwork, [style*="--shadow-modal"],
   .setdlg, .set-search, .set-close, .setrail button, .setpane [style*="padding: 14px 16px"], .set-toggle, .set-toggle i,
   .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button,
-  .pb-tabs, .pb-isles > .pb-dry, .pb-now > .act-glyph, .pb-work > .pb-resume,
+  .pb-tabs, .pb-isles > .pb-dry, .pb-work > .pb-resume,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
   .cr-seatchip, .cr-add, .cr-menu, .cr-mr, .cr-mrb, .cr-chip, .cr-pickp,
@@ -5400,7 +5400,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs, .pb-isles > .pb-dry { background: var(--pb-isle); box-shadow: 0 8px 22px -14px var(--shadow-pop); }
 /* outside .pb-isles (DeviceRunPlate) the pill centres itself */
 :not(.pb-isles) > .pb-tabs { width: fit-content; margin: 0 auto 6px; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task, .ma-crumb), .pb-tabs > :is(.ctrl-ctx, .pb-work, .pb-now) {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task, .ma-crumb), .pb-tabs > :is(.ctrl-ctx, .pb-work) {
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 100% !important; margin: 0 !important;
   padding: 0 11px !important; border: 0 !important; border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)) !important;
   border-radius: 0 !important; background: none !important; }
@@ -5425,16 +5425,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the warning gives way first, down to its own ellipsis: the pill is the header */
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
-/* mid-turn the pill takes the row and the now strip, and only it shines: a light circling its edge */
-.pb-tabs[data-now] { flex: 1 1 auto; border-color: transparent; }
-.pb-tabs[data-now] .np-branch, .pb-tabs[data-now] > .pb-work:not([data-paused]):not(:has(.pb-wq)) { display: none !important; }
-.pb-tabs[data-now] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-now] .pb-wq > .pb-ww { display: none; }
-.pb-tabs[data-now]::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+/* mid-turn only the pill shines, a light circling its edge; what the turn is doing is the chat's live row (LiveRow) */
+.pb-tabs[data-live] { border-color: transparent; }
+.pb-tabs[data-live] > .pb-work:not([data-paused]):not(:has(.pb-wq)) { display: none !important; }
+.pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
+.pb-tabs[data-live]::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
   background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--ok) 18%, transparent), var(--ok) 16%, color-mix(in oklab, var(--ok) 18%, transparent) 34% 60%,
     var(--ok) 72%, color-mix(in oklab, var(--ok) 18%, transparent) 88%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: pb-orbit 3.2s linear infinite; }
 @keyframes pb-orbit { to { --pb-a: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .pb-tabs[data-now]::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pb-tabs[data-live]::before { animation: none; } }
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
    purple (a tap lists it); paused in the warn colour, with RESUME */
 .pb-tabs > .pb-work { gap: 6px; font-family: var(--ui-font, inherit); font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
@@ -5447,15 +5447,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-resume > svg { display: none; }
 .pb-work > .pb-wq { color: var(--purple-h); }
 
-/* B · DECK (.mystical/design-drafts/prompt-box-v2), in the island since prompt-box-wild: mid-turn the
-   pill carries a now strip: what the turn did last, its clock, Pause and Stop. */
-.pb-now { display: flex; align-items: center; gap: 9px; min-width: 0; font-family: var(--ui-font, inherit); font-size: var(--t105); color: var(--txm); }
-.pb-tabs > .pb-now { flex: 1 1 auto !important; padding: 0 2px 0 11px !important; }
-.pb-now > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
-.pb-now-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 22%, transparent); }
-.pb-now-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txh); }
-.pb-now-bg { flex: none; color: var(--purple-h); }
-.pb-now-clock { flex: none; font-family: var(--mono, monospace); font-size: var(--t10); color: var(--txl); font-variant-numeric: tabular-nums; }
+/* B · DECK (.mystical/design-drafts/prompt-box-v2): what the turn is doing, its clock, Pause and Stop
+   are the chat's live row now (LiveRow, chat-notes-live); the box keeps NOW|NEXT. */
 /* NOW|NEXT: what Enter does with the text while a turn runs */
 .pb-mode { display: flex; flex: none; height: 28px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-radius: var(--f-rad-s, 0); overflow: hidden; }
 .pb-mode > button { appearance: none; cursor: pointer; border: 0; background: none; padding: 0 9px; font-family: var(--ui-font, inherit);
