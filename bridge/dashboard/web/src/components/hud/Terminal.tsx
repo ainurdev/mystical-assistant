@@ -459,6 +459,7 @@ export function Terminal({
   // HEADER ▸ HIDE WHILE READING: the island slides away while you scroll down,
   // and back on any scroll up, near the top, or when the pointer nears it.
   const isleRef = useRef<HTMLDivElement | null>(null);
+  const crumbRef = useRef<HTMLDivElement | null>(null);
   const [tucked, setTucked] = useState(false);
   const tuckOn = head.hide && isChat && !empty && !grid && !team && !tkLive;
   useEffect(() => {
@@ -470,15 +471,38 @@ export function Terminal({
       last = y;
       if (y < 80 || d < -4) setTucked(false);
       // Off the tail only: following a streaming reply scrolls down too, and that isn't reading.
-      else if (d > 4 && root.scrollHeight - y - root.clientHeight > 40 && !isleRef.current?.matches(":focus-within")) setTucked(true);
+      else if (d > 4 && root.scrollHeight - y - root.clientHeight > 40 && !isleRef.current?.matches(":focus-within") && !crumbRef.current?.matches(":focus-within")) setTucked(true);
     };
     setTucked(false);
     root.addEventListener("scroll", on, { passive: true });
     return () => root.removeEventListener("scroll", on);
   }, [scrollRef, tuckOn, view, sessionId]);
-  // COMPACT with nothing to hold draws no pill (below), and a tucked header is
-  // gone: no fade for a header that isn't there.
-  const isleShown = !(compact && isChat && !chrome && !hasAgents && !hasSubs && !tset);
+  // COMPACT CHAT with nothing to read out draws no readouts pill.
+  const readoutsShown = !(compact && isChat && !chrome && !hasAgents && !hasSubs && !tset);
+  // A helper's or a ticket's way back. DEFAULT keeps it in the nameplate; COMPACT puts it in the
+  // header, never in the prompt box (.mystical/design-drafts/ticket-back-in-header, A · OWN PILL):
+  // its own pill on the left, or the bar's left end.
+  const crumbs = helperChat || selected?.ticket_of ? (
+    <>
+      {helperChat && (
+        <button type="button" className="ma-crumb" title={`Back to ${gridMain?.title || "its chat"}`} onClick={() => openAgentSession(helperChat)}>
+          <span aria-hidden>‹</span> <span className="ma-crumb-t">{gridMain?.title || "chat"}</span>
+        </button>
+      )}
+      {selected?.ticket_of && (
+        <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
+          <span aria-hidden>‹</span> <span className="ma-crumb-t">{superTitle || "its session"}</span>
+          {sessionId && <TicketPart superId={selected.ticket_of} sessionId={sessionId} />}
+        </button>
+      )}
+    </>
+  ) : null;
+  // COMPACT's crumb pill floats over CHAT only; HIST and NEXT stack their island in the flow.
+  const crumbPill = pill && isChat && !!crumbs;
+  // The island holds the readouts, and COMPACT's crumb when it has no pill of its own.
+  const islandShown = readoutsShown || (compact && !!crumbs && !crumbPill);
+  // A tucked header is gone, and a header that isn't there gets no fade.
+  const isleShown = islandShown || crumbPill;
   const band = isleShown && !tucked ? bandAt(showPeek) : null;
   // The words' top padding clears the band at rest, without the LAST row, so
   // that row opening (or the header tucking) never moves the transcript.
@@ -691,17 +715,7 @@ export function Terminal({
           {sessionId && !helperChat && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
         </button>
         <div className="np-meta" style={flat ? { display: "contents" } : { display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
-          {helperChat && (
-            <button type="button" className="ma-crumb" title={`Back to ${gridMain?.title || "its chat"}`} onClick={() => openAgentSession(helperChat)}>
-              <span aria-hidden>‹</span> <span className="ma-crumb-t">{gridMain?.title || "chat"}</span>
-            </button>
-          )}
-          {selected?.ticket_of && (
-            <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
-              <span aria-hidden>‹</span> <span className="ma-crumb-t">{superTitle || "its session"}</span>
-              {sessionId && <TicketPart superId={selected.ticket_of} sessionId={sessionId} />}
-            </button>
-          )}
+          {!compact && crumbs}
           <button
             className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
@@ -789,7 +803,8 @@ export function Terminal({
       </div>
   );
   const header = compact ? (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 16px", height: 34, flex: "none", minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "0 16px", height: 34, flex: "none", minWidth: 0 }}>
+      {!crumbPill && crumbs && <>{crumbs}<span style={{ flex: 1, minWidth: 12 }} /></>}
       {readouts}
     </div>
   ) : (
@@ -809,6 +824,27 @@ export function Terminal({
   // it isn't the containing block for anything fixed inside the row.
   // The header keeps the column's measure: its gutters with the transcript, none in the Agents view.
   const isleGutter = team ? "0px" : chatPad;
+  // What the crumb pill shares with the island: glass, edge, and the tuck.
+  const isleShell = { "data-glass": head.glass, "data-tucked": tucked || undefined, inert: tucked || undefined };
+  const isleLook: CSSProperties = {
+    zIndex: 12, flex: "none",
+    transform: tucked ? `translateY(calc(-100% - ${ISLE_TOP + 2}px))` : undefined, opacity: tucked ? 0 : undefined,
+    transition: "transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease",
+    border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
+    boxShadow: "0 10px 28px var(--shadow-pop)",
+  };
+  const isleGlass = <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: `color-mix(in srgb, var(--panel) ${pill ? 97 : 88}%, transparent)`, backdropFilter: "blur(10px) saturate(1.15)" }} />;
+  // A ticket's (or a helper's) way back, top-left, opposite the readouts pill.
+  const crumbIsle = crumbPill && (
+    // The two pills split the header's measure 40/60, less a gap, so they never meet.
+    <div ref={crumbRef} className="isle isle-pill" {...isleShell} style={{
+      position: "absolute", top: ISLE_TOP, left: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc((100% - 2 * (${isleGutter} + ${ISLE_X}px)) * 0.4 - 8px)`,
+      ...isleLook, borderRadius: 999,
+    }}>
+      {isleGlass}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, height: 34, padding: "0 16px", minWidth: 0 }}>{crumbs}</div>
+    </div>
+  );
   const island = (
     // `isle` / `isle-glass`: VOID re-inks both (index.css) — the border and the
     // glass are inline here, and a theme can only outrank an inline rule by name.
@@ -816,22 +852,18 @@ export function Terminal({
     // right as a pill — a thing that holds numbers, not a bar pretending to be
     // the column's top edge. No corner brackets: they belong to a rectangle.
     // HEADER ▸ GLASS rides data-glass (index.css); tucked, it slides up out of the column.
-    <div ref={isleRef} className={pill ? "isle isle-pill" : "panel isle"} data-glass={head.glass} data-tucked={tucked || undefined} inert={tucked || undefined} style={{
+    <div ref={isleRef} className={pill ? "isle isle-pill" : "panel isle"} {...isleShell} style={{
       ...(pill
         ? isChat
-          ? { position: "absolute", top: ISLE_TOP, right: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${isleGutter} + ${ISLE_X}px))` }
+          ? { position: "absolute", top: ISLE_TOP, right: `calc(${isleGutter} + ${ISLE_X}px)`, maxWidth: `calc((100% - 2 * (${isleGutter} + ${ISLE_X}px)) * ${crumbPill ? 0.6 : 1})` }
           : { position: "relative", alignSelf: "flex-end", margin: `${ISLE_TOP}px ${ISLE_X}px 0` }
         : isChat
           ? { position: "absolute", top: ISLE_TOP, left: `calc(${isleGutter} + ${ISLE_X}px)`, right: `calc(${isleGutter} + ${ISLE_X}px)` }
           : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
-      zIndex: 12, flex: "none",
-      transform: tucked ? `translateY(calc(-100% - ${ISLE_TOP + 2}px))` : undefined, opacity: tucked ? 0 : undefined,
-      transition: "transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease",
+      ...isleLook,
       borderRadius: pill ? 999 : undefined,
-      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
-      boxShadow: "0 10px 28px var(--shadow-pop)",
     }}>
-      <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: `color-mix(in srgb, var(--panel) ${pill ? 97 : 88}%, transparent)`, backdropFilter: "blur(10px) saturate(1.15)" }} />
+      {isleGlass}
       <div style={{ position: "relative" }}>
         {header}
         {isChat && !empty && !pill && head.last && (
@@ -878,8 +910,9 @@ export function Terminal({
         // The gutters are a reading measure for the transcript. The Agents view is three panes, and takes the column.
         paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
-      {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
-      {isleShown && island}
+      {/* COMPACT CHAT with no chrome and no crumb has nothing left to hold: no empty pill. */}
+      {islandShown && island}
+      {crumbIsle}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
