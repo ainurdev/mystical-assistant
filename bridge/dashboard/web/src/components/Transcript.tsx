@@ -98,7 +98,8 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
         className="self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{ color: tone, borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
       >
-        {good ? "◇ " : "✕ "}{outcome.label}
+        {/* on the session's spine the node is the glyph and the label reads in sentence case (spine.css) */}
+        <span className="doutcome-g">{good ? "◇ " : "✕ "}</span><span className="doutcome-l">{outcome.label}</span>
       </span>
       <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
         {outcome.detail}

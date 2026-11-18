@@ -3116,7 +3116,8 @@ export const RunStream = memo(function RunStream({
             className="ev-stop ml-[var(--rail)] flex items-center gap-1.5 text-xs"
           >
             <CircleStop size={14} className="shrink-0" aria-hidden />
-            <span>{readOnly ? "Stopped" : "Stopped — send a message to continue."}</span>
+            {/* on the session's spine the node is the stop (spine.css, A · KNOTS) */}
+            <span><b>{readOnly ? "Stopped" : "You stopped it"}</b>{readOnly ? null : <span className="ev-stop-w"> · send a message to carry on from here</span>}</span>
           </div>
         );
       case "background": {
