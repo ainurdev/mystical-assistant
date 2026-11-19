@@ -454,7 +454,8 @@
   border-radius: 6px !important; border: 1px solid color-mix(in oklab, var(--acc) 35%, transparent) !important;
   background: color-mix(in oklab, var(--acc) 14%, var(--panel)) !important; overflow: hidden; transition: box-shadow .3s;
 }
-.composer[data-pb] .pb-isles .pb-tabs .np-tile > * { max-width: 16px; max-height: 16px; }
+/* margin 0: the families' 6px gap after a .ptile (index.css) would push it 3px left of centre */
+.composer[data-pb] .pb-isles .pb-tabs .np-tile > * { max-width: 16px; max-height: 16px; margin: 0; }
 .composer[data-pb] .pb-isles .pb-tabs .np-tile + .np-title-btn { padding-left: 9px !important; }
 .composer[data-pb] .pb-isles .pb-tabs .np-title { font-family: var(--ui-font) !important; font-weight: 700 !important; color: var(--txh); }
 /* live: only the pill shines, in the accent (you), and the tile glows */
