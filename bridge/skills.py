@@ -102,8 +102,8 @@ def _design_paths(d: str) -> "tuple[set | None, str | None]":
     return {ln.strip() for ln in lines[1:] if ln.strip()}, None
 
 
-def _fetch(url: str) -> "tuple[str, str]":
-    """Download an upstream SKILL.md. Returns (text, error)."""
+def _get(url: str) -> "tuple[str, str]":
+    """Download one upstream file. Returns (text, error)."""
     try:
         with urllib.request.urlopen(url, timeout=_TIMEOUT) as r:
             raw = r.read(_MAX_BYTES + 1)
@@ -111,7 +111,14 @@ def _fetch(url: str) -> "tuple[str, str]":
         return "", f"download failed: {type(e).__name__}"
     if len(raw) > _MAX_BYTES:
         return "", "download too large"
-    text = raw.decode("utf-8", "replace")
+    return raw.decode("utf-8", "replace"), ""
+
+
+def _fetch(url: str) -> "tuple[str, str]":
+    """Download an upstream SKILL.md. Returns (text, error)."""
+    text, err = _get(url)
+    if err:
+        return "", err
     # A SKILL.md always opens with front matter; anything else means we were
     # served an error page rather than the file.
     if not text.lstrip().startswith("---"):
@@ -176,14 +183,27 @@ def install(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tup
     body, err = _fetch(entry["url"]) if entry.get("url") else (skill_md(entry), "")
     if err:
         return False, err
+    # Sibling files (scripts/, references/) the SKILL.md points at, fetched
+    # before anything is written so a failed download leaves nothing behind.
+    extra = {}
+    for rel in entry.get("files", []):
+        extra[rel], err = _get(entry["url"].rsplit("/", 1)[0] + "/" + rel)
+        if err:
+            return False, f"{rel}: {err}"
     try:
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(body)
+        for rel, text in extra.items():
+            os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+            with open(os.path.join(d, rel), "w", encoding="utf-8") as f:
+                f.write(text)
         # Source + the digest of exactly what we wrote, so a later check can tell
         # "upstream moved" apart from "the user edited this".
         with open(os.path.join(d, MARKER), "w", encoding="utf-8") as f:
-            f.write(f"{entry.get('url') or 'built-in catalog'}\n{_digest(body)}\n")
+            # Lines 3+ name the sibling files, so remove() knows exactly what it owns.
+            f.write(f"{entry.get('url') or 'built-in catalog'}\n{_digest(body)}\n"
+                    + "".join(f"{rel}\n" for rel in extra))
     except OSError as e:
         return False, str(e)
     return True, ""
@@ -307,7 +327,8 @@ def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tupl
     catalog (MARKER) or pulled from a design project (DESIGN_MARKER). Refuses
     anything else: the directory must carry one of those two provenance
     markers, so an edited or hand-written skill is never deleted from the UI.
-    A catalog directory must hold nothing but SKILL.md + MARKER; a design
+    A catalog directory must hold nothing but SKILL.md, MARKER and the
+    sibling files MARKER lists; a design
     directory may hold nested content too, but only exactly what its marker
     recorded pulling — see `_remove_design_sourced`."""
     root = _root(scope, abs_project)
@@ -328,11 +349,15 @@ def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tupl
     else:
         return False, "not installed from the catalog"
     try:
-        if set(os.listdir(d)) != {"SKILL.md", marker}:
+        with open(os.path.join(d, marker), encoding="utf-8", errors="replace") as f:
+            owned = {"SKILL.md", marker} | {ln.strip() for ln in f.read().splitlines()[2:] if ln.strip()}
+        found = {os.path.relpath(os.path.join(r, n), d) for r, _, ns in os.walk(d) for n in ns}
+        if found != owned:
             return False, "directory has other files"
-        os.remove(os.path.join(d, "SKILL.md"))
-        os.remove(os.path.join(d, marker))
-        os.rmdir(d)
+        for rel in owned:
+            os.remove(os.path.join(d, rel))
+        for r, _, _ in os.walk(d, topdown=False):
+            os.rmdir(r)
     except OSError as e:
         return False, str(e)
     return True, ""

@@ -14,7 +14,7 @@ def _no_network(monkeypatch):
 
 def test_catalog_shape():
     ids = [e["id"] for e in CATALOG]
-    assert len(ids) == len(set(ids)) == 24
+    assert len(ids) == len(set(ids)) == 25
     assert {e["category"] for e in CATALOG} == set(CATEGORIES)
     # every entry renders locally or downloads — never neither, never both
     assert all(bool(e.get("steps")) != bool(e.get("url")) for e in CATALOG)
@@ -56,6 +56,19 @@ def test_community_entry_installs_the_upstream_file(tmp_path):
     d = tmp_path / ".claude" / "skills" / "verification-before-completion"
     assert "raw.githubusercontent.com" in (d / "SKILL.md").read_text()
     assert "obra/superpowers" in (d / skills.MARKER).read_text()
+
+
+def test_entry_with_files_installs_and_removes_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "_get", lambda url: ("---\nname: x\n---\n" + url, ""))
+    proj = str(tmp_path)
+    assert skills.install("asd-ste100", "project", proj) == (True, "")
+    d = tmp_path / ".claude" / "skills" / "asd-ste100"
+    assert (d / "scripts" / "ste-lint.py").read_text().endswith("/master/scripts/ste-lint.py")
+    (d / "notes.md").write_text("mine")                     # a file we did not put there
+    assert skills.remove("asd-ste100", "project", proj) == (False, "directory has other files")
+    (d / "notes.md").unlink()
+    assert skills.remove("asd-ste100", "project", proj) == (True, "")
+    assert not d.exists()
 
 
 def test_download_failure_leaves_nothing_behind(tmp_path, monkeypatch):

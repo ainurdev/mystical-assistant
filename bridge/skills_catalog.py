@@ -4,9 +4,9 @@ Two kinds of entry:
   · `steps`  — a starter skill written here, rendered to SKILL.md locally.
   · `url`    — a real community skill; install downloads that SKILL.md verbatim
                from GitHub, so the user gets the maintained original, not a
-               paraphrase. Only self-contained (single-file) skills are listed:
-               a skill whose SKILL.md points at sibling scripts/ or references/
-               would install broken, so those are deliberately left out.
+               paraphrase. A skill whose SKILL.md points at sibling scripts/ or
+               references/ lists them in `files` (paths beside its SKILL.md);
+               without that list it would install broken.
 """
 
 import json
@@ -277,6 +277,16 @@ CATALOG = [
         "description": "Strip the tells out of AI-written prose — the patterns that make text read as generated.",
         "repo": "boraoztunc/skills",
         "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/stop-slop/SKILL.md",
+    },
+    {
+        "id": "asd-ste100",
+        "category": "writing",
+        "name": "Simplified Technical English",
+        "description": "Rewrite agent-facing English (tool descriptions, errors, prompts) to ASD-STE100 rules so nothing can misread it — with a stdlib linter for the structural rules.",
+        "repo": "danyuchn/asd-ste100-skill",
+        "url": "https://raw.githubusercontent.com/danyuchn/asd-ste100-skill/master/SKILL.md",
+        "files": ["references/writing-rules.md", "examples/before-after.md",
+                  "examples/linter-edge-cases.md", "scripts/ste-lint.py"],
     },
     {
         "id": "unslop",
