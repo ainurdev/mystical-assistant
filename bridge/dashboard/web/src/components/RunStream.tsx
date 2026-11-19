@@ -3747,9 +3747,11 @@ export function FinalResult({
   const ask = onAnswer && !bad && !drawn ? askBack(result) : null;
   const body = ask ? ask.body : result;
   const lines = body.split("\n").length;
+  // One threshold for the fold and its SHOW ALL, so a folded box can always be opened.
+  const foldAt = update ? 3 : RESULT_FOLD_LINES;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
-  const [open, setOpen] = useState(update ? lines <= 3 : land || lines <= RESULT_FOLD_LINES || !!views?.size);
+  const [open, setOpen] = useState(update ? lines <= foldAt : land || lines <= foldAt || !!views?.size);
   return (
     // `--tone` rather than four inline colours: the answer is the loudest thing
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
@@ -3791,7 +3793,7 @@ export function FinalResult({
         {ask && (askDocked
           ? <div className="res-askmark"><AskMarker kind="prose" topic={ask.question.replace(/[*_`]/g, "")} /></div>
           : <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />)}
-        {!drawn && body && lines > RESULT_FOLD_LINES && (
+        {!drawn && body && lines > foldAt && (
           <button
             type="button"
             onClick={(e) => {
