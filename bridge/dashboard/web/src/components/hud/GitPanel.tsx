@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Cloud, Ellipsis, ExternalLink, FileDiff, GitMerge,
-  GitPullRequest, Laptop, LoaderCircle, Minus, Plus, RefreshCw, RotateCcw, Send, SquarePen, TriangleAlert, Undo2, X,
+  GitPullRequest, Laptop, LoaderCircle, Minus, Plus, RefreshCw, RotateCcw, Send, Sparkles, SquarePen, TriangleAlert, Undo2, X,
 } from "lucide-react";
 import { api, type CompareFile, type GitFile, type GitLedger, type GitStatus, type LedgerCommit, type PrStatus } from "../../api";
 import { CommitGraph } from "../CommitGraph";
@@ -15,6 +15,7 @@ import { useAiFeatures } from "../../lib/ai";
 import { useStickyFlag } from "../../lib/prefs";
 import { notify } from "./Notifications";
 import { syncOf } from "../../lib/gitsync";
+import { gitCard, type Stop } from "../../lib/gitcard";
 import { divergedDraft, pushFailedDraft } from "../../lib/pushfailed";
 import { ago } from "../../lib/surfaces";
 import { TaskLine } from "./TaskChip";
@@ -23,26 +24,24 @@ import { commentsMessage, failureMessage, stateLine } from "../../lib/prchip";
 import { diffColor } from "../../lib/resultfields";
 
 /* GIT — the right rail's one git tab, and the dashboard's only git status: a
-   kicker (branch, how fresh, ⟳ fetch), then the LEDGER (/design-first
-   git-reimagine, 2026-11-11): one line read downward. Your uncommitted edits
-   with the commit box; the commits only on this machine (hollow dots: what a
-   push sends); a marker where origin is; the commits origin has that the base
-   lacks, with the pull request; a marker for the base (a menu: the branch this
-   one is compared with, BRANCHES' Target). Where the markers sit is the status,
-   and each button sits on the stretch it moves. Commit and Push stay two
-   presses (the user's pick). A commit opens in place to its files; the newest
-   unpushed one can be undone. The graph (CommitGraph) waits behind its link.
+   kicker (branch, how fresh, ⟳ fetch), then the STATUS CARD (/design-first
+   git-calm, A · PIPE, 2026-11-19): a headline that says the situation, three
+   stops (this Mac, committed, origin) with what sits at each, and the one move,
+   amber when it needs you (lib/gitcard.ts decides which). The commit message
+   sits in the card beside Commit, drafted up front from the diff; Commit and
+   Push stay two presses (the user's pick). Under the card, plain lists: CHANGES
+   (rows with hover actions and a menu), COMING IN, TO PUSH, the PULL REQUEST
+   with its checks, and what's in it; then a footer with the base (a menu: the
+   branch this one is compared with, BRANCHES' Target) and the graph's link. A
+   commit opens in place to its files; the newest unpushed one can be undone.
+   It replaces the LEDGER's line and NEXT STEP's glowing card (11-11, 11-12):
+   the user wanted the situation at a glance, with less to look at.
    The working tree comes from App's per-worktree status poll (sessionGit), so
    the rail badge and the list read the same answer; an op here bumps that poll
    (onGitChanged) instead of running a second one. The commit box lives outside
    this component (lib/commitdraft.ts): the rail rebuilds the panel on every
    tab/session switch, and a GENERATE in flight outlives that. Styles under
-   GIT LEDGER in index.css.
-   NEXT STEP (/design-first git-better, 2026-11-12): the stretch you're on opens
-   as a glowing card holding the one filled button (Commit, Push, Open PR, or
-   the PR's failure); the other stretches fold their commits to one line with
-   quiet links. A bar under the kicker counts the steps left to the base, and
-   the commit message is drafted up front from the diff. */
+   GIT LEDGER and GIT STATUS CARD in index.css. */
 
 interface Props {
   project: string | null;
@@ -77,9 +76,12 @@ type Op = { kind: OpKind; n: number; phase: "busy" }
   | { kind: OpKind; n: number; phase: "failed"; output: string; project: string; branch?: string; push?: boolean };
 const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish refused", pull: "Pull failed", fetch: "Fetch failed", merge: "Merge failed" };
 
-const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
-const ROWS = 6;      // a stretch's commits before "Show all"
+// Colour only where it tells something: added green, deleted red, the rest grey.
+const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--txl)");
+const ROWS = 3;      // a list's commits before "N more"
 const IN_ROWS = 3;   // origin's incoming stays short: the buttons are the point
+const STOPS = ["THIS MAC", "COMMITTED", "ORIGIN"];
+const STOP_IC: Record<Stop["icon"], typeof Check> = { laptop: Laptop, check: Check, up: ArrowUp, down: ArrowDown, cloud: Cloud, pr: GitPullRequest };
 // What each tree's line last read, so a switch back draws at once and re-reads in place.
 const LEDGERS = new Map<string, GitLedger>();
 const PRS = new Map<string, PrStatus>();
@@ -271,7 +273,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     return () => clearTimeout(t);
   }, [op]);
 
-  // The hero's one move: PUSH, PUBLISH (push() adds -u) or PULL (ff-only).
+  // The card's sync move: PUSH, PUBLISH (push() adds -u) or PULL (ff-only).
   async function sync(kind: "push" | "publish" | "pull", n: number) {
     if (!project) return;
     const to = s.kind === "ahead" || s.kind === "behind" ? s.upstream : "origin";
@@ -591,7 +593,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         <span className="gp-name">{name}</span>
         {/* rtl keeps the nearest folder visible when the path is cut */}
         <span className="gp-dir" dir="rtl">{cut < 0 ? "" : f.path.slice(0, cut)}</span>
-        <span className="gp-fig"><i>+{f.add}</i><i>−{f.del}</i></span>
+        <span className="gp-fig"><i>+{f.add}</i>{f.del > 0 && <i>−{f.del}</i>}</span>
         <span className="gp-racts">
           <button className="gp-ib" title="open changes" onClick={(e) => { e.stopPropagation(); open(true); }}><FileDiff size={12} /></button>
           <button className="gp-ib" title={sec ? "unstage" : "stage"} disabled={busy}
@@ -630,31 +632,53 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     : clashFiles === null ? { tone: "", text: "Couldn't test the merge first; a clash would be undone" }
     : clashN ? { tone: "warn", text: `${plural(clashN, "file")} clash with origin's ${down}` }
     : { tone: "ok", text: dirty ? `Merges cleanly; your ${dirty === 1 ? "edit stays" : `${dirty} edits stay`} put` : "Merges cleanly, nothing clashes" };
-  const originSays = s.kind === "local" ? "no remote" : s.kind === "publish" ? "not on origin yet" : s.kind === "detached" ? "detached" : "on origin";
-  // The step you're on: its stretch is the card with the one filled button.
-  const failing = !!prInfo && (prInfo.failed > 0 || (!!prInfo.review && !!onSend));
-  const step = dirty ? "commit" : down ? "sync" : up ? "push"
-    : led?.base && led.shipped_n > 0 && !prInfo ? "pr" : failing ? "fix" : null;
-  // The bar's three legs to the base: done, the one you're on, or still ahead.
-  const legs = !led?.base ? [] : [
-    dirty ? "n" : "d",
-    up || down ? (step === "push" || step === "sync" ? "n" : "") : "d",
-    !led.shipped_n && !localN && !dirty ? "d" : failing ? "w" : step === "pr" || prInfo ? "n" : "",
-  ];
-  const left = legs.filter((l) => l !== "d").length;
-  const [unfold, setUnfold] = useState<Record<string, boolean>>({});
-  const flip = (name: string) => setUnfold((u) => ({ ...u, [name]: !u[name] }));
-  const showLink = (name: string) => <button type="button" className="gl-b q dim" onClick={() => flip(name)}>{unfold[name] ? "Hide" : "Show"}</button>;
-  // A folded stretch's header unfolds it; clicks on its own buttons stay theirs.
-  const foldHead = (name: string, folded: boolean) => !folded ? {} : {
-    className: "gl-h fold", title: unfold[name] ? "Hide these commits" : "Show these commits",
-    onClick: (e: React.MouseEvent) => { if (!(e.target as HTMLElement).closest("button")) flip(name); },
-  };
-  const card = (on: boolean, label: string, body: ReactNode, amb = false) => on
-    ? <div className={`gl-nx${amb ? " amb" : ""}`}><div className="gl-nx-l">Next · {label}</div>{body}</div> : body;
-  const crow = (c: LedgerCommit, tone: "out" | "on", undo: boolean) => (
+  // The status card: the step you're on, said in words, and where the work sits.
+  const card = gitCard({ sync: s, dirty, staged: staged.length, up, down, base: led?.base ?? "", shippedN: led?.shipped_n ?? 0, pr: prInfo, canSend: !!onSend, fresh: right });
+  const step = card.step;
+  const pushKind = s.kind === "publish" ? "publish" : "push";
+  const openPrForm = () => led && setPrForm({ title: led.shipped.length === 1 ? led.shipped[0].subject : branchName.replace(/^[a-z]+\//, "").replace(/[-_]/g, " "),
+    body: [...led.shipped].reverse().map((c) => `- ${c.subject}`).join("\n") });
+  const mergeBtns = (cls: string) => s.kind === "diverged" && (<>
+    <button type="button" className={`gs-btn ${cls}`} disabled={busy || syncing} onClick={() => mergeAct(false)}
+      title={clashN ? "Opens a new session with the merge as an unsent draft; it stops before pushing" : `Merge ${s.upstream}'s ${down} into this branch here. Pushing stays a separate step.`}>
+      {clashN ? <SquarePen size={13} strokeWidth={2.2} /> : <GitMerge size={13} strokeWidth={2.4} />}Merge {cap(down)}
+    </button>
+    <button type="button" className="gs-btn dark" disabled={busy || syncing} onClick={() => mergeAct(true)}
+      title={clashN ? "Opens a new session with the merge as an unsent draft; it pushes at the end" : `Merge ${s.upstream}'s ${down} in, then push to origin`}>
+      {clashN ? <SquarePen size={13} strokeWidth={2.2} /> : <ArrowUpDown size={13} strokeWidth={2.4} />}Merge &amp; push
+    </button>
+  </>);
+  const pushBtn = (cls: string) => (
+    <button type="button" className={`gs-btn ${cls}`} disabled={busy || syncing} onClick={() => void sync(pushKind, up)}>
+      <ArrowUp size={13} strokeWidth={2.6} />{pushKind === "publish" ? "Publish" : "Push"} {cap(up)}
+    </button>
+  );
+  // The card's one move (Commit keeps Push beside it, the user's two presses);
+  // a running push or pull shows in its place.
+  const buttons: ReactNode = syncing || prForm ? null
+    : step === "commit" ? (<>
+      {/* The label is the promise: with an index, Commit takes only what's in
+          it (bridge/git.py commit()), so "all" would be wrong once one file is staged. */}
+      <button type="button" className="gs-btn pri" disabled={noCommit} title={msg.trim() ? `${MOD}Enter` : "Write a message first"} onClick={() => void commit()}>
+        <Check size={13} strokeWidth={2.6} />{staged.length ? `Commit ${cap(staged.length)} staged` : `Commit ${cap(dirty)}`}
+      </button>
+      {up > 0 && !down && pushBtn("dark")}
+    </>)
+    : step === "sync" ? (s.kind === "behind"
+      ? <button type="button" className="gs-btn ask" disabled={busy || syncing} onClick={() => void sync("pull", down)}><ArrowDown size={13} strokeWidth={2.6} />Pull {cap(down)}</button>
+      : mergeBtns("ask"))
+    : step === "push" ? pushBtn("pri")
+    : step === "pr" && led ? (
+      <button type="button" className="gs-btn pri" disabled={busy} onClick={openPrForm}
+        title={`Open a pull request into ${led.base}`}><GitPullRequest size={13} strokeWidth={2.2} />Open PR into {led.base}</button>
+    )
+    : step === "fix" && prInfo && onSend ? (prInfo.failed
+      ? <button type="button" className="gs-btn ask" onClick={() => onSend(failureMessage(prInfo))}><Send size={13} strokeWidth={2} />Send failure to chat</button>
+      : <button type="button" className="gs-btn ask" onClick={() => onSend(commentsMessage(prInfo))}><Send size={13} strokeWidth={2} />Send comments to chat</button>)
+    : null;
+  const crow = (c: LedgerCommit, undo: boolean) => (
     <Fragment key={c.sha}>
-      <button type="button" className={`gl-c ${tone}`} aria-expanded={openSha === c.sha} title={c.subject} onClick={() => openCommit(c.sha)}>
+      <button type="button" className="gl-c" aria-expanded={openSha === c.sha} title={c.subject} onClick={() => openCommit(c.sha)}>
         <span>{c.subject}</span><em>{ago(c.ts)}</em>
       </button>
       {openSha === c.sha && (
@@ -669,7 +693,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
                   <FileIcon name={f.name} size={14} />
                   <span className="gp-name">{cut < 0 ? f.name : f.name.slice(cut + 1)}</span>
                   <span className="gp-dir" dir="rtl">{cut < 0 ? "" : f.name.slice(0, cut)}</span>
-                  <span className="gp-fig"><i>+{f.add}</i><i>−{f.del}</i></span>
+                  <span className="gp-fig"><i>+{f.add}</i>{f.del > 0 && <i>−{f.del}</i>}</span>
                   <span className="gp-st" style={{ color: ST_COLOR(f.mark) }}>{f.mark}</span>
                 </div>
                 {fdiff?.name === f.name && (
@@ -688,11 +712,13 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       )}
     </Fragment>
   );
-  const stretch = (name: string, list: LedgerCommit[], total: number, tone: "out" | "on") => (<>
-    {(allOf[name] ? list : list.slice(0, ROWS)).map((c, i) => crow(c, tone, tone === "out" && i === 0 && !down))}
-    {!allOf[name] && list.length > ROWS && <button type="button" className={`gl-c more ${tone}`} onClick={() => setAllOf((a) => ({ ...a, [name]: true }))}><span>Show all {Math.min(total, list.length)}</span></button>}
-    {(allOf[name] || list.length <= ROWS) && total > list.length && <button type="button" className={`gl-c more ${tone}`} onClick={() => setGrOpen(true)}><span>+{total - list.length} more in the graph</span></button>}
+  // A list's first few commits, then "N more" opens the rest it has; past that, the graph.
+  const stretch = (name: string, list: LedgerCommit[], total: number) => (<>
+    {(allOf[name] ? list : list.slice(0, ROWS)).map((c, i) => crow(c, name === "local" && i === 0 && !down))}
+    {!allOf[name] && list.length > ROWS && <button type="button" className="gl-c more" onClick={() => setAllOf((a) => ({ ...a, [name]: true }))}><span>{Math.min(total, list.length) - ROWS} more</span></button>}
+    {(allOf[name] || list.length <= ROWS) && total > list.length && <button type="button" className="gl-c more" onClick={() => setGrOpen(true)}><span>{total - list.length} more in the graph</span></button>}
   </>);
+  const sec = (title: string, n: ReactNode, links?: ReactNode) => <div className="gs-sec">{title}<em>{n}</em>{links && <span className="gs-lk">{links}</span>}</div>;
 
   return (
     <div className="panel gp" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -723,194 +749,114 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             <div className="gp-rd">
               {autoErr && <div className="gp-roerr" title={autoErr}>{when || "never checked"} · {autoErr.split("\n")[0]}</div>}
               <TaskLine project={project} branch={branchName} onSend={onSend} />
+            </div>
+
+            {/* the status card: the situation, the three stops, the one move */}
+            <div className={`gs-card${card.amber ? " amb" : ""}`}>
+              <div className="gs-hl">{card.head}</div>
+              <div className="gs-sub">{card.sub}</div>
+              <div className="gs-stn">
+                {card.stops.map((st, i) => {
+                  const Ic = STOP_IC[st.icon];
+                  return (
+                    <div key={i}>
+                      <span className={`o ${st.tone}`}><Ic size={13} strokeWidth={2.4} /></span>
+                      <span className={`l ${st.tone}`}>{STOPS[i]}</span>
+                      <span className={`v ${st.tone}`}>{st.value}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {step === "commit" && (
+                <div className="gs-msg">
+                  <textarea ref={msgRef} value={msg} onChange={(e) => setMsg(e.target.value)} rows={1}
+                    placeholder="Commit message" aria-label="Commit message"
+                    title={`${MOD}Enter commits on ${branchName || "this branch"}`}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && msg.trim() && changed.size && !busy) { e.preventDefault(); void commit(); }
+                    }} />
+                  {ai.commitmsg && (
+                    <button type="button" className="gs-draft" disabled={gen || busy || !changed.size} title="Write the message from the diff"
+                      onClick={() => void generate()}>
+                      <Sparkles size={10} strokeWidth={2.2} />{gen ? "writing…" : !!msg && AUTO.get(key) === msg ? "drafted" : "Write it"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {buttons && <div className="gs-btns">{buttons}</div>}
+              {step === "sync" && chk && <div className={`gl-chk ${chk.tone}`}>{chk.tone === "ok" ? <Check size={12} strokeWidth={2.4} /> : <TriangleAlert size={12} strokeWidth={2.2} />}<span title={chk.text}>{chk.text}</span></div>}
+              {prForm && led?.base && (
+                <div className="gl-form gs-form">
+                  <input value={prForm.title} placeholder="Title" aria-label="Pull request title" onChange={(e) => setPrForm({ ...prForm, title: e.target.value })} />
+                  <textarea value={prForm.body} rows={4} placeholder="What changed" aria-label="Pull request description" onChange={(e) => setPrForm({ ...prForm, body: e.target.value })} />
+                  <div className="gs-btns">
+                    <button type="button" className="gs-btn pri" disabled={busy || !prForm.title.trim()} onClick={() => void openPr()}><GitPullRequest size={13} strokeWidth={2.2} />Open PR into {led.base}</button>
+                    <button type="button" className="gs-btn ghost" onClick={() => setPrForm(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
               {act && <div className="gp-act">{act}</div>}
             </div>
-            {legs.length > 0 && (
-              <div className="gl-legs" title="Commit, push, pull request">
-                <b>{left ? `${plural(left, "step")} to ${led!.base}` : `All in ${led!.base}`}</b>
-                {legs.map((l, i) => <i key={i} className={l} />)}
-              </div>
-            )}
-            <div className={`gl-line${dirty || localN ? "" : " calm"}`}>
-              {/* your edits, and the box that commits them */}
-              <section className="gl-s">
-                <i className={`gl-n${dirty ? " me" : " done"}`}>{dirty ? <Laptop size={10} strokeWidth={2.4} /> : <Check size={10} strokeWidth={2.8} />}</i>
-                {card(dirty > 0, "commit", <>
-                <div className="gl-h">
-                  <b className={dirty ? "" : "calm"}>{dirty ? `${plural(dirty, "file")} changed` : "Nothing to commit"}</b>
-                  {dirty > 0 && (
-                    <span className="gl-r">
-                      <span className="gt-fig"><i>+{files.reduce((n, f) => n + f.add, 0)}</i><i>−{files.reduce((n, f) => n + f.del, 0)}</i></span>
-                      {unstaged.length > 0 && <button className="gp-ib" disabled={busy} title="stage all" onClick={() => void gitOp("stage", unstaged.map((f) => f.path))}><Plus size={13} /></button>}
-                      <button className="gp-ib" title="more" onClick={(e) => setCtx({ x: e.clientX, y: e.clientY, path: "", staged: false })}><Ellipsis size={13} /></button>
-                    </span>
-                  )}
+            {note && <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>}
+
+            {/* plain lists under the card */}
+            {dirty > 0 && (<>
+              {sec("Changes", dirty, <>
+                {unstaged.length > 0 && <button className="gp-ib" disabled={busy} title="stage all" onClick={() => void gitOp("stage", unstaged.map((f) => f.path))}><Plus size={13} /></button>}
+                <button className="gp-ib" title="more" onClick={(e) => setCtx({ x: e.clientX, y: e.clientY, path: "", staged: false })}><Ellipsis size={13} /></button>
+              </>)}
+              {/* Groups only once the index holds something; otherwise the rows sit flat. */}
+              {staged.length > 0 && group("STAGED", staged, true)}
+              {staged.map((f) => row(f, true))}
+              {staged.length > 0 && unstaged.length > 0 && group("UNSTAGED", unstaged, false)}
+              {unstaged.map((f) => row(f, false))}
+            </>)}
+
+            {/* what origin has that this branch doesn't; the card moves it unless a commit comes first */}
+            {down > 0 && (<>
+              {sec("Coming in", down, step !== "sync" && (s.kind === "behind"
+                ? <button type="button" className="gl-b q" disabled={busy || syncing} onClick={() => void sync("pull", down)}><ArrowDown size={12} strokeWidth={2.6} />Pull {cap(down)}</button>
+                : s.kind === "diverged" && <button type="button" className="gl-b q" disabled={busy || syncing} onClick={() => mergeAct(false)}><GitMerge size={12} strokeWidth={2.4} />Merge {cap(down)}</button>))}
+              {incoming?.commits.slice(0, IN_ROWS).map((c) => (
+                <div key={c.sha} className="gl-c" title={c.subject}><span>{c.subject}</span><em>{ago(c.ts)}</em></div>
+              ))}
+              {down > IN_ROWS && <button type="button" className="gl-c more" onClick={() => setGrOpen(true)}><span>{down - IN_ROWS} more in the graph</span></button>}
+            </>)}
+
+            {localN > 0 && (<>{sec("To push", localN)}{stretch("local", local, localN)}</>)}
+
+            {prInfo && (<>
+              {sec("Pull request", `#${prInfo.number}`, <>
+                {/* the card holds this move when the PR is the step; otherwise it waits here */}
+                {step !== "fix" && onSend && prInfo.failed > 0 && <button type="button" className="gl-b q" onClick={() => onSend(failureMessage(prInfo))}><Send size={12} strokeWidth={2} />Send failure</button>}
+                <a className="gp-ib" href={prInfo.url} target="_blank" rel="noreferrer" title="Open on GitHub"><ExternalLink size={12} strokeWidth={2} /></a>
+              </>)}
+              <div className="gl-c" title={prInfo.title}><span>{prInfo.title}</span><em>{stateLine(prInfo).toLowerCase()}</em></div>
+              {[...prInfo.checks].sort((a, b) => Number(b.state === "fail") - Number(a.state === "fail")).slice(0, 6).map((c) => (
+                <div key={c.name + c.workflow} className={`gl-ck ${c.state}`} title={c.workflow}>
+                  <i>{c.state === "pass" ? <Check size={9} strokeWidth={3.2} /> : c.state === "fail" ? <X size={9} strokeWidth={3.2} /> : null}</i>
+                  <span>{c.name}</span><em>{c.state === "pass" ? "passed" : c.state === "fail" ? "failed" : "running"}</em>
                 </div>
-                {dirty > 0 && (<>
-                  {/* Groups only once the index holds something; otherwise the rows sit flat. */}
-                  {staged.length > 0 && group("STAGED", staged, true)}
-                  {staged.map((f) => row(f, true))}
-                  {staged.length > 0 && unstaged.length > 0 && group("UNSTAGED", unstaged, false)}
-                  {unstaged.map((f) => row(f, false))}
-                  <div className="cbox gp-cbox">
-                    <textarea ref={msgRef} value={msg} onChange={(e) => setMsg(e.target.value)} rows={2}
-                      placeholder={`Message (${MOD}↵ to commit on ${branchName || "this branch"})`}
-                      title={`${MOD}Enter to commit`}
-                      onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && msg.trim() && changed.size && !busy) { e.preventDefault(); void commit(); }
-                      }} />
-                    {!!msg && AUTO.get(key) === msg && <div className="gl-drafted">✧ Drafted from the diff<em>edit it · {MOD}↵</em></div>}
-                    <div className="gp-cbtns">
-                      {ai.commitmsg && (
-                        <button className="gp-btn caps" disabled={gen || busy || !changed.size} title="write the message from the diff"
-                          onClick={() => void generate()}>{gen ? "Writing…" : "✧ Write it"}</button>
-                      )}
-                      {/* The label is the promise: with an index, COMMIT takes only
-                          what's in it (bridge/git.py commit()), so saying "ALL"
-                          would be wrong the moment you stage one file. */}
-                      <button className="gp-btn pri caps" disabled={noCommit} title={`${MOD}Enter`} onClick={() => void commit()}>
-                        {staged.length ? `✓ Commit staged (${staged.length})` : `✓ Commit ${plural(changed.size, "file")}`}
-                      </button>
-                    </div>
-                  </div>
-                </>)}
-                </>)}
-                {note && <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>}
-              </section>
+              ))}
+            </>)}
 
-              {/* the commits a push sends: hollow, as the graph draws them */}
-              {localN > 0 && (
-                <section className="gl-s">
-                  <i className="gl-n out"><ArrowUp size={10} strokeWidth={2.6} /></i>
-                  {card(step === "push", s.kind === "publish" ? "publish" : "push", <>
-                  <div className="gl-h" {...foldHead("local", step !== "push" && !down)}>
-                    <b>Ready to push</b><span>{plural(localN, "commit")}</span>
-                    {up > 0 && !down && (
-                      <span className="gl-r">
-                        <button type="button" className={`gl-b ${step === "push" ? "pri" : "q"}`} disabled={busy || syncing}
-                          onClick={() => void sync(s.kind === "publish" ? "publish" : "push", up)}>
-                          <ArrowUp size={12} strokeWidth={2.6} />{s.kind === "publish" ? "Publish" : "Push"} {cap(up)}
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  {(step === "push" || down > 0 || unfold.local) && stretch("local", local, localN, "out")}
-                  </>)}
-                </section>
-              )}
-              {!localN && !down && !!git.upstream && (
-                <section className="gl-s"><i className="gl-n done"><Check size={10} strokeWidth={2.8} /></i><div className="gl-h"><b className="calm">All pushed</b></div></section>
-              )}
+            {!!led?.base && led.shipped_n > 0 && (<>{sec(prInfo ? "In the PR" : `Not in ${led.base}`, led.shipped_n)}{stretch("shipped", led.shipped, led.shipped_n)}</>)}
 
-              {/* what origin has that this branch doesn't: amber, it came from elsewhere */}
-              {down > 0 && (
-                <section className="gl-s">
-                  <i className="gl-n in"><ArrowDown size={10} strokeWidth={2.6} /></i>
-                  {card(true, s.kind === "diverged" ? "merge" : "pull", <>
-                  <div className="gl-h">
-                    <b>On origin, not here</b><span>{plural(down, "commit")}</span>
-                    {s.kind === "behind" && (
-                      <span className="gl-r">
-                        <button type="button" className="gl-b warn" disabled={busy || syncing} onClick={() => void sync("pull", down)}>
-                          <ArrowDown size={12} strokeWidth={2.6} />Pull {cap(down)}
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  {incoming?.commits.slice(0, IN_ROWS).map((c) => (
-                    <div key={c.sha} className="gl-c in" title={c.subject}><span>{c.subject}</span><em>{ago(c.ts)}</em></div>
-                  ))}
-                  {down > IN_ROWS && <button type="button" className="gl-c more in" onClick={() => setGrOpen(true)}><span>+{down - IN_ROWS} more in the graph</span></button>}
-                  {s.kind === "diverged" && (<>
-                    <div className="gl-acts">
-                      <button type="button" className="gl-b warn" disabled={busy || syncing} onClick={() => mergeAct(false)}
-                        title={clashN ? "Opens a new session with the merge as an unsent draft; it stops before pushing" : `Merge ${s.upstream}'s ${down} into this branch here. Pushing stays a separate step.`}>
-                        {clashN ? <SquarePen size={12} strokeWidth={2.2} /> : <GitMerge size={12} strokeWidth={2.4} />}Merge {cap(down)}
-                      </button>
-                      <button type="button" className="gl-b soft" disabled={busy || syncing} onClick={() => mergeAct(true)}
-                        title={clashN ? "Opens a new session with the merge as an unsent draft; it pushes at the end" : `Merge ${s.upstream}'s ${down} in, then push to origin`}>
-                        {clashN ? <SquarePen size={12} strokeWidth={2.2} /> : <ArrowUpDown size={12} strokeWidth={2.4} />}Merge &amp; push
-                      </button>
-                    </div>
-                    {chk && <div className={`gl-chk ${chk.tone}`}>{chk.tone === "ok" ? <Check size={12} strokeWidth={2.4} /> : <TriangleAlert size={12} strokeWidth={2.2} />}<span title={chk.text}>{chk.text}</span></div>}
-                  </>)}
-                  </>, true)}
-                </section>
-              )}
-
-              <div className="gl-mk"><span className="gl-tag"><Cloud size={12} strokeWidth={2} />{originSays}</span>{when && <em>{unchecked ? "not checked" : when}</em>}</div>
-
-              {/* on origin, but the base hasn't got it: the pull request's stretch */}
-              {!!led?.base && (led.shipped_n > 0 || prInfo) && (
-                <section className="gl-s">
-                  <div className="gl-h" {...foldHead("shipped", step !== "pr" && !prInfo && !prForm && led.shipped_n > 0)}>
-                    <b>Waiting for {led.base}</b>{led.shipped_n > 0 && <span>{led.shipped_n}</span>}
-                    {led.shipped_n > 0 && (step !== "pr" || (!prInfo && !prForm)) && (
-                      <span className="gl-r">
-                        {step !== "pr" && (prInfo || prForm) && showLink("shipped")}
-                        {!prInfo && !prForm && (
-                        <button type="button" className={`gl-b ${step === "pr" ? "pri" : "q"}`} disabled={busy}
-                          title={up ? "Opens a pull request for what origin has; push first to include the rest" : `Open a pull request into ${led.base}`}
-                          onClick={() => setPrForm({ title: led.shipped.length === 1 ? led.shipped[0].subject : branchName.replace(/^[a-z]+\//, "").replace(/[-_]/g, " "),
-                            body: [...led.shipped].reverse().map((c) => `- ${c.subject}`).join("\n") })}>
-                          <GitPullRequest size={12} strokeWidth={2.2} />Open PR
-                        </button>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  {(step === "pr" || unfold.shipped) && stretch("shipped", led.shipped, led.shipped_n, "on")}
-                  {prForm && (
-                    <div className="gl-pr gl-form">
-                      <input value={prForm.title} placeholder="Title" aria-label="Pull request title" onChange={(e) => setPrForm({ ...prForm, title: e.target.value })} />
-                      <textarea value={prForm.body} rows={4} placeholder="What changed" aria-label="Pull request description" onChange={(e) => setPrForm({ ...prForm, body: e.target.value })} />
-                      <div className="gl-acts">
-                        <button type="button" className="gl-b pri" disabled={busy || !prForm.title.trim()} onClick={() => void openPr()}><GitPullRequest size={12} strokeWidth={2.2} />Open PR into {led.base}</button>
-                        <button type="button" className="gl-b ghost" onClick={() => setPrForm(null)}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                  {prInfo && card(step === "fix", prInfo.failed ? "fix a check" : "answer the review", (
-                    <div className={step === "fix" ? "gl-pr in" : "gl-pr"}>
-                      <div className="gl-pr-t" title={prInfo.title}>#{prInfo.number} · {prInfo.title}</div>
-                      <div className="gl-pr-s">into {prInfo.base} · {stateLine(prInfo)}</div>
-                      {[...prInfo.checks].sort((a, b) => Number(b.state === "fail") - Number(a.state === "fail")).slice(0, 6).map((c) => (
-                        <div key={c.name + c.workflow} className={`gl-ck ${c.state}`} title={c.workflow}>
-                          <i>{c.state === "pass" ? <Check size={9} strokeWidth={3.2} /> : c.state === "fail" ? <X size={9} strokeWidth={3.2} /> : null}</i>
-                          <span>{c.name}</span><em>{c.state === "pass" ? "passed" : c.state === "fail" ? "failed" : "running"}</em>
-                        </div>
-                      ))}
-                      <div className="gl-acts">
-                        {prInfo.failed > 0 && onSend && (
-                          <button type="button" className={`gl-b ${step === "fix" ? "ask" : "warn"} grow`} onClick={() => onSend(failureMessage(prInfo))}><Send size={12} strokeWidth={2} />Send failure to chat</button>
-                        )}
-                        {!prInfo.failed && prInfo.review && onSend && (
-                          <button type="button" className={`gl-b ${step === "fix" ? "ask" : "warn"} grow`} onClick={() => onSend(commentsMessage(prInfo))}><Send size={12} strokeWidth={2} />Send comments to chat</button>
-                        )}
-                        <a className="gl-b ghost" href={prInfo.url} target="_blank" rel="noreferrer"><ExternalLink size={12} strokeWidth={2} />GitHub</a>
-                      </div>
-                    </div>
-                  ), true)}
-                </section>
-              )}
-
-              {/* the base: a menu, and whether it moved since */}
-              {!!led?.base && (
-                <div className="gl-mk">
-                  <button type="button" className="gl-tag base" title="The branch this one is compared with. Click to change."
-                    onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setBaseAt({ x: r.left, y: r.bottom + 4 }); }}>
-                    <GitMerge size={12} strokeWidth={2} />{led.base}<ChevronDown size={10} strokeWidth={2.6} />
-                  </button>
-                  <em>{led.behind ? `moved ${led.behind}` : led.ahead ? "up to date" : "has all of this"}</em>
-                  {led.behind > 0 && <button type="button" className="gl-lnk" disabled={busy} title={`Merge ${led.ref} into ${branchName} (a merge commit, never a rebase)`} onClick={() => void updateBase()}>Update</button>}
-                </div>
-              )}
-
-              <section className="gl-s gl-foot">
-                <button type="button" className="gl-c more dim" aria-expanded={grOpen} onClick={() => setGrOpen((v) => !v)}>
-                  <span>Older history · Graph</span>{grOpen ? <ChevronDown size={11} strokeWidth={2.4} /> : <ChevronRight size={11} strokeWidth={2.4} />}
+            {/* the base (a menu: BRANCHES' Target) and whether it moved, then the graph */}
+            <div className="gs-foot">
+              {!!led?.base && (<>
+                vs<button type="button" className="gs-base" title="The branch this one is compared with. Click to change."
+                  onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setBaseAt({ x: r.left, y: r.bottom + 4 }); }}>
+                  <span>{led.base}</span><ChevronDown size={10} strokeWidth={2.6} />
                 </button>
-              </section>
+                {led.behind > 0 && <>
+                  <em>moved {led.behind}</em>
+                  <button type="button" className="gl-b q" disabled={busy} title={`Merge ${led.ref} into ${branchName} (a merge commit, never a rebase)`} onClick={() => void updateBase()}>Update</button>
+                </>}
+              </>)}
+              <button type="button" className="gs-graph" aria-expanded={grOpen} onClick={() => setGrOpen((v) => !v)}>
+                Graph{grOpen ? <ChevronDown size={11} strokeWidth={2.4} /> : <ChevronRight size={11} strokeWidth={2.4} />}
+              </button>
             </div>
             {grOpen && (
               <div className="gl-graph">
