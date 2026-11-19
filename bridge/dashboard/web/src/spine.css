@@ -441,10 +441,15 @@
 [data-fam] [data-style="dossier"][data-isle] .dseam b { color: var(--txh); }
 [data-fam] [data-style="dossier"][data-isle] .dseam-acts { justify-content: flex-start; margin: 8px 0 0 var(--sp-in); }
 
-/* ── the prompt box: the island's emblem is the spine's last node; island and notice are the card's material ── */
+/* ── the prompt box: the island's emblem is the spine's last node; the notice is the card's material ── */
 .composer[data-pb] { --pb-isle: var(--panel); }
-.composer[data-pb] .pb-isles { justify-content: flex-start; padding-left: 0; }
-.composer[data-pb] .pb-isles > .pb-tabs { margin-left: 3px; padding-left: 3px; border-color: var(--line2); }
+.composer[data-pb] .pb-isles { justify-content: flex-start; padding: 0; }
+/* C · LINE (.mystical/design-drafts/prompt-pill-row): the header is the whole row and no slab, the name,
+   a rule across, the context, on the ground it stands on */
+.composer[data-pb] .pb-isles > .pb-tabs { flex: 1 1 auto; margin-left: 3px; padding-left: 3px; border-color: transparent; background: none; box-shadow: none; }
+.composer[data-pb] .pb-rule { flex: 1 1 0; min-width: 0; height: 1px; align-self: center; margin: 0 6px; background: var(--line2); }
+.composer[data-pb] .pb-rule + .ctrl-ctx { border-left: 0 !important; }
+.composer[data-pb] .pb-isles .cx-pp { right: -5px; }   /* while CTX ends the row, its right edge on the card's: the row's 4px padding + 1px edge */
 .composer[data-pb] .pb-isles > .pb-dry { border: 1px solid var(--line2); }
 .composer[data-pb] .pb-isles > .pb-dry > svg { color: var(--ask, var(--warn)); }   /* usage waits on you */
 /* A · TILE (.mystical/design-drafts/chat-notes-live): the project's own tile, a rounded square inset
@@ -458,11 +463,7 @@
 .composer[data-pb] .pb-isles .pb-tabs .np-tile > * { max-width: 16px; max-height: 16px; margin: 0; }
 .composer[data-pb] .pb-isles .pb-tabs .np-tile + .np-title-btn { padding-left: 9px !important; }
 .composer[data-pb] .pb-isles .pb-tabs .np-title { font-family: var(--ui-font) !important; font-weight: 700 !important; color: var(--txh); }
-/* live: only the pill shines, in the accent (you), and the tile glows */
-.composer[data-pb] .pb-tabs[data-live]::before {
-  background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
-    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
-}
+/* live: the tile glows; the circling light is the live row's alone */
 .composer[data-pb] .pb-isles .pb-tabs[data-live] .np-tile {
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 30%, transparent), 0 0 10px color-mix(in oklab, var(--acc) 50%, transparent);
 }
@@ -472,9 +473,8 @@
 
 /* ── the live row (LiveRow, .mystical/design-drafts/chat-notes-live): the running turn's current action as
    the chat's last row, its node on the line; the host is sticky, so scrolled up the row stays at the
-   foot over a fade, with the way back down. The ring is the prompt pill's light (--pb-a, index.css). ── */
-/* bottom: the prompt pill's band (30px pill + 6px gap, .pb-isles) floats over the scroller's foot */
-.live-host { position: sticky; bottom: 36px; z-index: 5; }
+   foot over a fade, with the way back down. The ring turns on --pb-a and pb-orbit (index.css). ── */
+.live-host { position: sticky; bottom: 0; z-index: 5; }
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
   --lr-in: var(--sp-in, 42px); --lr-n: var(--sp-n, 26px); --lr-gnd: var(--sp-gnd, var(--panel2));
@@ -532,8 +532,7 @@
 /* the row is the way back down while a turn runs: the corner's ↓ Latest would repeat it */
 .swapwrap:has(.live-host:not(:empty)) .jump-latest { display: none !important; }
 [data-style="dossier"] .live-row[data-away] .live-card { cursor: pointer; }
-/* mid-turn the pill is logo + title + ctx; its Pause/Stop give way to the live row's while that row is on screen */
-.composer[data-pb] .pb-tabs[data-live] .np-branch { display: none !important; }
+/* mid-turn the pill's Pause/Stop give way to the live row's while that row is on screen */
 .pb-hold { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 4px; }
 .pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
 .pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }

@@ -2249,13 +2249,14 @@ export function Composer({
   );
   // COMPACT's shell. The lead (tile, title, project, branch, PR, running app)
   // arrives flattened from Terminal; .pb-lead lays it out in index.css.
-  // B · ISLAND (.mystical/design-drafts/prompt-box-wild): the lead floats over the card as one
-  // pill; mid-turn only it shines (data-live), so the card keeps its height; what the turn is
-  // doing is the chat's live row (LiveRow). The login warning floats beside it as a second pill.
+  // B · ISLAND (.mystical/design-drafts/prompt-box-wild), drawn as C · LINE (prompt-pill-row): the
+  // lead is the whole row over the card, a rule running from it to CTX; mid-turn (data-live) the tile
+  // glows and the card keeps its height; what the turn is doing is the chat's live row (LiveRow).
+  // The login warning floats beside it as a pill.
   const shell =
       <>
         <div className="pb-isles">
-          <div className="pb-tabs pb-lead" data-live={deckRun ? "" : undefined}>{lead}{workTab}{queuedList}{ctxBlock}
+          <div className="pb-tabs pb-lead" data-live={deckRun ? "" : undefined}>{lead}{workTab}{queuedList}<span className="pb-rule" aria-hidden />{ctxBlock}
             {/* the live row carries these; while it isn't on screen (background tasks, a card, a grid view) the pill does (spine.css) */}
             {deckRun && <span className="pb-hold">{pauseBtn}{stopBtn}</span>}</div>
           {dryPill}

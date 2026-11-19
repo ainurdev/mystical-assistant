@@ -5419,16 +5419,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the warning gives way first, down to its own ellipsis: the pill is the header */
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
-/* mid-turn only the pill shines, a light circling its edge; what the turn is doing is the chat's live row (LiveRow) */
-.pb-tabs[data-live] { border-color: transparent; }
+/* mid-turn what the turn is doing, and the circling light, are the chat's live row (LiveRow) */
 .pb-tabs[data-live] > .pb-work:not([data-paused]):not(:has(.pb-wq)) { display: none !important; }
 .pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
-.pb-tabs[data-live]::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
-  background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--ok) 18%, transparent), var(--ok) 16%, color-mix(in oklab, var(--ok) 18%, transparent) 34% 60%,
-    var(--ok) 72%, color-mix(in oklab, var(--ok) 18%, transparent) 88%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: pb-orbit 3.2s linear infinite; }
-@keyframes pb-orbit { to { --pb-a: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .pb-tabs[data-live]::before { animation: none; } }
+@keyframes pb-orbit { to { --pb-a: 360deg; } }   /* turns the live row's ring (spine.css) */
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
    purple (a tap lists it); paused in the warn colour, with RESUME */
 .pb-tabs > .pb-work { gap: 6px; font-family: var(--ui-font, inherit); font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
@@ -5505,20 +5499,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
 [data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
-/* TABS: the transcript runs on under the tab row, as it runs under the island
-   at the top. Only when the box sits right under the transcript (a "checking…"
-   banner or a new-session card between them keeps the old stack): the scroller
-   reaches the island's 36px (pill + gap) down to the card, its end and LATEST rise by the same
-   36px so nothing parks under the pill, and only the pills and the card take the
-   pointer, so the transcript between and beside them still scrolls and selects.
-   13 keeps the box's menus over the island (12), as when they stacked alone. */
-.swapwrap:has(+ .composer[data-pb="tabs"]) { margin-bottom: -36px; }
-.swapwrap:has(+ .composer[data-pb="tabs"]) > .mscroll > div { padding-bottom: 62px !important; }
-.swapwrap:has(+ .composer[data-pb="tabs"]) > .jump-latest { bottom: 60px !important; }
-.swapwrap + .composer[data-pb="tabs"] { position: relative; z-index: 13; pointer-events: none; padding-top: 0 !important; border-top: 0 !important;
-  background: linear-gradient(transparent 36px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
-.swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs, .pb-isles), .swapwrap + .composer[data-pb="tabs"] :is(.pb-tabs, .pb-isles > .pb-dry) { pointer-events: auto; }
-[data-fam] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
+/* TABS: the transcript stops above the header row, so nothing scrolls under it (prompt-pill-row).
+   13 keeps the box's menus over the island (12). */
+.swapwrap + .composer[data-pb="tabs"] { position: relative; z-index: 13; }
 
 /* A teammate's device run, read only (components/DeviceRunPlate): the TABS shell
    above with what the run is in the card instead of a box to type in. The
@@ -7572,7 +7555,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 18px; pointer-events: none;
   background: linear-gradient(transparent, var(--col, var(--panel2)));
 }
-/* TABS runs the transcript on under its island, so no fade: it stopped at the island's top in a hard line */
+/* TABS: no fade over the transcript's foot, where the live row parks (spine.css) */
 [data-fam="pebble"] .swapwrap + .composer[data-pb="tabs"]::before { content: none; }
 
 /* modal and palette heads ruled in the accent (the HUD's tint): a neutral line, like every other rule here */
@@ -7862,7 +7845,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 18px; pointer-events: none;
   background: linear-gradient(transparent, var(--canvas));
 }
-/* TABS runs the transcript on under its island, so no fade: it stopped at the island's top in a hard line */
+/* TABS: no fade over the transcript's foot, where the live row parks (spine.css) */
 [data-fam="middle-earth"] .swapwrap + .composer[data-pb="tabs"]::before { content: none; }
 [data-fam="middle-earth"] .gp-pb { box-shadow: none !important; }
 
