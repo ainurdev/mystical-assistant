@@ -44,7 +44,7 @@ def tg(monkeypatch):
     monkeypatch.setattr(state, "miniapp_url", "https://mini.example")
     monkeypatch.setattr(notices, "telegram_ok", lambda kind: True)
     monkeypatch.setattr(config, "AUTO_RESUME", True)
-    monkeypatch.setattr(accounts, "pick", lambda exclude=(), strategy="best": None)   # no other login: the plain notice
+    monkeypatch.setattr(accounts, "pick", lambda exclude=(), strategy="best", auto_switch=False: None)   # no other login: the plain notice
     monkeypatch.setattr(limits, "_reset_epoch", lambda now, slot=None: RESET[0])
     RESET[0] = time.time() + 3600
     store.set_setting(tgboard.KEY, None)
@@ -82,7 +82,7 @@ def hit_limit(sess, chat=CHAT):
 
 def offer(sess, monkeypatch, chat=CHAT):
     """A park where another login is free and the policy is to ask: the choice."""
-    monkeypatch.setattr(accounts, "pick", lambda exclude=(), strategy="best": 2)
+    monkeypatch.setattr(accounts, "pick", lambda exclude=(), strategy="best", auto_switch=False: 2)
     monkeypatch.setattr(accounts, "headroom", lambda slot: 55)
     store.set_fallback_policy(sess["id"], "ask")
     hit_limit(sess, chat)

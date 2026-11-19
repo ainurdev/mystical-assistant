@@ -821,7 +821,7 @@ def test_an_offers_why_rides_the_park_and_goes_with_the_answer():
     restore = _usage(100, time.time() + 3600)
     try:
         limits.defer("s-why", CHAT, "/tmp/why")
-        why = "Account 2 has room, but it's kept out of Auto-switch."
+        why = "No account in Auto-switch has room, and Account 2 (85% left) is kept out of it."
         limits.offer("s-why", [{"slot": 2, "label": "Account 2 (85% left)"}], why)
         assert limits.parked()["s-why"]["why"] == why
         limits.offer("s-why", None)

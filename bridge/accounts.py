@@ -176,7 +176,9 @@ def _sync_user_mcp(p: str) -> None:
 
 # --- registry (ROOT/accounts.json) ------------------------------------------
 # Slot 1 is implicit: it *is* ~/.claude, so it needs no entry and is listed
-# whenever an ambient login exists. Only added slots are persisted.
+# whenever an ambient login exists. Only added slots are persisted, plus slot 1's
+# Auto-switch switch under "1" once it has been set (set_auto_switch): every
+# reader of slot rows skips that key.
 
 def _registry_path() -> str:
     return os.path.join(ROOT, "accounts.json")
@@ -611,7 +613,7 @@ def enable(slot: int) -> None:
 def set_auto_switch(slot: int, on: bool) -> None:
     """Keep an account in Auto-switch (the on-limit move that doesn't ask you)
     or out of it; out, it is only offered to you. Unlike disable(), slot 1 can
-    have it too: the one thing ever kept under its registry key."""
+    have it too, under a registry key of its own."""
     slot = int(slot)
     with _lock:
         reg = _load()
@@ -714,12 +716,16 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
         return list(pool.map(lambda a: {**a, **meter(a["slot"], max_age)}, accts))
 
 
-def pick(exclude=(), strategy: str = "best") -> "int | None":
+def pick(exclude=(), strategy: str = "best",
+         auto_switch: bool = False) -> "int | None":
     """The slot that should take over, or None when nothing has headroom.
 
     best          -- most quota left (default)
     consume-first -- among accounts with room, the one whose weekly window
                      resets soonest, so perishable quota is spent first
+
+    auto_switch picks only among accounts still in Auto-switch: the ones a
+    limit may move work onto without asking you.
 
     An account whose meter won't read is a last resort rather than a skip: the
     usage endpoint 429s readily (the Claude CLI polls it too, and reading two
@@ -730,7 +736,7 @@ def pick(exclude=(), strategy: str = "best") -> "int | None":
     skip = {int(s) for s in exclude}
     viable, unknown = [], []
     for a in list_accounts():
-        if a["slot"] in skip or a["disabled"]:
+        if a["slot"] in skip or a["disabled"] or (auto_switch and not a["auto_switch"]):
             continue
         meter = usage_for(a["slot"])
         used = _used(meter)

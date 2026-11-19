@@ -255,9 +255,9 @@ def test_accounts_lists_both_windows_and_names_a_dead_login():
     soon = time.time() + 1800
     dispatch.accounts.list_accounts = lambda: [
         {"slot": 1, "email": "a@x.com", "alias": None, "disabled": False,
-         "default": True, "plan": "MAX 20x"},
+         "default": True, "auto_switch": True, "plan": "MAX 20x"},
         {"slot": 2, "email": "b@x.com", "alias": None, "disabled": False,
-         "default": False, "plan": None}]
+         "default": False, "auto_switch": True, "plan": None}]
     dispatch.accounts.meter = lambda slot: (
         {"left": 70, "resets_at": None, "logged_in": True,
          "five_hour": {"percent": 5, "resets_at": soon, "severity": "normal"},

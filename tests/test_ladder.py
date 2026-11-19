@@ -87,9 +87,9 @@ def test_turn_records_the_commit_it_started_from():
 
 def _stub(accounts_pick=None, headroom=None):
     """Patch what rungs() consults: accounts_pick is a callable taking
-    (exclude, strategy) so tests can model 'the next best account'."""
+    (exclude, strategy, auto_switch) so tests can model 'the next best account'."""
     saved = (ladder.accounts.pick, ladder.accounts.headroom)
-    ladder.accounts.pick = accounts_pick or (lambda exclude=(), strategy="best": None)
+    ladder.accounts.pick = accounts_pick or (lambda exclude=(), strategy="best", auto_switch=False: None)
     ladder.accounts.headroom = headroom or (lambda slot: None)
 
     def restore():
@@ -106,7 +106,7 @@ def test_no_other_account_means_no_rungs():
 
 
 def test_a_healthy_account_is_the_first_rung():
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 2,
                     headroom=lambda slot: 78)
     try:
         got = ladder.rungs(_session())
@@ -120,7 +120,7 @@ def test_a_healthy_account_is_the_first_rung():
 def test_the_dead_account_is_excluded_from_the_rungs():
     seen = {}
 
-    def pick(exclude=(), strategy="best"):
+    def pick(exclude=(), strategy="best", auto_switch=False):
         seen["exclude"] = tuple(exclude)
         return None
 
@@ -188,7 +188,7 @@ class _Rec:
 
 def test_wait_policy_takes_no_rung_even_when_one_exists():
     """'wait' must be byte-for-byte today's behaviour: park and do nothing."""
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 2,
                     headroom=lambda slot: 90)
     run, notify = _Rec(), _Rec()
     try:
@@ -200,7 +200,7 @@ def test_wait_policy_takes_no_rung_even_when_one_exists():
 
 
 def test_auto_policy_takes_the_best_rung_immediately():
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 3,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 3,
                     headroom=lambda slot: 64)
     run, notify = _Rec(), _Rec()
     try:
@@ -216,7 +216,7 @@ def test_auto_policy_reports_which_rung_it_landed_on():
     """A silent switch is untrackable: the bell always has it, and Telegram once
     its route is on (Settings ▸ NOTIFY ▸ Resumed or retrying on its own)."""
     from bridge import notices
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 3,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 3,
                     headroom=lambda slot: 64)
     run, notify = _Rec(), _Rec()
     try:
@@ -235,7 +235,7 @@ def test_auto_policy_reports_which_rung_it_landed_on():
 
 
 def test_ask_policy_offers_the_rungs_without_taking_one():
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 2,
                     headroom=lambda slot: 55)
     run, notify = _Rec(), _Rec()
     try:
@@ -290,7 +290,7 @@ def test_auto_switch_asks_you_when_only_accounts_kept_out_of_it_have_room():
     """No silent move then: the Ask card, on Telegram, the chat and the bell,
     each saying why. Unanswered, the park stands and resumes at the reset."""
     from bridge import limits, notices
-    why = "Account 2 has room, but it's kept out of Auto-switch."
+    why = "No account in Auto-switch has room, and Account 2 (95% left) is kept out of it."
     restore = _logins({1: 100, 2: 5, 3: 100}, kept_out=(2,))
     s = _session("auto")
     saved, got = limits.offer, []
@@ -332,7 +332,7 @@ def test_take_declines_a_rung_kind_it_no_longer_knows():
 def test_ask_policy_puts_its_offer_on_the_park():
     """The chat's YOUR CALL card reads the offer off the parked status."""
     from bridge import limits
-    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best", auto_switch=False: 2,
                     headroom=lambda slot: 55)
     s = _session("ask")
     saved, got = limits.offer, []

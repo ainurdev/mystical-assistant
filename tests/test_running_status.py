@@ -230,7 +230,7 @@ def test_a_parked_session_says_when_it_resumes():
     from bridge import limits
     saved = limits.parked
     offer = [{"slot": 2, "label": "Account 2 (85% left)"}]
-    why = "Account 2 has room, but it's kept out of Auto-switch."
+    why = "No account in Auto-switch has room, and Account 2 (85% left) is kept out of it."
     limits.parked = lambda: {"p1": {"kind": "limit", "at": 2000.0, "since": 1000.0,
                                     "slot": 1, "offer": offer, "why": why}}
     try:

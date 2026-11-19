@@ -115,10 +115,8 @@ def rungs(session: "dict | None", dead_slot: "int | None" = None,
     auto_switch, only accounts still in Auto-switch: those it may move to
     without asking."""
     out = []
-    skip = {dead_slot} if dead_slot else set()
-    if auto_switch:
-        skip |= {a["slot"] for a in accounts.list_accounts() if not a["auto_switch"]}
-    slot = accounts.pick(exclude=tuple(skip), strategy=strategy)
+    slot = accounts.pick(exclude=(dead_slot,) if dead_slot else (),
+                         strategy=strategy, auto_switch=auto_switch)
     if slot:
         left = accounts.headroom(slot)
         room = f" ({left}% left)" if left is not None else ""
@@ -144,7 +142,8 @@ def escalate(session: dict, chat_id: int, *, dead_slot: "int | None" = None,
         available = rungs(session, dead_slot=dead_slot)
         if available:
             policy = "ask"
-            why = f"Account {available[0]['slot']} has room, but it's kept out of Auto-switch."
+            # The label says how much room only when its meter reads (pick's last resort may not).
+            why = f"No account in Auto-switch has room, and {available[0]['label']} is kept out of it."
     if not available:
         return None                       # nothing to offer: the park is the answer
     if run is None:
