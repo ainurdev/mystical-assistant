@@ -397,8 +397,8 @@ def _open_site(s: dict, job, a: dict) -> dict:
         return _text(str(e), error=True)
     if job is not None:
         job.add({"type": "browser", "url": got["url"], "profile": got["profile"]})
-    return _text(f"Opened {got['url']} in the Mystical browser. Their comments arrive here as a message when they press "
-                 "Send all; until then there's nothing to do.")
+    return _text(f"Opened {got['url']} in the Mystical browser. Each time they press Send, their comments start a new chat "
+                 "on this project, so nothing comes back here and there's nothing to wait for.")
 
 
 def _design_context(s: dict, job, a: dict) -> dict:

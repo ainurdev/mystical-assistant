@@ -571,7 +571,7 @@ export function BrowserCard({ session: given, url, profile }: { session?: string
       <div className="dg-card-text">
         <b><span className="dg-browser-dot" data-on={st?.running ? "" : undefined} aria-hidden />Mystical browser{st ? (st.running ? " · live" : "") : ""}</b>
         <small>{url}</small>
-        <small>{st?.pinned ? <span className="dg-browser-pins">{st.pinned} pinned, not sent · </span> : null}{st?.to ? `comments go to “${st.to}”` : "comments come to this chat"} · profile {profile}</small>
+        <small>{st?.pinned ? <span className="dg-browser-pins">{st.pinned} pinned, not sent · </span> : null}{st?.to ? `each Send starts a new chat from “${st.to}”` : "each Send starts a new chat on this project"} · profile {profile}</small>
       </div>
       <button type="button" className="dg-btn" disabled={!st?.running} title="Quits the Mystical browser, every tab" onClick={() => act("close")}>Close</button>
       <button type="button" className="dg-send dg-browser-go" onClick={() => act(st?.running ? "front" : "open")}>{st?.running ? "Bring to front" : "Open again"}</button>

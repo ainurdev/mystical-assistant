@@ -119,6 +119,23 @@ def test_chats_names_the_opener_first_and_the_others_apart():
     assert b["id"] in ids and a["id"] not in ids
 
 
+def test_the_picker_says_who_is_working_and_puts_the_openers_project_first(monkeypatch):
+    from bridge import runner
+    opener, bug, other, copy = (_chat("Fix pricing page", "/lumen/web"), _chat("Coupon rounding bug", "/lumen/web"),
+                                _chat("Rate limit headers", "/lumen/api"), _chat("Checkout copy pass", "/lumen/web"))
+    sb.open_site(opener["id"], "https://lumen.test/pricing")
+    job = lambda *pending: type("Job", (), {"pending": list(pending)})()      # noqa: E731
+    live = {opener["id"]: job(), bug["id"]: job({"request_id": "r1"})}
+    monkeypatch.setattr(runner, "live_job", live.get)
+    got = _ask("GET", "/chats?url=https%3A%2F%2Flumen.test%2Fcheckout")[1]
+    assert (got["opener"]["status"], got["project"]) == ("working", "/lumen/web")
+    mine = [c for c in got["chats"] if c["id"] in (bug["id"], other["id"], copy["id"])]
+    assert [(c["title"], c["status"]) for c in mine] == [
+        ("Checkout copy pass", "idle"), ("Coupon rounding bug", "needs"),      # its project, the latest first
+        ("Rate limit headers", "idle")]                                        # then the others
+    assert mine[0]["at"] == store.get_session(copy["id"])["updated"]
+
+
 def test_the_tray_wears_the_theme_the_dashboard_last_saved(tmp_path, monkeypatch):
     from bridge import design_board
     monkeypatch.setattr(design_board, "_theme_path", lambda: str(tmp_path / "theme.json"))
@@ -129,9 +146,18 @@ def test_the_tray_wears_the_theme_the_dashboard_last_saved(tmp_path, monkeypatch
     assert _ask("GET", "/theme", token="nope")[0] == 403
 
 
+def test_pins_count_once_per_site_whichever_page_reports_them():
+    s = _chat()
+    sb.open_site(s["id"], "https://site.test/a")
+    sb.pinned({"url": "https://site.test/a", "count": 3})
+    sb.pinned({"url": "https://site.test/b#/x", "count": 3})       # the same list of the site, told from another page
+    sb.pinned({"url": "https://other.test/", "count": 1})
+    assert sb.state(s["id"], "https://site.test/c")["pinned"] == 3
+
+
 # ------- Send all ------------------------------------------------------------------------
 
-def test_send_all_goes_to_the_opener_as_one_turn_with_crops():
+def test_each_send_starts_a_new_chat_on_the_openers_project_never_its_queue():
     s = _chat()
     sb.open_site(s["id"], "https://site.test/planning")
     sb.pinned({"url": "https://site.test/planning", "count": 2})
@@ -139,44 +165,67 @@ def test_send_all_goes_to_the_opener_as_one_turn_with_crops():
     code, got = _ask("POST", "/send", {"url": "https://site.test/planning", "viewport": "1440×900", "comments": [
         {"text": "nav should look active", "where": 'a.nav · "Planning"', "crop": PNG},
         {"text": "rows too tight", "where": "tr"}]})
-    assert code == 200 and got["chat"]["id"] == s["id"]
+    new = store.get_session(got["chat"]["id"])
+    assert code == 200 and new["id"] != s["id"] and (new["project"], new["cwd"]) == (s["project"], s["cwd"])
+    assert new["title"] == "site.test: nav should look active +1"
     (sid, kw), = sent
-    assert sid == s["id"] and kw["sent_by"] == "browser"
-    assert "2 comments from the Mystical browser on https://site.test/planning (window 1440×900)" in kw["prompt"]
+    assert sid == new["id"] and kw["sent_by"] == "browser"
+    assert "2 comments from the Mystical browser on https://site.test (window 1440×900)" in kw["prompt"]
     assert "1. nav should look active" in kw["prompt"] and "picture: comment-1.png" in kw["prompt"]
     assert "picture: comment-2.png" not in kw["prompt"]
     assert [os.path.basename(p).endswith("comment-1.png") for p in kw["images"]] == [True]
     assert sb.state(s["id"], "https://site.test/")["pinned"] == 0
+    sb.send({"url": "https://site.test/planning", "comments": [{"text": "again"}]})
+    assert sent[1][0] not in (s["id"], new["id"])          # the next Send is a chat of its own too
 
 
-def test_send_all_to_another_chat_and_it_becomes_the_default():
-    a, b = _chat("Opener"), _chat("Other")
+def test_send_all_groups_the_comments_by_page_each_with_its_address():
+    s = _chat()
+    sb.open_site(s["id"], "https://lumen.test/pricing")
+    sb.send({"url": "https://lumen.test/checkout", "viewport": "1440×900", "comments": [
+        {"text": "Make Pro the highlighted plan", "where": 'div.plan · "Pro"', "crop": PNG, "url": "https://lumen.test/pricing", "page": "Pricing"},
+        {"text": "Card error says only Invalid", "where": "input#card", "crop": PNG, "url": "https://lumen.test/checkout", "page": "Checkout"},
+        {"text": "Yearly switch is too small", "where": "div.toggle", "url": "https://lumen.test/pricing", "page": "Pricing"}]})
+    (sid, kw), = sent
+    assert kw["prompt"].split("\n\nApply these")[0].splitlines() == [
+        "3 comments from the Mystical browser on https://lumen.test (window 1440×900):",
+        "",
+        "Pricing (https://lumen.test/pricing)",
+        "1. Make Pro the highlighted plan",
+        '   at: div.plan · "Pro"',
+        "   picture: comment-1.png",
+        "2. Yearly switch is too small",
+        "   at: div.toggle",
+        "",
+        "Checkout (https://lumen.test/checkout)",
+        "3. Card error says only Invalid",
+        "   at: input#card",
+        "   picture: comment-3.png"]
+    assert [os.path.basename(p).split("-", 1)[-1] for p in kw["images"]] == ["comment-1.png", "comment-3.png"]
+    with pytest.raises(sb.Refused):          # one list per site: a comment from another site is no part of it
+        sb.send({"url": "https://lumen.test/", "comments": [{"text": "x", "url": "https://evil.test/"}]})
+
+
+def test_a_send_can_start_from_another_chat_which_becomes_the_default():
+    a, b = _chat("Opener"), _chat("Other", "/nr/planning")
     sb.open_site(a["id"], "https://site.test/")
-    got = sb.send({"url": "https://site.test/", "target": "chat", "chat": b["id"], "comments": [{"text": "hi"}]})
-    assert got["chat"]["id"] == b["id"] and sent[0][0] == b["id"]
-    assert sb.opener("https://site.test/")["id"] == b["id"]
-    assert sb.state(a["id"], "https://site.test/")["to"] == "Other"      # a's card says where they go now
-    assert sb.state(b["id"], "https://site.test/")["to"] is None
-
-
-def test_send_all_to_a_new_chat_on_the_openers_project():
-    a = _chat()
-    sb.open_site(a["id"], "https://site.test/")
-    got = sb.send({"url": "https://site.test/", "target": "new", "comments": [{"text": "hi"}]})
+    got = sb.send({"url": "https://site.test/", "chat": b["id"], "comments": [{"text": "hi"}]})
     new = store.get_session(got["chat"]["id"])
-    assert new["id"] != a["id"] and new["project"] == a["project"] and new["cwd"] == a["cwd"]
-    assert new["title"] == "Comments on site.test" and sent[0][0] == new["id"]
+    assert new["id"] not in (a["id"], b["id"]) and new["project"] == "/nr/planning" and sent[0][0] == new["id"]
+    assert sb.opener("https://site.test/")["id"] == b["id"]
+    assert sb.state(a["id"], "https://site.test/")["to"] == "Other"      # a's card says where new chats start from
+    assert sb.state(b["id"], "https://site.test/")["to"] is None
 
 
 def test_send_refuses_empty_unknown_and_orphaned():
     with pytest.raises(sb.Refused):
-        sb.send({"url": "https://nobody.test/", "comments": [{"text": "x"}]})     # no opener
+        sb.send({"url": "https://nobody.test/", "comments": [{"text": "x"}]})     # no opener, no chat picked
     a = _chat()
     sb.open_site(a["id"], "https://site.test/")
     with pytest.raises(sb.Refused):
         sb.send({"url": "https://site.test/", "comments": [{"text": "   "}]})
     with pytest.raises(sb.Refused):
-        sb.send({"url": "https://site.test/", "target": "chat", "chat": "nope", "comments": [{"text": "x"}]})
+        sb.send({"url": "https://site.test/", "chat": "nope", "comments": [{"text": "x"}]})
     assert sent == []
 
 

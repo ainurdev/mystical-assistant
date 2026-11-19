@@ -13,8 +13,10 @@ read) and its own Host, the same DNS-rebinding guard the design proxy has. Its p
 outlive a bridge restart, so a browser left open keeps working once the bridge is back. The
 tray wears the theme the dashboard last saved (bridge/design_board.save_theme), from GET /theme.
 
-A site remembers the chat that last opened it or was sent to: Send all goes there unless you pick another
-running chat or a new one on the same project. Comments arrive as one turn of yours, tagged
+A site remembers the chat that opened it, or the one last picked in the tray: each Send starts a new
+chat on that chat's project and worktree, so comments never wait in the queue of a chat that's busy
+(the tray's picker shows which chats are working or Need you). The tray keeps one list for the
+whole site, so a Send carries every page's comments as one turn of yours, page by page, tagged
 "via Mystical browser", each with a crop of what it points at attached as comment-N.png.
 
 shortcut: the opener is kept per origin, so two chats with tabs on one site share the last
@@ -47,7 +49,7 @@ _MAX_COMMENTS = 30
 _lock = threading.Lock()
 _server: "ThreadingHTTPServer | None" = None
 _procs: list = []
-_pins: dict = {}      # page url -> pinned, not sent
+_pins: dict = {}      # site (origin) -> pinned, not sent
 
 
 def home() -> str:
@@ -239,39 +241,54 @@ class _Handler(BaseHTTPRequestHandler):
 
 # ------- what the extension asks ----------------------------------------------------------
 
+def _row(s: dict) -> dict:
+    """A chat in the tray's picker: whether it's working or Needs you, and when it last moved."""
+    from bridge import runner
+    job = runner.live_job(s["id"])
+    return {**_brief(s), "status": "needs" if job and job.pending else "working" if job else "idle",
+            "at": s.get("updated") or 0}
+
+
 def chats(url: str) -> dict:
-    """Who Send all goes to by default, and the open chats it could go to instead."""
+    """Who Send all goes to by default, and the open chats it could go to instead: the opener's
+    project first (the latest chat's when no chat opened the site), then the others, the latest
+    first in each. shortcut: the picker's search only finds the latest 100; page it if that bites."""
     o = opener(url) if url else None
     rows = store.list_sessions_all(config.DASH_CHAT_ID, include_archived=False)
     rows.sort(key=lambda r: r.get("updated") or 0, reverse=True)
-    return {"opener": _brief(o) if o else None,
-            "chats": [_brief(r) for r in rows if not o or r["id"] != o["id"]][:20]}
+    rows = [r for r in rows if not o or r["id"] != o["id"]]
+    project = (o or (rows[0] if rows else {})).get("project") or ""
+    rows.sort(key=lambda r: (r.get("project") or "") != project)
+    return {"opener": _row(o) if o else None, "project": project, "chats": [_row(r) for r in rows[:100]]}
 
 
 def pinned(body: dict) -> dict:
     url = str(body.get("url") or "")
     if url:
         with _lock:
-            _pins[url] = max(0, int(body.get("count") or 0))
+            _pins[_origin(url)] = max(0, int(body.get("count") or 0))
     return {"ok": True}
 
 
 def state(sid: str, url: str = "") -> dict:
     """For the chat's BROWSER card: is the window up, what's pinned on that site and not sent,
-    and whether Send all would come to this chat (sending elsewhere moves it)."""
-    site = _origin(url) if url else ""
+    and which chat a Send's new chat would start from when it isn't this one (picking another moves it)."""
     with _lock:
-        pins = sum(n for u, n in _pins.items() if site and _origin(u) == site)
+        pins = _pins.get(_origin(url), 0) if url else 0
         up = any(p.poll() is None for p in _procs)
     o = opener(url) if url else None
     return {"running": up, "pinned": pins, "to": None if not o or o["id"] == sid else _brief(o)["title"]}
 
 
-def _prompt(url: str, comments: list, viewport: str) -> str:
+def _prompt(site: str, comments: list, viewport: str) -> str:
     n = len(comments)
-    lines = [f"{n} comment{'s' if n != 1 else ''} from the Mystical browser on {url}"
-             + (f" (window {viewport})" if viewport else "") + ":", ""]
+    lines = [f"{n} comment{'s' if n != 1 else ''} from the Mystical browser on {site}"
+             + (f" (window {viewport})" if viewport else "") + ":"]
+    last = None
     for i, c in enumerate(comments, 1):
+        if c["url"] != last:            # a heading for each page
+            lines += ["", f"{c['page']} ({c['url']})" if c["page"] else c["url"]]
+            last = c["url"]
         lines.append(f"{i}. {c['text']}")
         if c.get("where"):
             lines.append(f"   at: {c['where']}")
@@ -283,7 +300,10 @@ def _prompt(url: str, comments: list, viewport: str) -> str:
 
 
 def send(body: dict) -> dict:
-    """Send all: every pinned comment as one turn, to the opener, another chat or a new one."""
+    """Send all: every comment pinned on the site as one turn, page by page, in a new chat of its
+    own, never the queue of a chat that may be busy. The new chat takes the project and worktree of
+    the chat picked in the tray (`chat`), else of the one that opened the site, and a picked chat
+    becomes the site's default. `url` is the page it was sent from; each comment has its own."""
     from bridge import profiles, queue_manager
     from bridge.miniapp.server import _save_images
     url = normalize(str(body.get("url") or ""))
@@ -297,30 +317,26 @@ def send(body: dict) -> dict:
         text = _clean(c.get("text"), 2000) if isinstance(c, dict) else ""
         if text:
             crop = str(c.get("crop") or "")
-            comments.append({"text": text, "where": _clean(c.get("where"), 300),
+            page = normalize(str(c.get("url") or url))
+            if _origin(page) != _origin(url):
+                raise Refused("A comment from another site can't go with these.")
+            comments.append({"text": text, "where": _clean(c.get("where"), 300), "url": page,
+                             "page": _clean(c.get("page"), 120),
                              "crop": crop if crop.startswith("data:image/png;base64,") else ""})
     if not comments:
         raise Refused("The comments are empty.")
+    pages = list(dict.fromkeys(c["url"] for c in comments))
+    comments.sort(key=lambda c: pages.index(c["url"]))         # page by page, in the order they came
     for c in [c for c in comments if c["crop"]][config.UPLOAD_MAX_COUNT:]:
         c["crop"] = ""      # a turn takes so many pictures; the rest go as words alone
-    target = body.get("target") or "opener"
-    o = opener(url)
-    if target == "chat":
-        dest = store.get_session(str(body.get("chat") or ""))
-        if not dest or dest.get("chat_id") != config.DASH_CHAT_ID or dest.get("archived"):
+    if body.get("chat"):
+        base = store.get_session(str(body["chat"]))
+        if not base or base.get("chat_id") != config.DASH_CHAT_ID or base.get("archived"):
             raise Refused("That chat isn't open any more.")
-    elif target == "new":
-        base = o or store.get_session(str(body.get("chat") or ""))
+    else:
+        base = opener(url)
         if not base:
             raise Refused("No chat opened this site, so there's no project for a new one: pick a chat.")
-        dest = store.create_session(config.DASH_CHAT_ID, base.get("project") or "", origin="browser",
-                                    cwd=base.get("cwd"), profile_id=profiles.project_default(base.get("project") or ""))
-        store.rename(dest["id"], f"Comments on {urllib.parse.urlparse(url).hostname}")
-        dest = store.get_session(dest["id"])
-    elif o:
-        dest = o
-    else:
-        raise Refused("The chat that opened this site is gone: pick another.")
     job = uuid.uuid4().hex
     shots = [c["crop"].replace("data:image/png;", f"data:image/png;name=comment-{i}.png;", 1)
              for i, c in enumerate(comments, 1) if c["crop"]]
@@ -328,15 +344,19 @@ def send(body: dict) -> dict:
         paths = _save_images(job, shots)
     except ValueError as e:
         raise Refused(str(e)) from e
-    prompt = _prompt(url, comments, _clean(body.get("viewport"), 20))
+    prompt = _prompt(_origin(url), comments, _clean(body.get("viewport"), 20))
+    dest = store.create_session(base["chat_id"], base.get("project") or "", origin="browser",
+                                cwd=base.get("cwd"), profile_id=profiles.project_default(base.get("project") or ""))
+    more = f" +{len(comments) - 1}" if len(comments) > 1 else ""
+    store.rename(dest["id"], f"{urllib.parse.urlparse(url).hostname}: {_clean(comments[0]['text'], 50)}{more}")
+    dest = store.get_session(dest["id"])
     project = dest.get("cwd") or os.path.join(config.BASE_PATH, (dest.get("project") or "").lstrip("/"))
     queue_manager.enqueue(dest["id"], text=prompt, prompt=prompt, images=paths, model=None, effort=None,
                           permission_mode=None, width=None, sel=[], surface="browser", chat_id=dest["chat_id"],
                           project=project, run_job_id=job, sent_by="browser")
-    if target != "new":
-        _remember(url, dest["id"])
+    _remember(url, base["id"])
     with _lock:
-        _pins.pop(url, None)
+        _pins.pop(_origin(url), None)
     return {"chat": _brief(dest)}
 
 
