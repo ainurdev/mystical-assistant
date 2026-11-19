@@ -80,7 +80,7 @@ const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--txl)");
 const ROWS = 3;      // a list's commits before "N more"
 const IN_ROWS = 3;   // origin's incoming stays short: the buttons are the point
-const STOPS = ["THIS MAC", "COMMITTED", "ORIGIN"];
+const STOPS = ["This Mac", "Committed", "Origin"];
 const STOP_IC: Record<Stop["icon"], typeof Check> = { laptop: Laptop, check: Check, up: ArrowUp, down: ArrowDown, cloud: Cloud, pr: GitPullRequest };
 // What each tree's line last read, so a switch back draws at once and re-reads in place.
 const LEDGERS = new Map<string, GitLedger>();
@@ -511,6 +511,28 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   // Only a running push or pull locks the hero: Commit just opens the message box, and an auto-fetch is no reason to wait.
   const syncing = op?.phase === "busy" && op.kind !== "fetch";
   const pushy = op?.kind === "push" || op?.kind === "publish";
+  // The dry run said the merge would clash: the card shows it when merging is the step, COMING IN otherwise.
+  const clash: ReactNode = s.kind === "diverged" && clashFiles?.length ? (
+    <div className="gp-clash">
+      <div className="gp-clash-h"><TriangleAlert size={12} strokeWidth={2.2} /><span>Would clash</span><em>{plural(clashFiles.length, "file")}</em></div>
+      <div className="gp-clash-rows">
+        {(clashAll ? clashFiles : clashFiles.slice(0, 3)).map((f) => {
+          const cut = f.lastIndexOf("/");
+          return (
+            <div key={f} className="trow gp-row" role="button" tabIndex={0} title={f}
+              onClick={() => onOpenFile(f, false)} onKeyDown={(e) => { if (e.key === "Enter") onOpenFile(f, false); }}>
+              <FileIcon name={f} size={14} />
+              <span className="gp-name">{cut < 0 ? f : f.slice(cut + 1)}</span>
+              <span className="gp-dir" dir="rtl">{cut < 0 ? "" : f.slice(0, cut)}</span>
+              <span className="gp-st">!</span>
+            </div>
+          );
+        })}
+      </div>
+      {clashFiles.length > 3 && !clashAll && <button className="gp-clash-more" onClick={() => setClashAll(true)}>+{clashFiles.length - 3} more</button>}
+      <div className="gp-clash-note">Nothing on disk changed. Each merge button opens a <b>new session</b> with the merge as an unsent draft; only <b>Merge &amp; push</b>'s draft ends in a push.</div>
+    </div>
+  ) : null;
   const act: ReactNode = op?.phase === "failed" ? (
     <div className="gp-fail" role="alert">
       <div className="gp-failh">
@@ -549,26 +571,6 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       <LoaderCircle size={14} strokeWidth={2.2} />
       {op.kind === "publish" ? "Publishing…" : `${op.kind === "pull" ? "Pulling" : op.kind === "merge" ? "Merging" : "Pushing"} ${plural(op.n, "commit")}…`}
     </button>
-  ) : s.kind === "diverged" && clashFiles?.length ? (
-    <div className="gp-clash">
-      <div className="gp-clash-h"><TriangleAlert size={12} strokeWidth={2.2} /><span>Would clash</span><em>{plural(clashFiles.length, "file")}</em></div>
-      <div className="gp-clash-rows">
-        {(clashAll ? clashFiles : clashFiles.slice(0, 3)).map((f) => {
-          const cut = f.lastIndexOf("/");
-          return (
-            <div key={f} className="trow gp-row" role="button" tabIndex={0} title={f}
-              onClick={() => onOpenFile(f, false)} onKeyDown={(e) => { if (e.key === "Enter") onOpenFile(f, false); }}>
-              <FileIcon name={f} size={14} />
-              <span className="gp-name">{cut < 0 ? f : f.slice(cut + 1)}</span>
-              <span className="gp-dir" dir="rtl">{cut < 0 ? "" : f.slice(0, cut)}</span>
-              <span className="gp-st">!</span>
-            </div>
-          );
-        })}
-      </div>
-      {clashFiles.length > 3 && !clashAll && <button className="gp-clash-more" onClick={() => setClashAll(true)}>+{clashFiles.length - 3} more</button>}
-      <div className="gp-clash-note">Nothing on disk changed. Each merge button opens a <b>new session</b> with the merge as an unsent draft; only <b>Merge &amp; push</b>'s draft ends in a push.</div>
-    </div>
   ) : null;
 
   const row = (f: GitFile, sec: boolean) => {
@@ -638,16 +640,24 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const pushKind = s.kind === "publish" ? "publish" : "push";
   const openPrForm = () => led && setPrForm({ title: led.shipped.length === 1 ? led.shipped[0].subject : branchName.replace(/^[a-z]+\//, "").replace(/[-_]/g, " "),
     body: [...led.shipped].reverse().map((c) => `- ${c.subject}`).join("\n") });
-  const mergeBtns = (cls: string) => s.kind === "diverged" && (<>
-    <button type="button" className={`gs-btn ${cls}`} disabled={busy || syncing} onClick={() => mergeAct(false)}
+  // Built once for the card (filled) and COMING IN (quiet links, when a commit comes first).
+  const mergeBtns = (main: string, other: string) => s.kind === "diverged" && (<>
+    <button type="button" className={main} disabled={busy || syncing} onClick={() => mergeAct(false)}
       title={clashN ? "Opens a new session with the merge as an unsent draft; it stops before pushing" : `Merge ${s.upstream}'s ${down} into this branch here. Pushing stays a separate step.`}>
       {clashN ? <SquarePen size={13} strokeWidth={2.2} /> : <GitMerge size={13} strokeWidth={2.4} />}Merge {cap(down)}
     </button>
-    <button type="button" className="gs-btn dark" disabled={busy || syncing} onClick={() => mergeAct(true)}
+    <button type="button" className={other} disabled={busy || syncing} onClick={() => mergeAct(true)}
       title={clashN ? "Opens a new session with the merge as an unsent draft; it pushes at the end" : `Merge ${s.upstream}'s ${down} in, then push to origin`}>
       {clashN ? <SquarePen size={13} strokeWidth={2.2} /> : <ArrowUpDown size={13} strokeWidth={2.4} />}Merge &amp; push
     </button>
   </>);
+  const pullBtn = (cls: string) => (
+    <button type="button" className={cls} disabled={busy || syncing} onClick={() => void sync("pull", down)}><ArrowDown size={13} strokeWidth={2.6} />Pull {cap(down)}</button>
+  );
+  const sendBtn = (cls: string, short = false) => prInfo && onSend && (prInfo.failed > 0
+    ? <button type="button" className={cls} onClick={() => onSend(failureMessage(prInfo))}><Send size={13} strokeWidth={2} />{short ? "Send failure" : "Send failure to chat"}</button>
+    : prInfo.review ? <button type="button" className={cls} onClick={() => onSend(commentsMessage(prInfo))}><Send size={13} strokeWidth={2} />{short ? "Send comments" : "Send comments to chat"}</button>
+    : null);
   const pushBtn = (cls: string) => (
     <button type="button" className={`gs-btn ${cls}`} disabled={busy || syncing} onClick={() => void sync(pushKind, up)}>
       <ArrowUp size={13} strokeWidth={2.6} />{pushKind === "publish" ? "Publish" : "Push"} {cap(up)}
@@ -655,7 +665,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   );
   // The card's one move (Commit keeps Push beside it, the user's two presses);
   // a running push or pull shows in its place.
-  const buttons: ReactNode = syncing || prForm ? null
+  const buttons: ReactNode = syncing || (prForm && step === "pr") ? null
     : step === "commit" ? (<>
       {/* The label is the promise: with an index, Commit takes only what's in
           it (bridge/git.py commit()), so "all" would be wrong once one file is staged. */}
@@ -664,17 +674,13 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       </button>
       {up > 0 && !down && pushBtn("dark")}
     </>)
-    : step === "sync" ? (s.kind === "behind"
-      ? <button type="button" className="gs-btn ask" disabled={busy || syncing} onClick={() => void sync("pull", down)}><ArrowDown size={13} strokeWidth={2.6} />Pull {cap(down)}</button>
-      : mergeBtns("ask"))
+    : step === "sync" ? (s.kind === "behind" ? pullBtn("gs-btn ask") : mergeBtns("gs-btn ask", "gs-btn dark"))
     : step === "push" ? pushBtn("pri")
     : step === "pr" && led ? (
       <button type="button" className="gs-btn pri" disabled={busy} onClick={openPrForm}
         title={`Open a pull request into ${led.base}`}><GitPullRequest size={13} strokeWidth={2.2} />Open PR into {led.base}</button>
     )
-    : step === "fix" && prInfo && onSend ? (prInfo.failed
-      ? <button type="button" className="gs-btn ask" onClick={() => onSend(failureMessage(prInfo))}><Send size={13} strokeWidth={2} />Send failure to chat</button>
-      : <button type="button" className="gs-btn ask" onClick={() => onSend(commentsMessage(prInfo))}><Send size={13} strokeWidth={2} />Send comments to chat</button>)
+    : step === "fix" ? sendBtn("gs-btn ask")
     : null;
   const crow = (c: LedgerCommit, undo: boolean) => (
     <Fragment key={c.sha}>
@@ -718,7 +724,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     {!allOf[name] && list.length > ROWS && <button type="button" className="gl-c more" onClick={() => setAllOf((a) => ({ ...a, [name]: true }))}><span>{Math.min(total, list.length) - ROWS} more</span></button>}
     {(allOf[name] || list.length <= ROWS) && total > list.length && <button type="button" className="gl-c more" onClick={() => setGrOpen(true)}><span>{total - list.length} more in the graph</span></button>}
   </>);
-  const sec = (title: string, n: ReactNode, links?: ReactNode) => <div className="gs-sec">{title}<em>{n}</em>{links && <span className="gs-lk">{links}</span>}</div>;
+  const sec = (title: string, n: ReactNode, links?: ReactNode) => <div className="gs-sec caps">{title}<em>{n}</em>{links && <span className="gs-lk">{links}</span>}</div>;
 
   return (
     <div className="panel gp" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -761,7 +767,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
                   return (
                     <div key={i}>
                       <span className={`o ${st.tone}`}><Ic size={13} strokeWidth={2.4} /></span>
-                      <span className={`l ${st.tone}`}>{STOPS[i]}</span>
+                      <span className={`l caps ${st.tone}`}>{STOPS[i]}</span>
                       <span className={`v ${st.tone}`}>{st.value}</span>
                     </div>
                   );
@@ -795,9 +801,9 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
                   </div>
                 </div>
               )}
-              {act && <div className="gp-act">{act}</div>}
+              {(act || (step === "sync" && clash)) && <div className="gp-act">{act || clash}</div>}
+              {note && <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>}
             </div>
-            {note && <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>}
 
             {/* plain lists under the card */}
             {dirty > 0 && (<>
@@ -814,13 +820,13 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
 
             {/* what origin has that this branch doesn't; the card moves it unless a commit comes first */}
             {down > 0 && (<>
-              {sec("Coming in", down, step !== "sync" && (s.kind === "behind"
-                ? <button type="button" className="gl-b q" disabled={busy || syncing} onClick={() => void sync("pull", down)}><ArrowDown size={12} strokeWidth={2.6} />Pull {cap(down)}</button>
-                : s.kind === "diverged" && <button type="button" className="gl-b q" disabled={busy || syncing} onClick={() => mergeAct(false)}><GitMerge size={12} strokeWidth={2.4} />Merge {cap(down)}</button>))}
+              {sec("Coming in", down, step !== "sync" && (s.kind === "behind" ? pullBtn("gl-b q") : mergeBtns("gl-b q", "gl-b q")))}
               {incoming?.commits.slice(0, IN_ROWS).map((c) => (
                 <div key={c.sha} className="gl-c" title={c.subject}><span>{c.subject}</span><em>{ago(c.ts)}</em></div>
               ))}
               {down > IN_ROWS && <button type="button" className="gl-c more" onClick={() => setGrOpen(true)}><span>{down - IN_ROWS} more in the graph</span></button>}
+              {step !== "sync" && clash && <div className="gs-clash-in">{clash}</div>}
+              {step !== "sync" && chk && <div className={`gl-chk ${chk.tone}`}>{chk.tone === "ok" ? <Check size={12} strokeWidth={2.4} /> : <TriangleAlert size={12} strokeWidth={2.2} />}<span title={chk.text}>{chk.text}</span></div>}
             </>)}
 
             {localN > 0 && (<>{sec("To push", localN)}{stretch("local", local, localN)}</>)}
@@ -828,7 +834,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             {prInfo && (<>
               {sec("Pull request", `#${prInfo.number}`, <>
                 {/* the card holds this move when the PR is the step; otherwise it waits here */}
-                {step !== "fix" && onSend && prInfo.failed > 0 && <button type="button" className="gl-b q" onClick={() => onSend(failureMessage(prInfo))}><Send size={12} strokeWidth={2} />Send failure</button>}
+                {step !== "fix" && sendBtn("gl-b q", true)}
                 <a className="gp-ib" href={prInfo.url} target="_blank" rel="noreferrer" title="Open on GitHub"><ExternalLink size={12} strokeWidth={2} /></a>
               </>)}
               <div className="gl-c" title={prInfo.title}><span>{prInfo.title}</span><em>{stateLine(prInfo).toLowerCase()}</em></div>
@@ -840,7 +846,12 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
               ))}
             </>)}
 
-            {!!led?.base && led.shipped_n > 0 && (<>{sec(prInfo ? "In the PR" : `Not in ${led.base}`, led.shipped_n)}{stretch("shipped", led.shipped, led.shipped_n)}</>)}
+            {!!led?.base && led.shipped_n > 0 && (<>{sec(prInfo ? "In the PR" : `Not in ${led.base}`, led.shipped_n,
+              !prInfo && !prForm && step !== "pr" && (
+                <button type="button" className="gl-b q" disabled={busy} onClick={openPrForm}
+                  title={up ? "Opens a pull request for what origin has; push first to include the rest" : `Open a pull request into ${led.base}`}>
+                  <GitPullRequest size={13} strokeWidth={2.2} />Open PR
+                </button>))}{stretch("shipped", led.shipped, led.shipped_n)}</>)}
 
             {/* the base (a menu: BRANCHES' Target) and whether it moved, then the graph */}
             <div className="gs-foot">
