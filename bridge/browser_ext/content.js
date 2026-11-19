@@ -4,14 +4,17 @@
 // it back), and it steps aside while you pick or write, so nothing on the page is out of its reach.
 // C or + Comment starts picking: hover outlines an element and names it, a drag draws an
 // area, a click or a finished drag opens the box to write in. Pins are kept per page until Send all
-// puts them in a chat as one turn, each with a crop of what it points at.
+// puts them in a chat as one turn, each with a crop of what it points at. A single-page app's pages
+// count too: the script follows the address when the app changes it in place.
 // It wears the theme the dashboard last saved (GET /theme): its tokens go on the host over the
 // AURORA look :host spells out, which also keeps the page's own CSS variables from reaching in.
 // Everything lives in a shadow root so the page's CSS can't reach it, and the page's own keys
 // and clicks are left alone unless you're picking.
 (() => {
   if (window.top !== window || document.getElementById("mystical-comments")) return;
-  const KEY = `pins:${location.origin}${location.pathname}${location.search}`;
+  // A page is its address without the hash, unless the hash is an app's route (#/…, #!/…): an anchor (#notes) is the same page.
+  const pageKey = () => `pins:${location.origin}${location.pathname}${location.search}${/^#!?\//.test(location.hash) ? location.hash : ""}`;
+  let KEY = pageKey();
   const ask = (m) => new Promise((ok) => chrome.runtime.sendMessage(m, (r) => ok(r || { error: chrome.runtime.lastError?.message || "No answer." })));
 
   const host = document.createElement("div");
@@ -90,6 +93,15 @@
     ask({ kind: "api", path: "/pins", body: { url: location.href, count: pins.length } });
   };
   chrome.storage.local.get([KEY, SPOT], (got) => { pins = got[KEY] || []; spot = got[SPOT] || null; draw(); });
+  // A single-page app changes pages without a load, and this script runs once a load: follow its address.
+  navigation.addEventListener("currententrychange", () => {
+    const k = pageKey();
+    if (k === KEY) return;
+    KEY = k;
+    pins = [];
+    setPicking(false);       // a comment being written goes too: it points at the page that's gone
+    chrome.storage.local.get(k, (got) => { if (k === KEY) { pins = got[k] || []; draw(); } });
+  });
   ask({ kind: "api", path: "/theme" }).then((t) => {
     for (const [k, v] of Object.entries(t.tokens || {})) host.style.setProperty(k, v);
     look.classList.toggle("plain", !!t.fam && t.fam !== "aurora");      // AURORA's capitals, the others' sentence case
