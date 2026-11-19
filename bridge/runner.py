@@ -2248,9 +2248,10 @@ def _register(job: Job):
     with _jobs_lock:
         _jobs[job.id] = job
         if len(_jobs) > _JOBS_MAX:
-            # Evict finished jobs only — dropping a running job would 404 its
-            # respond/interrupt endpoints and strand a pending permission card.
-            done = [j for j in _jobs.values() if j.status != "running"]
+            # Evict jobs whose child exited only — dropping a live one (still
+            # running, or done answering while a background agent can wake it to
+            # ask) would 404 its respond/interrupt and strand its card.
+            done = [j for j in _jobs.values() if j.exited.is_set()]
             excess = len(_jobs) - _JOBS_MAX
             for old in sorted(done, key=lambda j: j.started)[:excess]:
                 _jobs.pop(old.id, None)

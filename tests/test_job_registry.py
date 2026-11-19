@@ -27,11 +27,38 @@ def test_register_never_evicts_running_jobs():
             j.started = float(i)
             # Oldest five are still running; the rest finished.
             j.status = "running" if i < 5 else "done"
+            if i >= 5:
+                j.exited.set()
             jobs.append(j)
             runner._register(j)
         assert len(runner._jobs) <= runner._JOBS_MAX
         for i in range(5):
             assert runner.get_job(f"job{i}") is not None, "running job was evicted"
+    finally:
+        runner._jobs.clear()
+        runner._jobs.update(saved)
+
+
+def test_register_keeps_a_job_whose_child_outlives_its_answer():
+    """A turn's first result marks it done, but a background agent keeps its
+    child alive and can wake it to ask a question. Evicted, that card's respond
+    404'd ("That didn't reach the bridge"): only a job whose child exited goes."""
+    saved = dict(runner._jobs)
+    runner._jobs.clear()
+    try:
+        answered = runner.Job("answered", chat_id=555)
+        answered.started = 0.0
+        runner._register(answered)
+        runner._handle_event(answered, {"type": "result", "result": "status so far"})
+        assert answered.status == "done" and not answered.exited.is_set()
+        for i in range(runner._JOBS_MAX + 5):
+            j = runner.Job(f"job{i}", chat_id=555)
+            j.started = float(i + 1)
+            j.status = "done"
+            j.exited.set()
+            runner._register(j)
+        assert len(runner._jobs) <= runner._JOBS_MAX
+        assert runner.get_job("answered") is answered, "a live child's job was evicted"
     finally:
         runner._jobs.clear()
         runner._jobs.update(saved)
