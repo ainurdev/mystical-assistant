@@ -243,6 +243,7 @@ def list_accounts() -> list:
     if ambient:
         out.append({"slot": DEFAULT_SLOT, "email": _email_at(IDENTITY),
                     "alias": None, "disabled": False, "default": True,
+                    "auto_switch": bool((reg.get(str(DEFAULT_SLOT)) or {}).get("auto_switch", True)),
                     "plan": _plan_of(credentials.parse(ambient))})
     for key, e in reg.items():
         if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
@@ -253,7 +254,7 @@ def list_accounts() -> list:
         live = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
         out.append({"slot": slot, "email": live or e.get("email"),
                     "alias": e.get("alias"), "disabled": bool(e.get("disabled")),
-                    "default": False,
+                    "default": False, "auto_switch": bool(e.get("auto_switch", True)),
                     "plan": _plan_of(credentials.load(credentials_path(slot)))})
     return sorted(out, key=lambda a: a["slot"])
 
@@ -605,6 +606,19 @@ def disable(slot: int) -> None:
 
 def enable(slot: int) -> None:
     _set_disabled(slot, False)
+
+
+def set_auto_switch(slot: int, on: bool) -> None:
+    """Keep an account in Auto-switch (the on-limit move that doesn't ask you)
+    or out of it; out, it is only offered to you. Unlike disable(), slot 1 can
+    have it too: the one thing ever kept under its registry key."""
+    slot = int(slot)
+    with _lock:
+        reg = _load()
+        if slot != DEFAULT_SLOT and str(slot) not in reg:
+            raise ValueError(f"no account in slot {slot}")
+        reg.setdefault(str(slot), {})["auto_switch"] = bool(on)
+        _save(reg)
 
 
 # --- pick(): which account takes the work ------------------------------------

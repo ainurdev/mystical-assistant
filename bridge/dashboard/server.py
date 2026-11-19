@@ -1399,6 +1399,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"error": "slot must be a number"}, 400)
                     getattr(accounts, action)(slot)
                     return self._json({"ok": True})
+                if action == "auto_switch":
+                    slot, on = body.get("slot"), body.get("on")
+                    if not isinstance(slot, int) or not isinstance(on, bool):
+                        return self._json({"error": "slot must be a number and on true or false"}, 400)
+                    accounts.set_auto_switch(slot, on)
+                    return self._json({"ok": True})
             except accounts.NoLogin:
                 return self._json({"error": "No login in ~/.claude to copy. Run "
                                             "`claude /login` in a terminal first."}, 400)

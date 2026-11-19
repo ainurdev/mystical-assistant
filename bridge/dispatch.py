@@ -569,6 +569,7 @@ def _accounts_text() -> str:
             "usage unknown" if m["logged_in"] else "login expired — /accounts login")
         tags = " (default)" if a["default"] else ""
         tags += " (disabled)" if a["disabled"] else ""
+        tags += " (out of Auto-switch)" if not a.get("auto_switch", True) else ""
         plan = f"{a['plan']} · " if a.get("plan") else ""
         lines.append(f"{a['slot']}. {a['email'] or 'unknown'} — {plan}{meter}{tags}")
     return ("Claude accounts:\n" + "\n".join(lines) +

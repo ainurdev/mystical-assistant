@@ -815,6 +815,22 @@ def test_an_offer_rides_the_park_until_it_is_answered():
         restore()
 
 
+def test_an_offers_why_rides_the_park_and_goes_with_the_answer():
+    """Auto-switch asking instead of moving says why on the chat's card too."""
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-why", CHAT, "/tmp/why")
+        why = "Account 2 has room, but it's kept out of Auto-switch."
+        limits.offer("s-why", [{"slot": 2, "label": "Account 2 (85% left)"}], why)
+        assert limits.parked()["s-why"]["why"] == why
+        limits.offer("s-why", None)
+        assert limits.parked()["s-why"]["why"] is None
+    finally:
+        _reset_limits()
+        restore()
+
+
 def test_an_offer_on_a_session_that_is_not_parked_is_dropped():
     _reset_limits()
     assert limits.offer("never-parked", [{"slot": 2, "label": "x"}]) is False

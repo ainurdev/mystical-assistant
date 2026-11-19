@@ -259,6 +259,69 @@ def test_no_rung_available_asks_nothing_and_leaves_the_park_alone():
         restore()
 
 
+# --- Auto-switch never lands on an account you kept out of it -----------------
+
+def _logins(used, kept_out=()):
+    """The real pick() over accounts 1..n: `used` is each slot's percent of its
+    window spent; the slots in kept_out have their Auto-switch switch off."""
+    saved = (ladder.accounts.list_accounts, ladder.accounts.usage_for)
+    ladder.accounts.list_accounts = lambda: [
+        {"slot": s, "disabled": False, "auto_switch": s not in kept_out} for s in sorted(used)]
+    ladder.accounts.usage_for = lambda slot: {"available": True, "five_hour": {"percent": used[slot]}}
+
+    def restore():
+        (ladder.accounts.list_accounts, ladder.accounts.usage_for) = saved
+    return restore
+
+
+def test_auto_switch_moves_only_onto_accounts_still_in_it():
+    """Account 2 has the most room but is kept out of Auto-switch: the work
+    moves to account 3, as silently as ever."""
+    restore = _logins({1: 100, 2: 5, 3: 40}, kept_out=(2,))
+    run, notify = _Rec(), _Rec()
+    try:
+        taken = ladder.escalate(_session("auto"), CHAT, dead_slot=1, run=run, notify=notify)
+        assert taken["slot"] == 3 and run.calls[0][1]["account_slot"] == 3
+    finally:
+        restore()
+
+
+def test_auto_switch_asks_you_when_only_accounts_kept_out_of_it_have_room():
+    """No silent move then: the Ask card, on Telegram, the chat and the bell,
+    each saying why. Unanswered, the park stands and resumes at the reset."""
+    from bridge import limits, notices
+    why = "Account 2 has room, but it's kept out of Auto-switch."
+    restore = _logins({1: 100, 2: 5, 3: 100}, kept_out=(2,))
+    s = _session("auto")
+    saved, got = limits.offer, []
+    limits.offer = lambda sid, rungs, why=None: got.append((sid, rungs, why)) or True
+    run, notify = _Rec(), _Rec()
+    try:
+        assert ladder.escalate(s, CHAT, dead_slot=1, run=run, notify=notify) is None
+        assert run.calls == []
+        assert got == [(s["id"], [{"slot": 2, "label": "Account 2 (95% left)"}], why)]
+        assert why in notify.calls[0][0][1]
+        bell = [r for r in notices.feed() if r["kind"] == "limit_choice" and r["subject"] == s["id"]]
+        assert why in bell[0]["body"]
+    finally:
+        limits.offer = saved
+        restore()
+
+
+def test_ask_still_offers_an_account_kept_out_of_auto_switch_without_a_why():
+    """The switch is about moves made without asking; Ask always asks."""
+    from bridge import limits
+    restore = _logins({1: 100, 2: 5}, kept_out=(2,))
+    saved, got = limits.offer, []
+    limits.offer = lambda sid, rungs, why=None: got.append((rungs, why)) or True
+    try:
+        ladder.escalate(_session("ask"), CHAT, dead_slot=1, run=_Rec(), notify=_Rec())
+        assert got == [([{"slot": 2, "label": "Account 2 (95% left)"}], None)]
+    finally:
+        limits.offer = saved
+        restore()
+
+
 def test_take_declines_a_rung_kind_it_no_longer_knows():
     """A stale card from before the free rung was removed must not crash --
     it should decline like any other handover that can't be started."""
@@ -273,7 +336,7 @@ def test_ask_policy_puts_its_offer_on_the_park():
                     headroom=lambda slot: 55)
     s = _session("ask")
     saved, got = limits.offer, []
-    limits.offer = lambda sid, rungs: got.append((sid, rungs)) or True
+    limits.offer = lambda sid, rungs, why=None: got.append((sid, rungs)) or True
     try:
         ladder.escalate(s, CHAT, run=_Rec(), notify=_Rec())
         assert got == [(s["id"], [{"slot": 2, "label": "Account 2 (55% left)"}])]

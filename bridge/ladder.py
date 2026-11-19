@@ -109,12 +109,16 @@ def same_agent(runtime: "str | None") -> tuple:
 
 
 def rungs(session: "dict | None", dead_slot: "int | None" = None,
-          strategy: str = "best") -> list:
+          strategy: str = "best", auto_switch: bool = False) -> list:
     """Alternatives to waiting, best first. Waiting itself is always available
-    and is not listed here -- the caller offers it alongside these."""
+    and is not listed here -- the caller offers it alongside these. With
+    auto_switch, only accounts still in Auto-switch: those it may move to
+    without asking."""
     out = []
-    slot = accounts.pick(exclude=(dead_slot,) if dead_slot else (),
-                         strategy=strategy)
+    skip = {dead_slot} if dead_slot else set()
+    if auto_switch:
+        skip |= {a["slot"] for a in accounts.list_accounts() if not a["auto_switch"]}
+    slot = accounts.pick(exclude=tuple(skip), strategy=strategy)
     if slot:
         left = accounts.headroom(slot)
         room = f" ({left}% left)" if left is not None else ""
@@ -133,7 +137,14 @@ def escalate(session: dict, chat_id: int, *, dead_slot: "int | None" = None,
     policy = policy_for(session)
     if policy == "wait":
         return None
-    available = rungs(session, dead_slot=dead_slot)
+    available = rungs(session, dead_slot=dead_slot, auto_switch=policy == "auto")
+    why = None
+    if policy == "auto" and not available:
+        # Only accounts you kept out of Auto-switch may have room: ask instead.
+        available = rungs(session, dead_slot=dead_slot)
+        if available:
+            policy = "ask"
+            why = f"Account {available[0]['slot']} has room, but it's kept out of Auto-switch."
     if not available:
         return None                       # nothing to offer: the park is the answer
     if run is None:
@@ -143,7 +154,7 @@ def escalate(session: dict, chat_id: int, *, dead_slot: "int | None" = None,
         from bridge import telegram
         notify = telegram.send
     if policy == "ask":
-        _offer(session, chat_id, available, notify, model=model, effort=effort)
+        _offer(session, chat_id, available, notify, why=why, model=model, effort=effort)
         return None
     return take(session, chat_id, available[0], run=run, notify=notify,
                 model=model, effort=effort)
@@ -157,10 +168,11 @@ ACCOUNT_NUDGE = (
     "your recent transcript and continue exactly where you left off; finish the "
     "task you were doing. Don't start over.")
 
-def _offer(session: dict, chat_id: int, available: list, notify,
+def _offer(session: dict, chat_id: int, available: list, notify, why=None,
            model=None, effort=None) -> None:
     """Post the card. The session stays parked behind it, so an unanswered card
-    degrades into today's wait-for-reset rather than a stalled session."""
+    degrades into today's wait-for-reset rather than a stalled session. `why`
+    says why it asks when Auto-switch was the policy, on every surface."""
     sid = session["id"]
     rows = []
     for r in available:
@@ -172,13 +184,14 @@ def _offer(session: dict, chat_id: int, available: list, notify,
     offered = [{"slot": r["slot"], "label": r["label"]}
                for r in available if r["kind"] == "account"]
     # The chat asks too (the dashboard's YOUR CALL card), off the parked status.
-    limits.offer(sid, offered)
-    notices.emit("limit_choice", sid, body="Usage limit reached. Switch to another account, "
+    limits.offer(sid, offered, why)
+    because = f" {why}" if why else ""
+    notices.emit("limit_choice", sid, body=f"Usage limit reached.{because} Switch to another account, "
                                            "or wait for the reset.",
                  meta={"rungs": offered})
     if notices.telegram_ok("limit_choice"):
         from bridge import tgboard
-        text = ("⛔ Usage limit reached. This chat is parked until the "
+        text = (f"⛔ Usage limit reached.{because} This chat is parked until the "
                 "window resets — or something else can pick the work up now:")
         if not tgboard.limit_card(chat_id, sid, text, {"inline_keyboard": rows}):
             notify(chat_id, text, {"inline_keyboard": rows})

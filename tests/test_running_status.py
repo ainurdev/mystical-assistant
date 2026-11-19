@@ -225,18 +225,20 @@ if __name__ == "__main__":
 
 def test_a_parked_session_says_when_it_resumes():
     """The chat's paused card counts down to `at` from `since`, names `slot`'s
-    login, and asks with `offer` when the ladder offered another one."""
+    login, and asks with `offer` when the ladder offered another one, saying
+    `why` when Auto-switch could have moved it."""
     from bridge import limits
     saved = limits.parked
     offer = [{"slot": 2, "label": "Account 2 (85% left)"}]
+    why = "Account 2 has room, but it's kept out of Auto-switch."
     limits.parked = lambda: {"p1": {"kind": "limit", "at": 2000.0, "since": 1000.0,
-                                    "slot": 1, "offer": offer}}
+                                    "slot": 1, "offer": offer, "why": why}}
     try:
         st = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
                                   external=[], native_snap={})["p1"]
         assert (st["state"], st["kind"], st["at"], st["since"], st["slot"]) == (
             "parked", "limit", 2000.0, 1000.0, 1)
-        assert st["offer"] == offer
+        assert (st["offer"], st["why"]) == (offer, why)
         assert st["label"].startswith("usage limit — resuming ~")
     finally:
         limits.parked = saved

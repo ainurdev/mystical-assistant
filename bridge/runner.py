@@ -1642,7 +1642,7 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
             "state": "parked", "kind": p["kind"], "source": "bridge",
             "label": (f"usage limit — resuming ~{limits.when_str(p['at'])}" if p["kind"] == "limit"
                       else f"API error — retrying {limits.wait_str(p['at'])}"),
-            "at": p["at"], "since": p["since"], "slot": p["slot"], "offer": p["offer"]})
+            "at": p["at"], "since": p["since"], "slot": p["slot"], "offer": p["offer"], "why": p["why"]})
     # A turn that signed off with a question — the ASK card in the transcript —
     # is finished, not blocked: the work landed and nothing is parked. But the
     # next move is yours, and reported as idle it looks like nobody is waiting.

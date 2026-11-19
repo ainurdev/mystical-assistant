@@ -220,6 +220,30 @@ def test_disable_holds_a_slot_out_of_rotation_but_keeps_it_listed():
     assert entry["disabled"] is False
 
 
+def test_every_account_starts_in_auto_switch_and_any_can_be_kept_out():
+    """The default login too: its switch is kept even though slot 1 has no
+    registry row. Out of Auto-switch is not disabled: the account stays usable."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("acct2@example.com")
+    accounts.add()
+    _fake_identity()
+    assert [a["auto_switch"] for a in accounts.list_accounts()] == [True, True]
+
+    accounts.set_auto_switch(1, False)
+    accounts.set_auto_switch(2, False)
+    assert [(a["slot"], a["auto_switch"], a["disabled"]) for a in accounts.list_accounts()] == \
+        [(1, False, False), (2, False, False)]
+
+    accounts.set_auto_switch(1, True)
+    assert [a["auto_switch"] for a in accounts.list_accounts()] == [True, False]
+    try:
+        accounts.set_auto_switch(9, False)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for a slot with no account")
+
+
 def test_remove_drops_the_slot_and_its_profile_dir():
     _fresh_root()
     _fake_claude_home()

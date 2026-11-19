@@ -225,6 +225,21 @@ def test_dashboard_disables_and_removes_by_slot():
             restore()
 
 
+def test_dashboard_sets_any_accounts_auto_switch_switch():
+    """The default login's switch too; anything but a slot and a yes/no is a 400."""
+    calls, restore = _stub_action("set_auto_switch")
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "auto_switch", "slot": 1, "on": False})
+        assert box["code"] == 200 and calls == [((1, False), {})]
+        for bad in ({"slot": "1", "on": False}, {"slot": 2, "on": "no"}, {"slot": 2}):
+            h._post_api("/local/accounts", {"action": "auto_switch", **bad})
+            assert box["code"] == 400, bad
+        assert len(calls) == 1
+    finally:
+        restore()
+
+
 def test_dashboard_rejects_an_unknown_account_action():
     h, box = _dash_handler()
     h._post_api("/local/accounts", {"action": "nuke", "slot": 2})
