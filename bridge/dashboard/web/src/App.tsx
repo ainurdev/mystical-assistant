@@ -3074,15 +3074,19 @@ export function App() {
         patchSettings({ rightHidden: next, ...(away && { rightTab: away as RightTab }) });
       };
       const move = (to: number) => patchSettings({ rightOrder: moveTo(shown, at, to) });
-      items.push({ section: "THIS TILE" });
-      if (!hidden.includes(id) && toggleHidden(ids, hidden, id).includes(id))
-        items.push({ icon: "⊘", label: `Hide ${ctxMenu.label.split(":")[0]}`, onClick: () => flip(id) });
-      // Both moves stay and dim at the ends: a row that vanished would put the other under the pointer.
-      items.push({ icon: "↑", label: "Move up", keep: true, disabled: at <= 0, onClick: () => move(at - 1) },
-        { icon: "↓", label: "Move down", keep: true, disabled: at < 0 || at >= shown.length - 1, onClick: () => move(at + 1) });
-      items.push({ icon: "★", label: "Open here on start", keep: true, on: settings.rightStart === id,
-        onClick: () => patchSettings({ rightStart: settings.rightStart === id ? "" : id }) });
-      items.push({ divider: true }, { section: "ON THE RAIL", hint: "click to show/hide" }, {
+      // The rail's own background opens this menu too, with no tile under it: no THIS TILE rows.
+      if (id) {
+        items.push({ section: "THIS TILE" });
+        if (!hidden.includes(id) && toggleHidden(ids, hidden, id).includes(id))
+          items.push({ icon: "⊘", label: `Hide ${ctxMenu.label.split(":")[0]}`, onClick: () => flip(id) });
+        // Both moves stay and dim at the ends: a row that vanished would put the other under the pointer.
+        items.push({ icon: "↑", label: "Move up", keep: true, disabled: at <= 0, onClick: () => move(at - 1) },
+          { icon: "↓", label: "Move down", keep: true, disabled: at < 0 || at >= shown.length - 1, onClick: () => move(at + 1) });
+        items.push({ icon: "★", label: "Open here on start", keep: true, on: settings.rightStart === id,
+          onClick: () => patchSettings({ rightStart: settings.rightStart === id ? "" : id }) });
+        items.push({ divider: true });
+      }
+      items.push({ section: "ON THE RAIL", hint: "click to show/hide" }, {
         checks: rightTabs.map((t) => {
           const on = !hidden.includes(t.id);
           return { label: t.label.split(":")[0], on, locked: on && !toggleHidden(ids, hidden, t.id).includes(t.id), onClick: () => flip(t.id) };

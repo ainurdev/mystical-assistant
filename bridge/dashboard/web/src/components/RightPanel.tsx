@@ -283,6 +283,8 @@ export function RightPanel({
       )}
       <div
         ref={railRef}
+        data-ctx-type="railtab"
+        data-ctx-label="Rail"
         className="relative flex w-[48px] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
         style={{ background: "var(--panel3)", isolation: "isolate", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
       >
