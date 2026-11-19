@@ -27,7 +27,7 @@
   const host = document.createElement("div");
   host.id = "mystical-comments";
   host.style.cssText = "all:initial;position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647";
-  const root = host.attachShadow({ mode: "open" });
+  const root = host.attachShadow({ mode: "closed" });   // closed: the page's own script can't read the chats or press Send
   root.innerHTML = `<style>
     :host{--acc:#7fe9d8;--acc-on:#060a0a;--canvas:#060a0a;--panel:rgba(7,13,13,.97);--panel2:#070d0d;--panel3:#040707;--tx:#bfe6de;--txb:#dff8f2;--txm:#9fc7c0;--txd:#6f938d;--txl:#5f817b;--border:rgba(127,233,216,.16);--border-bright:rgba(127,233,216,.4);--ask:#e3c279;--err:#e0897a;--ui-font:ui-monospace,"JetBrains Mono",Menlo,monospace;--prad:0px}
     *{box-sizing:border-box;font:12.5px/1.45 var(--ui-font);color:var(--tx)}
@@ -266,6 +266,7 @@
   // ------- picking --------------------------------------------------------------------------
   let start = null;      // {x, y} of a press while picking
   let hovered = null;
+  let eat = false;       // the click after a pick's mouseup: compose and moveTo stop picking before it arrives
 
   function setPicking(on) {
     picking = on;
@@ -286,8 +287,9 @@
 
   const areaOf = (a, b) => ({ left: Math.min(a.x, b.x), top: Math.min(a.y, b.y), right: Math.max(a.x, b.x), bottom: Math.max(a.y, b.y) });
 
+  // Only a person's input counts (isTrusted): the page's own script can dispatch these events too.
   document.addEventListener("mousemove", (e) => {
-    if (!picking || own(e)) return;
+    if (!e.isTrusted || !picking || own(e)) return;
     if (start && e.buttons === 1 && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) {
       const a = areaOf(start, { x: e.clientX, y: e.clientY });
       live.innerHTML = `<div class="area" style="left:${a.left}px;top:${a.top}px;width:${a.right - a.left}px;height:${a.bottom - a.top}px"></div>`;
@@ -299,6 +301,8 @@
   }, true);
 
   document.addEventListener("mousedown", (e) => {
+    if (!e.isTrusted) return;
+    eat = false;
     if (!picking || own(e) || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -306,11 +310,12 @@
   }, true);
 
   document.addEventListener("mouseup", (e) => {
-    if (!picking || own(e) || !start) return;
+    if (!e.isTrusted || !picking || own(e) || !start) return;
     e.preventDefault();
     e.stopPropagation();
     const s = start;
     start = null;
+    eat = true;
     const use = repoint === null ? compose : moveTo;
     if (s.dragged) {
       const a = areaOf(s, { x: e.clientX, y: e.clientY });
@@ -326,13 +331,15 @@
 
   // A pick's click must not reach the page (it would follow the link or press the button).
   document.addEventListener("click", (e) => {
-    if (own(e)) return;
-    if (picking) { e.preventDefault(); e.stopPropagation(); }
+    if (!e.isTrusted || own(e)) return;
+    if (picking || eat) { eat = false; e.preventDefault(); e.stopPropagation(); }
     else if (menu) { menu = ""; draw(); }      // a click anywhere else closes the ⋯ menu
   }, true);
 
   document.addEventListener("keydown", (e) => {
-    const typing = e.composedPath()[0].closest?.("input,textarea,select,[contenteditable=''],[contenteditable=true]");
+    if (!e.isTrusted) return;
+    // The closed root hides the tray's own field from composedPath(); root.activeElement still has it.
+    const typing = (own(e) ? root.activeElement : e.composedPath()[0])?.closest?.("input,textarea,select,[contenteditable=''],[contenteditable=true]");
     if (own(e) && typing) return;                       // the tray's own fields keep their keys
     const k = e.key.toLowerCase(), bare = !typing && !e.metaKey && !e.ctrlKey && !e.altKey;
     if (k === "escape" && picking) setPicking(false);
@@ -437,6 +444,7 @@
     note = { text: "Sending…" };
     draw();
     const nm = names();
+    const sent = new Set(pins.map((p) => p.id));
     const body = {
       url: location.href, viewport: `${innerWidth}×${innerHeight}`,
       chat: from?.id || "",    // the new chat gets this chat's project and worktree; "" = the one that opened the site's
@@ -445,8 +453,8 @@
     const got = await ask({ kind: "api", path: "/send", body });
     busy = false;
     if (got.error) { note = { text: got.error, bad: true }; draw(); return; }
-    pins = [];
-    opened = null;
+    pins = pins.filter((p) => !sent.has(p.id));   // one pinned while it was sending, here or in another tab, stays
+    if (idx(opened) < 0) opened = null;
     save();
     from = null;               // the bridge keeps a picked chat as the site's own now
     note = { text: `Started “${got.chat.title}”. i will see to it.` };
