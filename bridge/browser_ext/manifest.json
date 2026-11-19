@@ -3,7 +3,7 @@
   "name": "Mystical comments",
   "version": "1.0.0",
   "description": "Pin comments on a page and send them to a Mystical chat.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
