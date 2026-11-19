@@ -1173,7 +1173,7 @@ const POLICY_OPTS: { label: string; value: string }[] = [
 
 const POLICY_BLURB: Record<string, string> = {
   ask: "Offer the choices (other account · wait) and stay parked until you pick.",
-  auto: "Take the best fallback immediately and report which one it landed on.",
+  auto: "Take the best fallback immediately and report which one it landed on. Accounts out of Auto-switch are only offered to you.",
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
 
@@ -2977,9 +2977,9 @@ function useAccounts(onChanged: () => void) {
     })
     .catch(() => setRows([]));
   useEffect(() => { void load(); }, []);
-  async function act(action: "add" | "remove" | "disable" | "enable", slot?: number) {
+  async function act(action: Parameters<typeof api.accountAction>[0], slot?: number, on?: boolean) {
     setBusy(true); setErr(null);
-    try { await api.accountAction(action, slot); onChanged(); await load(); }
+    try { await api.accountAction(action, slot, on); onChanged(); await load(); }
     catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
     finally { setBusy(false); }
   }
@@ -3691,7 +3691,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
             <LoginTile slot={a.slot} />
             <span className="aim-who">
               <b>{a.email ?? "unknown"}</b>
-              <span>{[a.plan, a.default ? "default login" : null, a.disabled ? "disabled" : null].filter(Boolean).join(" · ") || "Claude login"}</span>
+              <span>{[a.plan, a.default ? "default login" : null, a.disabled ? "disabled" : null,
+                a.auto_switch === false ? "out of Auto-switch" : null].filter(Boolean).join(" · ") || "Claude login"}</span>
             </span>
             {a.default && <span className="aim-chip">Default</span>}
             <LoginMeters a={a} />
@@ -3705,6 +3706,12 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
                   <MiniBtn disabled={acc.busy} danger onClick={() => void acc.act("remove", a.slot)} title="Remove this login">✕</MiniBtn>
                 </>
               )}
+              {/* Every row, disabled ones too (dimmed with the row), so the switches line up. */}
+              <span className="aim-auto" title="On: a limit can move a session onto this login without asking. Off: it's only offered to you.">
+                Auto-switch
+                <Switch on={a.auto_switch !== false} label="Auto-switch"
+                  onClick={() => acc.busy ? null : void acc.act("auto_switch", a.slot, a.auto_switch === false)} />
+              </span>
             </span>
           </div>
           {profilesAvailable && profileRows({ agent: "claude", account: String(a.slot) }, String(a.slot), "on this login")}

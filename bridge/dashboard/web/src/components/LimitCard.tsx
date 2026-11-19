@@ -262,7 +262,7 @@ function LimitAsk({ live, logins, who, win }: Ctx & { live: LimitLive; logins: A
   return (
     <Card className="chatcard qcard qcard-live dlimit-ask space-y-3">
       <div className="dlimit-q">
-        <b>{who}</b> hit its {win} limit{st.since ? ` at ${hhmm(st.since, h12)}` : ""}. Where should the rest of this turn run?
+        <b>{who}</b> hit its {win} limit{st.since ? ` at ${hhmm(st.since, h12)}` : ""}.{st.why ? ` ${st.why}` : ""} Where should the rest of this turn run?
       </div>
       <div className="flex flex-col gap-1.5">
         {st.offer!.map((r, i) => {

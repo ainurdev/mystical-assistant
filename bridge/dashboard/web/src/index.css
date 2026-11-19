@@ -5590,6 +5590,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-meter b { font-weight: 500; }
 .aim-usage { font: 11px var(--mono); white-space: nowrap; }
 .aim-acts { display: flex; gap: 6px; flex: none; align-items: center; }
+.aim-auto { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--l2); font-size: 12px; color: var(--txd); white-space: nowrap; }
 .aim-profs { border-top: 1px solid var(--l); background: var(--panel2); padding: 6px 10px 8px; }
 .aim-prof { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 6px 6px; border-radius: 8px; }
 .aim-prof:hover, .aim-prof[data-editing] { background: var(--ac-06); }

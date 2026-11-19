@@ -1069,6 +1069,7 @@ export interface SessionStatus {
   at?: number;
   slot?: number | null;
   offer?: { slot: number; label: string }[] | null;
+  why?: string | null; // why it asks when Auto-switch could have moved it: only logins kept out of it have room
   // `background` only, with `since` = when the answer landed: the tasks still
   // running (shells too), and the most that ran at once.
   bg?: BgTask[];
@@ -1302,6 +1303,7 @@ export interface AccountInfo {
   alias: string | null;
   disabled: boolean;
   default: boolean;
+  auto_switch?: boolean; // false = out of Auto-switch: a limit only ever offers this login to you (absent from an older bridge)
   left: number | null; // % of the tighter usage window unspent; null = meter unreadable
   resets_at: string | null; // when that window rolls and `left` goes back up
   five_hour: UsageBucket | null; // both windows, so a row can show the near reset
@@ -2171,10 +2173,11 @@ export const api = {
   // older than N s (0 = every one, now). A bridge older than that ignores it.
   accounts: (fresh?: number) =>
     req<AccountsInfo>(`/local/accounts${fresh === undefined ? "" : `?fresh=${fresh}`}`),
-  accountAction: (action: "add" | "remove" | "disable" | "enable", slot?: number) =>
+  /** `on` goes with auto_switch: keep the login in Auto-switch, or out of it. */
+  accountAction: (action: "add" | "remove" | "disable" | "enable" | "auto_switch", slot?: number, on?: boolean) =>
     req<{ ok: boolean; slot?: number }>("/local/accounts", {
       method: "POST",
-      body: { action, ...(slot === undefined ? {} : { slot }) },
+      body: { action, ...(slot === undefined ? {} : { slot }), ...(on === undefined ? {} : { on }) },
     }),
   /** Start a sign-in. No slot: a fresh profile, so the ambient ~/.claude login is
    *  untouched. A slot: that account signs back in where it already lives — the
