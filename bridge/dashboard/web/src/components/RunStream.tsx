@@ -3176,8 +3176,11 @@ export const RunStream = memo(function RunStream({
       case "background_set":
       case "permission_resolved":
       case "question_answered":
-      case "computer_state":   // the DRIVING pill over the prompt box (ComputerPill)
         return null; // shown inside the relevant card
+      case "computer_state":   // driving: the pill over the prompt box (ComputerPill)
+        return event.state === "stopped"
+          ? <DividerRow key={i} text={`Computer use stopped${event.by === "esc" ? " with Esc" : event.by === "menu" ? " from the menu bar" : ""} · ${event.actions ?? 0} action${event.actions === 1 ? "" : "s"} · its apps dropped`} />
+          : null;
     }
   };
 

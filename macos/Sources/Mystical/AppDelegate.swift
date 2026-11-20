@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
             menu.addItem(disabled("Driving: \(computer.title.isEmpty ? "a chat" : computer.title)"))
             menu.addItem(item("Stop Computer Use (Esc)", #selector(stopComputer), ""))
+            menu.addItem(item("Open the Chat", #selector(openComputerChat), "", enabled: !computer.session.isEmpty))
         }
         menu.addItem(.separator())
         menu.addItem(item("Open Dashboard", #selector(showDashboard), "0"))
@@ -201,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: actions
 
     @objc private func stopComputer() { computer.stop("menu") }
+    @objc private func openComputerChat() { dashboard.open(session: computer.session) }
     @objc func showDashboard() { dashboard.show() }
     @objc func reloadDashboard() { dashboard.reload() }
     @objc func zoomIn() { dashboard.zoom(1.1) }

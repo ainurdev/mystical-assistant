@@ -1,9 +1,10 @@
 // Grouping runs of consecutive tool events in a transcript turn. Pure — the
 // renderer decides what a "block" is, this only groups.
 
-/** Only what the grouping reads: the discriminator, plus the text that decides
- *  whether a `thinking` event is a paragraph or just a pause. */
-type Ev = { type: string; text?: string };
+/** Only what the grouping reads: the discriminator, the text that decides
+ *  whether a `thinking` event is a paragraph or just a pause, and whether a
+ *  `computer_state` is the silent start of a drive or its stop line. */
+type Ev = { type: string; text?: string; state?: string };
 
 /** Events that take no row of their own, so they can't break a run. A textless
  *  `thinking` is a pause — both frontends draw it as a zero-height mark, so a
@@ -14,7 +15,7 @@ const invisible = (e: Ev) =>
   e.type === "background_done" ||
   e.type === "background_set" ||
   e.type === "question_answered" ||
-  e.type === "computer_state" ||
+  (e.type === "computer_state" && e.state === "driving") ||
   (e.type === "thinking" && !e.text);
 
 /** Shortest run worth folding — two chips is not yet noise. */

@@ -28,8 +28,13 @@ final class ComputerUse {
     private var results: [[String: Any]] = []
     private var running = false
     private var askedAccessibility = false
+    /// Set by Stop until the bridge confirms ("end", or a pull that isn't driving):
+    /// an order already here or a batch half done goes no further.
+    private var halted = false
     private(set) var driving = false
     private(set) var title = ""
+    /// The driving chat, for the menu bar's Open the chat.
+    private(set) var session = ""
     var onChange: (() -> Void)?
 
     // The last full screenshot: what Claude's coordinates refer to.
@@ -52,32 +57,31 @@ final class ComputerUse {
 
     /// The menu bar's Stop, and Esc: told to the bridge at once, not with the next pull.
     func stop(_ by: String) {
+        halted = true
         end()
-        guard let base = bridge.status?.origin, let token = ComputerCore.token(from: bridge.status?.dashboardURL) else { return }
+        if let req = request(["stop": by], timeout: 5) { URLSession.shared.dataTask(with: req).resume() }
+    }
+
+    /// POST /local/computer/app with the dashboard token. Nil until a status names the bridge.
+    private func request(_ body: [String: Any], timeout: TimeInterval) -> URLRequest? {
+        guard let base = bridge.status?.origin, let token = ComputerCore.token(from: bridge.status?.dashboardURL) else { return nil }
         var req = URLRequest(url: base.appendingPathComponent("local/computer/app"))
         req.httpMethod = "POST"
-        req.timeoutInterval = 5
+        req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(token, forHTTPHeaderField: "X-Dash-Token")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["stop": by])
-        URLSession.shared.dataTask(with: req).resume()
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        return req
     }
 
     // MARK: the line to the bridge
 
     private func loop() async {
         while running {
-            guard let base = bridge.status?.origin, let token = ComputerCore.token(from: bridge.status?.dashboardURL) else {
+            guard let req = request(["results": results, "perms": perms()], timeout: 35) else {
                 try? await Task.sleep(for: .seconds(5)); continue
             }
-            let body: [String: Any] = ["results": results, "perms": perms()]
             results = []
-            var req = URLRequest(url: base.appendingPathComponent("local/computer/app"))
-            req.httpMethod = "POST"
-            req.timeoutInterval = 35
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.setValue(token, forHTTPHeaderField: "X-Dash-Token")
-            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
             guard let (data, resp) = try? await URLSession.shared.data(for: req),
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -87,7 +91,10 @@ final class ComputerUse {
             for order in o["orders"] as? [[String: Any]] ?? [] {
                 if let r = await run(order) { results.append(r) }
             }
-            if (o["driving"] as? Bool) == false && driving { end() }
+            if (o["driving"] as? Bool) == false {
+                halted = false
+                if driving { end() }
+            }
         }
     }
 
@@ -113,12 +120,13 @@ final class ComputerUse {
 
     private func run(_ order: [String: Any]) async -> [String: Any]? {
         let action = order["action"] as? String ?? ""
-        if action == "end" { end(); return nil }
+        if action == "end" { halted = false; end(); return nil }
         guard let id = order["id"] as? String else { return nil }
+        if halted { return ["id": id, "ok": false, "text": "The user stopped computer use."] }
         let args = order["args"] as? [String: Any] ?? [:]
         let full = order["full"] as? [String] ?? []
         let see = order["see"] as? [String] ?? []
-        begin(order["title"] as? String ?? "")
+        begin(order["title"] as? String ?? "", apps: see, session: order["sid"] as? String ?? "")
         var out: [String: Any] = ["id": id]
         do {
             let r = try await act(action, args, full: full, see: see)
@@ -144,7 +152,11 @@ final class ComputerUse {
             var last: String?
             for (i, step) in (a["actions"] as? [[String: Any]] ?? []).enumerated() {
                 let name = step["action"] as? String ?? ""
+                // A beat between steps: Stop gets heard, and the front app catches up
+                // with a click that just changed it.
+                if i > 0 { try await Task.sleep(for: .milliseconds(60)) }
                 do {
+                    try checkHalt()
                     let r = name == "wait" ? try await wait(step) : try await act(name, step, full: full, see: see)
                     if !r.text.isEmpty { texts.append("\(i + 1). \(name): \(r.text)") }
                     if let img = r.image { last = img }
@@ -170,7 +182,15 @@ final class ComputerUse {
         case "open_application": return try await open(a["app"] as? String ?? "", see: see)
         default: break
         }
-        try ready(full: full)
+        let pointer: CGPoint? = switch action {
+        case "left_click", "double_click", "triple_click", "right_click", "middle_click", "scroll":
+            try point(a["coordinate"])
+        case "left_click_drag": a["start_coordinate"] != nil ? try point(a["start_coordinate"]) : cursor()
+        case "left_mouse_down", "left_mouse_up": cursor()
+        default: nil
+        }
+        try ready(full: full, at: pointer, keys: ["type", "key", "hold_key"].contains(action))
+        if action == "left_click_drag" { try ready(full: full, at: try point(a["coordinate"]), keys: false) }
         switch action {
         case "left_click", "double_click", "triple_click", "right_click", "middle_click":
             let p = try point(a["coordinate"])
@@ -227,8 +247,16 @@ final class ComputerUse {
         return ("", nil)
     }
 
-    /// Input needs Accessibility and one of the chat's FULL apps in front.
-    private func ready(full: [String]) throws {
+    private func checkHalt() throws {
+        if halted { throw Refusal(text: "The user stopped computer use.") }
+    }
+
+    /// Input needs Accessibility and one of the chat's FULL apps in front. A pointer
+    /// action also needs one of them on top under the point: a click lands on
+    /// whatever window is there, which can be a LOOK app or one hidden from the
+    /// screenshot. Keys go to the top window, so that has to be a FULL app's too.
+    private func ready(full: [String], at p: CGPoint?, keys: Bool) throws {
+        try checkHalt()
         guard AXIsProcessTrusted() else {
             if !askedAccessibility {
                 askedAccessibility = true
@@ -245,6 +273,36 @@ final class ComputerUse {
                 + "type into, so nothing happened. Bring a granted app to the front (open_application), or "
                 + "ask for \(name) with request_access.")
         }
+        if let p {
+            let o = owner(at: p)
+            // The menu bar's menus are the Window Server's, and belong to the front app checked above.
+            guard let o, o.name == "Window Server" || ComputerCore.granted(full, name: o.name, bundle: o.bundle) else {
+                throw Refusal(text: "Under that point is \(o?.name ?? "the desktop"), not one of this chat's apps you "
+                    + "may click, so nothing happened.")
+            }
+        } else if keys, let o = owner(at: nil), !ComputerCore.granted(full, name: o.name, bundle: o.bundle) {
+            throw Refusal(text: "\(o.name ?? "Another app")'s window is on top, so the keys would go there. Nothing "
+                + "was typed.")
+        }
+    }
+
+    /// Whose window is on top at `p` (global top-left points), or the topmost
+    /// normal window when `p` is nil. Ours (the overlay) and invisible ones skipped.
+    private func owner(at p: CGPoint?) -> (name: String?, bundle: String?)? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        let me = ProcessInfo.processInfo.processIdentifier
+        for w in list {
+            guard let pid = w[kCGWindowOwnerPID as String] as? Int32, pid != me,
+                  (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let layer = w[kCGWindowLayer as String] as? Int,
+                  let b = w[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: b) else { continue }
+            if let p { if !r.contains(p) { continue } } else if layer != 0 { continue }
+            let app = NSRunningApplication(processIdentifier: pid)
+            return (app?.localizedName ?? w[kCGWindowOwnerName as String] as? String, app?.bundleIdentifier)
+        }
+        return nil
     }
 
     // MARK: input
@@ -291,6 +349,7 @@ final class ComputerUse {
         CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left)?
             .post(tap: .cghidEventTap)
         for i in 1...12 {
+            if halted { break }
             let t = Double(i) / 12
             let p = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
             CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left)?
@@ -315,6 +374,7 @@ final class ComputerUse {
 
     private func type(_ text: String) async throws {
         for run in ComputerCore.typingRuns(text) {
+            try checkHalt()
             if run == "\n" { press(ComputerCore.chord("return")!); continue }
             let units = Array(run.utf16)
             for d in [true, false] {
@@ -379,9 +439,11 @@ final class ComputerUse {
                 + "Coordinates still refer to the full screenshot.", jpeg(img))
     }
 
-    private var scale: Double { Double(NSScreen.main?.backingScaleFactor ?? 2) }
+    /// The primary display's scale (screenshots are of CGMainDisplayID, i.e. NSScreen.screens[0]).
+    private var scale: Double { Double(NSScreen.screens.first?.backingScaleFactor ?? 2) }
 
     /// The main display with only the chat's apps on it, and never our overlay.
+    /// shortcut: the primary display only (no switch_display); add it when a task needs a second screen.
     private func filter(see: [String]) async throws -> (SCContentFilter, SCDisplay) {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
@@ -406,11 +468,12 @@ final class ComputerUse {
 
     // MARK: driving on / off
 
-    private func begin(_ title: String) {
+    private func begin(_ title: String, apps: [String], session: String) {
         guard !driving || title != self.title else { return }
         driving = true
         self.title = title
-        overlay.show(title: title)
+        self.session = session
+        overlay.show(title: title, apps: apps)
         armEsc()
         onChange?()
     }
@@ -467,13 +530,13 @@ final class Overlay {
 
     var windowNumbers: [Int] { panel.map { [$0.windowNumber] } ?? [] }
 
-    func show(title: String) {
-        guard let screen = NSScreen.main else { return }
+    func show(title: String, apps: [String]) {
+        guard let screen = NSScreen.screens.first else { return }
         let p = panel ?? make(screen)
         panel = p
         p.setFrame(screen.frame, display: true)
-        let t = title.isEmpty ? "" : "  ·  \(title.prefix(40))"
-        pill?.stringValue = "MYSTICAL IS DRIVING\(t)   ESC STOPS"
+        let parts = ["MYSTICAL IS DRIVING", String(title.prefix(40)), apps.prefix(3).joined(separator: ", ")]
+        pill?.stringValue = parts.filter { !$0.isEmpty }.joined(separator: "  ·  ") + "   ESC STOPS"
         layoutPill(in: p)
         p.orderFrontRegardless()
     }
@@ -481,7 +544,7 @@ final class Overlay {
     func hide() { panel?.orderOut(nil) }
 
     func ring(at p: CGPoint) {
-        guard let panel, let layer = panel.contentView?.layer, let screen = NSScreen.main else { return }
+        guard let panel, let layer = panel.contentView?.layer, let screen = NSScreen.screens.first else { return }
         // CGEvent points are top-left; the layer's are bottom-left.
         let y = screen.frame.height - p.y
         let r = CAShapeLayer()

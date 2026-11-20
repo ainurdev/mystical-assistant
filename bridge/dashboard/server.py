@@ -726,8 +726,7 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(attribution.breakdown(sid))
-        # The SESSION tab's window, time and spend, from the CLI's own transcript.
-        # Computer use's Tools row and DRIVING strip (bridge/computer.py).
+        # Computer use's Tools row (bridge/computer.py).
         if path.startswith("/local/sessions/") and path.endswith("/computer"):
             from bridge import computer
             sid = path[len("/local/sessions/"):-len("/computer")]
@@ -735,6 +734,7 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(computer.status(sid))
+        # The SESSION tab's window, time and spend, from the CLI's own transcript.
         if path.startswith("/local/sessions/") and path.endswith("/meter"):
             sid = path[len("/local/sessions/"):-len("/meter")]
             s = store.get_session(sid)

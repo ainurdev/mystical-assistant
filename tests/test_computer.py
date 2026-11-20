@@ -292,3 +292,43 @@ def test_switching_it_off_stops_it(isolated):
     _grant(job, cid)
     computer.set_enabled(sid, False)
     assert computer.status(sid)["apps"] == [] and not computer.enabled(sid)
+
+
+def test_stop_fails_an_order_still_in_flight_and_the_app_never_gets_it_late(isolated):
+    sid, cid, job = _chat(isolated)
+    _grant(job, cid)
+    computer.app_exchange({})
+    t, box = _in_thread(computer.call, cid, "type", {"text": "a long text"})
+    time.sleep(0.2)                       # queued, the app hasn't pulled it
+    computer.stop(sid, "esc")
+    t.join(3)
+    assert box["out"]["isError"] and "stopped" in _text(box["out"])
+    assert [o["action"] for o in computer.app_exchange({})["orders"]] == ["end"]
+
+
+def test_system_keys_are_caught_in_any_spelling(isolated):
+    _sid, cid, job = _chat(isolated)
+    _grant(job, cid)
+    for k in ("command+q", "Q+CMD", "cmd+option+escape", "meta+tab", "control+command+q"):
+        assert "system key" in _text(computer.call(cid, "key", {"text": k})), k
+    assert "system key" not in _text(computer.call(cid, "key", {"text": "cmd+c"}))
+
+
+def test_a_junk_duration_is_an_answer_not_a_crash(isolated):
+    _sid, cid, job = _chat(isolated)
+    _grant(job, cid)
+    assert _text(computer.call(cid, "wait", {"duration": "soon"})) == "Waited."
+
+
+def test_two_cards_answered_in_turn_keep_both_grants(isolated):
+    sid, cid, job = _chat(isolated)
+    n = len(job.pending)
+    t1, b1 = _in_thread(computer.call, cid, "request_access", {"apps": ["Safari"], "reason": "x"})
+    c1 = _card_of(job, n)
+    t2, b2 = _in_thread(computer.call, cid, "request_access", {"apps": ["Numbers"], "reason": "y", "clipboardRead": True})
+    c2 = _card_of(job, n + 1)
+    gateway.answer_card(job, c2, [{"header": "Computer", "labels": [computer.ALLOW]}, {"header": "Also", "labels": ["Read clipboard"]}])
+    gateway.answer_card(job, c1, [{"header": "Computer", "labels": [computer.ALLOW]}])
+    t1.join(3), t2.join(3)
+    assert sorted(computer.status(sid)["apps"]) == ["Numbers", "Safari"]
+    assert "Flags: clipboard_read" in _text(computer.call(cid, "list_granted_applications", {}))

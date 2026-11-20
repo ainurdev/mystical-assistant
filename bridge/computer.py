@@ -47,15 +47,19 @@ PULL_WAIT = 20                      # s an app pull waits for an order
 ORDER_TIMEOUT = 30                  # s for the app to do one order (plus any wait it asks for)
 
 # Typing here runs code, or answers this chat's own cards: see only.
+# shortcut: matched by name, so a renamed app or a variant ("Code - Insiders") gets FULL;
+# match bundle ids once someone runs one.
 LOOK_ONLY = {"terminal", "iterm", "iterm2", "ghostty", "warp", "alacritty", "kitty", "wezterm",
              "hyper", "visual studio code", "code", "cursor", "windsurf", "zed", "xcode",
              "script editor", "automator", "shortcuts", "system settings", "system preferences",
              "keychain access", "activity monitor", "mystical"}
 
-# Quit, force-quit, log out, lock, switch app: blocked unless the grant has system keys.
-SYSTEM_KEYS = {"cmd+q", "cmd+shift+q", "cmd+alt+esc", "cmd+option+esc", "ctrl+cmd+q",
-               "cmd+tab", "cmd+shift+tab", "cmd+alt+shift+q", "cmd+option+shift+q",
-               "ctrl+alt+cmd+power", "cmd+h", "cmd+alt+h", "cmd+option+h", "cmd+m"}
+# Quit, force-quit, log out, lock, switch app, hide: blocked unless the grant has system keys.
+# Written in _chord's spelling; every alias the app accepts folds onto it.
+SYSTEM_KEYS = {"cmd+q", "cmd+shift+q", "alt+cmd+esc", "cmd+ctrl+q", "cmd+tab", "cmd+shift+tab",
+               "alt+cmd+shift+q", "cmd+h", "alt+cmd+h", "cmd+m"}
+_ALIAS = {"command": "cmd", "meta": "cmd", "super": "cmd", "win": "cmd", "option": "alt", "opt": "alt",
+          "control": "ctrl", "escape": "esc"}
 
 INPUT = {"left_click", "double_click", "triple_click", "right_click", "middle_click", "type", "key",
          "scroll", "left_click_drag", "mouse_move", "hold_key", "left_mouse_down", "left_mouse_up",
@@ -92,7 +96,7 @@ def app_online() -> bool:
 
 
 def status(sid: str) -> dict:
-    """What the Tools row and the DRIVING strip read."""
+    """What the Tools row reads (the DRIVING pill reads the turn's computer_state events)."""
     with _lock:
         h = dict(_holder) if _holder else None
         g = _grants.get(sid)
@@ -111,6 +115,23 @@ def _text(s: str, error: bool = False) -> dict:
     if error:
         out["isError"] = True
     return out
+
+
+def _chord(text: str) -> str:
+    """A key chord in one spelling, parts sorted: "Command+Q" and "q+cmd" are one key."""
+    parts = (p.strip().lower() for p in text.split("+") if p.strip())
+    return "+".join(sorted(_ALIAS.get(p, p) for p in parts))
+
+
+_SYSTEM = {_chord(k) for k in SYSTEM_KEYS}
+
+
+def _secs(v, cap: float = 100.0) -> float:
+    """A duration from the model, never an exception: junk is 0."""
+    try:
+        return max(0.0, min(float(v or 0), cap))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def tier(name: str) -> str:
@@ -142,7 +163,7 @@ def call(claude_sid: str, name: str, args: dict) -> dict:
         return _text(f"Granted: {apps}. Flags: {', '.join(flags) or 'none'}. "
                      "Coordinates are pixels in the most recent screenshot.")
     if name == "wait":
-        time.sleep(max(0.0, min(float(args.get("duration") or 0), 100.0)))
+        time.sleep(_secs(args.get("duration")))
         return _text("Waited.")
     if name not in APP_ACTIONS and name != "computer_batch":
         return _text(f"Unknown tool: {name}", error=True)
@@ -176,8 +197,7 @@ def _refusal(g: dict, name: str, args: dict) -> "str | None":
     if name == "write_clipboard" and not g.get("clipboard_write"):
         return "Writing the clipboard wasn't granted. Ask again with clipboardWrite."
     if name in ("key", "hold_key") and not g.get("system_keys"):
-        chord = "+".join(sorted(p.strip().lower() for p in str(args.get("text") or "").split("+")))
-        if chord in {"+".join(sorted(k.split("+"))) for k in SYSTEM_KEYS}:
+        if _chord(str(args.get("text") or "")) in _SYSTEM:
             return f"{args.get('text')} is a system key (quit, switch app, lock). Ask again with systemKeyCombos."
     if name == "open_application" and not _granted_app(g, str(args.get("app") or "")):
         return f"{args.get('app')} isn't one of this chat's apps. Ask for it with request_access first."
@@ -227,23 +247,27 @@ def _release(sid: str, job_id: "str | None" = None) -> bool:
 
 
 def _order(sid: str, name: str, args: dict, g: dict) -> dict:
-    with _lock:
-        title = (_holder or {}).get("title", "")
     if not app_online():
         return _text("Mystical.app isn't running, or is too old for computer use. "
                      "Tell the user to open it (and rebuild it from its menu if it's old).", error=True)
     acts = args.get("actions") if name == "computer_batch" else None
-    wait = sum(float((a or {}).get("duration") or 0) for a in acts) if acts else float(args.get("duration") or 0)
+    wait = sum(_secs((a or {}).get("duration")) for a in acts) if acts else _secs(args.get("duration"))
     oid = uuid.uuid4().hex
     done = threading.Event()
     with _lock:
-        _waiting[oid] = {"done": done, "result": None}
-    _orders.put({"id": oid, "action": name, "args": args, "title": title,
-                 "full": [a["name"] for a in g["apps"] if a["tier"] == "full"],
-                 "see": [a["name"] for a in g["apps"]]})
+        # Checked and queued under one lock: a Stop between taking the desktop and
+        # this order must win, or the order would run after the app's "end".
+        if not _holder or _holder["sid"] != sid:
+            return _text("The user stopped computer use.", error=True)
+        _waiting[oid] = {"done": done, "result": None, "sid": sid}
+        _orders.put({"id": oid, "action": name, "args": args, "title": _holder["title"], "sid": sid,
+                     "full": [a["name"] for a in g["apps"] if a["tier"] == "full"],
+                     "see": [a["name"] for a in g["apps"]]})
     got = done.wait(ORDER_TIMEOUT + min(wait, 200))
     with _lock:
         row = _waiting.pop(oid, None)
+    if got and row is None:
+        return _text("The user stopped computer use.", error=True)
     if not got or not row or row["result"] is None:
         return _text("Mystical.app didn't answer in time. The action may or may not have happened: "
                      "take a screenshot before going on.", error=True)
@@ -323,9 +347,13 @@ def _request_access(s: dict, job, args: dict) -> dict:
         g = grant_from(apps, extras, answers)
         if g is None:
             return "The user denied access. Don't try to control the desktop; carry on another way or ask."
-        for _k, _lab, f in EXTRAS:
-            g[f] = g[f] or bool(had.get(f))
         with _lock:
+            # Onto the grant as it is now: another card may have been answered meanwhile.
+            now = _grants.get(s["id"]) or {"apps": []}
+            names = {a["name"].lower() for a in g["apps"]}
+            g["apps"] = g["apps"] + [a for a in now["apps"] if a["name"].lower() not in names]
+            for _k, _lab, f in EXTRAS:
+                g[f] = g[f] or bool(now.get(f))
             _grants[s["id"]] = g
         look = [a["name"] for a in apps if a["tier"] == "look"]
         return ("Granted: " + ", ".join(a["name"] for a in apps)
@@ -342,6 +370,11 @@ def stop(sid: str, by: str = "you") -> bool:
     with _lock:
         had = _grants.pop(sid, None) is not None
         n = _holder["n"] if _holder and _holder["sid"] == sid else 0
+        # Orders not yet done fail now; the app drops them (their id is gone from _waiting).
+        for oid in [o for o, row in _waiting.items() if row.get("sid") == sid]:
+            row = _waiting.pop(oid)
+            row["result"] = {"ok": False, "text": "The user stopped computer use."}
+            row["done"].set()
     freed = _release(sid)
     job = runner.live_job(sid)
     if job is not None and (had or freed):

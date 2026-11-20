@@ -647,7 +647,7 @@ function ComputerDock({ d, onRespond, bind }: {
             <div key={a.name} className="cu-app">
               <span className="cu-ic" aria-hidden>{a.name.slice(0, 1).toUpperCase()}</span>
               <span className="cu-an">{a.name}<small>{a.tier === "full" ? "see · click · type" : "see only: typing here could run code"}</small></span>
-              <span className="cu-tier" data-tier={a.tier}>{a.tier === "full" ? "FULL" : "LOOK"}</span>
+              <span className="cu-tier caps" data-tier={a.tier}>{a.tier === "full" ? "Full" : "Look"}</span>
             </div>
           ))}
         </div>
@@ -675,7 +675,7 @@ function ComputerDock({ d, onRespond, bind }: {
         </div>
         {failed && <p className="ad-err">That didn't reach the bridge. Try again.</p>}
         <p className="cu-note">
-          Other apps stay hidden in screenshots and can't be clicked{look ? "; LOOK apps are seen, never typed into" : ""}.
+          Other apps stay hidden in screenshots and can't be clicked{look ? "; look-only apps are seen, never typed into" : ""}.
           Esc on the Mac stops it any time.
         </p>
       </div>

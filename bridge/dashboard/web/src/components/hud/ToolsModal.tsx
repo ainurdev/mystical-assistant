@@ -168,7 +168,7 @@ function ComputerRow({ sessionId }: { sessionId: string }) {
     <div className="cu-perm" key={label}>
       <span style={{ color: ok ? "var(--ok)" : "var(--err)" }}>{ok ? "✓" : "✕"}</span>
       <span>{label}</span>
-      {!ok && pane && <a className="cu-open" href={pane}>OPEN SETTINGS</a>}
+      {!ok && pane && <a className="cu-open caps" href={pane}>Open settings</a>}
     </div>
   );
   const app = st.app;

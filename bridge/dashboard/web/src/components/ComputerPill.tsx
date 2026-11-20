@@ -20,12 +20,12 @@ export function ComputerPill({ sessionId, turns }: { sessionId: string; turns: T
     <div className="cu-pill" title="This chat is controlling your Mac. Esc on the Mac stops it too.">
       <span className="cu-pulse" aria-hidden />
       <MonitorCog size={11} strokeWidth={2.2} aria-hidden style={{ flex: "none" }} />
-      <span className="cu-dl">DRIVING</span>
+      <span className="cu-dl caps">Driving</span>
       {d.apps.slice(0, 3).map((a) => <span key={a} className="cu-chip">{a}</span>)}
       {d.apps.length > 3 && <span className="pill-desc" style={{ color: "var(--txl)" }}>+{d.apps.length - 3}</span>}
       <span className="pill-desc" style={{ flex: "none", color: "var(--txl)" }}>· {d.actions} action{d.actions === 1 ? "" : "s"}</span>
-      <button type="button" className="cu-stop" onClick={stop} disabled={stopping} title="Stop: drop its apps and interrupt the turn">
-        STOP <span className="cu-kc">ESC</span>
+      <button type="button" className="cu-stop caps" onClick={stop} disabled={stopping} title="Stop: drop its apps and interrupt the turn">
+        Stop <span className="cu-kc">Esc</span>
       </button>
     </div>
   );

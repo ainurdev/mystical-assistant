@@ -9162,7 +9162,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .cu-dl { flex: none; font-weight: 800; letter-spacing: .14em; }
 .cu-chip { flex: none; padding: 1px 6px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); color: var(--txh); }
 .cu-stop { appearance: none; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 18px; padding: 0 8px; border-radius: 999px;
-  border: 0; background: var(--err); color: var(--panel3, #000); font-family: inherit; font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .12em; }
+  border: 0; background: var(--err); color: var(--panel3); font-family: inherit; font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .12em; }
 .cu-stop:disabled { opacity: .6; cursor: default; }
 .cu-kc { font-weight: 600; opacity: .75; }
 /* the Tools modal row */
