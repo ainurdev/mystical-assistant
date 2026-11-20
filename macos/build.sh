@@ -4,8 +4,9 @@
 # Run by `mystical app` and offered by setup.sh on macOS.
 #
 # Needs only the Command Line Tools (swift, codesign, sips, iconutil) — no Xcode,
-# no Apple Developer account. Ad-hoc signed: a bundle built on this machine is
-# never quarantined, so Gatekeeper has nothing to ask.
+# no Apple Developer account. Signed with a local self-signed identity (signing.sh)
+# so macOS keeps its permissions across rebuilds; a bundle built on this machine
+# is never quarantined, so Gatekeeper has nothing to ask.
 #
 # The bundle carries two facts about where it was built, so the app can find the
 # bridge without guessing:  MysticalRepo (this checkout) and MysticalPath (this
@@ -83,7 +84,10 @@ plistlib.dump({
 }, open(out, "wb"))
 PY
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || die "codesign failed"
+# shellcheck source=signing.sh
+. "$HERE/signing.sh"
+signed="$(sign_app "$APP")" || die "codesign failed"
+[ "$signed" = ad-hoc ] && printf '  %s!%s signed ad-hoc: macOS will ask for Screen Recording and Accessibility again %s(macos/signing.sh)%s\n' "$c_r" "$c_0" "$c_d" "$c_0"
 
 # Swap it in. Quitting the app is harmless — launchd owns the bridge, not the app.
 # A build to another destination (MYSTICAL_APP_DEST, a dev bundle) leaves the

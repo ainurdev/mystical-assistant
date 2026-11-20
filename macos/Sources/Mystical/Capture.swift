@@ -14,9 +14,9 @@ import ScreenCaptureKit
 /// an `error` that names the setting to flip, and the windows it could see.
 /// Request-only: nothing is captured unless a local process asks.
 ///
-/// shortcut: the bundle is ad-hoc signed, so TCC keys the permission to this
-/// build's hash and every `mystical app` needs it re-granted; a stable
-/// self-signed identity in build.sh fixes that, when captures are routine.
+/// TCC keys the permission to the signature: build.sh signs with the stable
+/// "Mystical Local" identity (macos/signing.sh), so it survives rebuilds. A
+/// build that fell back to ad-hoc needs it granted again.
 @MainActor
 enum Capture {
     static let name = Notification.Name("cloud.ainurhq.mystical.capture")

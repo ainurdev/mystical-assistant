@@ -376,7 +376,9 @@ def app_exchange(body: dict) -> dict:
             row["result"] = r
             row["done"].set()
     if body.get("stop"):
+        # Its own quick request, never a pull: it must not wait, or take another pull's orders.
         stop_driver(str(body["stop"])[:20])
+        return {"orders": [], "driving": False}
     out = []
     try:
         out.append(_orders.get(timeout=0 if body.get("results") else PULL_WAIT))

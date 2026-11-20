@@ -397,3 +397,49 @@ private func row(_ subject: String, at: Double = 1) -> WaitingSession {
     #expect(CaptureRequest.matches("mystical", title: nil, app: "Mystical"))
     #expect(!CaptureRequest.matches("xcode", title: "a", app: "b"))
 }
+
+// MARK: computer use (ComputerCore)
+
+@Test func chordsMapToKeyCodesAndFlags() throws {
+    let c = try #require(ComputerCore.chord("cmd+shift+A"))
+    #expect(c.key == 0 && c.flags == ComputerCore.command | ComputerCore.shift)
+    #expect(ComputerCore.chord("Return")?.key == 36)
+    #expect(ComputerCore.chord("ctrl+shift+tab")?.flags == ComputerCore.control | ComputerCore.shift)
+    #expect(ComputerCore.chord("shift")?.key == nil)
+    #expect(ComputerCore.chord("shift")?.modifierKeys == [56])
+    #expect(ComputerCore.chord("cmd+nonsense") == nil)
+    #expect(ComputerCore.chord("") == nil)
+}
+
+@Test func screenshotsShrinkToWhatTheModelReadsAndNeverGrow() {
+    let (w, h) = ComputerCore.shotSize(width: 3024, height: 1964)
+    #expect(w <= 1568 && w * h <= 1_150_000 + 2000)
+    #expect(abs(Double(w) / Double(h) - 3024.0 / 1964.0) < 0.01)
+    #expect(ComputerCore.shotSize(width: 800, height: 600) == (800, 600))
+}
+
+@Test func screenshotPixelsMapToScreenPointsAndBack() {
+    let p = ComputerCore.toScreen(x: 728, y: 408, image: (1456, 816), origin: (0, 0), points: (1512, 847.5))
+    #expect(abs(p.0 - 756) < 0.01 && abs(p.1 - 423.75) < 0.01)
+    let clamped = ComputerCore.toScreen(x: -5, y: 9999, image: (1456, 816), origin: (0, 0), points: (1512, 847.5))
+    #expect(clamped.0 == 0 && clamped.1 < 847.5)
+    #expect(ComputerCore.toImage(x: 756, y: 423.75, image: (1456, 816), origin: (0, 0), points: (1512, 847.5)) == (728, 408))
+}
+
+@Test func grantedMatchesNameOrBundleAnyCase() {
+    #expect(ComputerCore.granted(["Safari"], name: "safari", bundle: nil))
+    #expect(ComputerCore.granted(["com.apple.Safari"], name: "Safari", bundle: "com.apple.safari"))
+    #expect(!ComputerCore.granted(["Safari"], name: "Mail", bundle: "com.apple.mail"))
+    #expect(!ComputerCore.granted(["Safari"], name: "", bundle: ""))
+}
+
+@Test func typingSplitsIntoShortRunsWithNewlinesAsReturns() {
+    #expect(ComputerCore.typingRuns("hi\nthere") == ["hi", "\n", "there"])
+    let long = String(repeating: "a", count: 45)
+    #expect(ComputerCore.typingRuns(long).map(\.count) == [20, 20, 5])
+}
+
+@Test func tokenComesFromTheDashboardURL() {
+    #expect(ComputerCore.token(from: URL(string: "http://127.0.0.1:8790/?token=abc")) == "abc")
+    #expect(ComputerCore.token(from: URL(string: "http://127.0.0.1:8790/")) == nil)
+}

@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var busy = false
     private var rebuilding = false
     private lazy var summonShortcut = SummonShortcut { [weak self] in self?.summon() }
+    private lazy var computer = ComputerUse(bridge: bridge)
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // Native chrome in the theme's mode from the first frame; the page
@@ -49,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Capture.install()
         bridge.onChange = { [weak self] in self?.bridgeChanged() }
         bridge.start()
+        computer.onChange = { [weak self] in self?.bridgeChanged() }
+        computer.start()
         // Launched at login by the window agent, or by hand: either way, show it.
         dashboard.show()
     }
@@ -110,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.sync()
         let n = bridge.waiting.count
         let working = bridge.working
-        let image = NSImage(systemSymbolName: working > 0 ? "sparkles" : "sparkle",
+        let image = NSImage(systemSymbolName: computer.driving ? "cursorarrow.motionlines" : working > 0 ? "sparkles" : "sparkle",
                             accessibilityDescription: working > 0 ? "mystical, working" : "mystical")
         image?.isTemplate = true
         statusItem.button?.image = image
@@ -137,6 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
             menu.addItem(disabled("Waiting on you"))
             rows.forEach(menu.addItem)
+        }
+        if computer.driving {
+            menu.addItem(.separator())
+            menu.addItem(disabled("Driving: \(computer.title.isEmpty ? "a chat" : computer.title)"))
+            menu.addItem(item("Stop Computer Use (Esc)", #selector(stopComputer), ""))
         }
         menu.addItem(.separator())
         menu.addItem(item("Open Dashboard", #selector(showDashboard), "0"))
@@ -192,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: actions
 
+    @objc private func stopComputer() { computer.stop("menu") }
     @objc func showDashboard() { dashboard.show() }
     @objc func reloadDashboard() { dashboard.reload() }
     @objc func zoomIn() { dashboard.zoom(1.1) }
