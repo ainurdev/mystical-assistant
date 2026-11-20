@@ -272,7 +272,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "aimgmt", sec: "FLOWS", terms: "flows flow steps grill design build refactor fix ship ask review retro audit tickets parts guess compact wait go on" },
-  { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens concise replies subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
+  { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
   { tab: "aimgmt", sec: "COUNCIL", terms: "council review reviewers codex claude bar score pass rounds stop early origin push code-review" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },

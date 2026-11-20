@@ -32,7 +32,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, chat_images, config, devserver,
                     experimental, git, inspector, integrations, ladder, limits, machine,
-                    native_activity, notices, paths, profiles, pubsub, relevance, savers, state,
+                    native_activity, notices, outputstyles, paths, profiles, pubsub, relevance, savers, state,
                     store, team, tgask, tgtopics, transcript_jsonl, transcript_page, ux_mcp, waits)
 from bridge.browser import rel, within_base
 from bridge.telegram import panel_kb, send
@@ -938,6 +938,8 @@ class Job:
         # A run whose prompt carries untrusted text (start_streaming_job's skip_pack):
         # no tools, no MCP servers, and never resumed (_maybe_auto_resume).
         self.skip_pack = False
+        # The Output style this turn's claude takes (start_streaming_job), None = none passed.
+        self.style: str | None = None
         self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
@@ -3374,7 +3376,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
         # Savers (bridge/savers.py): every ON one, and each TRIAL this session drew.
         saving = set() if job.skip_pack else savers.for_run(job.store_session_id)
-        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving))
+        style = ["--settings", json.dumps({"outputStyle": job.style})] if job.style else []
+        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving) + style)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -3685,7 +3688,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         skip_pack: bool = False,
                         native_resume: bool = False,
                         flow: str | None = None, flow_by: str | None = None,
-                        sent_by: str | None = None, sent_why: str | None = None) -> Job | None:
+                        sent_by: str | None = None, sent_why: str | None = None,
+                        style: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -3789,6 +3793,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.work_cwd = wt if wt and os.path.isdir(wt) else None
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         job.skip_pack = skip_pack
+        # A lit flow's style, else the session's (bridge/outputstyles.py), in a chat you drive.
+        job.style = ((style or eff["style"])
+                     if outputstyles.attended(session) and not (skip_pack or is_acp) else None)
         job.native_resume = native_resume and not is_acp
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"

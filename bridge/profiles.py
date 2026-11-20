@@ -46,14 +46,14 @@ import sys
 import threading
 import uuid
 
-from bridge import accounts, acp_agents, config, project_config, store
+from bridge import accounts, acp_agents, config, outputstyles, project_config, store
 
 CLAUDE = "claude"
 NAME_MAX = 32
 ID_MAX = 64          # an agent's mode or effort id
 _CLAUDE_ONLY = "Claude models run in a Claude profile"
 # session column -> profile field, for the knobs a picker can hand-set
-KNOBS = {"model": "model", "permission_mode": "mode", "effort": "effort"}
+KNOBS = {"model": "model", "permission_mode": "mode", "effort": "effort", "style": "style"}
 
 PATH = os.path.join(os.path.dirname(config.BRIDGE_DB), "profiles.json")
 _lock = threading.RLock()
@@ -145,6 +145,8 @@ def _clean(fields: dict, keep_id: "str | None" = None) -> dict:
     model = str(fields.get("model") or "").strip()
     mode = str(fields.get("mode") or "").strip()
     effort = str(fields.get("effort") or "").strip()
+    # A style is Claude Code's (bridge/outputstyles.py): another agent's profile has none.
+    style = (outputstyles.clean(fields.get("style")) or "") if agent == CLAUDE else ""
     tools = fields.get("tools")
     if tools is not None and not (isinstance(tools, list)
                                   and all(isinstance(t, str) for t in tools)):
@@ -154,7 +156,7 @@ def _clean(fields: dict, keep_id: "str | None" = None) -> dict:
     else:
         _check_agent(agent, account, model, mode, effort)
     return {"name": name, "agent": agent, "account": account, "model": model,
-            "mode": mode, "effort": effort, "tools": tools}
+            "mode": mode, "effort": effort, "style": style, "tools": tools}
 
 
 def create(fields: dict) -> dict:
@@ -194,7 +196,7 @@ def delete(pid: str) -> None:
             raise KeyError(pid)
         _save([r for r in rows if r["id"] != pid])
     store.unbind_profile(pid, p.get("model") or None, p.get("mode") or None,
-                         p.get("effort") or None,
+                         p.get("effort") or None, p.get("style") or None,
                          None if p.get("tools") is None else json.dumps(p["tools"]),
                          clear=(p.get("agent") or CLAUDE) != CLAUDE)
     project_config.drop_profile(pid)
@@ -299,7 +301,7 @@ def brief(session: dict) -> dict:
         mode = config.MINIAPP_PERMISSION_MODE
     return {"profile_id": e["profile_id"], "agent": e["agent"], "account": e["account"],
             "model": e["model"], "permission_mode": mode, "effort": e["effort"],
-            "disabled_tools": tools_for(session), "overrides": e["overrides"]}
+            "style": e["style"], "disabled_tools": tools_for(session), "overrides": e["overrides"]}
 
 
 def history(chat_id: int, include_archived: bool = False) -> list:
@@ -311,12 +313,13 @@ def history(chat_id: int, include_archived: bool = False) -> list:
 def save_pick(session: dict, field: str, value: "str | None") -> None:
     """Save a person's pick for one knob, keeping the profile live. Unbound, a
     blank model or mode keeps the old pick (no picker offers one), but a blank
-    effort is Auto, a pick of its own, so it clears the column."""
+    effort is Auto and a blank style Not set, picks of their own, so they clear
+    the column."""
     if field not in KNOBS:
         raise ValueError(field)
     p = get(session.get("profile_id"))
     if p is None:
-        if value or field == "effort":
+        if value or field in ("effort", "style"):
             store.set_session_field(session["id"], field, value or None)
         return
     follow = not value or value == (p.get(KNOBS[field]) or None)

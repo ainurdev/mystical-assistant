@@ -11,8 +11,8 @@ const ok = (cond: boolean, what: string) => {
 const eq = (got: unknown, want: unknown, what: string) =>
   ok(JSON.stringify(got) === JSON.stringify(want), `${what} — got ${JSON.stringify(got)}`);
 
-eq(["concise", "subagent_effort", "trim_tests", "new_one"].map(saverTag),
-  ["Concise · trial", "Subagent effort · trial", "Trim tests · trial", "new one · trial"], "the prompt tag per saver");
+eq(["subagent_effort", "trim_tests", "new_one"].map(saverTag),
+  ["Subagent effort · trial", "Trim tests · trial", "new one · trial"], "the prompt tag per saver");
 eq([pct(-41), pct(12), pct(0)], ["−41%", "+12%", "±0%"], "deltas with a real minus");
 
 const trial = (n: number, words: number | null, tokens: number | null) =>
@@ -20,13 +20,13 @@ const trial = (n: number, words: number | null, tokens: number | null) =>
 const saver = (key: string, mode: Saver["mode"], t: Saver["trial"]): Saver =>
   ({ key, label: key, hint: `the ${key} hint`, mode, target: 20, trial: t });
 
-eq(saverFoot(saver("concise", "trial", trial(14, -41, -9))),
-  { left: "trial · 14 of 20 sessions", bar: 0.7, delta: "−41%", good: true, unit: "words", untried: false },
-  "a running trial: progress, and Concise's delta in words");
-eq(saverFoot(saver("concise", "trial", trial(0, null, null))),
-  { left: "trial · 0 of 20 sessions", bar: 0, delta: null, good: null, unit: "words", untried: false },
+eq(saverFoot(saver("trim_tests", "trial", trial(14, -41, -9))),
+  { left: "trial · 14 of 20 sessions", bar: 0.7, delta: "−9%", good: true, unit: "tokens a turn", untried: false },
+  "a running trial: progress, and its delta in tokens");
+eq(saverFoot(saver("trim_tests", "trial", trial(0, null, null))),
+  { left: "trial · 0 of 20 sessions", bar: 0, delta: null, good: null, unit: "tokens a turn", untried: false },
   "a trial just started: nothing to compare yet");
-eq(saverFoot(saver("concise", "trial", trial(23, -30, null))).left, "trial done · 23 sessions", "past the target it says it's done");
+eq(saverFoot(saver("trim_tests", "trial", trial(23, -30, null))).left, "trial done · 23 sessions", "past the target it says it's done");
 eq(saverFoot(saver("subagent_effort", "on", trial(20, 5, -18))),
   { left: "kept after a trial", bar: null, delta: "−18%", good: true, unit: "tokens a turn", untried: false },
   "kept after a trial: the others report tokens");

@@ -39,18 +39,23 @@ def _session(n_turns=1, *, result="", tools=(), status="done", tokens=None):
 
 
 def test_everything_starts_off_and_a_run_gets_nothing():
-    assert [s["mode"] for s in savers.state()] == ["off", "off", "off"]
+    assert [s["mode"] for s in savers.state()] == ["off", "off"]
     assert savers.for_run("anything") == set()
 
 
 def test_on_applies_to_every_run_and_says_how():
-    savers.set_mode("concise", "on")
     savers.set_mode("subagent_effort", "on")
     on = savers.for_run("x")
-    assert on == {"concise", "subagent_effort"}
+    assert on == {"subagent_effort"}
     assert savers.env(on) == {"CLAUDE_CODE_SUBAGENT_EFFORT": "medium"}
-    args = savers.settings_args(on)
-    assert args[0] == "--settings" and json.loads(args[1]) == {"outputStyle": "Concise"}
+    assert savers.settings_args(on) == []
+
+
+def test_the_concise_saver_is_retired_for_the_sessions_style():
+    """Concise is an Output style now (bridge/outputstyles.py): a style has one writer."""
+    assert "concise" not in savers.KEYS
+    with pytest.raises(ValueError):
+        savers.set_mode("concise", "on")
 
 
 def test_trim_tests_adds_a_bash_pretooluse_hook_that_merges_with_the_rest():
@@ -63,22 +68,22 @@ def test_trim_tests_adds_a_bash_pretooluse_hook_that_merges_with_the_rest():
 
 
 def test_a_trial_splits_new_sessions_and_leaves_old_ones_out():
-    savers.set_mode("concise", "trial")
+    savers.set_mode("subagent_effort", "trial")
     drawn = []
     for _ in range(12):
         sid = _session()
         savers.assign(sid)
-        drawn.append("concise" in savers.for_run(sid))
-        assert savers.arms_for(sid) == (["concise"] if drawn[-1] else [])
+        drawn.append("subagent_effort" in savers.for_run(sid))
+        assert savers.arms_for(sid) == (["subagent_effort"] if drawn[-1] else [])
     assert True in drawn and False in drawn          # both halves fill
     old = _session(n_turns=3)
     savers.assign(old)
-    assert "concise" not in savers.for_run(old)
+    assert "subagent_effort" not in savers.for_run(old)
     assert old not in json.load(open(savers._path()))["arms"]
 
 
 def test_the_draw_is_fixed_for_a_session():
-    savers.set_mode("concise", "trial")
+    savers.set_mode("subagent_effort", "trial")
     sid = _session()
     savers.assign(sid)
     first = savers.for_run(sid)
@@ -87,20 +92,20 @@ def test_the_draw_is_fixed_for_a_session():
 
 
 def test_results_compare_the_halves_on_the_first_turn():
-    savers.set_mode("concise", "trial")
+    savers.set_mode("subagent_effort", "trial")
     d = json.load(open(savers._path()))
-    since = d["since"]["concise"]
+    since = d["since"]["subagent_effort"]
     long_answer, short_answer = " ".join(["w"] * 100), " ".join(["w"] * 60)
     tok = {"in": 10, "out": 90, "cache_w": 0, "cache_r": 0}
     arms = {}
     for i in range(3):
         on = _session(result=short_answer, tools=("Read", "Edit"), tokens=tok)
         off = _session(result=long_answer, tools=("Read", "Grep", "Edit"), tokens=tok)
-        arms[on] = {"concise": [True, since + 1]}
-        arms[off] = {"concise": [False, since + 1]}
+        arms[on] = {"subagent_effort": [True, since + 1]}
+        arms[off] = {"subagent_effort": [False, since + 1]}
     d["arms"] = arms
     json.dump(d, open(savers._path(), "w"))
-    r = savers.results("concise")
+    r = savers.results("subagent_effort")
     assert (r["n"], r["on"], r["off"]) == (6, 3, 3)
     assert r["words"] == -40 and r["tools"] == -50 and r["errors_on"] == 0
 
@@ -124,9 +129,9 @@ def test_routes_list_and_set(tmp_path):
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)
     h._get_api("/local/savers", {})
     assert [s["key"] for s in box["obj"]["savers"]] == list(savers.KEYS)
-    h._post_api("/local/savers", {"key": "concise", "mode": "trial"})
+    h._post_api("/local/savers", {"key": "subagent_effort", "mode": "trial"})
     assert box["obj"]["ok"] and box["obj"]["savers"][0]["mode"] == "trial"
-    h._post_api("/local/savers", {"key": "concise", "mode": "sometimes"})
+    h._post_api("/local/savers", {"key": "subagent_effort", "mode": "sometimes"})
     assert box["code"] == 400
 
 

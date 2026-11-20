@@ -30,7 +30,7 @@ import re
 import sys
 import threading
 
-from bridge import aifeatures, config
+from bridge import aifeatures, config, outputstyles
 
 FLOWS = ("design", "build", "refactor", "fix", "ship", "ask")
 # The flows that build as tickets: they have TICKETS and AUTO-START (`approve`, inverted).
@@ -48,14 +48,15 @@ STEPS = {
 }
 # The box's built-in kind presets (web lib/kinds.ts KINDS), REFACTOR with BUILD's. mode ""
 # is the session's own: a guess must never make a Bypass session ask. trim "" = default.
+# style "" is the session's own too (bridge/outputstyles.py).
 _OPUS, _SONNET = "claude-opus-5-5", "claude-sonnet-5-5"
 BUILT_IN = {
-    "design": {"model": _OPUS, "mode": "", "effort": "high", "trim": ""},
-    "build": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": ""},
-    "refactor": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": ""},
-    "fix": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": ""},
-    "ship": {"model": _OPUS, "mode": "bypassPermissions", "effort": "high", "trim": ""},
-    "ask": {"model": _SONNET, "mode": "", "effort": "medium", "trim": ""},
+    "design": {"model": _OPUS, "mode": "", "effort": "high", "trim": "", "style": ""},
+    "build": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": "", "style": ""},
+    "refactor": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": "", "style": ""},
+    "fix": {"model": _OPUS, "mode": "bypassPermissions", "effort": "max", "trim": "", "style": ""},
+    "ship": {"model": _OPUS, "mode": "bypassPermissions", "effort": "high", "trim": "", "style": ""},
+    "ask": {"model": _SONNET, "mode": "", "effort": "medium", "trim": "", "style": ""},
 }
 # Global keys kept here, with their choices (the first is the default).
 CHOICES = {"guess": ("auto", "hand"), "nokind": ("claude", "typed")}
@@ -66,10 +67,11 @@ _RUN = {
     "mode": lambda v: v == "" or v in config.MINIAPP_PERMISSION_MODES,
     "effort": lambda v: v == "" or v in config.MINIAPP_EFFORTS,
     "trim": lambda v: v in ("", "off", "lite", "full", "ultra"),
+    "style": lambda v: v == "" or bool(outputstyles.NAME_RE.fullmatch(v)),
 }
 _BOOLS = ("on", "next", "tickets", "approve")
 # A browser's saved kind preset names its fields as the box does (lib/kinds KindRun).
-_BROWSER = {"model": "model", "perm": "mode", "effort": "effort", "ponytail": "trim"}
+_BROWSER = {"model": "model", "perm": "mode", "effort": "effort", "ponytail": "trim", "style": "style"}
 
 _lock = threading.Lock()
 _cache: dict = {}   # emptied by tests to simulate a reload
@@ -178,8 +180,9 @@ def approve(flow: str) -> bool:
 
 
 def run(flow: str) -> dict:
-    """The flow's run defaults: model, mode, effort and trim."""
-    return dict(_flow(flow).get("run") or BUILT_IN[flow])
+    """The flow's run defaults: model, mode, effort, trim and style. A run saved before
+    styles existed reads its style as the session's own."""
+    return {**BUILT_IN[flow], **(_flow(flow).get("run") or {})}
 
 
 def presets_taken() -> bool:
@@ -205,7 +208,7 @@ def state() -> dict:
         out = {k: c[k] for k in CHOICES}
         out["presets"] = c["presets"]
         flows = [{"id": fl, **{k: v for k, v in f.items() if k not in ("steps", "run")},
-                  "run": dict(f.get("run") or BUILT_IN[fl]), "run_saved": "run" in f,
+                  "run": {**BUILT_IN[fl], **(f.get("run") or {})}, "run_saved": "run" in f,
                   "steps": [{"step": st, "fixed": fixed, "on": fixed or f["steps"][st],
                              "ponytail_off": pony_off and pony(fl, st)} for st, fixed in STEPS[fl]]}
                  for fl, f in c["flows"].items()]
@@ -217,11 +220,11 @@ def state() -> dict:
 def change(body: dict) -> None:
     """One change from POST /local/flows. ValueError says what was wrong with it.
       {"key": <global>, "value": v}                    FLOWS, AUTO PICKS, SMART ZONE, GUESS, NO KIND
-      {"flow": f, "key": <flow key>, "value": v}       on, next, tickets, approve, model, mode, effort, trim
-      {"flow": f, "key": "run", "value": {model, mode, effort, trim}}  all of them, or none
+      {"flow": f, "key": <flow key>, "value": v}       on, next, tickets, approve, model, mode, effort, trim, style
+      {"flow": f, "key": "run", "value": {model, mode, effort, trim, style}}  all of them, or none
       {"flow": f, "key": "step", "step": s, "value": b}  an optional step on or off
       {"reset": f}                                     back to its seeds, its run unset
-      {"presets": {<kind>: {model, perm, effort, ponytail}}}  a browser's, taken once"""
+      {"presets": {<kind>: {model, perm, effort, ponytail, style}}}  a browser's, taken once"""
     if not isinstance(body, dict):
         raise ValueError("the body must be an object")
     if "presets" in body:
@@ -272,7 +275,7 @@ def change(body: dict) -> None:
         elif key in _RUN or key == "run":   # "run": PRESET's Save as, checked whole before any lands
             new = value if key == "run" else {key: value}
             if not isinstance(new, dict) or not new:
-                raise ValueError("run takes an object of model, mode, effort and trim")
+                raise ValueError("run takes an object of model, mode, effort, trim and style")
             for k, v in new.items():
                 if k not in _RUN:
                     raise ValueError(f"unknown run setting {k!r}")

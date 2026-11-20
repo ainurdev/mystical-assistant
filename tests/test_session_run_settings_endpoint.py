@@ -183,7 +183,7 @@ def test_a_mode_pick_is_saved_and_switches_only_the_mode(monkeypatch, surface):
     assert box["code"] == 200
     assert box["obj"] == {"ok": True, "model": "claude-fable-5-1",
                           "permission_mode": "bypassPermissions",
-                          "effort": None, "overrides": []}
+                          "effort": None, "style": None, "overrides": []}
     row = store.get_session(s["id"])
     assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
     lines = job.proc.stdin.lines
@@ -202,7 +202,7 @@ def test_with_nothing_running_the_save_is_enough(monkeypatch, surface):
     box = _settings(surface, {"session_id": s["id"], "permission_mode": "plan"})
     assert box["code"] == 200
     assert box["obj"] == {"ok": True, "model": None, "permission_mode": "plan",
-                          "effort": None, "overrides": []}
+                          "effort": None, "style": None, "overrides": []}
     assert store.get_session(s["id"])["permission_mode"] == "plan"
 
 
@@ -279,3 +279,60 @@ def test_history_rows_carry_the_sessions_picks():
         "claude-fable-5-1", "default")
     assert rows[bot["id"]]["model"] is None
     assert rows[bot["id"]]["permission_mode"] == config.MINIAPP_PERMISSION_MODE
+
+
+# --- Output style (bridge/outputstyles.py) ------------------------------------------
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_a_style_pick_is_saved_and_blank_is_not_set(monkeypatch, surface):
+    monkeypatch.setattr(runner, "_jobs", {})
+    s = store.create_session(CHAT, f"/srs-style-{surface}")
+    box = _settings(surface, {"session_id": s["id"], "style": "Explanatory", "pick": "style"})
+    assert box["code"] == 200 and box["obj"]["style"] == "Explanatory"
+    assert store.get_session(s["id"])["style"] == "Explanatory"
+    box = _settings(surface, {"session_id": s["id"], "style": "", "pick": "style"})
+    assert box["code"] == 200 and box["obj"]["style"] is None
+    assert store.get_session(s["id"])["style"] is None
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_a_style_pick_follows_the_profile_unless_it_differs(monkeypatch, surface, tmp_path):
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(profiles, "PATH", str(tmp_path / "profiles.json"))
+    p = profiles.create({"name": "P", "style": "Learning"})
+    s = store.create_session(CHAT, f"/srs-style-p-{surface}", profile_id=p["id"])
+    box = _settings(surface, {"session_id": s["id"], "style": "Concise", "pick": "style"})
+    assert box["obj"]["style"] == "Concise" and "style" in box["obj"]["overrides"]
+    box = _settings(surface, {"session_id": s["id"], "style": "Learning", "pick": "style"})
+    assert box["obj"]["style"] == "Learning" and "style" not in box["obj"]["overrides"]
+    assert store.get_session(s["id"])["style"] is None      # the profile's again
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+@pytest.mark.parametrize("bad", [5, "two\nlines", "x" * 65])
+def test_a_bad_style_is_a_400_and_saves_nothing(monkeypatch, surface, bad):
+    monkeypatch.setattr(runner, "_jobs", {})
+    s = store.create_session(CHAT, f"/srs-style-bad-{surface}")
+    store.set_session_field(s["id"], "style", "Concise")
+    box = _settings(surface, {"session_id": s["id"], "style": bad, "effort": "high", "pick": "style"})
+    assert box["code"] == 400
+    row = store.get_session(s["id"])
+    assert (row["style"], row["effort"]) == ("Concise", None)
+
+
+def test_a_lit_flows_style_runs_with_its_prompt_and_is_not_saved(monkeypatch):
+    s = store.create_session(CHAT, "/srs-style-run")
+    store.set_session_field(s["id"], "style", "Concise")
+    seen = _fake_start(monkeypatch, s["id"])
+    box = _run("dashboard", {"prompt": "hi", "session_id": s["id"], "style": "Learning", "pick_once": True})
+    assert box["code"] == 200 and seen["style"] == "Learning"
+    assert store.get_session(s["id"])["style"] == "Concise"
+    assert _run("dashboard", {"prompt": "hi", "session_id": s["id"], "style": "a\nb"})["code"] == 400
+
+
+def test_a_queued_flow_prompt_keeps_its_style(held_queue):
+    h, box = _handler(dash)
+    h._queue("enqueue", CHAT, {"session_id": "s-q-style", "text": "later", "style": "Learning"})
+    assert box["code"] == 200
+    [it] = held_queue.snapshot("s-q-style")["items"]
+    assert it["style"] == "Learning"

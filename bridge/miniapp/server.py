@@ -21,8 +21,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (accounts, agent_caps, agents, browser, channel, config, devserver, experimental,
                     git, github, goals, multi_api,
-                    httpgz, integrations, models, native, profiles, project_config, projectmarks,
-                    relevance, runner, state, store, transcript_jsonl,
+                    httpgz, integrations, models, native, outputstyles, profiles, project_config,
+                    projectmarks, relevance, runner, state, store, transcript_jsonl,
                     transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -96,19 +96,30 @@ def normalize_permission_mode(mode) -> str | None:
     return m
 
 
+def styles_for(session: "dict | None") -> dict:
+    """GET /api/styles and /local/styles: the Output styles the STYLE pickers offer in
+    this session's folder (bridge/outputstyles.py). No session (a profile, a flow):
+    Claude's and yours, no folder's."""
+    cwd = session and (session.get("cwd")
+                       or os.path.join(config.BASE_PATH, (session.get("project") or "").lstrip("/")))
+    return {"styles": outputstyles.available(cwd or None)}
+
+
 def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
     """POST /api/session/settings and /local/session/settings: one function, so
     both servers take and answer exactly the same.
 
     Saves the pickers' model, permission mode and effort to the session — the
     picks they show, so a session that never ran keeps what its picker showed —
+    and its Output style (the STYLE picker sends it alone; bridge/outputstyles.py),
     and switches the session's running turn (runner.apply_run_settings) to the
-    one half the body names in `pick`: "model", "permission_mode" or "effort".
+    one half the body names in `pick`: "model", "permission_mode", "effort" or "style".
     Only an explicit mode pick switches the mode, so only that can turn Bypass
     on and approve a waiting card; a model pick sent beside a mode the picker
     merely showed (this device's default on a never-run session, a stale one on
     a lagging client) leaves the turn's mode alone, and a mode pick its model.
-    There is no live effort switch (runner.apply_run_settings doesn't take one).
+    There is no live effort or style switch (runner.apply_run_settings doesn't
+    take one): both apply from the next turn.
     A pick saved through profiles.save_pick, so a value that matches a bound
     session's profile follows it (stored NULL) instead of pinning an override.
     Only the knobs present in the body are touched: omitting a key leaves it
@@ -121,12 +132,17 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
                      body.get("effort"), body.get("pick"))
     if not all(v is None or isinstance(v, str) for v in (m, p, e)):
         return {"error": "model, permission_mode and effort must be strings"}, 400
-    if pick not in (None, "model", "permission_mode", "effort"):
-        return {"error": "pick must be 'model', 'permission_mode' or 'effort'"}, 400
+    if pick not in (None, "model", "permission_mode", "effort", "style"):
+        return {"error": "pick must be 'model', 'permission_mode', 'effort' or 'style'"}, 400
     err, model, mode, effort = profiles.run_values(m, p, e, profiles.agent_for(session))
     if err:
         return {"error": err}, 400
-    for field, value in (("model", model), ("permission_mode", mode), ("effort", effort)):
+    try:
+        style = outputstyles.clean(body.get("style"))
+    except ValueError as ex:
+        return {"error": str(ex)}, 400
+    for field, value in (("model", model), ("permission_mode", mode), ("effort", effort),
+                         ("style", style)):
         if field in body:
             profiles.save_pick(session, field, value)
             session = store.get_session(session["id"]) or session
@@ -135,7 +151,7 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
                               permission_mode=mode if pick == "permission_mode" else None)
     b = profiles.brief(store.get_session(session["id"]) or session)
     return {"ok": True, "model": b["model"], "permission_mode": b["permission_mode"],
-            "effort": b["effort"], "overrides": b["overrides"]}, 200
+            "effort": b["effort"], "style": b["style"], "overrides": b["overrides"]}, 200
 
 
 AUTOCOMPACT_MIN, AUTOCOMPACT_MAX = 100_000, 1_000_000
@@ -424,6 +440,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"accounts": accounts.with_meters()})
                 if path == "/api/profiles":
                     return self._api_profiles(chat_id)
+                if path == "/api/styles":
+                    sid = qs.get("session", [""])[0]
+                    s = self._owned_session(chat_id, sid)
+                    if sid and not s:
+                        return self._json({"error": "not found"}, 404)
+                    return self._json(styles_for(s))
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
                 if path == "/api/queue":

@@ -724,7 +724,7 @@ def on_turn_start(session_id: str, prompt: str) -> None:
         print(f"[paths] on_turn_start failed: {e}", file=sys.stderr)
 
 
-def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
+def _start(session_id: str, station: str, chat_id=None, effort=None, style=None) -> bool:
     flow = get(session_id)
     if flow and station == "build" and flowsettings.tickets(flow_id(flow["path"])):
         from bridge import tickets  # local import: tickets imports paths
@@ -756,11 +756,11 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
             effort=effort, permission_mode=None, width=None, sel=[], surface="flow",
             chat_id=chat_id if chat_id is not None else sess.get("chat_id"),
             project=sess.get("project") or "", sent_by="mystical:step",
-            sent_why=f"the flow's last step was done; next is {station}")
+            sent_why=f"the flow's last step was done; next is {station}", style=style)
     return True
 
 
-def _go(session_id: str, chat_id=None, effort=None) -> bool:
+def _go(session_id: str, chat_id=None, effort=None, style=None) -> bool:
     """Start the recorded next step, once: SKILL PATHS and AUTO NEXT STEPS on, AUTO not
     held, no wait on another session (its wake-up is the next turn). A step that can't
     start stays pending for the next release or resume. True = started."""
@@ -780,7 +780,7 @@ def _go(session_id: str, chat_id=None, effort=None) -> bool:
             return False
         nxt["started"] = True
         _save_locked()
-    if _start(session_id, nxt["station"], chat_id, effort):
+    if _start(session_id, nxt["station"], chat_id, effort, style):
         return True
     with _lock:
         if (_cache.get(session_id) or {}).get("next") is nxt:
@@ -829,7 +829,8 @@ def continue_after_turn(job, effort=None) -> bool:
         nxt = flow and flow["next"]
         if not nxt or nxt.get("started") or nxt["turn_id"] != _carried(sid, job.id)[0]:
             return False
-        return _go(sid, job.chat_id, effort)
+        # The next step keeps the style this turn ran with, as it keeps its effort.
+        return _go(sid, job.chat_id, effort, getattr(job, "style", None))
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[paths] continue failed: {e}", file=sys.stderr)
         return False

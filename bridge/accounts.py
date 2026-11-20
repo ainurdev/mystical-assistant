@@ -46,7 +46,7 @@ DEFAULT_SLOT = 1
 # --resume any session, and the bridge's transcript readers keep working).
 # Deliberately NOT shared: .credentials.json and .claude.json, which are exactly
 # what makes a slot a distinct login.
-SHARED = ("projects", "skills", "plugins", "hooks", "sessions",
+SHARED = ("projects", "skills", "plugins", "hooks", "sessions", "output-styles",
           "settings.json", "settings.local.json", "CLAUDE.md")
 CREDENTIALS = ".credentials.json"
 

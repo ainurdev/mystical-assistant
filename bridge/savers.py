@@ -1,11 +1,8 @@
 """Savers: Claude Code's own switches that make a turn cheaper, tried before kept.
 
-Four levers the CLI already has. None is a dependency or a model call of ours
+Three levers the CLI already has. None is a dependency or a model call of ours
 (row 6 of .mystical/docs/reports/Tools and platforms to boost Mystical.md):
 
-  concise          outputStyle "Concise" in each run's --settings: the result
-                   first, no recap, the same work. Not TRANSCRIPT ▸ OUTPUT
-                   STYLE, which only changes how a turn is drawn.
   subagent_effort  CLAUDE_CODE_SUBAGENT_EFFORT=medium: subagents stop
                    inheriting the session's (usually max) effort.
   trim_tests       a PreToolUse hook (bridge/trimhook.py) that hands Claude a
@@ -13,6 +10,9 @@ Four levers the CLI already has. None is a dependency or a model call of ours
   one-shot cache   CLAUDE_CODE_PROMPT_CACHE_TTL=5m on runner.run_blocking:
                    titles, commit messages and scouts never reuse their prefix,
                    so the hour-long cache write was waste. Always on, no switch.
+
+A Concise saver was the fourth, retired unused: Concise is one of a session's Output
+styles now (bridge/outputstyles.py), so a style has one writer.
 
 None of them is measured on this stack, so each switch has a third position.
 TRIAL puts it on every other new session (a coin flip seeded by the session id,
@@ -36,8 +36,6 @@ import time
 from bridge import config, notices, store
 
 SAVERS = (
-    {"key": "concise", "label": "Concise replies",
-     "hint": "the result first, no recap: the same work, a shorter answer"},
     {"key": "subagent_effort", "label": "Subagent effort",
      "hint": "subagents work at medium effort instead of the session's own"},
     {"key": "trim_tests", "label": "Trim test output",
@@ -138,8 +136,6 @@ def arms_for(session_id: str) -> list:
 def settings_args(on: set, bridge_dir: "str | None" = None) -> list:
     """The --settings a run's savers add (runner._one_settings folds them in)."""
     s: dict = {}
-    if "concise" in on:
-        s["outputStyle"] = "Concise"
     if "trim_tests" in on:
         hook = os.path.join(bridge_dir or os.path.dirname(os.path.abspath(__file__)), "trimhook.py")
         s["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [
