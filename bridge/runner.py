@@ -489,11 +489,22 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None,
                 "mystical-ux": {"command": sys.executable,
                                 "args": ["-m", "bridge.ux_mcp"], "env": env},
                 **({"mystical": gateway} if gateway else {}),    # bridge/gateway.py
+                **({"computer": {"command": sys.executable, "args": ["-m", "bridge.computer_mcp"], "env": env}}
+                   if _computer_on(claude_session_id) else {}),    # bridge/computer.py
             }}, f)
     except BaseException:
         shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
         raise
     return path
+
+
+def _computer_on(claude_session_id: str) -> bool:
+    """Computer use is off unless this chat switched it on (Tools modal), and Mac only."""
+    from bridge import computer
+    if not computer.available():
+        return False
+    s = store.get_by_claude_session_id(claude_session_id)
+    return bool(s) and computer.enabled(s["id"])
 
 
 # The flag each browser MCP takes for the three AI BROWSER settings (hidden,
