@@ -189,3 +189,11 @@ def test_a_profile_takes_a_style_and_refuses_a_bad_one():
     out, code = profiles.api_write({"action": "update", "id": out["profile"]["id"], "style": ""})
     assert code == 200 and out["profile"]["style"] == ""                     # Not set
     assert profiles.api_write({"action": "create", "name": "B", "style": "a\nb"})[1] == 400
+
+
+def test_a_brief_says_whether_its_turns_take_a_style():
+    """The STYLE chip shows only where a pick would reach Claude."""
+    from bridge.miniapp.server import _session_brief
+    assert _session_brief(store.get_session(_session(style="Learning")["id"]))["takes_style"] is True
+    part = _session(origin="ticket", style="Learning")
+    assert _session_brief(store.get_session(part["id"]))["takes_style"] is False

@@ -282,7 +282,7 @@ interface HeldPrompt {
   title: string | null;
   noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
   // A kind's run (lib/kinds): the forced resend still carries its preset and stays one-shot.
-  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string; flow?: SendFlow };
+  kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string; style?: string; flow?: SendFlow };
   typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
 
@@ -411,6 +411,9 @@ export function App() {
   const [model, setModelState] = useState<ModelId>(() => settings.model as ModelId);
   const [permMode, setPermState] = useState<string>(() => settings.perm);
   const [effort, setEffortState] = useState<EffortLevel | "">(() => settings.effort as EffortLevel | "");
+  // The session's Output style (bridge/outputstyles.py), from its brief. No device default:
+  // a new session starts Not set, so a folder's own style (communication's Comms) holds.
+  const [style, setStyleState] = useState("");
   const ponytail = settings.ponytail;
   const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
@@ -491,6 +494,16 @@ export function App() {
   const setModel = (m: ModelId) => pickRun(m, permMode, effort, "model");
   const setPermMode = (p: string) => pickRun(model, p, effort, "permission_mode");
   const setEffort = (e: EffortLevel | "") => pickRun(model, permMode, e, "effort");
+  // A STYLE pick is saved alone, and applies from the session's next turn.
+  const setStyle = (st: string) => {
+    setStyleState(st);
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    void api.setRunSettings(sid, { style: st, pick: "style" })
+      // Not set on a session whose profile has a style follows the profile's: show what will run.
+      .then((r) => { if (r.style !== undefined && sessionIdRef.current === sid) setStyleState(r.style ?? ""); })
+      .catch(() => {});
+  };
   // Multi-agent chats: the switch, and the brief of an open helper, which is no row
   // in `sessions` (a helper lists under its chat, never as a chat of its own).
   const experimental = useExperimental();
@@ -1769,7 +1782,8 @@ export function App() {
     // which also carries its trim (ponytail).
     opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
              picks?: { model: string; perm: string; effort: string }; ponytail?: string;
-             pickOnce?: boolean; typed?: string; flow?: SendFlow },
+             // style: a lit kind's Output style, with pickOnce; the session's own is its STYLE pick.
+             pickOnce?: boolean; typed?: string; flow?: SendFlow; style?: string },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1820,7 +1834,7 @@ export function App() {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
-        ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined } : {}),
+        ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined, style: opts.style || undefined } : {}),
         ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
@@ -1840,6 +1854,7 @@ export function App() {
         permission_mode: (knobs && pk.perm) || undefined, ponytail: (opts?.ponytail ?? ponytail) || undefined,
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
         pick_once: opts?.pickOnce || undefined,
+        style: (opts?.pickOnce && !agentPick && knobs && opts.style) || undefined,
         ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
       });
       // Held: this looks like different work from the session it would resume.
@@ -1849,7 +1864,7 @@ export function App() {
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
                    text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath, typed: opts?.typed,
-                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail, flow: opts.flow } : undefined },
+                   kind: opts?.pickOnce && opts.picks ? { picks: opts.picks, ponytail: opts.ponytail, style: opts.style, flow: opts.flow } : undefined },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -2069,7 +2084,7 @@ export function App() {
                              profiles?.profiles.find((p) => p.id === session.profile_id) ?? null);
       return await send(prompt, opts?.images ?? [],
                         { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude",
-                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, flow: opts.kind.flow, pickOnce: true } : { picks }) });
+                          ...(opts?.kind ? { picks: opts.kind.picks, ponytail: opts.kind.ponytail, style: opts.kind.style, flow: opts.kind.flow, pickOnce: true } : { picks }) });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);
@@ -2996,7 +3011,8 @@ export function App() {
     setModelState(r.model);
     setPermState(r.perm);
     setEffortState(r.effort as EffortLevel | "");
-  }, [sessionId, selected?.agent, selected?.model, selected?.permission_mode, selected?.effort, selected?.profile_id,
+    setStyleState(selected.style ?? "");
+  }, [sessionId, selected?.agent, selected?.model, selected?.permission_mode, selected?.effort, selected?.style, selected?.profile_id,
       selected?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
 
   // Switched an extra off while looking at the view it owns: the tab is gone, so
@@ -3695,6 +3711,8 @@ export function App() {
                           bind={setAskMode} stashed={!!sessionId && sessionId in stashedDrafts.current} />
                       ) : undefined}
                       ask={dock ? askMode : null} model={model} models={composerModels} usage={spentUsage} effort={effort}
+                      // Only a chat you drive takes a style (bridge/outputstyles.py): a Part's or a helper's never would.
+                      style={style} onStyle={selected?.takes_style ? setStyle : undefined}
                       accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       // A helper stays on the provider it was started on.
                       profiles={profilesAvailable && !selected?.parent_session ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
@@ -3709,7 +3727,7 @@ export function App() {
                       showPonytail={ai.ponytail}
                       // A kind's preset rides with its prompt, and never becomes this browser's picks.
                       onSend={(t, i, noPath, run, typed, flow) => void send(t, i, { ...(noPath ? { noPath: true } : {}), ...(run ? { typed, flow } : {}),
-                        ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
+                        ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, style: run.style, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
                       designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}

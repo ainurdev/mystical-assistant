@@ -4,23 +4,28 @@ import { carryPresets, flowRuns, saveRun } from "./flowruns.ts";
 import { presetFor } from "./kinds.ts";
 
 const cfg = [
-  { id: "build", run: { model: "claude-sonnet-5-5", mode: "plan", effort: "low", trim: "lite" } },
-  { id: "ask", run: { model: "claude-haiku-5-5", mode: "", effort: "medium", trim: "" } },
+  { id: "build", run: { model: "claude-sonnet-5-5", mode: "plan", effort: "low", trim: "lite", style: "Explanatory" } },
+  { id: "ask", run: { model: "claude-haiku-5-5", mode: "", effort: "medium", trim: "" } },   // an older bridge: no style
 ];
 
 test("a flow's preset is its bridge default, then this session's edits", () => {
   const saved = flowRuns(cfg);
-  assert.deepEqual(presetFor("build", saved), { model: "claude-sonnet-5-5", perm: "plan", effort: "low", ponytail: "lite" });
-  assert.deepEqual(presetFor("build", saved, { effort: "max" }), { model: "claude-sonnet-5-5", perm: "plan", effort: "max", ponytail: "lite" });
+  assert.deepEqual(presetFor("build", saved), { model: "claude-sonnet-5-5", perm: "plan", effort: "low", ponytail: "lite", style: "Explanatory" });
+  assert.deepEqual(presetFor("build", saved, { effort: "max", style: "" }),
+    { model: "claude-sonnet-5-5", perm: "plan", effort: "max", ponytail: "lite", style: "" });
+});
+
+test("a flow with no style follows the session's", () => {
+  assert.equal(presetFor("ask", flowRuns(cfg)).style, "");
 });
 
 test("before the bridge answers, the built-in preset holds", () => {
-  assert.deepEqual(presetFor("fix", flowRuns(undefined)), { model: "claude-opus-5-5", perm: "bypassPermissions", effort: "max", ponytail: "" });
+  assert.deepEqual(presetFor("fix", flowRuns(undefined)), { model: "claude-opus-5-5", perm: "bypassPermissions", effort: "max", ponytail: "", style: "" });
 });
 
 test("Save as writes every run row to the flow's bridge default", () => {
-  assert.deepEqual(saveRun("fix", { model: "m", perm: "plan", effort: "high", ponytail: "off" }),
-    { flow: "fix", key: "run", value: { model: "m", mode: "plan", effort: "high", trim: "off" } });
+  assert.deepEqual(saveRun("fix", { model: "m", perm: "plan", effort: "high", ponytail: "off", style: "Learning" }),
+    { flow: "fix", key: "run", value: { model: "m", mode: "plan", effort: "high", trim: "off", style: "Learning" } });
 });
 
 test("saved kind presets are sent once, then dropped", async () => {

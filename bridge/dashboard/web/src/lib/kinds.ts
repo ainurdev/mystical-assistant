@@ -24,12 +24,13 @@ import { ago, hhmm } from "./surfaces.ts";
 export type KindId = "design" | "build" | "refactor" | "fix" | "ship" | "ask";
 export const KIND_ORDER: KindId[] = ["design", "build", "refactor", "fix", "ship", "ask"];
 
-export interface KindRun { model: string; perm: string; effort: string; ponytail: string }
+/** style "" = the session's own Output style, as perm "" is its own mode. */
+export interface KindRun { model: string; perm: string; effort: string; ponytail: string; style: string }
 export interface Kind { id: KindId; name: string; verb: string; starter: string; preset: KindRun }
 
 const OPUS = "claude-opus-5-5", SONNET = "claude-sonnet-5-5";
 const k = (id: KindId, name: string, verb: string, starter: string, model: string, perm: string, effort: string): Kind =>
-  ({ id, name, verb, starter, preset: { model, perm, effort, ponytail: "" } });
+  ({ id, name, verb, starter, preset: { model, perm, effort, ponytail: "", style: "" } });
 
 // perm "" = the session's own mode. A guess must never make a Bypass session ask: plan raised a
 // plan card plus an Allow/Deny card per Bash call even after approval; acceptEdits asks per Bash call.

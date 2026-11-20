@@ -95,10 +95,12 @@ export interface SessionBrief {
   model?: string | null; // null = neither it nor its profile picked one yet
   permission_mode?: string; // its own, else its profile's, else the bridge default
   effort?: string | null; // null = none set (Auto)
+  style?: string | null; // its Output style (bridge/outputstyles.py); null = Not set, the folder's own decides
+  takes_style?: boolean; // a chat you drive, whose turns take that style; a Part's, a helper's never do
   profile_id?: string | null; // the profile it is bound to (bridge/profiles.py); null = none
   agent?: string; // who runs it: "claude" until agent profiles land
   account?: string; // its profile's Claude login slot; "" = the default login
-  overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort
+  overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort | style
   // The Claude login it is spending now, whose usage the strip shows: the turn
   // in flight's (a fallback handover moves it off the profile's), else the one
   // its next turn takes. null = it runs on another agent. Absent from an older bridge.
@@ -217,9 +219,9 @@ export type SwitchScope = "whole" | "recent";
 export type MergeAction = "merge" | "discard" | "undo" | "review";
 
 /** Which half of the picker a settings POST was for: the only half a running
- *  turn is switched to (the pair is saved either way; effort waits for the
- *  next turn — runner.apply_run_settings takes no live effort switch). */
-export type RunPick = "model" | "permission_mode" | "effort";
+ *  turn is switched to (what the body names is saved either way; effort and style
+ *  wait for the next turn — runner.apply_run_settings takes no live switch of either). */
+export type RunPick = "model" | "permission_mode" | "effort" | "style";
 
 /** What POST /api/session/settings saved (and switched a running turn to). */
 export interface RunSettings {
@@ -227,8 +229,12 @@ export interface RunSettings {
   model: string | null;
   permission_mode: string;
   effort?: string | null;
+  style?: string | null;
   overrides?: string[];
 }
+
+/** One Output style the OUTPUT STYLE row offers (GET /api/styles, bridge/outputstyles.py). */
+export interface OutputStyle { id: string; label: string; description: string; source: "built-in" | "user" | "folder" }
 
 // A named, server-side bundle of agent/account/model/mode/effort/tool picks a
 // session can bind to (bridge/profiles.py). Editing stays on the dashboard —
@@ -241,6 +247,7 @@ export interface Profile {
   model: string; // "" = not set, so the composer's pick applies
   mode: string; // permission mode; "" = not set
   effort: string; // "" = not set
+  style?: string; // Output style; "" = not set; absent on an older bridge
   tools: string[] | null; // deny rules; null = the bridge's defaults
 }
 
@@ -925,13 +932,15 @@ export const api = {
       method: "POST",
       body: { autocompact },
     }),
-  // A model/mode/effort pick for a session: saved, and applied to its running
-  // turn. A blank effort is Auto.
-  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; effort?: string; pick: RunPick }) =>
+  // A model/mode/effort/style pick for a session: saved, and applied to its running
+  // turn. A blank effort is Auto, a blank style Not set.
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; effort?: string; style?: string; pick: RunPick }) =>
     request<RunSettings>("/api/session/settings", {
       method: "POST",
       body: { session_id: id, ...body },
     }),
+  // The Output styles a session's folder offers: Claude's, yours, the folder's.
+  styles: (sessionId: string) => request<{ styles: OutputStyle[] }>(`/api/styles?session=${encodeURIComponent(sessionId)}`),
 
   // A bridge older than profiles answers this with its catch-all 404 "not found".
   profiles: () => request<ProfilesInfo>("/api/profiles"),

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
@@ -37,6 +37,7 @@ import { multi as multiApi } from "../lib/multistore";
 import { chatImagesInline, uploadChatImage, useChatImages } from "../lib/chatimages";
 import { isInlineImage } from "../lib/embeds";
 import { keyAttrs, SHORTCUTS } from "../lib/shortcuts";
+import { styleName, styleRows, useStyles } from "../lib/styles";
 
 const STILL_SAVING = "An image is still saving. Send again in a moment.";
 
@@ -90,7 +91,11 @@ const FLOW_ABOUT: Record<string, string> = {
   ship: "merge, check, clean up", ask: "an answer, nothing changed",
 };
 // PRESET names a run's fields as the box does; the bridge's flow settings as they do (lib/flowruns).
-const RUN_KEY: Record<keyof KindRun, string> = { model: "model", perm: "mode", effort: "effort", ponytail: "trim" };
+const RUN_KEY: Record<keyof KindRun, string> = { model: "model", perm: "mode", effort: "effort", ponytail: "trim", style: "style" };
+// What a blank STYLE means: in a session nothing goes, so the folder's own setting holds
+// (bridge/outputstyles.py); in a flow's run, the session's own style.
+const NOT_SET = { label: "Not set", hint: "the folder's own Claude setting decides" };
+const SESSION_STYLE = { label: "Session", hint: "the session's own style" };
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // hint → a quieter second line under the label (what a mode does); tag → a
@@ -112,7 +117,7 @@ function MenuRows<T extends string>({ options, value, onPick }: {
         return (
           <Fragment key={o.id}>
             {heading && (
-              <div style={{
+              <div className="caps" style={{
                 fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", whiteSpace: "nowrap",
                 padding: i ? "10px 11px 4px" : "8px 11px 4px",
                 borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
@@ -447,17 +452,19 @@ function effortRow(effort: string, agent?: AgentPickers | null): { id: string; l
 type FlowChangeFn = (c: FlowChange) => void;
 
 /** The picked flow's run default for every session, folded to one line ("Opus 5.5 · Bypass · Max ·
- *  trim default"); open, PRESET's Model, Mode, Effort and Trim rows, drawn the same, with no profile
- *  marks (the default is no profile's). */
+ *  trim default"); open, PRESET's Model, Mode, Effort, Style and Trim rows, drawn the same, with no
+ *  profile marks (the default is no profile's). A blank Style is the session's own. */
 function FlowRunRows({ f, change, models, open, onOpen, flat }: { f: FlowSetting; change: FlowChangeFn; models: DropOption<string>[];
   open: boolean; onOpen: () => void;
   /** SETTINGS: the picks in one row, always open, no summary line to fold them. */
   flat?: boolean }) {
   const [list, setList] = useState<"" | keyof KindRun>("");
   const trim = useAiFeatures().ponytail;
+  const [styles] = useStyles(null);
   const val = flowRuns([f])[f.id];
   const perm = val.perm ? PERMS.find((o) => o.id === val.perm)?.label ?? modeRow(val.perm).label : "Session";
   const effort = effortRow(val.effort, null).label;
+  const style = styleName(val.style, SESSION_STYLE.label);
   const pony = PONYTAILS.find((o) => o.id === val.ponytail)?.label ?? val.ponytail;
   const sel = (k: keyof KindRun, label: string, opts: DropOption<string>[], shown: string) => (
     <div className="fs-pick"><span className="caps">{label}</span>
@@ -470,7 +477,7 @@ function FlowRunRows({ f, change, models, open, onOpen, flat }: { f: FlowSetting
     <div className="fs-kv" data-top=""><span className="caps">Runs on</span>
       <div className="fs-runs-w">
         {!flat && <button type="button" className="fs-runs" aria-expanded={open} onClick={onOpen}>
-          {modelName(val.model)}<span>{[perm, effort, trim && `trim ${pony.toLowerCase()}`].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
+          {modelName(val.model)}<span>{[perm, effort, val.style && style, trim && `trim ${pony.toLowerCase()}`].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
           <ChevronDown size={11} strokeWidth={2} aria-hidden />
         </button>}
         {(open || flat) && (
@@ -478,6 +485,7 @@ function FlowRunRows({ f, change, models, open, onOpen, flat }: { f: FlowSetting
             {sel("model", "Model", models, modelName(val.model))}
             {sel("perm", "Mode", PERMS, perm)}
             {sel("effort", "Effort", EFFORTS.filter((e) => e.id), effort)}
+            {sel("style", "Style", styleRows(styles, val.style, SESSION_STYLE), style)}
             {trim && sel("ponytail", "Trim", PONYTAILS, pony)}
           </div>
         )}
@@ -696,7 +704,7 @@ export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
 }
 
 export function Composer({
-  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, style = "", onStyle, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
   dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
@@ -736,6 +744,9 @@ export function Composer({
   onDefaultProfile?: (id: string) => void;
   overrides?: string[]; // knobs set by hand over the profile — each gets an OverrideDot
   effort: EffortLevel | "";
+  // The session's Output style ("" = Not set) and its pick; no onStyle, no STYLE chip.
+  style?: string;
+  onStyle?: (s: string) => void;
   perm: string;
   onPerm: (p: string) => void;
   ponytail: string;
@@ -817,14 +828,16 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "style" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
   // NOW|NEXT (B · DECK): what Enter does with the text while a turn runs. Alt+Enter does the other.
   const [enterMode, setEnterMode] = useState<EnterMode>("next");
   // NOW is picked for one turn: the next turn, or another session, starts back on NEXT.
   useEffect(() => { if (!running) setEnterMode("next"); }, [running, sessionId]);
   // PRESET's model or mode list, open inside it; and where it hangs: above the card and its tabs, its
   // right edge on the preset segment's (measured as it opens; index.css keeps it inside the card).
-  const [ppList, setPpList] = useState<"" | "model" | "mode" | "jump">("");
+  const [ppList, setPpList] = useState<"" | "model" | "mode" | "style" | "jump">("");
+  // The STYLE picker's list for this session's folder, reloaded as a picker opens.
+  const [styles, reloadStyles] = useStyles(sessionId);
   const [ppAt, setPpAt] = useState(0);
   useEffect(() => setPpList(""), [openDrop]);
   // PRESET stays open across picks, so it takes a dialog's Esc as well as a
@@ -2107,7 +2120,7 @@ export function Composer({
   // PRESET: the run the next send goes with, which the segment reads and the popover edits. A lit
   // kind's is its preset (lib/kinds presetFor), and a pick here is this session's edit of it. With
   // no kind it is the session's own picks, and a pick sets them.
-  const pre = run ?? { model, perm, effort, ponytail };
+  const pre = run ?? { model, perm, effort, ponytail, style };
   const PreGlyph = kind ? KIND_ICON[kind] : SlidersHorizontal;
   const trimOn = showPonytail && !onAgent;
   const optLabel = (opts: DropOption<string>[], id: string) => { const o = opts.find((x) => x.id === id); return o && (o.short ?? o.label); };
@@ -2115,30 +2128,33 @@ export function Composer({
   const preRest = [
     pre.perm && (optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label),
     pre.effort && effortRow(pre.effort, kind ? null : agentPick).label,
+    !onAgent && pre.style && styleName(pre.style),
     trimOn && pre.ponytail && (PONYTAILS.find((p) => p.id === pre.ponytail)?.label ?? pre.ponytail),
   ].filter(Boolean).join(" · ");
   // A kind's preset names its effort; with no kind lit, Auto is a pick again, as in the run sheet.
   const preEffs: DropOption<string>[] = kind ? EFFORTS.filter((e) => e.id) : agentPick ? agentPick.effort ?? [] : EFFORTS;
   // With no kind lit, a knob set here over the bound profile wears the OverrideDot, and the
   // profile's own value a PROFILE mark: picking that follows the profile again (OVERRIDE_TIP).
-  const setHere = (k: "model" | "perm" | "effort") => !kind && own(k === "perm" ? "permission_mode" : k);
-  const profPick = (k: "model" | "perm" | "effort") => (setHere(k) && bound?.[k === "perm" ? "mode" : k]) || null;
+  const setHere = (k: "model" | "perm" | "effort" | "style") => !kind && own(k === "perm" ? "permission_mode" : k);
+  const profPick = (k: "model" | "perm" | "effort" | "style") => (setHere(k) && bound?.[k === "perm" ? "mode" : k]) || null;
   const preEdit = (k: keyof KindRun, v: string) => {
     const sid = sessionId ?? "";
     if (kind) setRunEdits((m) => ({ ...m, [sid]: { ...m[sid], [kind]: { ...m[sid]?.[kind], [k]: v } } }));
     else if (k === "model") onModel(v);
     else if (k === "perm") onPerm(v);
     else if (k === "effort") onEffort(v as EffortLevel | "");
+    else if (k === "style") onStyle?.(v);
     else onPonytail(v);
   };
   // A select is the chips' own Drop: its MenuRows list opens over the popover.
-  const preSel = (k: "model" | "perm", label: string, opts: DropOption<string>[], shown: string) => {
-    const list = k === "model" ? "model" : "mode", prof = profPick(k);
+  const preSel = (k: "model" | "perm" | "style", label: string, opts: DropOption<string>[], shown: string) => {
+    const list = k === "perm" ? "mode" : k, prof = profPick(k);
     return (
       <div className="pb-pr"><b>{label}{setHere(k) && <OverrideDot />}</b>
         <Drop<string> label={label.toUpperCase()} className="pb-sel" value={pre[k]} fallback={{ id: pre[k], label: shown }}
           options={prof === null ? opts : opts.map((o) => (o.id === prof ? { ...o, tag: "PROFILE" } : o))}
-          open={ppList === list} onToggle={() => setPpList((l) => (l === list ? "" : list))} onPick={(v) => { preEdit(k, v); setPpList(""); }} />
+          open={ppList === list} onToggle={() => { if (k === "style" && ppList !== list) reloadStyles(); setPpList((l) => (l === list ? "" : list)); }}
+          onPick={(v) => { preEdit(k, v); setPpList(""); }} />
       </div>
     );
   };
@@ -2163,6 +2179,9 @@ export function Composer({
       {modelOpts.length > 0 && preSel("model", "Model", modelOpts, preModel)}
       {permOpts.length > 0 && preSel("perm", "Mode", permOpts, pre.perm ? optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label : "Session")}
       {preEffs.length > 0 && preSeg("effort", "Effort", preEffs)}
+      {/* Claude Code's own setting: an agent session has none. In a kind's preset, blank is the session's. */}
+      {!onAgent && onStyle && preSel("style", "Style", styleRows(styles, pre.style, kind ? SESSION_STYLE : NOT_SET),
+        styleName(pre.style, kind ? SESSION_STYLE.label : NOT_SET.label))}
       {trimOn && preSeg("ponytail", "Trim", PONYTAILS)}
       {kind && (
         <div className="pb-pf">A change here wins in this session.
@@ -2362,6 +2381,12 @@ export function Composer({
                 fallback={agentPick ? { id: effort, label: effort || "AGENT DEFAULT" } : undefined} open={openDrop === "effort"} dot={own("effort")}
                 onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
                 onPick={(id) => { onEffort(id as EffortLevel | ""); setOpenDrop(""); }} />
+            )}
+            {!agentPick && onStyle && (
+              <Drop<string> label="STYLE" code={<Feather size={12} />} value={style} options={styleRows(styles, style, NOT_SET)}
+                fallback={{ id: style, label: styleName(style) }} open={openDrop === "style"} dot={own("style")}
+                onToggle={() => { if (openDrop !== "style") reloadStyles(); setOpenDrop((d) => (d === "style" ? "" : "style")); }}
+                onPick={(id) => { onStyle(id); setOpenDrop(""); }} />
             )}
             {permOpts.length > 0 && (
               <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={permOpts} fallback={modeRow(perm)} open={openDrop === "mode"} minWidth={104} dot={own("permission_mode")}

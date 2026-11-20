@@ -76,9 +76,9 @@ console.assert(guessKind("why does the build fail on CI?", { ...START, off: ["fi
 console.assert(nextKind("build", 1) === "refactor", "forward");
 
 // --- presetFor ---------------------------------------------------------------
-console.assert(same(presetFor("design"), { model: "claude-opus-5-5", perm: "", effort: "high", ponytail: "" }), "design default");
-console.assert(same(presetFor("build"), { model: "claude-opus-5-5", perm: "bypassPermissions", effort: "max", ponytail: "" }), "build default");
-console.assert(same(presetFor("ask"), { model: "claude-sonnet-5-5", perm: "", effort: "medium", ponytail: "" }), "ask default");
+console.assert(same(presetFor("design"), { model: "claude-opus-5-5", perm: "", effort: "high", ponytail: "", style: "" }), "design default");
+console.assert(same(presetFor("build"), { model: "claude-opus-5-5", perm: "bypassPermissions", effort: "max", ponytail: "", style: "" }), "build default");
+console.assert(same(presetFor("ask"), { model: "claude-sonnet-5-5", perm: "", effort: "medium", ponytail: "", style: "" }), "ask default");
 console.assert(presetFor("fix", { fix: { effort: "high" } }).effort === "high", "saved beats default");
 console.assert(presetFor("fix", { fix: { effort: "high" } }, { effort: "low" }).effort === "low", "session beats saved");
 console.assert(presetFor("fix", { ship: { effort: "low" } }).effort === "max", "another kind's save is ignored");

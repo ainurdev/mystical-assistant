@@ -4,7 +4,7 @@
 import { cloneElement, isValidElement, type ReactNode } from "react";
 
 /** A GitHub callout's marker, `> [!NOTE]` and friends, at the head of a quote. */
-export const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
+export const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution|insight)\]\s*\n?/i;
 
 const blank = (n: unknown) => n === null || n === undefined || (typeof n === "string" && !n.trim());
 
@@ -31,4 +31,34 @@ export function stripMarker(node: unknown): unknown {
     return kids === "" ? null : cloneElement(node, undefined, kids as ReactNode);
   }
   return node;
+}
+
+// The Explanatory and Learning Output styles' teaching note (bridge/outputstyles.py): Claude
+// writes a rule in backticks, `★ Insight ───`, its points, and a closing `───` rule.
+const INSIGHT_OPEN = /^\s*`★ Insight[^`]*`\s*$/;
+const INSIGHT_CLOSE = /^\s*`─+`\s*$/;
+const FENCE = /^\s*(```|~~~)/;
+
+/** A reply's Insight notes as `> [!INSIGHT]` callouts, so the callout box draws them. One
+ *  still streaming (no closing rule yet) runs to the end, so the box grows with it. A fenced
+ *  block that quotes the marker stays code. */
+export function insightCallouts(md: string): string {
+  if (!md.includes("★ Insight")) return md;
+  const out: string[] = [];
+  let fence = false, inside = false;
+  for (const line of md.split("\n")) {
+    if (inside) {
+      if (INSIGHT_CLOSE.test(line)) {
+        inside = false;
+        out.push("");                    // what follows the note isn't part of it
+      } else out.push(line.trim() ? `> ${line}` : ">");
+      continue;
+    }
+    if (FENCE.test(line)) fence = !fence;
+    if (!fence && INSIGHT_OPEN.test(line)) {
+      inside = true;
+      out.push("> [!INSIGHT]");
+    } else out.push(line);
+  }
+  return out.join("\n");
 }

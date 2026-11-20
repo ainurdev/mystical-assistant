@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
+import { useStyles } from "../../lib/styles";
 import { fadeBand, fadeMask, type HeadLook } from "../../lib/headlook";
 
 import { ago, projectName, setClock12, useClock12, windowLabels } from "../../lib/surfaces";
@@ -269,7 +270,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "WINDOW", terms: "mac app windows app title bar session name dock icon keep cmd-tab space tray hotkey summon shortcut win ctrl a cmd control" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space window" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
-  { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
+  { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort output style explanatory learning ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "aimgmt", sec: "FLOWS", terms: "flows flow steps grill design build refactor fix ship ask review retro audit tickets parts guess compact wait go on" },
   { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
@@ -3042,7 +3043,7 @@ function LoginMeters({ a }: { a: AccountInfo }) {
 /** What a profile sets, as pills: model · mode · effort · tools off. */
 function ProfilePills({ p }: { p: Profile }) {
   const bits = [p.agent !== "claude" ? `◇ ${agentLabel(p.agent)}` : null, p.model.replace(/^claude-/, ""),
-    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), p.effort, p.tools && `${p.tools.length} off`].filter(Boolean) as string[];
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), p.effort, p.style, p.tools && `${p.tools.length} off`].filter(Boolean) as string[];
   return <span className="aim-pills">{bits.length ? bits.map((b) => <em key={b}>{b}</em>) : <em>defaults</em>}</span>;
 }
 
@@ -3065,6 +3066,7 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
 }) {
   const [testing, setTesting] = useState(false);
   const [testErr, setTestErr] = useState<string | null>(null);
+  const [styles] = useStyles(null);   // a profile isn't one folder's: Claude's and yours
   const set = setForm;
   // A value the lists no longer offer (a login since removed, a model gone
   // from the Models API) stays shown as itself, not as another row.
@@ -3172,6 +3174,11 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
           <div className="aim-f"><label>Effort</label>
             <select value={form.effort} onChange={(e) => set({ effort: e.target.value })}>
               {[NOT_SET, ...EFFORTS.filter((e) => e.id)].map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select></div>
+          {/* Claude Code's Output style (bridge/outputstyles.py); not set, the folder's own decides. */}
+          <div className="aim-f"><label>Style</label>
+            <select value={form.style ?? ""} onChange={(e) => set({ style: e.target.value })}>
+              {keep([NOT_SET, ...styles.map((st) => ({ id: st.id, label: st.label }))], form.style ?? "").map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select></div>
         </>
       )}

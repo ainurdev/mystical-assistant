@@ -1,6 +1,6 @@
 // A profile is a named, server-side bundle (bridge/profiles.py): which agent
-// and account run a session, and with what model, mode, effort and tool
-// switches. A session is bound to one rather than stamped from it, so an edit
+// and account run a session, and with what model, mode, effort, Output style
+// and tool switches. A session is bound to one rather than stamped from it, so an edit
 // reaches every session using it, on every surface, from its next turn —
 // except a knob set by hand in that session. It replaced a browser-only list
 // (localStorage "hud-profiles") whose APPLY copied values once; importLegacy()
@@ -14,6 +14,7 @@ export interface Profile {
   model: string; // "" = not set, so the composer's pick applies
   mode: string; // permission mode; "" = not set
   effort: string; // "" = not set
+  style?: string; // Output style; "" = not set (the folder's own decides); absent on an older bridge
   tools: string[] | null; // deny rules; null = the bridge's defaults
 }
 
@@ -33,7 +34,7 @@ const NAME_MAX = 32; // bridge/profiles.py NAME_MAX
  *  with "◇ CODEX" (its account ids mean nothing on a row). */
 export function describe(p: Profile): string {
   const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
-    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.style, p.tools && `${p.tools.length} off`];
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
 
