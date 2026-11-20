@@ -73,7 +73,7 @@ def test_not_set_passes_no_style_so_the_folders_own_setting_decides(monkeypatch)
 
 
 @pytest.mark.parametrize("origin", ["ticket", "ticket-merge", "helper", "automation",
-                                    "rivendell:w1", "device-run", "preview-queue", None])
+                                    "rivendell:w1", "device-run", "preview-queue"])
 def test_a_session_nobody_watches_gets_no_style(monkeypatch, origin):
     """Learning leaves a TODO(human) and waits: in a Part nobody watches, its flow
     could merge the half-written code."""
@@ -81,7 +81,8 @@ def test_a_session_nobody_watches_gets_no_style(monkeypatch, origin):
     assert "outputStyle" not in _settings(monkeypatch, session_id=s["id"])
 
 
-@pytest.mark.parametrize("origin", ["dashboard", "miniapp", "bot", "vscode", "terminal", "browser", "work"])
+@pytest.mark.parametrize("origin", ["dashboard", "miniapp", "bot", "vscode", "terminal", "browser", "work",
+                                    None])     # None: the Telegram bot's own chat (/new, plain text, topics)
 def test_every_chat_you_drive_takes_its_style(monkeypatch, origin):
     s = _session(origin=origin, style="Concise")
     assert _settings(monkeypatch, session_id=s["id"])["outputStyle"] == "Concise"

@@ -14,7 +14,7 @@ export interface Profile {
   model: string; // "" = not set, so the composer's pick applies
   mode: string; // permission mode; "" = not set
   effort: string; // "" = not set
-  style?: string; // Output style; "" = not set (the folder's own decides); absent on an older bridge
+  style?: string; // Output style; "" = not set (the folder's own decides); absent from one saved before styles
   tools: string[] | null; // deny rules; null = the bridge's defaults
 }
 

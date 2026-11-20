@@ -12,7 +12,7 @@ import {
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, RotateCw, Send, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
-  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork, Plus,
+  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, Clock3, GitFork, Plus,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
@@ -3247,12 +3247,11 @@ function AimFold({ id, title, hint, count, right, secs, defaultOpen = false, ope
  *  switches that make every turn cheaper, in the Extras' card grammar with the
  *  Accounts fold's three-way switch. TRIAL puts one on every other new session
  *  and scores both halves on their first turn; the card's floor says how far it
- *  got and what it found (lib/savers saverFoot). The fourth card is the
+ *  got and what it found (lib/savers saverFoot). The third card is the
  *  one-shot cache: always on, no switch. A bridge older than Savers answers
  *  404, and the fold isn't drawn. */
-const SAVER_ICONS: Record<string, LucideIcon> = { concise: AlignLeft, subagent_effort: GitFork, trim_tests: ListChecks };
+const SAVER_ICONS: Record<string, LucideIcon> = { subagent_effort: GitFork, trim_tests: ListChecks };
 const SAVER_ABOUT: Record<string, string> = {
-  concise: "Claude Code's built-in Concise style, sent with each run: the result first, no recap, the same work. It shapes the reply itself, not how the transcript draws it; Ponytail, when on, still applies.",
   subagent_effort: "CLAUDE_CODE_SUBAGENT_EFFORT=medium on each run: subagents stop inheriting the session's effort, which is usually the highest.",
   trim_tests: "A hook before each Bash call: a test run (pytest, vitest, jest, go test, cargo test) hands Claude its failures and its summary, not every passing line. Its exit status is untouched.",
 };

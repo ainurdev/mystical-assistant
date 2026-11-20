@@ -938,7 +938,8 @@ class Job:
         # A run whose prompt carries untrusted text (start_streaming_job's skip_pack):
         # no tools, no MCP servers, and never resumed (_maybe_auto_resume).
         self.skip_pack = False
-        # The Output style this turn's claude takes (start_streaming_job), None = none passed.
+        # A lit flow's Output style for this turn (start_streaming_job); None = the session's
+        # own, which _run_streaming resolves as claude starts.
         self.style: str | None = None
         self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
@@ -2093,7 +2094,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     try:
         job2 = start_streaming_job(
             job.chat_id, ECHO_NUDGE if echoed else TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
-            project=cwd, session_id=sid, model=model, effort=effort,
+            project=cwd, session_id=sid, model=model, effort=effort, style=job.style,
             account_slot=job.account_slot, runtime=job.runtime, sent_by="mystical:resume",
             sent_why="the turn stopped on a repeated system reminder" if echoed
             else "the turn went silent and the watchdog restarted it" if job.timed_out
@@ -3376,8 +3377,14 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
         # Savers (bridge/savers.py): every ON one, and each TRIAL this session drew.
         saving = set() if job.skip_pack else savers.for_run(job.store_session_id)
-        style = ["--settings", json.dumps({"outputStyle": job.style})] if job.style else []
-        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving) + style)
+        # Its Output style (bridge/outputstyles.py): a lit flow's, else the session's own as it
+        # is now, and only in a chat you drive. shortcut: a limit park's resume and a login
+        # handover run the session's own, not a lit flow's; carry job.style there if that bites.
+        sess = store.get_session(job.store_session_id) if job.store_session_id else None
+        style = ((job.style or profiles.effective(sess)["style"])
+                 if sess and outputstyles.attended(sess) and not job.skip_pack else None)
+        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving)
+                            + (["--settings", json.dumps({"outputStyle": style})] if style else []))
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -3793,9 +3800,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.work_cwd = wt if wt and os.path.isdir(wt) else None
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         job.skip_pack = skip_pack
-        # A lit flow's style, else the session's (bridge/outputstyles.py), in a chat you drive.
-        job.style = ((style or eff["style"])
-                     if outputstyles.attended(session) and not (skip_pack or is_acp) else None)
+        job.style = style
         job.native_resume = native_resume and not is_acp
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"

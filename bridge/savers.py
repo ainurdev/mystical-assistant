@@ -17,8 +17,8 @@ styles now (bridge/outputstyles.py), so a style has one writer.
 None of them is measured on this stack, so each switch has a third position.
 TRIAL puts it on every other new session (a coin flip seeded by the session id,
 decided on the session's first run) and scores both halves on that first turn
-only, with numbers the bridge already logs: answer words, tokens, tool calls
-before the first edit, errors (store.first_turn_metrics). Medians per half, not
+only, with numbers the bridge already logs: tokens, tool calls before the first
+edit, errors (store.first_turn_metrics). Medians per half, not
 a model: at one person's scale only large effects show, and a keep-or-drop only
 needs those. After TRIAL_N scored sessions the bell says so once and you pick ON
 or OFF. Persisted next to the DB like ai_features.json. Stdlib only; nothing
@@ -172,7 +172,7 @@ def results(key: str, d: "dict | None" = None) -> "dict | None":
         return None if a is None or not b else round((a - b) / b * 100)
 
     return {"n": len(on) + len(off), "on": len(on), "off": len(off),
-            "words": delta("words"), "tokens": delta("tokens"), "tools": delta("tools_before_edit"),
+            "tokens": delta("tokens"), "tools": delta("tools_before_edit"),
             "errors_on": sum(1 for m in on if m["error"]),
             "errors_off": sum(1 for m in off if m["error"])}
 

@@ -5,7 +5,7 @@ import { presetFor } from "./kinds.ts";
 
 const cfg = [
   { id: "build", run: { model: "claude-sonnet-5-5", mode: "plan", effort: "low", trim: "lite", style: "Explanatory" } },
-  { id: "ask", run: { model: "claude-haiku-5-5", mode: "", effort: "medium", trim: "" } },   // an older bridge: no style
+  { id: "ask", run: { model: "claude-haiku-5-5", mode: "", effort: "medium", trim: "", style: "" } },
 ];
 
 test("a flow's preset is its bridge default, then this session's edits", () => {

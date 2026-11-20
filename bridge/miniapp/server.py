@@ -241,8 +241,8 @@ def _session_brief(s: dict) -> dict:
             # The session's effective run settings (profile + hand-set
             # overrides, defaults filled in) — both composers load these.
             **run,
-            # Whether its turns take that style: only a chat you drive (bridge/outputstyles.py).
-            "takes_style": outputstyles.attended(s),
+            # Whether its turns take that style: a chat you drive, on Claude (bridge/outputstyles.py).
+            "takes_style": outputstyles.attended(s) and run["agent"] == profiles.CLAUDE,
             "slot": _run_slot(s, run),
             "goal": goals.brief(store.parse_goal(s.get("goal"))),
             **_multi_brief(s, run),

@@ -139,16 +139,18 @@ function describeProfile(p: Profile): string {
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
 
-/** What a style reads as before its list loads: "" is Not set. */
+// The OUTPUT STYLE row. Mirrors the dashboard's lib/styles.ts (hand-kept: the two web apps
+// don't share source), except that a chip label leaves Not set out ("").
 const styleName = (id: string) => (!id ? "" : id === "default" ? "Default" : id);
 
-/** The OUTPUT STYLE row: Not set first (the folder's own setting decides), then Claude's,
- *  yours and the folder's styles, each one's description on hover. A pick the list lacks
- *  (still loading) stays as itself. */
-function styleOptions(list: OutputStyle[] | undefined, value: string) {
-  const rows = [{ id: "", label: "Not set", title: "the folder's own Claude setting decides" },
-    ...(list ?? []).map((s) => ({ id: s.id, label: s.label, title: s.description || undefined }))];
-  return value && !rows.some((r) => r.id === value) ? [...rows, { id: value, label: styleName(value), title: undefined }] : rows;
+/** Not set first, saying what decides then (the folder's own setting, or the profile's style
+ *  when it has one), then Claude's, yours and the folder's styles, each with its description
+ *  as a line under it: a phone shows no hover. A pick the list lacks (still loading) stays. */
+function styleOptions(list: OutputStyle[] | undefined, value: string, profileStyle?: string) {
+  const rows = [{ id: "", label: "Not set", note: profileStyle ? `follows its profile: ${styleName(profileStyle)}`
+                                                              : "the folder's own Claude setting decides" },
+    ...(list ?? []).map((s) => ({ id: s.id, label: s.label, note: s.description || undefined }))];
+  return value && !rows.some((r) => r.id === value) ? [...rows, { id: value, label: styleName(value), note: undefined }] : rows;
 }
 
 const chipClass =
@@ -683,7 +685,8 @@ export function Composer() {
             <OptionRow
               label="OUTPUT STYLE"
               value={style}
-              options={dotSelected(styleOptions(stylesQ.data?.styles, style), style, overrides.includes("style"))}
+              options={dotSelected(styleOptions(stylesQ.data?.styles, style,
+                profiles?.find((p) => p.id === profileId)?.style), style, overrides.includes("style"))}
               onPick={setStyle}
             />
             <DropdownMenuSeparator />

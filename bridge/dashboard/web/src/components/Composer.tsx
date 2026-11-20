@@ -866,6 +866,8 @@ export function Composer({
   // ProfileRows (what each sets, its login's fuel, the default control).
   const profileOpts = useMemo(() => (profiles ?? []).map((p) => ({ id: p.id, label: p.name })), [profiles]);
   const bound = profiles?.find((p) => p.id === profile);
+  // Not set on a session whose profile has a style follows that style (bridge profiles.save_pick).
+  const notSet = bound?.style ? { label: NOT_SET.label, hint: `follows its profile: ${styleName(bound.style)}` } : NOT_SET;
   const boundDead = bound ? deadLogin(accounts, bound.agent, bound.account) : null;
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -2128,7 +2130,7 @@ export function Composer({
   const preRest = [
     pre.perm && (optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label),
     pre.effort && effortRow(pre.effort, kind ? null : agentPick).label,
-    !onAgent && pre.style && styleName(pre.style),
+    !onAgent && onStyle && pre.style && styleName(pre.style),
     trimOn && pre.ponytail && (PONYTAILS.find((p) => p.id === pre.ponytail)?.label ?? pre.ponytail),
   ].filter(Boolean).join(" · ");
   // A kind's preset names its effort; with no kind lit, Auto is a pick again, as in the run sheet.
@@ -2180,7 +2182,7 @@ export function Composer({
       {permOpts.length > 0 && preSel("perm", "Mode", permOpts, pre.perm ? optLabel(permOpts, pre.perm) ?? modeRow(pre.perm).label : "Session")}
       {preEffs.length > 0 && preSeg("effort", "Effort", preEffs)}
       {/* Claude Code's own setting: an agent session has none. In a kind's preset, blank is the session's. */}
-      {!onAgent && onStyle && preSel("style", "Style", styleRows(styles, pre.style, kind ? SESSION_STYLE : NOT_SET),
+      {!onAgent && onStyle && preSel("style", "Style", styleRows(styles, pre.style, kind ? SESSION_STYLE : notSet),
         styleName(pre.style, kind ? SESSION_STYLE.label : NOT_SET.label))}
       {trimOn && preSeg("ponytail", "Trim", PONYTAILS)}
       {kind && (
@@ -2383,7 +2385,7 @@ export function Composer({
                 onPick={(id) => { onEffort(id as EffortLevel | ""); setOpenDrop(""); }} />
             )}
             {!agentPick && onStyle && (
-              <Drop<string> label="STYLE" code={<Feather size={12} />} value={style} options={styleRows(styles, style, NOT_SET)}
+              <Drop<string> label="STYLE" code={<Feather size={12} />} value={style} options={styleRows(styles, style, notSet)}
                 fallback={{ id: style, label: styleName(style) }} open={openDrop === "style"} dot={own("style")}
                 onToggle={() => { if (openDrop !== "style") reloadStyles(); setOpenDrop((d) => (d === "style" ? "" : "style")); }}
                 onPick={(id) => { onStyle(id); setOpenDrop(""); }} />

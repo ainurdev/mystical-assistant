@@ -6,12 +6,12 @@
 import type { FlowChange } from "../api.ts";
 import type { KindRun } from "./kinds.ts";
 
-interface BridgeRun { model: string; mode: string; effort: string; trim: string; style?: string }
+interface BridgeRun { model: string; mode: string; effort: string; trim: string; style: string }
 
 /** Each flow's bridge default as PRESET names it; {} until the bridge answers (the built-ins hold). */
 export function flowRuns(flows: { id: string; run: BridgeRun }[] | undefined): Record<string, KindRun> {
   return Object.fromEntries((flows ?? []).map((f) => [f.id, { model: f.run.model, perm: f.run.mode, effort: f.run.effort,
-    ponytail: f.run.trim, style: f.run.style ?? "" }]));
+    ponytail: f.run.trim, style: f.run.style }]));
 }
 
 /** PRESET's "Save as <Flow>'s preset": every run row in one change, so all land or none. */

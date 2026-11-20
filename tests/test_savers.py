@@ -95,19 +95,18 @@ def test_results_compare_the_halves_on_the_first_turn():
     savers.set_mode("subagent_effort", "trial")
     d = json.load(open(savers._path()))
     since = d["since"]["subagent_effort"]
-    long_answer, short_answer = " ".join(["w"] * 100), " ".join(["w"] * 60)
     tok = {"in": 10, "out": 90, "cache_w": 0, "cache_r": 0}
     arms = {}
     for i in range(3):
-        on = _session(result=short_answer, tools=("Read", "Edit"), tokens=tok)
-        off = _session(result=long_answer, tools=("Read", "Grep", "Edit"), tokens=tok)
+        on = _session(result="done", tools=("Read", "Edit"), tokens=tok)
+        off = _session(result="done", tools=("Read", "Grep", "Edit"), tokens=tok)
         arms[on] = {"subagent_effort": [True, since + 1]}
         arms[off] = {"subagent_effort": [False, since + 1]}
     d["arms"] = arms
     json.dump(d, open(savers._path(), "w"))
     r = savers.results("subagent_effort")
     assert (r["n"], r["on"], r["off"]) == (6, 3, 3)
-    assert r["words"] == -40 and r["tools"] == -50 and r["errors_on"] == 0
+    assert r["tools"] == -50 and r["tokens"] == 0 and r["errors_on"] == 0
 
 
 def test_a_trial_rings_once_when_it_has_its_sessions(monkeypatch):

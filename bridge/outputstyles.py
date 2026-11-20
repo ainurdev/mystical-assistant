@@ -31,8 +31,9 @@ import re
 
 from bridge import skills
 
-# The CLI's built-ins (Claude Code 2.1.328): the id is what `outputStyle` takes, case and
-# all (Default is lowercase there); the hint is the CLI's own description, shortened.
+# The CLI's built-ins: the id is what `outputStyle` takes, case and all (Default is
+# lowercase there); the hint is the CLI's own description, shortened.
+# shortcut: copied from Claude Code 2.1.328's list, update it when the CLI adds or renames one.
 BUILT_IN = (
     ("default", "Default", "Claude's usual way of working"),
     ("Proactive", "Proactive", "acts at once, interrupts less, prefers action over planning"),
@@ -44,15 +45,16 @@ BUILT_IN = (
 USER_DIR = os.path.join(os.path.expanduser("~"), ".claude", "output-styles")
 # What can be a style's name: a frontmatter `name` or a file stem, on one line.
 NAME_RE = re.compile(r"[^\x00-\x1f\x7f]{1,64}")
-# The chats you drive; "bridge" is a VS Code or terminal session once the bridge has
+# The chats you drive. None is the Telegram bot's own chat (dispatch and tgtopics make
+# those with no origin); "bridge" is a VS Code or terminal session once the bridge has
 # continued it (runner._adopt_native). Every other origin (ticket, ticket-merge, helper,
 # automation, preview-queue, rivendell:*, device-run, team) gets no style from Mystical.
-ATTENDED = frozenset({"dashboard", "miniapp", "bot", "vscode", "terminal", "bridge", "browser", "work"})
+ATTENDED = frozenset({None, "dashboard", "miniapp", "bot", "vscode", "terminal", "bridge", "browser", "work"})
 
 
-def attended(session: "dict | None") -> bool:
+def attended(session: dict) -> bool:
     """Whether a turn of this session may take a style: a chat you drive."""
-    return (session or {}).get("origin") in ATTENDED
+    return session.get("origin") in ATTENDED
 
 
 def clean(value) -> "str | None":
@@ -100,6 +102,7 @@ def available(cwd: "str | None") -> list:
     """Every style a session in `cwd` can pick, as {id, label, description, source}:
     the built-ins, then the custom ones by name, a folder's over yours and the
     nearest folder's over the rest. No cwd (a profile, a flow): yours only."""
+    # shortcut: plugin and managed styles aren't listed (none are installed), read them when one is.
     own: dict = {}
     dirs = [(USER_DIR, "user")] + [(os.path.join(f, ".claude", "output-styles"), "folder")
                                    for f in reversed(_folders(cwd))]

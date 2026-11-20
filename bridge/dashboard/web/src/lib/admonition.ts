@@ -35,6 +35,7 @@ export function stripMarker(node: unknown): unknown {
 
 // The Explanatory and Learning Output styles' teaching note (bridge/outputstyles.py): Claude
 // writes a rule in backticks, `★ Insight ───`, its points, and a closing `───` rule.
+// shortcut: the CLI's own banner (2.1.328), undocumented; if it changes, the note reads as plain text.
 const INSIGHT_OPEN = /^\s*`★ Insight[^`]*`\s*$/;
 const INSIGHT_CLOSE = /^\s*`─+`\s*$/;
 const FENCE = /^\s*(```|~~~)/;

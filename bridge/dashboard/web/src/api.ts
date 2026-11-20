@@ -126,7 +126,7 @@ export interface SessionBrief {
   model?: string | null; // null = neither it nor its profile picked one yet
   permission_mode?: string; // its own, else its profile's, else the bridge default
   effort?: string | null; // null = none set (Auto)
-  style?: string | null; // its Output style (bridge/outputstyles.py); null = Not set, the folder's own decides
+  style?: string | null; // its Output style (bridge/outputstyles.py): its own, else its profile's; null = Not set
   takes_style?: boolean; // a chat you drive, whose turns take that style; a Part's, a helper's never do
   profile_id?: string | null; // the profile it is bound to (lib/profiles); null = none
   agent?: string; // who runs it: "claude" until agent profiles land
@@ -1479,7 +1479,7 @@ export interface Saver {
   target: number; // sessions a trial scores before it reports
   trial: {
     n: number; on: number; off: number;
-    words: number | null; tokens: number | null; tools: number | null;
+    tokens: number | null; tools: number | null;
     errors_on: number; errors_off: number;
   } | null;
 }
@@ -1736,7 +1736,7 @@ const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>
 /** ponytail_off: PONYTAIL is off and the step is its plugin's, so it won't run; "here": only in a here
  *  build (DESIGN's and BUILD's REVIEW, the council's after tickets merge). */
 export interface FlowStep { step: string; fixed: boolean; on: boolean; ponytail_off: boolean | "here" }
-export interface FlowRunDefaults { model: string; mode: string; effort: string; trim: string; style?: string }
+export interface FlowRunDefaults { model: string; mode: string; effort: string; trim: string; style: string }
 export interface FlowSetting {
   id: string; on: boolean; next: boolean; tickets?: boolean; approve?: boolean;
   run: FlowRunDefaults; run_saved: boolean; steps: FlowStep[];
