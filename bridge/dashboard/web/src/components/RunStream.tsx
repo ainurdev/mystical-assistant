@@ -3110,7 +3110,8 @@ export const RunStream = memo(function RunStream({
         const live = !!onRespond && pendingIds.has(event.request_id);
         if (live && askDocked) return (
           <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
-            <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
+            <AskMarker kind="question" topic={event.questions[0]?.computer ? "Computer · apps on your Mac"
+              : event.questions.length > 1 ? `${event.questions.length} questions`
               : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
           </div>
         );
@@ -3175,6 +3176,7 @@ export const RunStream = memo(function RunStream({
       case "background_set":
       case "permission_resolved":
       case "question_answered":
+      case "computer_state":   // the DRIVING pill over the prompt box (ComputerPill)
         return null; // shown inside the relevant card
     }
   };

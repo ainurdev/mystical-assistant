@@ -9130,3 +9130,44 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 [data-fam="middle-earth"] .isle-reads .ma-viewsw button::first-letter { text-transform: uppercase; }
 /* The families read the switch at UI size: their scale's --t85 was a 7px label. */
 [data-fam] .isle-reads .ma-viewsw button { font-size: var(--t11); letter-spacing: 0; }
+
+/* ── computer use (bridge/computer.py; .mystical/design-drafts/computer-use) ── */
+/* the access ask: COMPUTER on the dock */
+.cu-b { gap: 10px; }
+.cu-why { margin: 0; padding-left: 9px; border-left: 2px solid var(--rc-line2); font-size: var(--t13); font-style: italic; color: var(--txm); }
+.cu-apps { display: flex; flex-direction: column; border: 1px solid var(--rc-line2); border-radius: var(--rc-rs); }
+.cu-app { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 9px 12px; }
+.cu-app + .cu-app { border-top: 1px solid var(--rc-line); }
+.cu-ic { display: grid; place-items: center; width: 24px; height: 24px; border-radius: max(3px, var(--rc-rs)); background: color-mix(in oklab, var(--rc) 22%, var(--panel2)); color: var(--rc-ink); font: 800 var(--t12)/1 var(--mono); }
+.cu-an { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--t14); font-weight: 750; color: var(--txh); }
+.cu-an small { font-size: var(--t11); font-weight: 500; color: var(--txl); }
+.cu-tier { font: 800 var(--t95)/1 var(--mono); letter-spacing: .1em; padding: 4px 6px; border-radius: max(2px, var(--rc-rs)); border: 1px solid; }
+.cu-tier[data-tier="full"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.cu-tier[data-tier="look"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.cu-extra { display: flex; flex-wrap: wrap; gap: 6px; }
+.cu-chk { display: inline-flex; align-items: center; gap: 7px; min-height: 26px; padding: 0 10px; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); background: var(--panel2); font-size: var(--t12); color: var(--txm); }
+.cu-chk::before { content: ""; width: 10px; height: 10px; border: 1px solid var(--txl); border-radius: 2px; }
+.cu-chk[aria-pressed="true"] { color: var(--txh); border-color: var(--rc); }
+.cu-chk[aria-pressed="true"]::before { background: var(--rc); border-color: var(--rc); }
+.cu-btns { display: flex; gap: 8px; }
+.cu-btns .ad-btn { flex: 1; justify-content: center; }
+.cu-note { margin: 0; font-size: var(--t11); color: var(--txl); }
+/* the DRIVING pill over the prompt box */
+.cu-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; max-width: 100%; height: 24px; box-sizing: border-box;
+  padding: 0 3px 0 9px; border-radius: 999px; white-space: nowrap; font-size: var(--t105); color: var(--acc);
+  border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 10%, transparent); }
+.cu-pulse { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent); animation: cupulse 1.6s ease-in-out infinite; }
+@keyframes cupulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--acc) 5%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .cu-pulse { animation: none; } }
+.cu-dl { flex: none; font-weight: 800; letter-spacing: .14em; }
+.cu-chip { flex: none; padding: 1px 6px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); color: var(--txh); }
+.cu-stop { appearance: none; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 18px; padding: 0 8px; border-radius: 999px;
+  border: 0; background: var(--err); color: var(--panel3, #000); font-family: inherit; font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .12em; }
+.cu-stop:disabled { opacity: .6; cursor: default; }
+.cu-kc { font-weight: 600; opacity: .75; }
+/* the Tools modal row */
+.cu-row { border: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); margin-bottom: 16px; padding: 9px 12px; }
+.cu-row[data-on] { border-color: color-mix(in srgb, var(--acc) 35%, transparent); background: color-mix(in srgb, var(--acc) 4%, transparent); }
+.cu-perms { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed color-mix(in srgb, var(--acc) 20%, transparent); }
+.cu-perm { display: flex; align-items: center; gap: 8px; font-size: var(--t11); color: var(--txm); }
+.cu-open { margin-left: auto; font-size: var(--t9); letter-spacing: 1.2px; color: var(--acc); text-decoration: none; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }

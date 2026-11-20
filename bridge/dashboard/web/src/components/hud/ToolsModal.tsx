@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Toolsets } from "../../api";
+import { api, type ComputerStatus, type Toolsets } from "../../api";
 import { atFocus } from "../../lib/agenttools";
 import { useMultiOn } from "../../lib/multistore";
 import { openSettings } from "../../lib/opensettings";
@@ -114,6 +114,8 @@ export function ToolsModal({
             OFF applies to this session's next turn · a switched-off tool leaves the model's context, so its schema stops costing tokens
           </div>
 
+          {sessionId && <ComputerRow sessionId={sessionId} />}
+
           <div className="caps" style={LABEL}>Built-in tools</div>
           <div style={box}>
             {(sets?.builtins ?? []).map((b) => row(b.rule, b.label, b.hint, b.rule))}
@@ -140,5 +142,63 @@ export function ToolsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+/* Computer use (bridge/computer.py): off by default, per chat, Mac only. Its
+   own switch, not a deny rule: everything else here is on until switched off.
+   Under it, what Mystical.app reports about its permissions, each missing one
+   with the System Settings pane that grants it. A bridge too old for the route
+   (404) or not on a Mac draws nothing. */
+const PANES: Record<string, string> = {
+  screen: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+};
+
+function ComputerRow({ sessionId }: { sessionId: string }) {
+  const [st, setSt] = useState<ComputerStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.computer(sessionId).then((r) => { if (live) setSt(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [sessionId]);
+  if (!st?.available) return null;
+  const flip = () => void api.setComputer(sessionId, { on: !st.on }).then(setSt).catch(() => {});
+  const perm = (ok: boolean | undefined, label: string, pane?: string) => (
+    <div className="cu-perm" key={label}>
+      <span style={{ color: ok ? "var(--ok)" : "var(--err)" }}>{ok ? "✓" : "✕"}</span>
+      <span>{label}</span>
+      {!ok && pane && <a className="cu-open" href={pane}>OPEN SETTINGS</a>}
+    </div>
+  );
+  const app = st.app;
+  return (
+    <>
+      <div className="caps" style={LABEL}>Mystical</div>
+      <div className="cu-row" data-on={st.on ? "" : undefined}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 6, height: 6, background: st.on ? "var(--ok)" : "var(--txd)", flex: "none" }} />
+          <span style={{ fontSize: "var(--t12)", color: "var(--txb)" }}>Computer use</span>
+          <span style={{ fontSize: "var(--t9)", color: "var(--txd)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            see and control this Mac's apps · asks before each new app
+          </span>
+          <span style={{ flex: 1 }} />
+          <button onClick={flip} style={BOX(st.on)} title="Mystical.app does the seeing and clicking">{st.on ? "ON" : "OFF"}</button>
+        </div>
+        {st.on && (
+          <div className="cu-perms">
+            {!app.online
+              ? perm(false, "Mystical.app isn't running, or needs a rebuild (its menu ▸ Rebuild App)")
+              : <>
+                  {perm(app.screen, "Screen Recording", PANES.screen)}
+                  {perm(app.accessibility, "Accessibility", PANES.accessibility)}
+                  {perm(app.signed !== undefined && app.signed !== "ad-hoc",
+                    app.signed && app.signed !== "ad-hoc" ? `Signed: ${app.signed} · kept across rebuilds`
+                      : "Signed ad-hoc · macOS asks again after each rebuild")}
+                </>}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

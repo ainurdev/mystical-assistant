@@ -167,6 +167,7 @@ import { InspectorModal } from "./components/hud/InspectorModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
+import { ComputerPill } from "./components/ComputerPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { flowQueued } from "./lib/route";
 import { flowChip, flowGlobals, flowView, runningFlow } from "./lib/flowview";
@@ -3679,6 +3680,7 @@ export function App() {
                             onAct={(a, objective) => void goalAct(a, objective)}
                             onClear={() => void send("/goal", [])}
                           />
+                          {sessionId && <ComputerPill sessionId={sessionId} turns={turns} />}
                           {openWait?.on && (
                             <WaitPill
                               title={sessions.find((s) => s.id === openWait.on)?.title || openWait.label?.replace(/^waiting on /, "") || "another session"}

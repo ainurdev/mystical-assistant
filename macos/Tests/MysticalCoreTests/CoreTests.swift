@@ -105,6 +105,11 @@ let origin = URL(string: "http://127.0.0.1:8790")!
     #expect(URLPolicy.decide(nil, origin: origin, mainFrame: true, newWindow: false) == .ignore)
 }
 
+@Test func settingsPanesOpenInSystemSettings() {
+    let pane = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    #expect(URLPolicy.decide(pane, origin: origin, mainFrame: true, newWindow: false) == .browser)
+}
+
 @Test func sessionLinkReplacesAnyEarlierOne() {
     let base = URL(string: "http://127.0.0.1:8790/?token=abc&s=old")!
     let u = URLPolicy.session(base, "new")

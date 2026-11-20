@@ -14,6 +14,7 @@ const invisible = (e: Ev) =>
   e.type === "background_done" ||
   e.type === "background_set" ||
   e.type === "question_answered" ||
+  e.type === "computer_state" ||
   (e.type === "thinking" && !e.text);
 
 /** Shortest run worth folding — two chips is not yet noise. */

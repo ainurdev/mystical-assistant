@@ -19,11 +19,15 @@ public enum URLPolicy {
         if ["about", "blob", "data", "javascript"].contains(scheme) {
             return newWindow ? .ignore : .inView
         }
-        if newWindow { return ["http", "https", "mailto"].contains(scheme) ? .browser : .ignore }
+        if newWindow { return outside.contains(scheme) ? .browser : .ignore }
         if !mainFrame { return .inView }
         if sameOrigin(url, origin) { return .inView }
-        return ["http", "https", "mailto"].contains(scheme) ? .browser : .ignore
+        return outside.contains(scheme) ? .browser : .ignore
     }
+
+    /// What the system may open: the web, mail, and System Settings' privacy panes
+    /// (the Tools modal's OPEN SETTINGS for computer use's permissions).
+    static let outside: Set<String> = ["http", "https", "mailto", "x-apple.systempreferences"]
 
     /// 127.0.0.1, localhost and [::1] are the same dashboard (the server's Host
     /// allow-list takes all three); the port has to match.

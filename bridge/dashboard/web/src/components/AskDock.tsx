@@ -1,7 +1,7 @@
 import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
-  KeyRound, Minimize2, Plug, SquareTerminal, X,
+  KeyRound, Minimize2, MonitorCog, Plug, SquareTerminal, X,
 } from "lucide-react";
 import { api, type AnswerSelection, type CardAnswer, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
@@ -132,7 +132,9 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
   return (
     <Fold.Provider value={fold}>
     <div className="askdock" data-kind={d.kind} data-flash={flash % 2 ? "a" : flash ? "b" : undefined} data-folded={fold.folded ? "" : undefined}>
-      {d.kind === "question"
+      {d.kind === "question" && d.questions[0]?.computer
+        ? <ComputerDock key={key} d={d} onRespond={onRespond} bind={bind} />
+        : d.kind === "question"
         ? <QuestionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} bind={bind} />
         : d.kind === "permission"
           ? <PermissionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} onSteer={onSteer} bind={bind} />
@@ -595,6 +597,87 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
           <span className="ad-aside">{plan ? "nothing has changed yet" : "or type below to deny it and say what to do instead"}</span>
         </div>
         {failed && <p className="ad-err">That didn't reach the bridge. Try again.</p>}
+      </div>
+    </>
+  );
+}
+
+/* ── computer use's access ask (bridge/computer.py): the apps, each FULL or LOOK,
+      the extra grants as ticks, Allow or Deny. It arrives as a question so
+      Telegram and the Mini App can answer it with plain options; here it gets
+      the dock drawn in .mystical/design-drafts/computer-use (1 · Access ask). ── */
+
+function ComputerDock({ d, onRespond, bind }: {
+  d: Extract<Docked, { kind: "question" }>;
+  onRespond: Respond;
+  bind: (mode: AskMode | null) => void;
+}) {
+  const [q, also] = d.questions;
+  const cu = q.computer!;
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
+  const [failed, setFailed] = useState(false);
+  const mode = useMemo<AskMode>(() => ({ placeholder: "Answer above, or type to steer…" }), []);
+  useEffect(() => { bind(mode); }, [mode, bind]);
+  const [allow, deny] = q.options;
+  async function answer(which: "allow" | "deny") {
+    if (sending) return;
+    setSending(which);
+    setFailed(false);
+    const answers = [{ header: q.header, labels: [(which === "allow" ? allow : deny).label] },
+      ...(also ? [{ header: also.header, labels: which === "allow" ? ticked : [] }] : [])];
+    if ((await onRespond(d.requestId, { answers })) === false) { setSending(null); setFailed(true); }
+  }
+  // ⌘1 allows, ⌘2 denies, as a click would (ui/Keys).
+  const mark = useAskKeys((k) => {
+    if (sending || (k !== "1" && k !== "2")) return false;
+    void answer(k === "1" ? "allow" : "deny");
+    return true;
+  });
+  const look = cu.apps.some((a) => a.tier === "look");
+  return (
+    <>
+      <Head icon={<MonitorCog size={13} strokeWidth={2.2} />} kind="Computer" topic="your Mac" at={d.at}
+        line="Let this chat control these apps?" />
+      <div className="ad-b cu-b">
+        <p className="ad-ask">Let this chat control these apps?</p>
+        {cu.why && <p className="cu-why">{cu.why}</p>}
+        <div className="cu-apps">
+          {cu.apps.map((a) => (
+            <div key={a.name} className="cu-app">
+              <span className="cu-ic" aria-hidden>{a.name.slice(0, 1).toUpperCase()}</span>
+              <span className="cu-an">{a.name}<small>{a.tier === "full" ? "see · click · type" : "see only: typing here could run code"}</small></span>
+              <span className="cu-tier" data-tier={a.tier}>{a.tier === "full" ? "FULL" : "LOOK"}</span>
+            </div>
+          ))}
+        </div>
+        {also && (
+          <div className="cu-extra" role="group" aria-label="Also allow">
+            {also.options.map((o) => {
+              const on = ticked.includes(o.label);
+              return (
+                <button key={o.label} type="button" className="cu-chk" aria-pressed={on} disabled={!!sending}
+                  onClick={() => setTicked((t) => on ? t.filter((x) => x !== o.label) : [...t, o.label])}>
+                  {o.label.toLowerCase()}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="cu-btns">
+          <span ref={mark} data-ask-keys hidden />
+          <button type="button" className="ad-btn" data-pri="" disabled={!!sending} onClick={() => void answer("allow")}>
+            {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : <>Allow apps <Keys k="Ctrl+1" /></>}
+          </button>
+          <button type="button" className="ad-btn" disabled={!!sending} onClick={() => void answer("deny")}>
+            {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <>Deny <Keys k="Ctrl+2" /></>}
+          </button>
+        </div>
+        {failed && <p className="ad-err">That didn't reach the bridge. Try again.</p>}
+        <p className="cu-note">
+          Other apps stay hidden in screenshots and can't be clicked{look ? "; LOOK apps are seen, never typed into" : ""}.
+          Esc on the Mac stops it any time.
+        </p>
       </div>
     </>
   );
