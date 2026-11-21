@@ -270,6 +270,9 @@ def tool_names(s: dict) -> set:
 
 # ------- cards -------------------------------------------------------------
 
+SCOPES = ("turn", "chat")     # what a permission card may offer past this one call
+
+
 def _card(job, s: dict, questions: list, on_answer) -> dict:
     """Show a question card. See _show_card."""
     ask = ((questions or [{}])[0].get("question") or "")[:300]
@@ -301,7 +304,8 @@ def _show_card(job, s: dict, entry: dict, event: dict, on_answer, ask: str, tapp
     job.add({**event, "request_id": rid})
     kw = {"job_id": job.id, "request_id": rid} if tappable else {}
     threading.Thread(target=runner.notify_awaiting, daemon=True,
-                     args=(job.chat_id, job.store_session_id, "question"),
+                     args=(job.chat_id, job.store_session_id,
+                           "permission" if entry.get("kind") == "permission" else "question"),
                      kwargs={"body": ask, **kw}).start()
     if not block:
         return _text("The card is shown. End your turn now, without doing anything else: the answer "
@@ -316,22 +320,40 @@ def _show_card(job, s: dict, entry: dict, event: dict, on_answer, ask: str, tapp
     return _text(row.get("text") or "No answer.")
 
 
-def answer_card(job, entry: dict, answers: "list | None") -> None:
+def _scope(answers: "list | None") -> str:
+    """How far an Allow reaches, from a permission card that offers it: "" (this call),
+    "turn" or "chat". It rides in the answers under the header `scope`, the way a
+    background command's tick does (Job.respond), so the route and clients carry it as is."""
+    for a in answers or []:
+        if isinstance(a, dict) and a.get("header") == "scope":
+            got = str(((a.get("labels") or [""])[0]))
+            return got if got in SCOPES else ""
+    return ""
+
+
+def answer_card(job, entry: dict, answers: "list | None", behavior: str = "allow",
+                message: "str | None" = None) -> None:
     """A click on a gateway card (Job.respond, AcpJob.respond)."""
     from bridge import runner
     rid = entry["request_id"]
+    perm = entry.get("kind") == "permission"
+    allow = behavior != "deny"
+    scope = _scope(answers) if perm and allow else ""
     if entry.get("kind") == "question":
         job.add({"type": "question_answered", "request_id": rid, "answers": answers or []})
+    elif perm:
+        job.add({"type": "permission_resolved", "request_id": rid, "behavior": "allow" if allow else "deny",
+                 **({"scope": scope} if scope else {})})
     with _lock:
         row = _cards.get(rid)
     if row is None:
         return
     try:
-        text = row["on_answer"](answers or [])
+        text = row["on_answer"](allow, scope, (message or "").strip()) if perm else row["on_answer"](answers or [])
     except Exception as e:  # noqa: BLE001
         print(f"[gateway] card: {e!r}", file=sys.stderr)
         text = f"That answer couldn't be acted on: {e}"
-    if entry.get("kind") != "question":
+    if entry.get("kind") not in ("question", "permission"):
         # After acting on it, so the card says what happened. Never the answers: a
         # secret's value goes in neither the journal nor the chat.
         ok, text = text if isinstance(text, tuple) else (False, text)
@@ -477,15 +499,23 @@ def _delegate(s: dict, job, a: dict) -> dict:
     plan, why = channel.plan_tasks(s, a.get("tasks"))
     if why:
         return _text(why, error=True)
-    if channel.needs_card(s):
-        def on_answer(answers: list) -> str:
-            if not channel.approved(answers):
-                return "The user said not now. Carry on alone."
+    # "Always allow in this turn" lives on the job, so it ends with the turn.
+    if channel.needs_card(s) and not getattr(job, "helpers_ok", False):
+        def on_answer(allow: bool, scope: str, note: str) -> str:
+            if not allow:
+                return "The user said not now. Carry on alone." + (f" They added: {note}" if note else "")
+            if scope == "chat":
+                channel.set_config(store.get_session(s["id"]), {"helpers": "auto"})
+            elif scope == "turn":
+                job.helpers_ok = True
             fresh, again = channel.plan_tasks(store.get_session(s["id"]), a.get("tasks"))
-            if again:
-                return again
-            return _started(s, fresh)
-        return _card(job, s, channel.card_questions(plan), on_answer)
+            return again or _started(s, fresh)
+        summary, detail = channel.card_text(plan)
+        # A permission card, drawn as every tool call's is, with how far an Allow may reach.
+        return _show_card(job, s, {"kind": "permission", "tool_name": "delegate", "summary": summary,
+                                   "detail": detail, "scopes": list(SCOPES)},
+                          {"type": "permission", "tool_name": "delegate", "summary": summary,
+                           "detail": detail, "scopes": list(SCOPES)}, on_answer, summary, tappable=True)
     return _text(_started(s, plan))
 
 

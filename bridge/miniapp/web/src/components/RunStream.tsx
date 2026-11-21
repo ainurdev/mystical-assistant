@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
-import { api, type AnswerSelection, type PendingRequest, type RunEvent, type SecretAnswer } from "../lib/api";
+import { api, scopeAnswer, type AnswerSelection, type PendingRequest, type RunEvent, type SecretAnswer } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
@@ -1518,6 +1518,8 @@ export const RunStream = memo(function RunStream({
             // nothing is listening for an answer any more.
             stale={ended && !permResolved.has(event.request_id)}
             onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
+            scopes={event.scopes}
+            onAllowScope={(sc) => onRespond?.(event.request_id, { behavior: "allow", answers: scopeAnswer(sc) })}
             onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
           />
         );

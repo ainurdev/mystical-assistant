@@ -367,27 +367,18 @@ def plan_tasks(chat: dict, tasks: list) -> "tuple[list, str | None]":
     return out, None
 
 
-def card_questions(plan: list) -> list:
-    """The one card for a call that needs a tap: everything it would start."""
+def card_text(plan: list) -> "tuple[str, str]":
+    """The one card for a call that needs a tap, as (summary, detail): how many it would
+    start, and each one. A permission card, as any tool call's is. It was a question
+    card, whose note box took "stop asking, commit and push are fine" three times in
+    one chat (2026-11-21) and gave it to nobody: the card only read Start or Not now."""
     lines = []
     for t in plan:
         who = (t["profile"] or {}).get("name") or handoff.label(t["agent"])
         lines.append(f"• {who}{' (own copy of the code)' if t['write'] else ' (read only)'}: "
                      f"{' '.join(t['brief'].split())[:140]}")
     n = len(plan)
-    return [{"header": "Helpers", "multiSelect": False,
-             "question": (f"Start {n} helper{'s' if n != 1 else ''}?\n" + "\n".join(lines)),
-             "options": [{"label": "Start", "description": "Mystical runs them and shows them under this chat."},
-                         {"label": "Not now", "description": "The agent carries on alone."}]}]
-
-
-def approved(answers) -> bool:
-    """Whether a helper card's answer was Start. An unanswered card is a no."""
-    for a in answers or []:
-        labels = (a.get("labels") or []) if isinstance(a, dict) else [a]
-        if any(str(x).strip().lower().startswith("start") for x in labels):
-            return True
-    return False
+    return f"Start {n} helper{'s' if n != 1 else ''}", "\n".join(lines)
 
 
 def start(chat: dict, plan: list) -> list:

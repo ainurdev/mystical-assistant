@@ -1095,7 +1095,7 @@ class Job:
 
         if entry.get("gateway"):
             from bridge import gateway          # a Mystical tool's card: nothing of Claude's waits on it
-            gateway.answer_card(self, entry, answers)
+            gateway.answer_card(self, entry, answers, behavior, message)
             return True
         if entry["kind"] == "question":
             resp = {"behavior": "deny",
@@ -1323,7 +1323,7 @@ class AcpJob(Job):
             from bridge import gateway
             # Answered before the card goes: the paused turn watches for it to go,
             # and must find the answer waiting.
-            gateway.answer_card(self, card, answers)
+            gateway.answer_card(self, card, answers, behavior, message)
             with self._lock:
                 self.pending = [p for p in self.pending if p.get("request_id") != request_id]
             return True

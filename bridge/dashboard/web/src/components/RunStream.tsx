@@ -5,7 +5,7 @@ import {
   Quote, Layers, Image as ImageIcon, Terminal, BookOpen, PencilLine, FilePlus2, Search, Globe,
   Plug, Bot, Sparkles, Webhook, Logs, CircleX, Wrench, Circle, FlaskConical, Hammer, GitBranch, PackagePlus, Play, type LucideIcon,
 } from "lucide-react";
-import { api, type AnswerSelection, type CardAnswer, type RunEvent, type TimedEvent } from "../api";
+import { api, scopeAnswer, type AnswerSelection, type CardAnswer, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { Markdown, type OpenFile } from "./Markdown";
 import { LiveHostCtx, LiveRow, type LiveHost } from "./LiveRow";
@@ -3101,6 +3101,8 @@ export const RunStream = memo(function RunStream({
               summary={event.summary}
               detail={event.detail}
               onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
+              scopes={event.scopes}
+              onAllowScope={(sc) => onRespond?.(event.request_id, { behavior: "allow", answers: scopeAnswer(sc) })}
               onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
             />
           </div>

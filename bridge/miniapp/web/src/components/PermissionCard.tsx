@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Wrench, Check, X, CircleSlash } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
+import { SCOPE_WORD, type AllowScope } from "../lib/api";
 
 export function PermissionCard({
   toolName,
@@ -9,7 +10,9 @@ export function PermissionCard({
   active,
   resolved,
   stale,
+  scopes,
   onAllow,
+  onAllowScope,
   onDeny,
 }: {
   toolName: string;
@@ -23,12 +26,15 @@ export function PermissionCard({
   stale?: boolean;
   /** Resolve when the answer has reached the bridge; `false` means it didn't. */
   onAllow: () => void | Promise<boolean | void>;
+  /** How far an Allow may reach past this call, and the tap for each. */
+  scopes?: AllowScope[];
+  onAllowScope?: (scope: AllowScope) => void | Promise<boolean | void>;
   onDeny: () => void | Promise<boolean | void>;
 }) {
   // The card only flips to Allowed/Denied on the next transcript poll — without
   // this the click looks like it did nothing. See QuestionCard.
-  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
-  async function answer(which: "allow" | "deny", fn: () => void | Promise<boolean | void>) {
+  const [sending, setSending] = useState<"allow" | "deny" | AllowScope | null>(null);
+  async function answer(which: "allow" | "deny" | AllowScope, fn: () => void | Promise<boolean | void>) {
     if (sending) return;
     setSending(which);
     if ((await fn()) === false) setSending(null);
@@ -54,10 +60,15 @@ export function PermissionCard({
         </pre>
       )}
       {active ? (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
             {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
           </Button>
+          {onAllowScope && (scopes ?? []).map((sc) => (
+            <Button key={sc} variant="secondary" className="basis-full" disabled={!!sending} onClick={() => void answer(sc, () => onAllowScope(sc))}>
+              {sending === sc ? <Spinner className="h-3 w-3 border" /> : SCOPE_WORD[sc]}
+            </Button>
+          ))}
           <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
             {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
           </Button>
