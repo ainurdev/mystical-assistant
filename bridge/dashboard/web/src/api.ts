@@ -1059,7 +1059,11 @@ export interface SessionStatus {
   label: string | null;
   // `waiting` only: the session it waits on, what it will do then, since when (epoch s).
   // `since` on `working` is the turn's start, folded in by App from /running's jobs.
+  // No `on`: the chat waits on its own helpers (bridge/channel.py), `agents` of them
+  // mid-turn and `needs` of those stopped on a card for you.
   on?: string;
+  agents?: number;
+  needs?: number;
   then?: string;
   since?: number;
   // `parked` only (bridge/limits.py), with `since` = when it stopped: when it

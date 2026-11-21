@@ -3733,7 +3733,7 @@ export function App() {
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
-                        : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…`
+                        : openWait?.on ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…`
                         : selected?.parent_session ? `message ${selected.title || "this helper"}…` : undefined}
                     />
                     </>

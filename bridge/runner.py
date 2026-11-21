@@ -1592,6 +1592,28 @@ def _background_view(j: "Job") -> "dict | None":
             "peak": max(j.bg_peak, n), "since": j.answered_at}
 
 
+def _helper_waits(bridge_running: list, awaiting_map: dict) -> dict:
+    """chat id -> its WAITING status, for each chat with a helper mid-turn."""
+    try:
+        kids = store.helper_parents(bridge_running)
+    except Exception:  # noqa: BLE001 - the status map must still answer
+        return {}
+    by_chat: dict[str, list] = {}
+    for sid in bridge_running:      # the list's order, so the label holds still between polls
+        if sid in kids:
+            by_chat.setdefault(kids[sid][0], []).append((sid, kids[sid][1]))
+    out = {}
+    for parent, rows in by_chat.items():
+        needs = [name for sid, name in rows if sid in awaiting_map]
+        if needs:
+            label = f"{needs[0]} needs you" if len(needs) == 1 else f"{len(needs)} agents need you"
+        else:
+            label = f"waiting on {rows[0][1]}" if len(rows) == 1 else f"waiting on {len(rows)} agents"
+        out[parent] = {"state": "waiting", "kind": None, "source": "bridge", "label": label,
+                       "agents": len(rows), "needs": len(needs)}
+    return out
+
+
 def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
@@ -1656,6 +1678,13 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         status.setdefault(sid, {"state": "waiting", "kind": None, "source": "bridge",
                                 "label": f"waiting on {w['title']}", "on": w["on"],
                                 "then": w["then"], "since": w["since"]})
+    # A chat whose own turn ended while its helpers (bridge/channel.py) still run isn't
+    # done either: their reports wake it. Idle here, it read as finished on every surface
+    # while it was only waiting (2026-11-21). No `on`: that is WaitForSession's, and a
+    # prompt of yours ends no wait here. A helper stopped on a card is named, since the
+    # chat can't move until you answer it.
+    for parent, w in _helper_waits(bridge_running, awaiting_map).items():
+        status.setdefault(parent, w)
     now = time.time()
     for row in external:
         sid = row.get("session_id")

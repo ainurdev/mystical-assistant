@@ -400,6 +400,23 @@ def test_quiet_pings(tmp_path, monkeypatch, on):
     assert channel.quiet_ping(chat["id"]) is True
 
 
+def test_a_chat_waiting_on_its_helpers_reads_waiting_not_idle(tmp_path, on):
+    chat = _session(tmp_path, agent=None)
+    mk = lambda n: store.create_member(chat, name=n, cwd=str(tmp_path), profile_id=None,  # noqa: E731
+                                       permission_mode=None, member={})["id"]
+    a, b = mk("products-fix"), mk("review")
+    status = lambda run, ask=(): runner._build_status(  # noqa: E731, SLF001
+        list(run), [{"session_id": x, "kind": "question"} for x in ask], [], [], {})
+    assert chat["id"] not in status([])
+    one = status([a])[chat["id"]]
+    assert (one["state"], one["label"], one["agents"]) == ("waiting", "waiting on products-fix", 1)
+    assert "on" not in one                      # WaitForSession's: a prompt of yours ends no wait here
+    assert status([a, b])[chat["id"]]["label"] == "waiting on 2 agents"
+    stuck = status([a, b], ask=[b])[chat["id"]]
+    assert (stuck["label"], stuck["needs"]) == ("review needs you", 1)
+    assert status([chat["id"], a])[chat["id"]]["state"] == "working"   # its own turn wins
+
+
 # ---- merging ----------------------------------------------------------------------
 
 def test_a_copy_is_named_after_its_helper_and_a_taken_name_gets_a_number(tmp_path, monkeypatch):
