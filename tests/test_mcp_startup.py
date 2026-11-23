@@ -130,9 +130,12 @@ def test_a_session_never_carries_workflow_or_report_findings(monkeypatch, no_mcp
     """Their descriptions were fixed context every step re-read; a session uses neither."""
     monkeypatch.setattr(toolsets, "servers", lambda: [])
     monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
-    for dt in (None, [], ["Workflow"]):
+    for dt in ([], ["Workflow"]):
         cmd = _cmd(disabled_tools=dt)
         assert cmd[cmd.index("--disallowedTools") + 1].split(",") == ["Workflow", "ReportFindings"]
+    # Switched ON in Agent Tools, it stays on, as any ON there does.
+    cmd = _cmd(disabled_tools=[], policy_on=("Workflow",))
+    assert cmd[cmd.index("--disallowedTools") + 1] == "ReportFindings"
 
 
 # --- secrets stay off the command line -----------------------------------------

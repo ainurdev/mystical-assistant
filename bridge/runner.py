@@ -628,7 +628,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
               autocompact: str | None = None, gateway: "dict | None" = None,
-              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None) -> list[str]:
+              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None,
+              policy_on: tuple = ()) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -768,9 +769,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         disabled_tools = []
     if interactive and claude_session_id and not skip_pack:
         # A session never runs a workflow or reports review findings; their
-        # descriptions were fixed context every step re-read.
-        disabled_tools = [*(disabled_tools or []),
-                          *[t for t in _SESSION_DENIED if t not in (disabled_tools or [])]]
+        # descriptions were fixed context every step re-read. One Agent Tools
+        # switched on (policy_on) still wins, as any ON there does.
+        disabled_tools = [*(disabled_tools or []), *[t for t in _SESSION_DENIED
+                                                     if t not in (disabled_tools or []) and t not in policy_on]]
     if policy_denied:
         disabled_tools = [*(disabled_tools or []), *[r for r in policy_denied if r not in (disabled_tools or [])]]
     if disabled_tools:
@@ -3347,7 +3349,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)
             return
         full_prompt = job.prefix + _with_images(prompt, image_paths)
-        gateway_def, rule_hooks, policy_denied = None, None, None
+        gateway_def, rule_hooks, policy_denied, policy_on = None, None, None, ()
         if experimental.enabled() and job.store_session_id and not job.skip_pack:
             from bridge import gateway, rules, tool_policy
             sess_row = store.get_session(job.store_session_id)
@@ -3356,6 +3358,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 gateway_def = gateway.server_def(job.gateway_token)
                 rule_hooks = rules.claude_hooks(sess_row)
                 policy_denied = tool_policy.claude_denied(sess_row.get("project"), sess_row)
+                policy_on = tuple(t for t in _SESSION_DENIED if tool_policy.lookup(
+                    "tool", t, "claude", sess_row.get("project"), sess_row)[0] is True)
         # The gap before the first token is two waits, and an empty stream makes
         # both read as a hang. Name whichever one we are actually in: the health
         # check only blocks while the cache is still cold (see toolsets.warm).
@@ -3380,7 +3384,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None,
                         skip_pack=job.skip_pack, gateway=gateway_def, rule_hooks=rule_hooks,
-                        policy_denied=policy_denied)
+                        policy_denied=policy_denied, policy_on=policy_on)
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
