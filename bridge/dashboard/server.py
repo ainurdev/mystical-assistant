@@ -1405,6 +1405,13 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"error": "slot must be a number and on true or false"}, 400)
                     accounts.set_auto_switch(slot, on)
                     return self._json({"ok": True})
+                if action == "order":
+                    slots = body.get("slots")
+                    if not isinstance(slots, list) or not slots or \
+                            not all(type(s) is int for s in slots):   # bool is an int subclass
+                        return self._json({"error": "slots must be a list of slot numbers"}, 400)
+                    accounts.set_order(slots)
+                    return self._json({"ok": True})
             except accounts.NoLogin:
                 return self._json({"error": "No login in ~/.claude to copy. Run "
                                             "`claude /login` in a terminal first."}, 400)

@@ -12,7 +12,7 @@ import {
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, RotateCw, Send, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
-  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork, Plus,
+  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork, Plus, GripVertical,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
@@ -1173,7 +1173,7 @@ const POLICY_OPTS: { label: string; value: string }[] = [
 
 const POLICY_BLURB: Record<string, string> = {
   ask: "Offer the choices (other account · wait) and stay parked until you pick.",
-  auto: "Take the best fallback immediately and report which one it landed on. Accounts out of Auto-switch are only offered to you.",
+  auto: "Move to the first login down the Auto-switch order with room, and report which one it landed on. Logins switched off there are only offered to you.",
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
 
@@ -2994,7 +2994,102 @@ function useAccounts(onChanged: () => void) {
     } catch (e) { setErr(e instanceof Error ? e.message : "could not start the sign-in"); }
     finally { setBusy(false); }
   }
-  return { rows, setRows, policy, setPolicy, busy, err, setErr, login, setLogin, load, act, startLogin };
+  return { rows, setRows, policy, setPolicy, busy, err, setErr, login, setLogin, load, act, startLogin, changed: onChanged };
+}
+
+/** The Auto-switch order (accounts.set_order): a limit moves the session to the
+ *  first login down it with room. The rows on screen are the saved order, so
+ *  nothing here needs a caption: a rank says where a login stands, and a login
+ *  switched off drops under the dashed line at full strength (it still works; a
+ *  limit only offers it to you, and only a disabled login is dimmed). A switch
+ *  moves its row across the line to the place nearest it; drag, or a grip's
+ *  ↑ ↓, reorders the logins above the line. */
+function AutoSwitchOrder({ acc }: { acc: ReturnType<typeof useAccounts> }) {
+  const rows = acc.rows ?? [];
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<{ slot: number; after: boolean } | null>(null);
+  const [refocus, setRefocus] = useState<number | null>(null);
+  const out = (a: AccountInfo) => a.auto_switch === false;
+  const sorted = [...rows].sort((a, b) => Number(out(a)) - Number(out(b)) || a.order - b.order);
+  const ins = sorted.filter((a) => !out(a)).map((a) => a.slot);
+  const outs = sorted.filter(out).map((a) => a.slot);
+  // React moving a row's node can drop the focus off its grip: give it back once.
+  useEffect(() => {
+    if (refocus === null) return;
+    document.querySelector<HTMLElement>(`[data-grip="${refocus}"]`)?.focus();
+    setRefocus(null);
+  }, [refocus, rows]);
+
+  async function save(nextIns: number[], nextOuts: number[], flipped?: number) {
+    const slots = [...nextIns, ...nextOuts];
+    acc.setRows(rows.map((r) => ({ ...r, order: slots.indexOf(r.slot), auto_switch: !nextOuts.includes(r.slot) })));
+    acc.setErr(null);
+    try {
+      if (flipped !== undefined) await api.accountAction("auto_switch", flipped, nextIns.includes(flipped));
+      await api.accountOrder(slots);
+      if (flipped !== undefined) acc.changed();
+    } catch (e) { acc.setErr(e instanceof Error ? e.message : "failed"); }
+    void acc.load();
+  }
+  const place = (slot: number, target: number, after: boolean) => {
+    if (slot === target) return;
+    const next = ins.filter((s) => s !== slot);
+    next.splice(next.indexOf(target) + (after ? 1 : 0), 0, slot);
+    void save(next, outs);
+  };
+  const flip = (slot: number) => (outs.includes(slot)
+    ? void save([...ins, slot], outs.filter((s) => s !== slot), slot)
+    : void save(ins.filter((s) => s !== slot), [slot, ...outs], slot));
+
+  return (
+    <>
+      <div className="aim-sub aim-ordhead"><b>Auto-switch order</b></div>
+      <div className="aim-card">
+        {sorted.map((a) => {
+          const i = ins.indexOf(a.slot);
+          const name = a.email ?? `login ${a.slot}`;
+          return (
+            <div key={a.slot} className="aim-ord" draggable={i >= 0}
+              data-out={i < 0 || undefined} data-line={(ins.length > 0 && a.slot === outs[0]) || undefined}
+              data-disabled={a.disabled || undefined} data-drag={drag === a.slot || undefined}
+              data-over={drag !== null && drag !== a.slot && over?.slot === a.slot ? (over.after ? "after" : "before") : undefined}
+              onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(a.slot)); setDrag(a.slot); }}
+              onDragEnd={() => { setDrag(null); setOver(null); }}
+              onDragOver={drag === null || i < 0 ? undefined : (e) => {
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                const after = e.clientY > r.top + r.height / 2;
+                if (over?.slot !== a.slot || over.after !== after) setOver({ slot: a.slot, after });
+              }}
+              onDrop={drag === null || i < 0 ? undefined : (e) => {
+                e.preventDefault();
+                if (over) place(drag, over.slot, over.after);
+                setDrag(null); setOver(null);
+              }}>
+              {i < 0 ? <span className="aim-grip" /> : (
+                <button type="button" className="aim-grip" data-grip={a.slot} title="Drag, or ↑ ↓"
+                  aria-label={`${name}, number ${i + 1}. Arrow keys move it.`}
+                  onKeyDown={(e) => {
+                    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                    e.preventDefault();
+                    const to = i + (e.key === "ArrowUp" ? -1 : 1);
+                    if (to < 0 || to >= ins.length) return;
+                    setRefocus(a.slot);
+                    place(a.slot, ins[to], to > i);
+                  }}>
+                  <GripVertical size={15} />
+                </button>
+              )}
+              <span className="aim-rank">{i < 0 ? "–" : i + 1}</span>
+              <LoginTile slot={a.slot} size={26} />
+              <b>{name}</b>
+              <Switch on={i >= 0} label={`Auto-switch onto ${name}`} onClick={() => flip(a.slot)} />
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
 }
 
 /** A login's tile: its slot on a hue of its own. The six hues are the theme's
@@ -3676,6 +3771,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   );
   const accountsBody = (
     <>
+      {acc.rows && acc.rows.length > 1 && <AutoSwitchOrder acc={acc} />}
       <div className="aim-toolbar">
         <span className="aim-lead">The Claude logins runs can use, and the profiles bound to each. A new login comes with a profile of its own.</span>
         <span style={{ flex: 1 }} />
@@ -3691,8 +3787,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
             <LoginTile slot={a.slot} />
             <span className="aim-who">
               <b>{a.email ?? "unknown"}</b>
-              <span>{[a.plan, a.default ? "default login" : null, a.disabled ? "disabled" : null,
-                a.auto_switch === false ? "out of Auto-switch" : null].filter(Boolean).join(" · ") || "Claude login"}</span>
+              <span>{[a.plan, a.default ? "default login" : null, a.disabled ? "disabled" : null]
+                .filter(Boolean).join(" · ") || "Claude login"}</span>
             </span>
             {a.default && <span className="aim-chip">Default</span>}
             <LoginMeters a={a} />
@@ -3706,12 +3802,6 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
                   <MiniBtn disabled={acc.busy} danger onClick={() => void acc.act("remove", a.slot)} title="Remove this login">✕</MiniBtn>
                 </>
               )}
-              {/* Every row, disabled ones too (dimmed with the row), so the switches line up. */}
-              <span className="aim-auto" title="On: a limit can move a session onto this login without asking. Off: it's only offered to you.">
-                Auto-switch
-                <Switch on={a.auto_switch !== false} label="Auto-switch"
-                  onClick={() => acc.busy ? null : void acc.act("auto_switch", a.slot, a.auto_switch === false)} />
-              </span>
             </span>
           </div>
           {profilesAvailable && profileRows({ agent: "claude", account: String(a.slot) }, String(a.slot), "on this login")}

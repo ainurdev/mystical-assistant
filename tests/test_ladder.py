@@ -266,7 +266,8 @@ def _logins(used, kept_out=()):
     window spent; the slots in kept_out have their Auto-switch switch off."""
     saved = (ladder.accounts.list_accounts, ladder.accounts.usage_for)
     ladder.accounts.list_accounts = lambda: [
-        {"slot": s, "disabled": False, "auto_switch": s not in kept_out} for s in sorted(used)]
+        {"slot": s, "disabled": False, "auto_switch": s not in kept_out, "order": i}
+        for i, s in enumerate(sorted(used))]
     ladder.accounts.usage_for = lambda slot: {"available": True, "five_hour": {"percent": used[slot]}}
 
     def restore():

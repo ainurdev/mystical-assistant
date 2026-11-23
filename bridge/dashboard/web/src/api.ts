@@ -1304,6 +1304,7 @@ export interface AccountInfo {
   disabled: boolean;
   default: boolean;
   auto_switch?: boolean; // false = out of Auto-switch: a limit only ever offers this login to you (absent from an older bridge)
+  order: number; // place in the Auto-switch order, 0 first (accounts.set_order); a limit takes the first with room
   left: number | null; // % of the tighter usage window unspent; null = meter unreadable
   resets_at: string | null; // when that window rolls and `left` goes back up
   five_hour: UsageBucket | null; // both windows, so a row can show the near reset
@@ -2179,6 +2180,9 @@ export const api = {
       method: "POST",
       body: { action, ...(slot === undefined ? {} : { slot }), ...(on === undefined ? {} : { on }) },
     }),
+  /** The Auto-switch order, first choice first: every login's slot. */
+  accountOrder: (slots: number[]) =>
+    req<{ ok: boolean }>("/local/accounts", { method: "POST", body: { action: "order", slots } }),
   /** Start a sign-in. No slot: a fresh profile, so the ambient ~/.claude login is
    *  untouched. A slot: that account signs back in where it already lives — the
    *  fix for an expired session, which a new profile would not be. */

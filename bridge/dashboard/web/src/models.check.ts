@@ -98,7 +98,7 @@ ok(spendingSlot({ agent: "claude", account: "3" }) === 3 && spendingSlot({ accou
   "an older bridge without slot: the profile's login, else the default");
 ok(spendingSlot(null) === DEFAULT_SLOT, "no session open: the default login");
 ok(loginSlot("claude", "") === DEFAULT_SLOT && loginSlot("codex", "k1") === null, "a profile's login");
-const A2 = { slot: 2, email: "b@x.com", alias: null, disabled: false, default: false, left: 91,
+const A2 = { slot: 2, email: "b@x.com", alias: null, disabled: false, default: false, order: 1, left: 91,
   resets_at: null, logged_in: true, plan: null, limits: [],
   five_hour: { percent: 9, resets_at: null, severity: "normal" },
   seven_day: { percent: 2, resets_at: null, severity: "normal" } };

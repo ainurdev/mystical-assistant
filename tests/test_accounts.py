@@ -770,14 +770,64 @@ def test_resets_at_reports_the_window_that_is_capping_you():
         restore()
 
 
-def test_pick_takes_the_account_with_most_quota_left():
+def test_pick_takes_the_first_login_down_the_order_with_room():
+    """The order is the user's priority, not a tiebreak: slot 2 has the most
+    left and still waits its turn."""
+    _slots(3)
+    accounts.set_order([3, 1, 2])
+    restore = _stub_usage({1: _meter(five=10), 2: _meter(five=0),
+                           3: _meter(five=50)})
+    try:
+        assert accounts.pick() == 3
+        assert accounts.pick(exclude=(3,)) == 1
+    finally:
+        restore()
+
+
+def test_with_no_saved_order_the_order_is_slot_order():
     _slots(3)
     restore = _stub_usage({1: _meter(five=90), 2: _meter(five=20),
                            3: _meter(five=55)})
     try:
+        assert accounts.pick() == 1
+        assert [a["order"] for a in accounts.list_accounts()] == [0, 1, 2]
+    finally:
+        restore()
+
+
+def test_auto_switch_never_lands_on_a_login_kept_out_wherever_it_sits():
+    """First in the order and out of Auto-switch: the move without asking skips
+    it, and asking offers it only once the logins still in have no room."""
+    _slots(3)
+    accounts.set_order([2, 1, 3])
+    accounts.set_auto_switch(2, False)
+    restore = _stub_usage({1: _meter(five=0), 2: _meter(five=0), 3: _meter(five=0)})
+    try:
+        assert accounts.pick(auto_switch=True) == 1
+        assert accounts.pick() == 1
+    finally:
+        restore()
+    restore = _stub_usage({1: _meter(five=100), 2: _meter(five=0), 3: _meter(five=100)})
+    try:
+        assert accounts.pick(auto_switch=True) is None
         assert accounts.pick() == 2
     finally:
         restore()
+
+
+def test_the_order_is_saved_and_a_new_login_joins_the_bottom():
+    _slots(3)
+    accounts.set_order([2, 3, 1])
+    assert {a["slot"]: a["order"] for a in accounts.list_accounts()} == {2: 0, 3: 1, 1: 2}
+    _fake_identity("acct4@example.com")
+    accounts.add()
+    assert {a["slot"]: a["order"] for a in accounts.list_accounts()} == {2: 0, 3: 1, 1: 2, 4: 3}
+    try:
+        accounts.set_order([9, 1])
+    except ValueError:
+        assert {a["slot"]: a["order"] for a in accounts.list_accounts()}[1] == 2   # nothing half-saved
+        return
+    raise AssertionError("expected ValueError for a slot with no account")
 
 
 def test_pick_counts_the_worst_of_the_two_windows():
@@ -850,30 +900,6 @@ def test_pick_returns_none_when_every_account_is_spent():
         assert accounts.pick() is None
     finally:
         restore()
-
-
-def test_consume_first_prefers_the_soonest_expiring_weekly_quota():
-    """Use-it-or-lose-it: spend the window that resets soonest, not the fullest."""
-    _slots(2)
-    restore = _stub_usage({
-        1: _meter(five=40, seven=40, seven_reset="2026-08-05T12:00:00+00:00"),
-        2: _meter(five=10, seven=10, seven_reset="2026-08-01T12:00:00+00:00"),
-    })
-    try:
-        assert accounts.pick(strategy="best") == 2          # most left
-        assert accounts.pick(strategy="consume-first") == 2  # also soonest
-        restore()
-        restore2 = _stub_usage({
-            1: _meter(five=40, seven=40, seven_reset="2026-08-01T12:00:00+00:00"),
-            2: _meter(five=10, seven=10, seven_reset="2026-08-05T12:00:00+00:00"),
-        })
-        try:
-            assert accounts.pick(strategy="best") == 2          # most left
-            assert accounts.pick(strategy="consume-first") == 1  # expires first
-        finally:
-            restore2()
-    finally:
-        pass
 
 
 if __name__ == "__main__":

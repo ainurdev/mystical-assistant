@@ -4864,7 +4864,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button,
   .pb-tabs, .pb-isles > .pb-dry, .pb-work > .pb-resume,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
-  .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
+  .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-grip, .aim-segwrap > div, .aim-segwrap > div button,
   .cr-seatchip, .cr-add, .cr-menu, .cr-mr, .cr-mrb, .cr-chip, .cr-pickp,
   .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input,
   .prj-search, .prj-search kbd, .prj-clr, .prj-list, .prj-det, .prj-stats, .prj-input, .prj-rename input, .prj-bigtile, .prj-foldact,
@@ -5569,7 +5569,21 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-usage { font: 11px var(--mono); white-space: nowrap; }
 .aim-acts { display: flex; gap: 6px; flex: none; align-items: center; }
 .aim-login > .aim-acts { margin-left: auto; }   /* wrapped onto a line of its own, the row's switches still line up at the end */
-.aim-auto { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--l2); font-size: var(--t12); color: var(--txd); white-space: nowrap; }
+/* the Auto-switch order (SettingsModal AutoSwitchOrder): the saved order on screen,
+   the logins switched off under a dashed line at full strength; only disabled dims */
+.aim-ordhead { margin-top: 12px; }
+.aim-ord { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px 0 8px; }
+.aim-ord + .aim-ord { border-top: 1px solid var(--l); }
+.aim-ord[data-line] { border-top-style: dashed; border-top-color: var(--l2); }
+.aim-ord[data-disabled] { opacity: .55; }
+.aim-ord[data-drag] { opacity: .4; }
+.aim-ord[data-over="before"] { box-shadow: inset 0 2px 0 var(--acc); }
+.aim-ord[data-over="after"] { box-shadow: inset 0 -2px 0 var(--acc); }
+.aim-ord b { flex: 1; min-width: 0; font: 500 13.5px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aim-grip { appearance: none; flex: none; width: 22px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--txl); display: grid; place-items: center; cursor: grab; }
+.aim-grip:hover, .aim-grip:focus-visible { color: var(--txm); background: var(--ac-06); outline: none; }
+.aim-rank { flex: none; width: 16px; text-align: center; font: 600 13px var(--mono); color: var(--acc); }
+.aim-ord[data-out] .aim-rank { color: var(--txl); }
 .aim-profs { border-top: 1px solid var(--l); background: var(--panel2); padding: 6px 10px 8px; }
 .aim-prof { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 6px 6px; border-radius: 8px; }
 .aim-prof:hover, .aim-prof[data-editing] { background: var(--ac-06); }
