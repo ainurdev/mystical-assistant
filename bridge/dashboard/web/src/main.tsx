@@ -1,3 +1,5 @@
+// First, so an error from the page's first moments is kept for Sentry (lib/crash.ts).
+import { crash, settle } from "./lib/crash";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource/share-tech-mono/400.css";
@@ -25,11 +27,21 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { queryClient } from "./lib/queries";
+import { startReports } from "./lib/reports";
 
-createRoot(document.getElementById("root")!).render(
+// React's root callbacks: render errors, route errors (the router's error screen
+// is a boundary) included. React's own console line is kept.
+const toCrash = (err: unknown) => { console.error(err); crash(err); };
+createRoot(document.getElementById("root")!, {
+  onUncaughtError: toCrash,
+  onCaughtError: toCrash,
+  onRecoverableError: toCrash,
+}).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );
+
+void startReports(settle);
