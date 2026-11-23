@@ -74,28 +74,33 @@ def boot() -> bool:
     if not _team:
         return False
     sys.path.insert(0, VENDOR)
-    import sentry_sdk
-    from sentry_sdk.integrations.atexit import AtexitIntegration
-    from sentry_sdk.integrations.dedupe import DedupeIntegration
-    from sentry_sdk.integrations.excepthook import ExcepthookIntegration
-    from sentry_sdk.integrations.threading import ThreadingIntegration
-    from sentry_sdk.transport import HttpTransport
-    from bridge import selfupdate
-    sentry_sdk.init(
-        dsn=DSN,
-        release=selfupdate.BOOT_HEAD or None,
-        default_integrations=False,
-        auto_enabling_integrations=False,
-        integrations=[ExcepthookIntegration(), ThreadingIntegration(), DedupeIntegration(), AtexitIntegration()],
-        data_collection={"user_info": False, "stack_frame_variables": False, "http_bodies": []},
-        max_request_body_size="never",
-        auto_session_tracking=False,
-        send_client_reports=False,
-        before_send=_before_send,
-        before_breadcrumb=lambda crumb, hint: None,
-        transport=type("_Transport", (HttpTransport,), {"TIMEOUT": _SEND_TIMEOUT}),
-        shutdown_timeout=2,
-    )
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.atexit import AtexitIntegration
+        from sentry_sdk.integrations.dedupe import DedupeIntegration
+        from sentry_sdk.integrations.excepthook import ExcepthookIntegration
+        from sentry_sdk.integrations.threading import ThreadingIntegration
+        from sentry_sdk.transport import HttpTransport
+        from bridge import selfupdate
+        sentry_sdk.init(
+            dsn=DSN,
+            release=selfupdate.BOOT_HEAD or None,
+            default_integrations=False,
+            auto_enabling_integrations=False,
+            integrations=[ExcepthookIntegration(), ThreadingIntegration(), DedupeIntegration(), AtexitIntegration()],
+            data_collection={"user_info": False, "stack_frame_variables": False, "http_bodies": []},
+            max_request_body_size="never",
+            auto_session_tracking=False,
+            send_client_reports=False,
+            before_send=_before_send,
+            before_breadcrumb=lambda crumb, hint: None,
+            transport=type("_Transport", (HttpTransport,), {"TIMEOUT": _SEND_TIMEOUT}),
+            shutdown_timeout=2,
+        )
+    except Exception as e:  # noqa: BLE001 - reporting must never stop the bridge from starting
+        sys.path.remove(VENDOR)
+        print(f"reports: off, the Sentry SDK did not start: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
     _sdk = sentry_sdk
     return True
 

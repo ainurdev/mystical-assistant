@@ -32,6 +32,7 @@ from bridge import config, reports, rivendell_instances, selfupdate, store  # no
 case = json.loads(sys.argv[1])
 PLANT = case.get("plant") or {}
 reports.DSN = case["dsn"]
+reports.VENDOR = case.get("vendor") or reports.VENDOR
 selfupdate.BOOT_HEAD = case["release"]
 store.init()
 for inst in case.get("instances", []):

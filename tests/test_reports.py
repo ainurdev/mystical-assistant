@@ -116,6 +116,14 @@ def test_an_empty_dsn_keeps_a_team_install_off(receiver):
     assert receiver.raw == []
 
 
+def test_an_sdk_that_fails_to_start_leaves_the_bridge_up_with_reports_off(receiver, tmp_path):
+    (tmp_path / "sentry_sdk").mkdir()
+    (tmp_path / "sentry_sdk" / "__init__.py").write_text("raise ImportError('a bad vendor refresh')\n")
+    out = _start(["status", "dash"], receiver.dsn, vendor=str(tmp_path))
+    assert out["codes"] == [500] and out["status"] == {"on": False} and not out["vendor_on_path"]
+    assert receiver.raw == []
+
+
 # --- what a crash carries -----------------------------------------------------------
 
 def test_a_route_that_raises_sends_one_scrubbed_crash_and_still_answers_500(receiver):
