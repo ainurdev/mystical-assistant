@@ -5,7 +5,11 @@
  * when this install doesn't report (settle(null)). React's root callbacks
  * (main.tsx) come through crash() too, before and after.
  *
- * Kept free of imports: it has to run before everything else. */
+ * It also starts reports, so a module that throws as the page's scripts first
+ * run (before main.tsx gets to render) is still sent. Its one import,
+ * lib/reports.ts, has no runtime imports of its own, so nothing else runs first. */
+
+import { startReports } from "./reports";
 
 type Sink = (err: unknown) => void;
 
@@ -31,3 +35,5 @@ export function settle(next: Sink | null): void {
   sink = next;
   for (const err of early.splice(0)) next?.(err);
 }
+
+void startReports(settle);

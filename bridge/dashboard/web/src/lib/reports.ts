@@ -22,6 +22,7 @@ import type { Breadcrumb, BreadcrumbHint, BrowserOptions, ErrorEvent, EventHint 
  * Kept free of runtime imports so lib/reports.check.ts can run it under node. */
 
 const FILTERED = "[Filtered]";
+const SAME_EVERY = 60_000; // the same crash at most once a minute
 const CAP = 1000;          // every string, a message included
 const PROMPT_CAP = 120;    // a prompt keeps its first line, this long at most
 const SHAPES: [RegExp, string][] = [
@@ -120,6 +121,16 @@ export interface ReportsStatus { on: boolean; dsn?: string; user?: string; os?: 
 /** The options @sentry/browser starts with; integrations are added by startReports. */
 export function options(s: ReportsStatus, token: string, ua: string, origin: string): BrowserOptions {
   const held = token.length >= 8 ? [token] : [];
+  const last = new Map<string, number>();
+  const fresh = (e: ErrorEvent) => {   // the same crash: its type, message and where it was thrown
+    const x = e.exception?.values?.at(-1);
+    const top = x?.stacktrace?.frames?.at(-1);
+    const key = x ? `${x.type}: ${x.value}@${top?.filename}:${top?.lineno}:${top?.colno}` : String(e.message);
+    const now = Date.now();
+    if (now - (last.get(key) ?? -SAME_EVERY) < SAME_EVERY) return false;
+    last.set(key, now);
+    return true;
+  };
   return {
     dsn: s.dsn,
     defaultIntegrations: false,
@@ -128,7 +139,7 @@ export function options(s: ReportsStatus, token: string, ua: string, origin: str
     // the release is the commit the page was built from: Sentry's Vite plugin writes it into the bundle
     initialScope: { tags: tagsFor(ua, s.os ?? ""), user: { username: s.user ?? "" } },
     beforeBreadcrumb: (crumb, hint) => keepBreadcrumb(crumb, hint, origin),
-    beforeSend: (event, hint) => scrubReport(event, hint, held),
+    beforeSend: (event, hint) => (fresh(event) ? scrubReport(event, hint, held) : null),
   };
 }
 

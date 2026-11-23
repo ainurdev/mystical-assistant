@@ -61,6 +61,11 @@ for (const m of ["Failed to fetch dynamically imported module: http://x/assets/S
 }
 assert.ok(!isMissingChunk(new Error("Cannot read properties of undefined")));
 
+// the same crash twice in a minute: one report
+const twice = { exception: { values: [{ type: "TypeError", value: "x", stacktrace: { frames: [{ filename: "/assets/a.js", lineno: 1, colno: 9 }] } }] } };
+assert.ok(send(twice));
+assert.equal(send(twice), null);
+
 // what each report says about where it ran, and who
 assert.deepEqual(tagsFor("Mozilla/5.0 (Macintosh) MysticalMac/1.2", "macos"), { side: "page", os: "macos", app: "Mystical.app" });
 assert.deepEqual(tagsFor("Mozilla/5.0 (Windows NT 10.0) Edg/1 MysticalWin/1", "wsl"), { side: "page", os: "windows", app: "Mystical.exe" });
