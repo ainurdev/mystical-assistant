@@ -62,7 +62,7 @@ export function WorkingIndicator({
           <span
             key={b}
             className="w-[2px] origin-bottom bg-primary"
-            style={{ height: "100%", animation: `eqbar .9s ease-in-out ${b * 0.12}s infinite` }}
+            style={{ height: "100%", animation: `eqbar .9s steps(7) ${b * 0.12}s infinite` }}
           />
         ))}
       </span>

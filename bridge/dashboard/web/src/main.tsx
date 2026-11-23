@@ -22,6 +22,9 @@ import "./spine.css";
 // the listener has to be installed here rather than in the SETTINGS component.
 import "./lib/installprompt";
 import { App } from "./App";
+import { watchStill } from "./lib/still";
+
+watchStill();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

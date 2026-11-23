@@ -469,7 +469,7 @@ function SessionRow({
             style={{ fontSize: "var(--t9)",
                      color: s.goal.state === "blocked" ? "var(--warn)"
                           : s.goal.state === "active" ? "var(--acc)" : "var(--txf)",
-                     animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
+                     animation: s.goal.state === "active" ? "mpulse 2.4s steps(19) infinite" : "none" }}
           >◎</span>
         )}
         {JobIcon && <span title={jobLabel(s.job).toLowerCase()} style={{ display: "inline-flex", color: "var(--purple)" }}><JobIcon size={12} strokeWidth={2.1} aria-hidden /></span>}

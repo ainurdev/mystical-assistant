@@ -128,7 +128,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   const spin = (size: number): CSSProperties => ({
     width: size, height: size, flex: "none", borderRadius: "50%", display: "inline-block",
     border: "1.5px solid color-mix(in srgb, var(--acc) 30%, transparent)", borderTopColor: "var(--acc)",
-    animation: "introspin 1s linear infinite",
+    animation: "introspin 1s steps(8) infinite",
   });
   const items = reviewItems(pr);
 

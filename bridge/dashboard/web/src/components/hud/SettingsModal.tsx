@@ -619,7 +619,7 @@ function Placeholder({ icon: Icon, spin, children }: {
       <Icon size={26} strokeWidth={1.3} aria-hidden
         style={{
           color: "var(--acc)", opacity: .4,
-          animation: spin ? "introspin 1.4s linear infinite" : undefined,
+          animation: spin ? "introspin 1.4s steps(11) infinite" : undefined,
         }} />
       <div style={{ fontSize: "var(--t10)", color: "var(--txl)", lineHeight: 1.75, maxWidth: 360 }}>
         {children}
@@ -2789,7 +2789,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     return (
       <MiniBtn disabled={!p.installed || (!!t && "busy" in t)} onClick={() => void test(acct)}
         title={p.installed ? "Start it once and list what it offers (up to two minutes)" : "Install it first"}>
-        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "TEST"}
+        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "TEST"}
       </MiniBtn>
     );
   };
@@ -2797,7 +2797,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     const l = logins[acct];
     return live(l)
       ? <MiniBtn disabled={l!.state === "testing"} onClick={() => void cancelLogin(acct)} title="Stop this sign-in">
-          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
+          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
         </MiniBtn>
       : <MiniBtn disabled={!p.installed} onClick={() => void login(acct)}
           title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>
@@ -3150,7 +3150,7 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
             <div className="aim-f wide">
               {testing
                 ? <span style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
+                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
                   </span>
                 : <MiniBtn onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">TEST</MiniBtn>}
               {testErr && warn(preset?.can_login && /login/i.test(testErr)

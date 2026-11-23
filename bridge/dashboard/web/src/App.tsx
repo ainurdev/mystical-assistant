@@ -239,12 +239,12 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         animation: "mpop .18s ease both",
       }}
     >
-      <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s linear infinite" }} />
+      <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s steps(11) infinite" }} />
       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
         <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
           <Spinner className="h-[11px] w-[11px] border" />
         </span>
-        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
+        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s steps(10) infinite" }}>
           CHECKING CONTEXT…
         </span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: "var(--txd)" }}>
