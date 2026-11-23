@@ -48,3 +48,45 @@ export function fromLegacy(href: string): string | null {
   u.hash = ID.test(id) ? `#${pathOf({ kind: "session", id })}` : u.hash;
   return u.toString();
 }
+
+// On any route, the search carries the right rail's tab and at most one pop-up:
+//   ?rail=<tab>                   the rail's tab (lib/theme RIGHT_TABS)
+//   ?analyze=<project>            the project window
+//   ?edit=<project>:<path>        the project window, its editor on that file
+//   ?pic=<turn id>.<picture key>  the picture viewer (lib/nav picKey)
+// Unknown values read as absent. A project rel or a turn id never holds ":" or ".".
+export type Popup =
+  | { kind: "analyze"; project: string }
+  | { kind: "edit"; project: string; path: string }
+  | { kind: "pic"; turn: string; pic: string };
+export type Extras = { rail?: string; popup?: Popup };
+
+const PROJECT = /^[^:]+$/;
+
+/** A router search string ("?a=b" or "") to its rail tab and pop-up. */
+export function extrasOf(search: string, rails: readonly string[]): Extras {
+  const q = new URLSearchParams(search);
+  const out: Extras = {};
+  const rail = q.get("rail");
+  if (rail && rails.includes(rail)) out.rail = rail;
+  const analyze = q.get("analyze");
+  const [project, ...rest] = (q.get("edit") ?? "").split(":");
+  const path = rest.join(":");
+  const [turn, pic, more] = (q.get("pic") ?? "").split(".");
+  if (analyze && PROJECT.test(analyze)) out.popup = { kind: "analyze", project: analyze };
+  else if (project && path) out.popup = { kind: "edit", project, path };
+  else if (turn && ID.test(turn) && pic && /^\w+$/.test(pic) && more === undefined) out.popup = { kind: "pic", turn, pic };
+  return out;
+}
+
+/** The search string a rail tab and pop-up live at ("" for neither). */
+export function searchOf(e: Extras): string {
+  const q = new URLSearchParams();
+  if (e.rail) q.set("rail", e.rail);
+  const p = e.popup;
+  if (p?.kind === "analyze") q.set("analyze", p.project);
+  else if (p?.kind === "edit") q.set("edit", `${p.project}:${p.path}`);
+  else if (p?.kind === "pic") q.set("pic", `${p.turn}.${p.pic}`);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}

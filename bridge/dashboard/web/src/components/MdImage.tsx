@@ -3,6 +3,7 @@ import { useChatImageScope } from "../lib/chatimages";
 import { classifyAddress, decodeSrc, embedMarkdown, fitBox, imageName, imageSrc } from "../lib/embeds";
 import { knownImage, noteImage } from "../lib/imageprobe";
 import { ImageLightbox, ZoomButton, type Shown } from "./ImageLightbox";
+import { usePic } from "../lib/nav";
 
 /* An image written into a message, drawn where it was written. What may load is the
    point of this file: a local address always (through the file route, which serves
@@ -38,6 +39,7 @@ export function MdImage({ src, alt = "", title, "data-addr": raw }: Props) {
   const address = raw ?? decodeSrc(typeof src === "string" ? src : "");
   const md = embedMarkdown(alt, address, title);
   const kind = classifyAddress(address);
+  const [zoom, setZoom] = usePic([imageSrc(address, scope) ?? ""]);
 
   if (kind === "remote" && !(typed && scope.remote)) {
     const label = alt.trim() || address;
@@ -69,13 +71,14 @@ export function MdImage({ src, alt = "", title, "data-addr": raw }: Props) {
     const root = box.current?.closest(".dturn") ?? box.current?.closest(".md");
     const all = Array.from(root?.querySelectorAll<HTMLImageElement>("img[data-md-img]") ?? []);
     setShown(all.map((i) => ({ src: i.getAttribute("src") ?? "", name: i.dataset.name })));
+    setZoom(url);
   };
   return (
     // The stop: this sits inside clickable cards, and the viewer portals, so its clicks
     // bubble here through React too.
     <span ref={box} className="md-img" data-md={md} onClick={(e) => e.stopPropagation()}>
       <ZoomButton onOpen={open}>{img}</ZoomButton>
-      {shown && <ImageLightbox src={url} all={shown} onClose={() => setShown(null)} />}
+      {zoom && <ImageLightbox src={url} all={shown ?? [{ src: url }]} onClose={() => setZoom(null)} />}
     </span>
   );
 }

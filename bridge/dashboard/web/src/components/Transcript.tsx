@@ -26,6 +26,7 @@ import { limitNudge } from "../lib/limit";
 import { dropNoPath, parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
+import { PicTurn, usePic } from "../lib/nav";
 
 /** The virtualizer's window plus the last row: a running turn's WORK zone feeds the live row
  *  (LiveRow), which has to keep going while you read an older turn. Module scope: the
@@ -45,13 +46,13 @@ function useCommands(project?: string | null): SlashCommand[] {
 }
 
 function Attachments({ items }: { items: string[] }) {
-  const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   // A just-sent turn carries data: URLs; a rehydrated one carries server paths the
   // dashboard serves back from the upload dir. Those files are cleaned up when the
   // run ends, so an image that 404s collapses into the chip it used to be.
   const srcs = items.map((a) =>
     a.startsWith("data:") || a.startsWith("http") ? a : api.attachmentUrl(a));
+  const [zoom, setZoom] = usePic(srcs);
   const missing = srcs.filter((s) => gone.has(s)).length;
   return (
     // Yours, so they hang off the right edge under your bubble.
@@ -307,6 +308,8 @@ function TurnBlock({
     // that turn rather than the terminal pane wrapping it.
     // `dturn` / `dprompt` / `dreply` are inert outside DOSSIER (display:contents
     // on the wrapper), where they make a turn one card: prompt, work, answer.
+    // PicTurn: a picture viewer opened in this turn names it in the URL (lib/nav usePic).
+    <PicTurn.Provider value={turn.id}>
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam ? "" : undefined}
@@ -373,6 +376,7 @@ function TurnBlock({
         : turn.outcome && !carriedOn && <OutcomeBadge outcome={turn.outcome} />}
       {unfinishedBy && <UnfinishedPlate who={unfinishedBy} />}
     </div>
+    </PicTurn.Provider>
   );
 }
 

@@ -10,6 +10,7 @@ import type { PendingRequest } from "../chat";
 import { Markdown, type OpenFile } from "./Markdown";
 import { LiveHostCtx, LiveRow, type LiveHost } from "./LiveRow";
 import { selectionMd } from "../lib/selmd";
+import { usePic } from "../lib/nav";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
@@ -1042,7 +1043,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   };
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
   const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
   // survives the zone remounting; the live line shows them.
@@ -2107,7 +2108,7 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
  *  (lib/seenshots) and wears the accent until you have. Your own steer's
  *  pictures pass none — you sent them. */
 function ToolImages({ paths, all, at }: { paths: string[]; all: Shown[]; at?: number }) {
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = usePic(paths.map(api.attachmentUrl));
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
