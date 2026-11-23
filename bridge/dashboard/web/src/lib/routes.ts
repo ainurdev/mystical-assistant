@@ -90,3 +90,9 @@ export function searchOf(e: Extras): string {
   const s = q.toString();
   return s ? `?${s}` : "";
 }
+
+/** The hash's own search, from hash history's search: that appends the page's
+ *  real query (?token=…&skipboot), which must never be written back into the hash. */
+export function ownSearch(historySearch: string, pageSearch: string): string {
+  return pageSearch && historySearch.endsWith(pageSearch) ? historySearch.slice(0, -pageSearch.length) : historySearch;
+}

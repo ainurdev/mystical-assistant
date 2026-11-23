@@ -5,7 +5,7 @@
 // editor moving to another file, adds no history.
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter, type AnyRouter } from "@tanstack/react-router";
-import { extrasOf, searchOf, type Extras, type Popup } from "./routes";
+import { extrasOf, ownSearch, searchOf, type Extras, type Popup } from "./routes";
 import { RIGHT_TABS } from "./theme";
 
 type Loc = { pathname: string; search: string; state: { __TSR_index: number } };
@@ -16,11 +16,7 @@ const here = (r: AnyRouter) => r.history.location as unknown as Loc;
 /** The hash's own search ("?rail=git" or ""). Hash history appends the page's
  *  real query (?token=…&skipboot) to it, and writing that back would copy the
  *  token into the hash. */
-export function hashSearch(r: AnyRouter): string {
-  const s = here(r).search;
-  const page = window.location.search;
-  return page && s.endsWith(page) ? s.slice(0, -page.length) : s;
-}
+export const hashSearch = (r: AnyRouter): string => ownSearch(here(r).search, window.location.search);
 
 /** The URL's rail tab and pop-up, now. */
 export const extrasNow = (r: AnyRouter): Extras => extrasOf(hashSearch(r), RIGHT_TABS);
@@ -38,9 +34,11 @@ export function setExtras(r: AnyRouter, patch: Extras, replace: boolean) {
 // can step back off it.
 let pushedAt: number | null = null;
 
-/** Open a pop-up: a new entry, or, when one is already up, in its place (back still closes in one step). */
+/** Open a pop-up: a new entry, or in place of one we pushed (back still closes in one step).
+ *  A pop-up the URL names on an entry we didn't push (a picture a reload couldn't
+ *  bring back) gets an entry above it, so back never skips past the session. */
 export function openPopup(r: AnyRouter, popup: Popup) {
-  if (extrasNow(r).popup) return setExtras(r, { popup }, true);
+  if (extrasNow(r).popup && pushedAt === here(r).state.__TSR_index) return setExtras(r, { popup }, true);
   setExtras(r, { popup }, false);
   pushedAt = here(r).state.__TSR_index;
 }

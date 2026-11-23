@@ -2,7 +2,7 @@
 //
 // The dashboard's URLs: URL to place and back for a session and each Settings
 // page, old ?s= links, and unknown values ignored.
-import { extrasOf, fromLegacy, pathOf, placeOf, searchOf, SETTINGS_PAGES, type Extras, type Place } from "./routes.ts";
+import { extrasOf, fromLegacy, ownSearch, pathOf, placeOf, searchOf, SETTINGS_PAGES, type Extras, type Place } from "./routes.ts";
 
 const eq = (a: unknown, b: unknown, what: string) =>
   console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
@@ -53,3 +53,8 @@ eq(extrasOf("?pic=t1.a.b", RAILS), {}, "a garbled pic is ignored");
 eq(extrasOf("?zoom=1&rail=git", RAILS), { rail: "git" }, "an unknown key is ignored");
 // At most one pop-up: a hand-made URL naming two opens the first.
 eq(extrasOf("?pic=t1.k&analyze=p", RAILS), { popup: { kind: "analyze", project: "p" } }, "two pop-ups open one");
+
+// The page's own query (the token) never reads as the hash's search.
+eq(ownSearch("?rail=git?skipboot=1&token=t", "?skipboot=1&token=t"), "?rail=git", "the page's query is cut off");
+eq(ownSearch("?skipboot=1&token=t", "?skipboot=1&token=t"), "", "no hash search is none");
+eq(ownSearch("?rail=git", ""), "?rail=git", "no page query leaves it whole");
