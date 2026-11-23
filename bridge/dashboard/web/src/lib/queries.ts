@@ -168,7 +168,7 @@ export function readWith(get: (url: string) => Promise<unknown>): void {
         // Another panel's interval on the same key, out of phase with the first: the answer is fresh.
         if (poll && st?.status === "success" && !st.isInvalidated && Date.now() - last < poll.ms / 2)
           return Promise.resolve(st.data);
-        lastFetch.set(queryHash, Date.now());
+        if (poll) lastFetch.set(queryHash, Date.now());
         const extra = (meta?.extra as (() => Params) | undefined)?.();
         return get(urlOf(route, { ...params, ...extra }));
       },
