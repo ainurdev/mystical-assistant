@@ -17,7 +17,7 @@ import { Markdown } from "../Markdown";
 import { ImageLightbox } from "../ImageLightbox";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { chord } from "../../lib/chord";
-import { cmpTreePath } from "../../lib/pathsort";
+import { buildRows, dirsOf, type TreeRow } from "../../lib/filetree";
 import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
 import { FileIcon } from "../../lib/fileicon";
@@ -124,52 +124,6 @@ interface Cmd {
   run: () => void;
   off?: boolean;  // hidden from the palette when it can't run
   show?: string;  // a binding the key handler matches itself, shown like `key`
-}
-
-export interface TreeRow {
-  key: string;
-  dir: boolean;
-  depth: number;
-  name: string;
-  path: string;
-}
-
-/* Flatten a sorted path list into a collapsible directory tree (dirs before
-   their files, honoring the collapsed set). */
-export function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
-  const sorted = [...paths].sort(cmpTreePath);
-  const rows: TreeRow[] = [];
-  const seen = new Set<string>();
-  for (const path of sorted) {
-    const parts = path.split("/");
-    let prefix = "";
-    let hidden = false;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const p = prefix ? `${prefix}/${parts[i]}` : parts[i];
-      if (!hidden && !seen.has(p)) {
-        seen.add(p);
-        rows.push({ key: `d:${p}`, dir: true, depth: i, name: parts[i], path: p });
-      }
-      if (collapsed.has(p)) hidden = true;
-      prefix = p;
-    }
-    if (!hidden) rows.push({ key: `f:${path}`, dir: false, depth: parts.length - 1, name: parts[parts.length - 1] ?? path, path });
-  }
-  return rows;
-}
-
-/* Every directory that appears in the path list — the expand/collapse-all set. */
-export function dirsOf(paths: string[]): string[] {
-  const out = new Set<string>();
-  for (const p of paths) {
-    const parts = p.split("/");
-    let prefix = "";
-    for (let i = 0; i < parts.length - 1; i++) {
-      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i];
-      out.add(prefix);
-    }
-  }
-  return [...out];
 }
 
 /* Subsequence match, VS Code Ctrl-P style: every query char in order, gaps

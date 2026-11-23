@@ -19,6 +19,9 @@ _spec.loader.exec_module(W)
     ("http://localhost:8790/?s=1", False, True, "view"),
     ("http://127.0.0.1:8790/x", False, True, "view"),
     ("http://[::1]:8790/", False, True, "view"),
+    # its hash URLs (a session, a Settings page) too
+    ("http://127.0.0.1:8790/?skipboot#/s/abc", False, True, "view"),
+    ("http://127.0.0.1:8790/#/settings/system", False, True, "view"),
     # a link out goes to the desktop's opener: the default browser
     ("https://github.com/a/b/pull/1", False, True, "browser"),
     ("mailto:a@b.c", False, True, "browser"),

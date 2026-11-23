@@ -81,7 +81,8 @@ import Testing
 let origin = URL(string: "http://127.0.0.1:8790")!
 
 @Test func dashboardNavigationStaysInTheWindow() {
-    for u in ["http://127.0.0.1:8790/?token=x", "http://localhost:8790/local/graph/html"] {
+    for u in ["http://127.0.0.1:8790/?token=x", "http://localhost:8790/local/graph/html",
+              "http://127.0.0.1:8790/?skipboot#/s/abc", "http://127.0.0.1:8790/#/settings/system"] {
         #expect(URLPolicy.decide(URL(string: u), origin: origin, mainFrame: true, newWindow: false) == .inView)
     }
 }
