@@ -99,7 +99,7 @@ export type FlowAnswer = { flow: Flow | null; past?: PastFlow[]; set: FlowSet | 
 
 /** The main column: the session list, the open session, its prompt box and what rides beside it. */
 export const main = {
-  state: read<DashState>("/local/state", { ms: 3000 }),
+  state: read<DashState>("/local/state", { ms: 5000 }),
   projects: read<ProjectsListing, { dir?: string }>("/local/projects", { ms: 10000 }),
   sessions: read<{ sessions: SessionBrief[] }, { project?: string }>("/local/sessions", { ms: 5000 }),
   // The open session's transcript. The live read is keyed by the session alone: its cursor (and
@@ -141,7 +141,7 @@ export const main = {
   // Multi-agent chats (lib/multistore): the switch, every wanted chat's agents in one read
   // (only while the switch is on), a chat's channel, and a helper's brief by id.
   experimental: read<{ enabled: boolean; defaults: HelperConfig }>("/local/experimental", { ms: 60000 }),
-  tree: read<{ trees: Record<string, AgentRow[]> }, { ids: string }>("/local/tree", { ms: 3000 }),
+  tree: read<{ trees: Record<string, AgentRow[]> }, { ids: string }>("/local/tree", { ms: 5000 }),
   channel: read<ChannelView, { session: string }>("/local/channel", { ms: 2000 }),
   brief: read<{ session: SessionBrief }, { session: string }>("/local/session/brief", { ms: 3000 }),
   // What a PROFILE switch would carry over, and the shared skills an agent's / list offers.
@@ -222,7 +222,7 @@ export const code = {
 /** The rest of the rail and the caps: the bell, HOME's vitals, UPDATE and the changelog. */
 export const rail = {
   notices: read<NoticesAnswer>("/local/notices", { ms: 4000, hidden: true }),
-  sysinfo: read<HostStats>("/local/sysinfo", { ms: 2000 }),
+  sysinfo: read<HostStats>("/local/sysinfo", { ms: 5000 }),
   update: read<UpdateInfo>("/local/update", { ms: 5 * 60_000 }),
   // -- rail A: Rivendell, TEAM, device runs
   // 1 s only while a share is coming in, else 30 s (App).

@@ -23,7 +23,7 @@ const hidden = [...reads()].filter(([, p]) => p?.hidden).map(([r]) => r).sort();
 eq(hidden, ["/local/notices", "/local/running"], "polls while hidden");
 console.assert(rail.notices().refetchIntervalInBackground === true && main.state().refetchIntervalInBackground === false,
   "the options carry the hidden rule");
-console.assert(main.commands().refetchInterval === false && rail.sysinfo().refetchInterval === 2000, "the options carry the interval");
+console.assert(main.commands().refetchInterval === false && rail.sysinfo().refetchInterval === 5000, "the options carry the interval");
 
 // --- every key that a change invalidates exists -------------------------------
 for (const [post, routes] of Object.entries(CHANGES))
