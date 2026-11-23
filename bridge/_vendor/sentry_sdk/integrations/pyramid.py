@@ -1,0 +1,209 @@
+import functools
+import os
+import sys
+import weakref
+
+import sentry_sdk
+from sentry_sdk.consts import SPANDATA
+from sentry_sdk.integrations import DidNotEnable, Integration, _check_minimum_version
+from sentry_sdk.integrations._wsgi_common import RequestExtractor
+from sentry_sdk.integrations.wsgi import SentryWsgiMiddleware
+from sentry_sdk.traces import SegmentNameSource
+from sentry_sdk.utils import (
+    capture_internal_exceptions,
+    ensure_integration_enabled,
+    event_from_exception,
+    package_version,
+    reraise,
+)
+
+try:
+    from pyramid import router
+    from pyramid.httpexceptions import HTTPException
+    from pyramid.request import Request
+except ImportError:
+    raise DidNotEnable("Pyramid not installed or incompatible")
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any, Callable, Dict
+
+    from pyramid.response import Response
+    from webob.cookies import RequestCookies
+    from webob.request import _FieldStorageWithFile
+
+    from sentry_sdk._types import Event, EventProcessor
+    from sentry_sdk.integrations.wsgi import _ScopedResponse
+    from sentry_sdk.utils import ExcInfo
+
+
+class PyramidIntegration(Integration):
+    identifier = "pyramid"
+    origin = f"auto.http.{identifier}"
+
+    @staticmethod
+    def setup_once() -> None:
+        version = package_version("pyramid")
+        _check_minimum_version(PyramidIntegration, version)
+
+        old_call_view = router._call_view
+
+        @functools.wraps(old_call_view)
+        def sentry_patched_call_view(
+            registry: "Any", request: "Request", *args: "Any", **kwargs: "Any"
+        ) -> "Response":
+            client = sentry_sdk.get_client()
+            integration = client.get_integration(PyramidIntegration)
+            if integration is None:
+                return old_call_view(registry, request, *args, **kwargs)
+
+            route_path = None
+            try:
+                route_path = request.matched_route.pattern
+            except Exception:
+                pass
+
+            server_span = sentry_sdk.get_current_scope()._server_segment_span
+            if server_span is not None and route_path is not None:
+                server_span.set_attribute(
+                    SPANDATA.HTTP_ROUTE, request.matched_route.pattern
+                )
+
+            try:
+                sentry_sdk.get_current_scope().set_transaction_name(
+                    request.matched_route.pattern, source=SegmentNameSource.ROUTE
+                )
+            except Exception:
+                pass
+
+            scope = sentry_sdk.get_isolation_scope()
+
+            if client.options["data_collection"]["user_info"]:
+                user_id = request.authenticated_userid
+                if user_id:
+                    scope.set_user({"id": user_id})
+
+            scope.add_event_processor(
+                _make_event_processor(weakref.ref(request), integration)
+            )
+
+            return old_call_view(registry, request, *args, **kwargs)
+
+        router._call_view = sentry_patched_call_view
+
+        if hasattr(Request, "invoke_exception_view"):
+            old_invoke_exception_view = Request.invoke_exception_view
+
+            def sentry_patched_invoke_exception_view(
+                self: "Request", *args: "Any", **kwargs: "Any"
+            ) -> "Any":
+                rv = old_invoke_exception_view(self, *args, **kwargs)
+
+                if (
+                    self.exc_info
+                    and all(self.exc_info)
+                    and rv.status_int == 500
+                    and sentry_sdk.get_client().get_integration(PyramidIntegration)
+                    is not None
+                ):
+                    _capture_exception(self.exc_info)
+
+                return rv
+
+            Request.invoke_exception_view = sentry_patched_invoke_exception_view
+
+        old_wsgi_call = router.Router.__call__
+
+        @ensure_integration_enabled(PyramidIntegration, old_wsgi_call)
+        def sentry_patched_wsgi_call(
+            self: "Any", environ: "Dict[str, str]", start_response: "Callable[..., Any]"
+        ) -> "_ScopedResponse":
+            def sentry_patched_inner_wsgi_call(
+                environ: "Dict[str, Any]", start_response: "Callable[..., Any]"
+            ) -> "Any":
+                try:
+                    return old_wsgi_call(self, environ, start_response)
+                except Exception:
+                    einfo = sys.exc_info()
+                    _capture_exception(einfo)
+                    reraise(*einfo)
+
+            middleware = SentryWsgiMiddleware(
+                sentry_patched_inner_wsgi_call,
+                span_origin=PyramidIntegration.origin,
+            )
+            return middleware(environ, start_response)
+
+        router.Router.__call__ = sentry_patched_wsgi_call
+
+
+@ensure_integration_enabled(PyramidIntegration)
+def _capture_exception(exc_info: "ExcInfo") -> None:
+    if exc_info[0] is None or issubclass(exc_info[0], HTTPException):
+        return
+
+    event, hint = event_from_exception(
+        exc_info,
+        mechanism={"type": "pyramid", "handled": False},
+    )
+
+    sentry_sdk.capture_event(event, hint=hint)
+
+
+class PyramidRequestExtractor(RequestExtractor):
+    def url(self) -> str:
+        return self.request.path_url
+
+    def env(self) -> "Dict[str, str]":
+        return self.request.environ
+
+    def cookies(self) -> "RequestCookies":
+        return self.request.cookies
+
+    def raw_data(self) -> str:
+        return self.request.text
+
+    def form(self) -> "Dict[str, str]":
+        return {
+            key: value
+            for key, value in self.request.POST.items()
+            if not getattr(value, "filename", None)
+        }
+
+    def files(self) -> "Dict[str, _FieldStorageWithFile]":
+        return {
+            key: value
+            for key, value in self.request.POST.items()
+            if getattr(value, "filename", None)
+        }
+
+    def size_of_file(self, postdata: "_FieldStorageWithFile") -> int:
+        file = postdata.file
+        try:
+            return os.fstat(file.fileno()).st_size
+        except Exception:
+            return 0
+
+
+def _make_event_processor(
+    weak_request: "Callable[[], Request]", integration: "PyramidIntegration"
+) -> "EventProcessor":
+    def pyramid_event_processor(event: "Event", hint: "Dict[str, Any]") -> "Event":
+        request = weak_request()
+        if request is None:
+            return event
+
+        with capture_internal_exceptions():
+            PyramidRequestExtractor(request).extract_into_event(event)
+
+        client_options = sentry_sdk.get_client().options
+
+        if client_options["data_collection"]["user_info"]:
+            with capture_internal_exceptions():
+                user_info = event.setdefault("user", {})
+                user_info.setdefault("id", request.authenticated_userid)
+
+        return event
+
+    return pyramid_event_processor

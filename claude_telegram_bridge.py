@@ -42,7 +42,7 @@ import sys
 
 from bridge import (acp_setup, automations, config, devserver, dream, envsettings, landing, limits,
                     native_activity, notices, onboard, profiles, pubsub, queue_manager, recovery,
-                    report, rivendell, run_api, runner, selfupdate, state, store,
+                    report, reports, rivendell, run_api, runner, selfupdate, state, store,
                     tgboard, tgtopics, tickets, toolsets, tunnel, whatsnew)
 from bridge.dispatch import handle_callback, menu, on_message, on_stop
 from bridge.telegram import get_updates, set_commands, tg
@@ -148,6 +148,7 @@ def main():
     # what .env said, so the checks below and every server started here see them.
     envsettings.apply()
     selfupdate.boot()              # the tree this process runs: what the rail's ⟳ diffs against
+    reports.boot()                 # a team install's crashes to Sentry; the gate holds until the next start
     if not os.path.isdir(config.BASE_PATH):
         sys.exit(f"BASE_PATH does not exist: {config.BASE_PATH}")
     signal.signal(signal.SIGINT, _on_stop_signal)

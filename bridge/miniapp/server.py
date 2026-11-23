@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from bridge import (accounts, agent_caps, agents, browser, channel, config, devserver, experimental,
                     git, github, goals, multi_api,
                     httpgz, integrations, models, native, profiles, project_config, projectmarks,
-                    relevance, runner, state, store, transcript_jsonl,
+                    relevance, reports, runner, state, store, transcript_jsonl,
                     transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -521,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
             self._safe_500(e)
 
     def _safe_500(self, e: Exception):
+        if not isinstance(e, (BrokenPipeError, ConnectionResetError)):   # a page that hung up isn't a fault
+            reports.request_crash("miniapp", self.command, self.path, e)
         try:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
         except Exception:  # noqa: BLE001
