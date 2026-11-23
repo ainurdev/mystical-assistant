@@ -47,10 +47,10 @@ export function AskDialog() {
 
   return (
     <div onClick={cancel}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "22vh", animation: "backdropIn .2s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "22vh", animation: "backdropIn .2s ease backwards" }}>
       <div role="dialog" aria-modal aria-labelledby="ask-title" onClick={(e) => e.stopPropagation()} className="panel ask"
         onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } }}
-        style={{ width: 460, maxWidth: "94vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
+        style={{ width: 460, maxWidth: "94vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease backwards" }}>
         <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ wordBreak: "break-word" }}>
             <div id="ask-title" style={{ fontSize: "var(--t13)", fontWeight: 600, color: "var(--txh)", lineHeight: 1.45 }}>{m ? m[1] : ask.text}</div>

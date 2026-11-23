@@ -466,7 +466,7 @@ function Quiz({ title, concept, question, onReveal, onSkip, cta = "SHOW THE LESS
       <span style={{ ...label, color: "var(--acc)" }}>{concept || "new lesson"}</span>
       <span style={{ fontSize: "var(--t15)", lineHeight: 1.35, color: "var(--txb)" }}>{title}</span>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
-        transformOrigin: "left", animation: "drawline .7s ease both" }} />
+        transformOrigin: "left", animation: "drawline .7s ease backwards" }} />
       <div>
         <span style={{ ...label, color: "var(--txd)", display: "block", marginBottom: 8 }}>CAN YOU ANSWER THIS?</span>
         <span style={{ ...mono, fontSize: "var(--t13)", lineHeight: 1.6, color: "var(--tx)" }}>{question}</span>
@@ -540,7 +540,7 @@ export function LearnPanel({ project, read, onRead }: {
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>LEARN</span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
-        transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
+        transformOrigin: "left", animation: "drawline .7s ease backwards .16s", flex: "none" }} />
       <div style={{ flex: 1, minHeight: 0, padding: 11 }}>
         {/* No `key={project}`: remounting on every session switch is what threw
             away the reading position in the first place. */}

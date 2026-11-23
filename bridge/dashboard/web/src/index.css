@@ -233,6 +233,9 @@
      left alone so gaps don't move when the base font does. */
   --text-xs: var(--t12);
   --text-sm: var(--t14);
+  /* the shared spinner and skeletons tick ~8 a second, like every indicator (tools/loops.mjs) */
+  --animate-spin: spin 1s steps(8) infinite;
+  --animate-pulse: pulse 2s steps(16) infinite;
 
   --radius-sm: 0px;
   --radius-md: 0px;
@@ -341,7 +344,7 @@ body {
    panel marks .swapin settle back in. mfadeup carries no opacity, so nothing
    blinks out. See components/RightPanel.tsx. */
 [data-swap] .swapin {
-  animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
 /* Another tab in the open right panel: the frame stays (its divider, its
    corner, the header strip above) and only the content changes — it fades up
@@ -546,7 +549,7 @@ body {
 /* Land N's list: every idle child ticked; untick to leave one out */
 .bt-veil { position: absolute; inset: 0; z-index: 5; }
 .bt-pop { position: absolute; z-index: 6; right: 10px; width: min(276px, calc(100% - 20px)); box-sizing: border-box; padding: 10px 0;
-  border-radius: 12px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 42%, transparent); animation: mslide .16s ease both; }
+  border-radius: 12px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 42%, transparent); animation: mslide .16s ease backwards; }
 .bt-ph { padding: 0 12px 8px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--txl); }
 .bt-ph b { margin-left: 4px; font-size: var(--t115); letter-spacing: .2px; color: var(--txb); }
 .bt-pr { display: flex; align-items: flex-start; gap: 8px; padding: 6px 12px; cursor: pointer; }
@@ -579,7 +582,7 @@ body {
    on you and already shouts with colour — a pulse there would be four things
    blinking at once. This one says "churning, leave it alone". */
 .sessdot[data-work="true"] {
-  animation: workpulse 1.8s ease-out infinite;
+  animation: workpulse 1.8s steps(14) infinite;
 }
 /* an answered row's background tasks (SessionsPanel bgTag), in line 2's tag cell beside the picture tag */
 .sess-bg { display: inline-flex; align-items: center; gap: 4px; height: 15px; font-size: var(--t85); font-weight: 700; line-height: 1;
@@ -659,6 +662,13 @@ body {
 }
 
 @keyframes sweepmove { 0% { transform: translateY(-200px); } 100% { transform: translateY(100vh); } }
+/* The scenes pause when the page is still (lib/still.ts: 20 s without input, or the window not in
+   front). Indicators are stepped and keep ticking. A scene with an inline animation carries
+   .still-scene; tools/loops.mjs checks every listed scene is named here. */
+:root[data-still] .sweep,
+:root[data-still] .home-emblem .ring,
+:root[data-still] .home-rune,
+:root[data-still] .still-scene { animation-play-state: paused !important; }
 @keyframes boot { 0% { transform: translateY(10px) scale(0.997); filter: brightness(2.6) saturate(0.5); } 55% { filter: brightness(1.25); } 100% { transform: none; filter: none; } }
 @keyframes flicker { 0% { filter: brightness(0.35); } 9% { filter: brightness(2.2); } 13% { filter: brightness(0.6); } 22% { filter: brightness(1.5); } 100% { filter: none; } }
 @keyframes drawline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -1001,10 +1011,11 @@ body {
 /* nyan.cat, EXTRA: the cat flies the length of the bar trailing the CSS
    rainbow, over the blooming pixel stars. Geometry ported from nyan.cat's
    base2.css at 2/7 scale so it fits a HUD row instead of a 200px stage. */
-.nyan-stage { position: relative; height: 46px; overflow: hidden; }
-.nyan-ride { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; animation: nyanfly 9s linear infinite; }
+/* a size container so the glide can move by cqw (the stage's width) with transform, on the path `left` took */
+.nyan-stage { position: relative; height: 46px; overflow: hidden; container-type: inline-size; }
+.nyan-ride { position: absolute; top: 0; bottom: 0; left: 0; display: flex; align-items: center; animation: nyanfly 9s linear infinite; }
 .nyan-ride img { animation: nyanbob 0.3s steps(1) infinite; }
-@keyframes nyanfly { from { left: -14%; } to { left: 100%; } }
+@keyframes nyanfly { from { transform: translateX(-14cqw); } to { transform: translateX(100cqw); } }
 @keyframes nyanbob { 0% { transform: translateY(-1px); } 50% { transform: translateY(1px); } }
 
 /* `.rainbows` — a strip of `.rainbow` columns, every other one dropped by 2em,
@@ -1022,6 +1033,7 @@ body {
    star frames, then vanishes. Offsets are its own em (font-size = dot size). */
 .nyan-star {
   position: absolute;
+  left: 0;
   width: 1em;
   height: 1em;
   color: inherit;
@@ -1036,7 +1048,7 @@ body {
   83.3%  { box-shadow: 0 3em, 0 -3em, 3em 0, -3em 0; }
   100%   { box-shadow: none; }
 }
-@keyframes nyandrift { from { left: 102%; } to { left: -4%; } }
+@keyframes nyandrift { from { transform: translateX(102cqw); } to { transform: translateX(-4cqw); } }
 
 @keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 @keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
@@ -1373,20 +1385,20 @@ input {
 .goal-pill:hover, .goal-pill[data-open] { background: color-mix(in srgb, var(--gc) 14%, transparent); border-color: color-mix(in srgb, var(--gc) 55%, transparent); }
 .goal-pill .pill-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); }
 .goal-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.goal-pill[data-phase="working"] .goal-dot { animation: mpulse 2.4s infinite; }
+.goal-pill[data-phase="working"] .goal-dot { animation: mpulse 2.4s steps(19) infinite; }
 .goal-pips { flex: none; display: inline-flex; align-items: center; gap: 2px; }
 .goal-pips i { display: block; width: 3px; height: 9px; border-radius: 1.5px; background: color-mix(in srgb, var(--txd) 26%, transparent); }
 .goal-pips i[data-on] { background: currentColor; }
-.goal-pips i[data-live] { animation: mpulse 1.6s infinite; }
+.goal-pips i[data-live] { animation: mpulse 1.6s steps(13) infinite; }
 .goal-sheet { position: fixed; z-index: 80; width: 456px; max-width: calc(100vw - 16px); padding: 13px 16px 12px; overflow-y: auto;
   border: 1px solid var(--line2, var(--border-bright)); border-radius: var(--f-rad, 0); background: var(--panel); color: var(--tx);
-  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; font-family: var(--ui-font); }
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease backwards; font-family: var(--ui-font); }
 .gs-h { display: flex; align-items: center; gap: 8px; height: 18px; }
 .gs-g { color: var(--gc); font-size: 14px; line-height: 1; }
 .gs-lbl { font-size: var(--t95); letter-spacing: .18em; text-transform: uppercase; color: var(--txl); }
 .gs-st { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t12); font-weight: 700; color: var(--gc); }
 .gs-st > i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.goal-sheet[data-phase="working"] .gs-st > i { animation: mpulse 2.4s infinite; }
+.goal-sheet[data-phase="working"] .gs-st > i { animation: mpulse 2.4s steps(19) infinite; }
 .gs-m { font-weight: 600; color: var(--txd); white-space: pre; }
 .gs-t { margin-top: 8px; font-size: 16px; font-weight: 700; line-height: 22px; color: var(--txb); }
 .gs-b { appearance: none; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; width: 100%;
@@ -1406,7 +1418,7 @@ input {
 .goal-sheet[data-phase="met"] .gs-bar:not([data-empty]) i { background: var(--ok); }
 .gs-bar[data-first] i { opacity: .5; }
 .gs-bar[data-last] i { background: var(--warn); }
-.gs-bar[data-live] i { background: repeating-linear-gradient(-45deg, var(--acc) 0 3px, color-mix(in srgb, var(--acc) 45%, transparent) 3px 6px); animation: mpulse 1.6s infinite; }
+.gs-bar[data-live] i { background: repeating-linear-gradient(-45deg, var(--acc) 0 3px, color-mix(in srgb, var(--acc) 45%, transparent) 3px 6px); animation: mpulse 1.6s steps(13) infinite; }
 .gs-bar[data-empty] i { width: 4px; height: 4px; border-radius: 50%; background: color-mix(in srgb, var(--txd) 25%, transparent); }
 .gs-bar em { font-style: normal; font-size: 9.5px; line-height: 1; height: 10px; color: var(--txl); font-variant-numeric: tabular-nums; }
 .gs-a { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
@@ -1447,7 +1459,7 @@ input {
 .ctrl-meter { display: inline-flex; gap: 6px; }
 /* a login's meter a running turn is reporting (Composer chip, PROFILE menu): a breathing green dot */
 .meter-live { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s ease-in-out infinite; }
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s steps(16) infinite; }
 @media (prefers-reduced-motion: reduce) { .meter-live { animation: none; } }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
@@ -1745,7 +1757,7 @@ input {
   transform: translateX(-100%);
 }
 .swapwrap[data-swapping] .swapline::after {
-  animation: swapsweep 1.05s cubic-bezier(0.5, 0, 0.5, 1) 0.14s infinite;
+  animation: swapsweep 1.05s steps(8) 0.14s infinite;
 }
 /* -100% clears the left edge; 360% carries a 28%-wide gleam past the right one. */
 @keyframes swapsweep {
@@ -1931,10 +1943,10 @@ input {
    so the families' small-dialog dress ([role=dialog] above) leaves it alone
    and it wears its own, the Settings dialog's. */
 .agm-scrim { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center;
-  background: var(--f-scrim); animation: backdropIn .2s ease both; }
+  background: var(--f-scrim); animation: backdropIn .2s ease backwards; }
 .agm { width: min(1240px, 94vw); height: min(860px, 92vh); display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line2); border-radius: calc(var(--f-rad-l) + 2px);
-  box-shadow: var(--f-modal-shadow); overflow: hidden; font-family: var(--ui-font); animation: mslide .2s ease both; }
+  box-shadow: var(--f-modal-shadow); overflow: hidden; font-family: var(--ui-font); animation: mslide .2s ease backwards; }
 .agm-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 18px; border-bottom: 1px solid var(--line); }
 .agm-title { font-size: var(--t13); font-weight: 600; color: var(--txb); letter-spacing: .01em; }
 [data-fam="aurora"] .agm-title { font-weight: 400; text-transform: uppercase; letter-spacing: .14em; }
@@ -2167,7 +2179,7 @@ input {
 .tw[data-said][data-idiom="field"] { margin-right: -10px; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) both; }
+  .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) backwards; clip-path: inset(0); }
 }
 
 /* THE ANSWER — the RESULT box, and the rail mark beside it.
@@ -2267,7 +2279,7 @@ input {
   border: 1.5px solid color-mix(in srgb, var(--purple) 35%, transparent); }
 .jobbar-orb::after { content: ""; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px;
   border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple);
-  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s linear infinite; }
+  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s steps(13) infinite; }
 @keyframes jobbar-orbit { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .jobbar-orb::after { animation: none; } }
 .jobbar-w1 { font-size: var(--t10); font-weight: 600; letter-spacing: .07em; color: var(--txh); white-space: nowrap; }
@@ -3048,7 +3060,7 @@ input {
    track. Working: a comet runs the track. */
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="think"] .dwork-node::before {
   content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
-  animation: dwripple 2.2s ease-out infinite;
+  animation: dwripple 2.2s steps(18) infinite;
 }
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="work"] .dwork-node::after {
   content: ""; position: absolute; inset: -4px; border-radius: 50%;
@@ -3056,7 +3068,7 @@ input {
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   filter: drop-shadow(0 0 2px color-mix(in oklab, var(--acc) 70%, transparent));
-  animation: dworbit 1.1s linear infinite;
+  animation: dworbit 1.1s steps(9) infinite;
 }
 @keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
@@ -3155,14 +3167,14 @@ input {
   content: ""; position: absolute; left: 50%; bottom: 100%; width: 3px; height: var(--now-reach, 23px); translate: -1.5px 0; z-index: -1;
   background: linear-gradient(transparent, var(--mc)) 0 0 / 3px 7px no-repeat;
   filter: drop-shadow(0 0 3px var(--mc));
-  animation: nowbead 1.5s cubic-bezier(.5,0,.75,1) infinite;
+  animation: nowbead 1.5s steps(12) infinite;
 }
 @keyframes nowbead { 0% { background-position: 0 0%; opacity: 0; } 25%, 85% { opacity: 1; } 100% { background-position: 0 100%; opacity: 0; } }
 /* thinking: the thought node's ring, breathing out */
 [data-style="dossier"] .now-ring { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 1.6px solid currentColor; }
 [data-style="dossier"] .now-ring::after {
   content: ""; position: absolute; inset: -1.6px; border-radius: 50%; border: 1.4px solid currentColor;
-  animation: nowripple 2s ease-out infinite;
+  animation: nowripple 2s steps(16) infinite;
 }
 @keyframes nowripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.3); opacity: 0; } }
 [data-style="dossier"] .now-tx { grid-column: 2; position: relative; min-width: 0; height: 28px; overflow: hidden; }
@@ -3186,7 +3198,7 @@ input {
 [data-style="dossier"] .now-line[data-st="think"] .now-v {
   background: linear-gradient(100deg, var(--mc) 0 38%, color-mix(in oklab, var(--mc) 35%, #fff) 50%, var(--mc) 62% 100%) 0 0 / 280% 100%;
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: nowshim 2.1s linear infinite;
+  animation: nowshim 2.1s steps(17) infinite;
 }
 @keyframes nowshim { from { background-position: 100% 0; } to { background-position: -80% 0; } }
 /* the CLI retrying a request (NowLine retry): the verb in warn, the node a ring
@@ -3413,7 +3425,7 @@ input {
   color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--zg));
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
     0 0 12px color-mix(in oklab, var(--d-you) 45%, transparent);
-  animation: agbpulse 1.4s ease-in-out infinite;
+  animation: agbpulse 1.4s steps(11) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg { animation: none; }
@@ -3828,7 +3840,7 @@ input {
   background: color-mix(in srgb, var(--h) 30%, transparent);
 }
 /* Only the card that is asking pulses. A settled card is furniture. */
-.flc[data-await] > .flc-rail { animation: agbpulse 1.4s ease-in-out infinite; }
+.flc[data-await] > .flc-rail { animation: agbpulse 1.4s steps(11) infinite; }
 
 .flc-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0 9px; }
 .flc-mark {
@@ -5049,7 +5061,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 40%, transparent); }
 
 /* MOVE dock (components/hud/MoveDock.tsx): the SWEEP bar's running sheen. */
-.movesweep { animation: movesweep 2.2s linear infinite; }
+.movesweep { animation: movesweep 2.2s steps(18) infinite; }
 @keyframes movesweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .movesweep { animation: none; } }
 
@@ -5806,7 +5818,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 @keyframes st-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--pc, var(--acc)) 80%, transparent); } 100% { box-shadow: 0 0 0 11px transparent; } }
 @keyframes st-pop { 0% { opacity: 0; transform: scale(.5); } 65% { transform: scale(1.1); } 100% { opacity: 1; transform: none; } }
 @keyframes st-sweep { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(var(--h, 520px)); opacity: 0; } }
-@keyframes st-run { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+/* the 30%-wide bar from -30% to 100% of the track, as a share of its own width */
+@keyframes st-run { 0% { transform: translateX(-100%); } 100% { transform: translateX(333.33%); } }
 @keyframes st-fade { from { opacity: 0; transform: translateY(4px); } }
 @keyframes st-caret { 50% { opacity: 0; } }
 .st-btn { gap: 7px; }
@@ -5815,18 +5828,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-logins { top: 40px; width: 448px; }
 .st-logins .pm-row { border-radius: 7px; }
 .st-logins .pm-row:disabled { cursor: default; background: none; }
-.st-btn[data-run] { color: var(--txm); opacity: 1; border-color: transparent; animation: st-turn 1.6s linear infinite;
+.st-btn[data-run] { color: var(--txm); opacity: 1; border-color: transparent; animation: st-turn 1.6s steps(13) infinite;
   background: linear-gradient(var(--panel2), var(--panel2)) padding-box,
     conic-gradient(from var(--st-a), color-mix(in oklab, var(--acc) 8%, transparent), var(--acc) 18%, color-mix(in oklab, var(--acc) 30%, white) 24%, color-mix(in oklab, var(--acc) 8%, transparent) 48%) border-box; }
 .st-spin { width: 13px; height: 13px; flex: none; border-radius: 50%; border: 2px solid color-mix(in oklab, var(--acc) 22%, transparent);
-  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s linear infinite; }
-.prj .ps-riv.st-strip { position: relative; overflow: hidden; animation: st-fade .35s ease-out both; }
+  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s steps(6) infinite; }
+.prj .ps-riv.st-strip { position: relative; overflow: hidden; animation: st-fade .35s ease-out backwards; }
 .prj .ps-riv.st-strip[data-err] { border-color: color-mix(in oklab, var(--err) 40%, var(--l)); }
 .st-strip small b { display: inline; font: inherit; font-weight: 700; color: var(--txm); }
 .st-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in oklab, var(--acc) 12%, transparent); }
 .st-bar > i { display: block; height: 100%; border-radius: 0 3px 3px 0; transition: width .45s cubic-bezier(.2, .8, .2, 1);
   background: linear-gradient(90deg, var(--acc), color-mix(in oklab, var(--acc) 45%, white)); box-shadow: 0 0 10px var(--acc); }
-.st-bar-run > i { width: 30%; animation: st-run 1.2s ease-in-out infinite; }
+.st-bar-run > i { width: 30%; animation: st-run 1.2s steps(10) infinite; }
 .st-sum { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .st-sum span { display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; color: var(--acc);
   border: 1px solid color-mix(in oklab, var(--acc) 35%, var(--l)); background: color-mix(in oklab, var(--acc) 9%, var(--panel2)); }
@@ -5835,14 +5848,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-scan { position: sticky; top: 0; z-index: 2; display: block; height: 0; pointer-events: none; }
 .st-scan::after { content: ""; position: absolute; left: 6px; right: 6px; top: 0; height: 2px; border-radius: 2px; --h: 520px;
   background: linear-gradient(90deg, transparent, var(--acc) 30%, color-mix(in oklab, var(--acc) 40%, white) 50%, var(--acc) 70%, transparent);
-  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s ease-in-out infinite; }
+  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s steps(10) infinite; }
 .prj-row[data-st] .prj-end { display: none; }
-.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s ease-in-out infinite; }
+.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s steps(12) infinite; }
 .prj-row[data-st="wait"] .prj-nm { color: var(--txl); }
 .prj-row[data-st="now"] { box-shadow: inset 2px 0 0 var(--acc);
   background: linear-gradient(90deg, color-mix(in oklab, var(--acc) 5%, transparent), color-mix(in oklab, var(--acc) 17%, transparent) 70%, color-mix(in oklab, var(--acc) 6%, transparent)); }
 .prj-row[data-landed] > .ptile { animation: st-flip .45s ease-out, st-ring .8s ease-out .3s; }
-.st-end { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11.5px; color: var(--txl); animation: st-pop .35s cubic-bezier(.2, .8, .2, 1) both; }
+.st-end { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11.5px; color: var(--txl); animation: st-pop .35s cubic-bezier(.2, .8, .2, 1) backwards; }
 .st-chip { display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 7px 0 6px; border-radius: 999px; font-size: 11px; font-weight: 700;
   color: var(--acc); background: color-mix(in oklab, var(--acc) 13%, transparent); }
 .st-chip i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
@@ -5851,7 +5864,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-fan > span[data-lens] { opacity: 1; outline-color: var(--acc); }
 .st-fan .ptile { width: 16px; height: 16px; margin: 0; border-radius: 4px; }
 /* the right side while it runs, and the list of changes after */
-.st-look, .st-led { display: flex; flex-direction: column; animation: st-fade .3s ease-out both; }
+.st-look, .st-led { display: flex; flex-direction: column; animation: st-fade .3s ease-out backwards; }
 .st-look { gap: 16px; }
 .st-k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--txl); display: flex; align-items: center; gap: 7px; }
 .st-k svg { color: var(--acc); }
@@ -5872,7 +5885,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-why { margin: 0; font-style: italic; color: var(--tx); font-size: 14px; line-height: 1.5; min-height: 21px; }
 .st-why[data-typing]::after { content: ""; display: inline-block; width: 2px; height: 16px; margin-left: 3px; background: var(--acc); vertical-align: -3px; animation: st-caret 1s steps(1) infinite; }
 .st-sheet { display: flex; flex-wrap: wrap; gap: 5px; }
-.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s ease-in-out infinite; }
+.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s steps(12) infinite; }
 .st-dec { display: flex; flex-wrap: wrap; gap: 6px; }
 .st-dec span { display: inline-flex; gap: 7px; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--l); font-size: 12px; color: var(--txd); }
 .st-dec span b { color: var(--txb); font-weight: 600; }
@@ -6048,10 +6061,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   border-radius: 5px; padding: 2px 6px; flex: none; justify-self: end; }
 /* the dialogs: AskDialog's frame and backdrop, with a list where its sentence was */
 .stg-back { position: fixed; inset: 0; z-index: 96; display: flex; align-items: flex-start; justify-content: center; padding-top: 9vh;
-  background: color-mix(in srgb, var(--panel3) 74%, transparent); animation: backdropIn .2s ease both; }
+  background: color-mix(in srgb, var(--panel3) 74%, transparent); animation: backdropIn .2s ease backwards; }
 .stg-dlg { width: 560px; max-width: 94vw; max-height: 84vh; display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 16px;
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--panel2) 98%, transparent);
-  box-shadow: 0 0 60px var(--shadow-modal); animation: mslide .2s ease both; }
+  box-shadow: 0 0 60px var(--shadow-modal); animation: mslide .2s ease backwards; }
 .stg-title { font-size: var(--t13); font-weight: 600; color: var(--txh); line-height: 1.45; }
 .stg-about { margin-top: 6px; font-size: var(--t12); color: var(--txm); line-height: 1.55; }
 .stg-list { display: flex; flex-direction: column; border: 1px solid var(--l); border-radius: 10px; background: var(--panel2); overflow: auto; min-height: 0; }
@@ -6188,7 +6201,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .an-mark .ptile { width: 22px; height: 22px; border-radius: 6px; font-size: 9.5px; }
 .mk { position: fixed; z-index: 200; width: 356px; max-height: calc(100vh - 16px); overflow-y: auto; text-align: left; font-family: var(--ui-font, inherit); cursor: default;
   border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 40%, transparent)); border-radius: var(--f-rad, 0);
-  background: var(--panel2); box-shadow: 0 18px 50px -12px var(--shadow-pop); animation: mslide .16s ease both; }
+  background: var(--panel2); box-shadow: 0 18px 50px -12px var(--shadow-pop); animation: mslide .16s ease backwards; }
 .mk-hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 .mk-hd small { display: block; font: 500 10px var(--ui-font); letter-spacing: .1em; text-transform: uppercase; color: var(--txl); margin-bottom: 2px; }
 .mk-hd b { font: 600 13px var(--ui-font); color: var(--txb); }
@@ -6305,7 +6318,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   background: var(--canvas, #000); color: var(--txd); }
 .ntf-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: 464px; max-width: calc(100vw - 24px);
   border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
-  box-shadow: var(--f-pop-shadow, 0 16px 44px var(--shadow-pop)); animation: mslide .16s ease both; overflow: hidden;
+  box-shadow: var(--f-pop-shadow, 0 16px 44px var(--shadow-pop)); animation: mslide .16s ease backwards; overflow: hidden;
   font-family: var(--ui-font); display: flex; flex-direction: column; max-height: min(640px, calc(100vh - 80px)); }
 .ntf-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
 .ntf-head .t { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--acc); }
@@ -6402,7 +6415,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-none { padding: 14px 14px 0; font: 400 var(--t11)/1.45 var(--ui-font); color: var(--txd); }
 mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var(--acc) 28%, transparent); color: var(--txb); }
 .clg-read { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px; }
-.clg-read > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out both; }
+.clg-read > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out backwards; }
 @keyframes clg-in { from { opacity: 0; transform: translateY(3px); } }
 .clg-stage { position: relative; flex: none; aspect-ratio: 16 / 10; overflow: hidden; border-radius: calc(var(--f-rad-s, 0px) * 1.4);
   border: 1px solid var(--line, var(--border)); background: color-mix(in oklab, var(--txl) 10%, var(--panel)); }
@@ -6475,7 +6488,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    notch sits on the icon's middle, which ChangelogButton puts 23px over the popup's bottom */
 .clg-co { position: fixed; z-index: 96; width: 340px; max-width: calc(100vw - 80px); cursor: pointer; font-family: var(--ui-font);
   border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
-  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; }
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease backwards; }
 .clg-co::after { content: ""; position: absolute; right: -6px; bottom: 18px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--panel);
   border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); }
 .clg-co .in { position: relative; overflow: hidden; padding: 11px 36px 12px 13px; border-radius: var(--f-rad, 0); }
@@ -6527,8 +6540,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* the rail's ⟳ over the changelog (LiveButton): what's on disk but not running. The card
    is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
 @keyframes gl-spin { to { transform: rotate(360deg); } }
-@keyframes gl-bar { from { left: -30%; } to { left: 100%; } }
-.gl-spin { animation: gl-spin 1s linear infinite; }
+@keyframes gl-bar { from { transform: translateX(-100%); } to { transform: translateX(333.33%); } }
+.gl-spin { animation: gl-spin 1s steps(8) infinite; }
 .gl-ic { position: relative; }
 .gl-pill { position: absolute; right: 3px; top: 1px; height: 15px; min-width: 15px; padding: 0 3px; border-radius: 999px; text-align: center;
   font: 600 var(--t7)/15px var(--ui-font); background: var(--acc); color: var(--acc-on); }
@@ -6574,7 +6587,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gl-step.now .d { color: var(--acc); }
 .gl-step.bad .d { color: var(--err); }
 .gl-step .bar { grid-column: 2 / 4; position: relative; height: 2px; margin-top: 8px; overflow: hidden; background: color-mix(in oklab, var(--acc) 16%, transparent); }
-.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s ease-in-out infinite; }
+.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s steps(11) infinite; }
 .gl-err { margin-top: 14px; padding: 9px 11px; border-radius: var(--f-rad-s, 0);
   border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 7%, transparent); }
 .gl-err .h { margin-bottom: 6px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--err); }
@@ -6608,7 +6621,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ntf-foot .q { display: inline-flex; align-items: center; gap: 6px; }
 .ntf-toasts { position: fixed; top: 52px; right: 14px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: 384px; max-width: calc(100vw - 28px); }
 .ntf-toast { position: relative; border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0); overflow: hidden;
-  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; font-family: var(--ui-font); }
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease backwards; font-family: var(--ui-font); }
 .ntf-toast .ntf-row { border-top: 0; padding-right: 30px; }
 .ntf-toast .ntf-row.unread::before { display: none; }
 .ntf-toast.needs { border-color: color-mix(in oklab, var(--ask) 55%, var(--line2, var(--border))); }
@@ -6623,7 +6636,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ntf-pillhost { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 75; pointer-events: none; }
 .ntf-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; white-space: nowrap; max-width: min(640px, calc(100vw - 40px));
   background: var(--panel); border: 1px solid var(--line2, var(--border-bright)); border-radius: 9px; box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop));
-  font: 500 var(--t115) var(--ui-font); color: var(--txh); animation: ntfrise .18s cubic-bezier(.2, .8, .2, 1) both; }
+  font: 500 var(--t115) var(--ui-font); color: var(--txh); animation: ntfrise .18s cubic-bezier(.2, .8, .2, 1) backwards; }
 .ntf-pill.err { border-color: color-mix(in oklab, var(--err) 45%, var(--line2, var(--border))); }
 .ntf-pill-k { width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none;
   background: color-mix(in oklab, var(--ok) 18%, var(--panel)); color: var(--ok); font: 700 9px var(--ui-font); }
@@ -6689,7 +6702,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
 .gp-ib:disabled { opacity: .4; cursor: not-allowed; }
 .gp-ib.spin { color: var(--acc); }
-.gp-ib.spin svg { animation: gpspin 1s linear infinite; }
+.gp-ib.spin svg { animation: gpspin 1s steps(8) infinite; }
 /* under the GIT hero: the task line, a sync op's outcome, and (on a failed
    auto-fetch) git's words. The hero's one move is the panel's only solid button:
    agents commit, you push. */
@@ -6701,10 +6714,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    the new one rises into its place, clipped to its own line top and bottom. */
 .gp-roll { position: relative; display: inline-flex; min-width: 0; clip-path: inset(0 -100vw); }
 .gp-roll > span { min-width: 0; }
-.gp-roll-i { animation: gprollin .3s cubic-bezier(.2, .8, .2, 1) both; }
-.gp-roll-o { position: absolute; top: 0; left: 0; animation: gprollout .3s cubic-bezier(.2, .8, .2, 1) both; }
+.gp-roll-i { animation: gprollin .3s cubic-bezier(.2, .8, .2, 1) backwards; }
+.gp-roll-o { position: absolute; top: 0; left: 0; transform: translateY(-80%); opacity: 0; animation: gprollout .3s cubic-bezier(.2, .8, .2, 1) backwards; }
 @keyframes gprollin { from { transform: translateY(80%); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes gprollout { to { transform: translateY(-80%); opacity: 0; } }
+@keyframes gprollout { from { transform: none; opacity: 1; } to { transform: translateY(-80%); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .gp-roll-i { animation: none; } .gp-roll-o { display: none; } }
 .gp-rosub { display: flex; align-items: center; gap: 5px; min-width: 0; margin: 8px 2px 0; font: 400 var(--t105)/1.3 var(--f); color: var(--txd); }
 .gp-rosub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6746,7 +6759,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 /* something runs for the tab unasked (GIT's auto-fetch): an orbit, the working indicator's shape */
 .rail-orbit { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s linear infinite; pointer-events: none; }
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s steps(19) infinite; pointer-events: none; }
 .rail-orbit::after { content: ""; position: absolute; left: 50%; top: -3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
   background: var(--acc); box-shadow: 0 0 6px var(--acc); }
 @media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
@@ -6779,7 +6792,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-pb:hover:not(:disabled) { filter: brightness(1.08); }
 .gp-pb:disabled { cursor: not-allowed; }
 .gp-pb.busy { background: color-mix(in srgb, var(--acc) 34%, var(--panel)); color: var(--txb); box-shadow: none; cursor: progress; }
-.gp-pb.busy svg { animation: gpspin 1s linear infinite; }
+.gp-pb.busy svg { animation: gpspin 1s steps(8) infinite; }
 .gp-pb.tint { border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 15%, transparent);
   color: var(--txb); letter-spacing: .05em; box-shadow: none; }
 .gp-pb.tint:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--acc) 24%, transparent); }
@@ -6788,7 +6801,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-pb.ghost.sq { width: 34px; padding: 0; }
 .gp-done { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: var(--r);
   border: 1px solid color-mix(in srgb, var(--ok) 34%, transparent); background: color-mix(in srgb, var(--ok) 7%, transparent);
-  color: var(--txh); font: 500 var(--t11)/1 var(--f); animation: mslide .16s ease both; }
+  color: var(--txh); font: 500 var(--t11)/1 var(--f); animation: mslide .16s ease backwards; }
 .gp-done svg { flex: none; color: var(--ok); }
 .gp-done span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-fail { display: flex; flex-direction: column; gap: 8px; padding: 9px; border-radius: var(--f-rad, 0px);
@@ -6958,7 +6971,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
 .tn-cnt { display: inline-grid; place-items: center; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px;
   border: 1px solid var(--l2); font: 700 var(--t105)/1 var(--f); color: var(--txm); }
-.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
+.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s steps(11) infinite; }
 @keyframes tnpulse { 50% { opacity: .35; } }
 /* the now bar: --c is the ask hue while the turn waits on you, the accent while it works */
 .tn-now { --c: var(--acc); display: flex; align-items: center; gap: 9px; flex: none; margin: 2px 12px 6px; padding: 9px 10px 9px 12px; border-radius: 11px;
@@ -7172,7 +7185,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-hi { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; color: var(--purple);
   background: color-mix(in srgb, var(--purple) 13%, transparent); }
 .ss-hi.run::after { content: ""; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
-  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s ease-in-out infinite; }
+  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s steps(11) infinite; }
 .ss-ht { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ss-h > small { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
 .ss-h > em { flex: none; width: 40px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
@@ -7188,7 +7201,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-t.on { box-shadow: inset 2px 0 0 var(--acc); }
 .ss-n { flex: none; width: 20px; text-align: right; font: normal 600 var(--t10)/1 var(--m); color: var(--txg); }
 .ss-t.on .ss-n { color: var(--acc); }
-.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s ease-in-out infinite; }
+.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s steps(11) infinite; }
 .ss-t.ask .ss-n { color: var(--askc); font-weight: 800; }
 .ss-t.err .ss-n { color: var(--err); }
 .ss-t.err .ss-p { color: var(--txl); }
@@ -7241,7 +7254,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
 .cn-pill.ask { color: var(--ask); background: color-mix(in srgb, var(--ask) 14%, transparent); }
 .cn-pill svg { flex: none; }
-.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s ease-in-out infinite;
+.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s steps(13) infinite;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-acc2) 20%, transparent), 0 0 8px currentColor; }
 /* the scoreboard: one height in every state, so nothing under it moves */
 .cn-sb { flex: none; height: 230px; box-sizing: border-box; margin: 2px 12px 0; padding: 12px 12px 10px; display: flex; flex-direction: column;
@@ -7304,7 +7317,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cr-coin .cn-spin { width: 13px; height: 13px; }
 .cr-why { flex: none; height: 16px; margin: 6px 14px 0; font: 600 var(--t105)/16px var(--f); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-why b { color: var(--txm); }
-.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s linear infinite;
+.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s steps(8) infinite;
   border: 2px solid color-mix(in srgb, var(--cn-acc2) 20%, transparent); border-top-color: var(--cn-acc2); }
 /* every agent wears Codex's neutral plate; Claude keeps the accent */
 .cn-mk { flex: none; width: 22px; height: 22px; border-radius: var(--f-rad-s, 7px); display: inline-flex; align-items: center; justify-content: center;
@@ -7906,7 +7919,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .srail-new { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
 .srail-fly {
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
-  padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease both;
+  padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease backwards;
 }
 
 /* ══ THE ASK DOCK (components/AskDock; .mystical/design-drafts/response-cards,
@@ -7974,7 +7987,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-more { font-size: var(--t11); color: var(--txl); }
 .ad-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t115); color: var(--txm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ad-beacon { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rc); }
-.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s ease-out infinite; }
+.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s steps(19) infinite; }
 @keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
 /* the fold (ask-dock-readable): one line, the ask itself, so the session above can be read; the body is hidden, not gone */
@@ -8248,7 +8261,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .wspop {
   position: absolute; top: calc(100% + 10px); right: -6px; z-index: 60; width: 236px; padding: 6px;
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
-  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease both;
+  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease backwards;
 }
 [data-fam] .wspop { border-radius: var(--f-rad, 8px); border-color: var(--line); }
 .wspop-h { padding: 4px 8px 7px; font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txd); }
@@ -8276,7 +8289,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* The picture picker under a workspace's avatar (WorkspacesSettings) */
 .wspick { position: absolute; top: calc(100% + 8px); left: -4px; z-index: 70; width: 288px; padding: 10px;
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
-  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease both; text-align: left; }
+  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease backwards; text-align: left; }
 [data-fam] .wspick { border-radius: var(--f-rad, 8px); border-color: var(--line); }
 .wspick-h { font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txd); margin: 0 2px 8px; }
 [data-fam] .wspick-h { letter-spacing: .02em; text-transform: none; font-weight: 600; }
@@ -8371,7 +8384,7 @@ button.gl-c:hover > span { color: var(--txb); }
 .wr-dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t10); color: var(--txl); }
 .wr-k { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.2px; color: var(--txl); }
 .wr-k.live { color: var(--acc); }
-.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s ease-in-out infinite; }
+.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s steps(11) infinite; }
 .wr-pre { margin: 0; padding: 6px 0 7px; font: 500 var(--t10)/1.6 var(--mono); color: var(--txm); background: color-mix(in srgb, var(--txb) 5%, transparent); }
 .wr-pre span { display: block; padding: 0 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .wr-pre .ad { background: color-mix(in srgb, var(--ok) 11%, transparent); color: var(--txb); }
@@ -8435,7 +8448,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-wv { display: inline-flex; gap: 3px; padding: 3px 4px; border: 1px solid transparent; border-radius: var(--f-rad-s, 4px); }
 .tm-wv.now { border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
 .tm-wv i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--txl) 45%, transparent); }
-.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s ease-in-out infinite; }
+.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s steps(13) infinite; }
 .tm-wv i.m { border-radius: 1px; transform: rotate(45deg); background: none; box-shadow: inset 0 0 0 1.5px var(--txl); animation: none; }
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
 .tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
@@ -8463,8 +8476,8 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-node:hover > circle:not(.tm-live), .tm-node:focus-visible > circle:not(.tm-live) { stroke: var(--txb); }
 .tm-lab { font-size: 11.5px; fill: var(--txd); }
 .tm-lab2 { font-size: 10.5px; fill: var(--txl); }
-.tm-live { animation: tmpulse 1.6s ease-in-out infinite; }
-.tm-flow { animation: tmflow .9s linear infinite; }
+.tm-live { animation: tmpulse 1.6s steps(13) infinite; }
+.tm-flow { animation: tmflow .9s steps(7) infinite; }
 @keyframes tmpulse { 50% { opacity: .35; } }
 @keyframes tmflow { to { stroke-dashoffset: -10; } }
 .tm-ft { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: var(--t12); color: var(--txd); }
@@ -8533,7 +8546,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .alm { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; box-sizing: border-box; width: 560px; cursor: default;
        border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: var(--f-rad, 0);
        background: color-mix(in srgb, var(--panel2) 99%, transparent); box-shadow: 0 16px 44px var(--shadow-pop);
-       padding: 11px 15px 15px; animation: mslide .16s ease both; }
+       padding: 11px 15px 15px; animation: mslide .16s ease backwards; }
 .alm button { appearance: none; border: 0; background: none; padding: 0; font-family: inherit; color: inherit; cursor: pointer; }
 .alm-top { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
 .alm-k { flex: none; font-size: var(--t9); letter-spacing: 2px; color: var(--acc); }
@@ -8945,7 +8958,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .home-now, .home-away { height: 22px; cursor: default; }
 .home-now { font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--acc); }
 .home-now .mid::before { top: 50%; }
-.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s ease-in-out infinite; }
+.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s steps(13) infinite; }
 .home-away { font-size: var(--t105); font-style: italic; font-weight: 600; color: var(--txg); }
 .home-away .mid::before { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--txl) 70%, transparent) 0 3px, transparent 3px 6px); opacity: 1; }
 .home-none { margin-top: 14px; font-size: var(--t15); font-weight: 800; color: var(--txb); }
@@ -9084,7 +9097,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .rl-read { overflow: hidden; padding: 0; gap: 0; }
 .rl-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px 16px;
   -webkit-mask-image: linear-gradient(#000 calc(100% - 14px), transparent); mask-image: linear-gradient(#000 calc(100% - 14px), transparent); }
-.rl-body > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out both; }
+.rl-body > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out backwards; }
 .rl-kick { margin-bottom: 5px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .16em; color: var(--acc); }
 .rl-kick.ok { color: var(--ok); } .rl-kick.warn { color: var(--warn); } .rl-kick.bad { color: var(--err); }
 .rl-sha { margin-top: 4px; font: 500 var(--t10)/1.3 var(--mono); color: var(--txf); overflow-wrap: anywhere; }
@@ -9098,7 +9111,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .upd-fix.ok { --k: var(--ok); } .upd-fix.warn { --k: var(--warn); } .upd-fix.bad { --k: var(--err); }
 .upd-fix .top { display: flex; align-items: center; gap: 8px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .14em; color: var(--k); }
 .upd-fix .dot { flex: none; width: 7px; height: 7px; border-radius: 9px; background: var(--k); box-shadow: 0 0 8px var(--k); }
-.upd-fix .dot.pulse { animation: tnpulse 1.4s ease-in-out infinite; }
+.upd-fix .dot.pulse { animation: tnpulse 1.4s steps(11) infinite; }
 @media (prefers-reduced-motion: reduce) { .upd-fix .dot.pulse { animation: none; } }
 .upd-fix .go { margin-left: auto; font: 500 var(--t95) var(--mono); letter-spacing: 0; }
 .upd-fix b { font: 600 var(--t125)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }

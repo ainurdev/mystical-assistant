@@ -75,7 +75,7 @@ export function NewProjectForm({ onCreate, onClose }: Props) {
     : notes ? "YES, GO AHEAD" : kind === "clone" ? "CLONE & START" : kind === "chat" ? "START CHAT" : kind === "folder" ? "OPEN & START" : "CREATE & START";
 
   return (
-    <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
+    <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease backwards" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--info)", flex: "none" }} />
         <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--info-hi)" }}>NEW PROJECT</span>

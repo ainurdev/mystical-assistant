@@ -478,7 +478,7 @@
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
   --lr-in: var(--sp-in, 42px); --lr-n: var(--sp-n, 26px); --lr-gnd: var(--sp-gnd, var(--panel2));
-  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) both;
+  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) backwards;
 }
 [data-style="dossier"] .live-row { position: relative; }
 [data-style="dossier"] .live-row[data-away] { background: var(--lr-gnd); }
@@ -492,7 +492,7 @@
   background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
     var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
   box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
-  animation: pb-orbit 3.2s linear infinite;
+  animation: pb-orbit 3.2s steps(26) infinite;
 }
 [data-style="dossier"] .live-card {
   display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
@@ -507,7 +507,7 @@
   content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2px;
   background: conic-gradient(from var(--pb-a), transparent 0 55%, var(--acc) 85%, transparent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: pb-orbit 1.4s linear infinite;
+  animation: pb-orbit 1.4s steps(11) infinite;
 }
 [data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
 /* the zone's NowLine, as the card's line */

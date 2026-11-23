@@ -116,7 +116,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   const spin = (size: number): CSSProperties => ({
     width: size, height: size, flex: "none", borderRadius: "50%", display: "inline-block",
     border: "1.5px solid color-mix(in srgb, var(--acc) 30%, transparent)", borderTopColor: "var(--acc)",
-    animation: "introspin 1s linear infinite",
+    animation: "introspin 1s steps(8) infinite",
   });
   const items = reviewItems(pr);
 
@@ -132,7 +132,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
       </button>
       {open && createPortal(
         <div ref={popRef} className="mscroll"
-          style={{ position: "fixed", ...place, left, width: 430, overflowY: "auto", zIndex: 80, fontFamily: "var(--mono)", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
+          style={{ position: "fixed", ...place, left, width: 430, overflowY: "auto", zIndex: 80, fontFamily: "var(--mono)", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease backwards" }}>
           <div style={{ padding: "10px 12px 8px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t9)", letterSpacing: 1.3 }}>
               <span style={{ color: tone.ink }}>{tone.glyph}</span>

@@ -620,7 +620,7 @@ function Placeholder({ icon: Icon, spin, children }: {
       <Icon size={26} strokeWidth={1.3} aria-hidden
         style={{
           color: "var(--acc)", opacity: .4,
-          animation: spin ? "introspin 1.4s linear infinite" : undefined,
+          animation: spin ? "introspin 1.4s steps(11) infinite" : undefined,
         }} />
       <div style={{ fontSize: "var(--t10)", color: "var(--txl)", lineHeight: 1.75, maxWidth: 360 }}>
         {children}
@@ -2748,7 +2748,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     return (
       <MiniBtn disabled={!p.installed || (!!t && "busy" in t)} onClick={() => void test(acct)}
         title={p.installed ? "Start it once and list what it offers (up to two minutes)" : "Install it first"}>
-        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "TEST"}
+        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "TEST"}
       </MiniBtn>
     );
   };
@@ -2756,7 +2756,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     const l = logins[acct];
     return live(l)
       ? <MiniBtn disabled={l!.state === "testing"} onClick={() => void cancelLogin(acct)} title="Stop this sign-in">
-          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
+          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
         </MiniBtn>
       : <MiniBtn disabled={!p.installed} onClick={() => void login(acct)}
           title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>
@@ -3110,7 +3110,7 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
             <div className="aim-f wide">
               {testing
                 ? <span style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
+                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
                   </span>
                 : <MiniBtn onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">TEST</MiniBtn>}
               {testErr && warn(preset?.can_login && /login/i.test(testErr)
@@ -4738,7 +4738,7 @@ export function SettingsModal(props: SettingsModalProps) {
         || pane.current?.querySelector(`[data-sec="${jump.sec}"]`);
       if (el) {
         el.scrollIntoView({ block: "center", behavior: "smooth" });
-        (el as HTMLElement).style.animation = "resultflash 1.2s ease both";
+        (el as HTMLElement).style.animation = "resultflash 1.2s ease backwards";
         setJump(null);
       } else if (++tries < 10) {
         timer = window.setTimeout(find, 150);
@@ -4778,7 +4778,7 @@ export function SettingsModal(props: SettingsModalProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        animation: "backdropIn .22s ease both",
+        animation: "backdropIn .22s ease backwards",
       }}
     >
       <div
@@ -4792,7 +4792,7 @@ export function SettingsModal(props: SettingsModalProps) {
           border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
           background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
           boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)",
-          animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both",
+          animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) backwards", clipPath: "inset(0)",
         }}
       >
         {/* Header. The storage note used to stand in a footer bar under every
@@ -4859,7 +4859,7 @@ export function SettingsModal(props: SettingsModalProps) {
           height: 1,
           background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 10%, transparent) 62%, transparent)",
           transformOrigin: "left",
-          animation: "drawline .55s cubic-bezier(.2,.8,.2,1) .12s both",
+          animation: "drawline .55s cubic-bezier(.2,.8,.2,1) .12s backwards",
         }} />
         </div>
 

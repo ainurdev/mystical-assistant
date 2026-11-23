@@ -430,7 +430,7 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
           minHeight: folded ? 30 : undefined, display: folded ? "flex" : undefined, alignItems: "center",
           borderLeft: needsYou ? `2px solid ${ask ? "var(--warn)" : "var(--err)"}` : undefined,
           opacity: frozen || (later && !isOpen) ? 0.55 : 1,
-          animation: "mfadeup .35s ease both",
+          animation: "mfadeup .35s ease backwards",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>

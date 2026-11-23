@@ -97,9 +97,9 @@ export function InspectorModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 94, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "7vh", animation: "backdropIn .2s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 94, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "7vh", animation: "backdropIn .2s ease backwards" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: "max(900px, var(--modal-w))", maxWidth: "96vw", maxHeight: "84vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
+        style={{ width: "max(900px, var(--modal-w))", maxWidth: "96vw", maxHeight: "84vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease backwards" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}>
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>HTTP</span>
           <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>Inspector</span>

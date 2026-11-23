@@ -25,6 +25,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { queryClient } from "./lib/queries";
+import { watchStill } from "./lib/still";
+
+watchStill();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
