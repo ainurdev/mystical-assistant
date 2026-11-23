@@ -674,7 +674,7 @@ export function App() {
   const running = active !== null;
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
   const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
-    `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
+    loadingSession ? null : `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
   // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
   const flowCfg = useFlowSettings();
   const boxChip = useMemo(() => {

@@ -327,16 +327,19 @@ export function SessionPanel({
   const meterKey = rail.meter({ id: sessionId ?? "" });
   const meterQ = useQuery({ ...meterKey, enabled: !!sessionId, refetchInterval: busy ? meterKey.refetchInterval : false });
   const meter = sessionId && (meterQ.data as Partial<Meter> | undefined)?.series?.length ? (meterQ.data as Meter) : null;
-  // The meter on a busy edge too; the clock ticks with it while busy.
-  const busyWas = useRef(busy);
+  // The meter on a busy edge too; the clock ticks with it while busy. The flow's first
+  // answer for a session is no edge: the meter's own first read covers it.
+  const busyKnown = !ai.router || !flowQ.isPending;
+  const busyWas = useRef<{ sid: string | null; busy: boolean } | null>(null);
   useEffect(() => {
-    if (busyWas.current !== busy && sessionId) void readAgain(meterKey.queryKey);
-    busyWas.current = busy;
+    const prev = busyWas.current;
+    busyWas.current = busyKnown ? { sid: sessionId, busy } : null;
+    if (busyKnown && sessionId && prev?.sid === sessionId && prev.busy !== busy) void readAgain(meterKey.queryKey);
     if (!busy) return;
     const id = setInterval(() => setNow(Date.now() / 1000), 4000);
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy]);
+  }, [busy, busyKnown, sessionId]);
   const [pick, setPick] = useState<string | null>(null);   // the FLOWS segment opened
   const [moreOf, setMoreOf] = useState<Record<string, boolean>>({});   // HELPERS groups shown whole
   // Another session's flows never show under this one while its own load.
