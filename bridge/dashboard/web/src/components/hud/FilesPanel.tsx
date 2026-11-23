@@ -125,14 +125,11 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   }, []);
 
   const loadTree = () => reread(treeKey.queryKey);
-  // Folders start closed once per tree; a re-read keeps the ones you opened.
-  const shutFor = useRef("");
-  useEffect(() => {
-    const k = `${project}\n${branch ?? ""}`;
-    if (!tree || shutFor.current === k) return;
-    shutFor.current = k;
-    setCollapsed(new Set(dirsOf(tree.files)));
-  }, [tree, project, branch]);
+  // Folders start closed once per tree; a re-read keeps the ones you opened. Set while
+  // rendering, not in an effect: one frame of a whole repo expanded is thousands of rows.
+  const [shutFor, setShutFor] = useState("");
+  const treeId = `${project}\n${branch ?? ""}`;
+  if (tree && shutFor !== treeId) { setShutFor(treeId); setCollapsed(new Set(dirsOf(tree.files))); }
 
   // Working-tree status, the GIT tab's read too (lib/queries), on the same cadence as the git badges.
   const gitKey = code.git({ project: project ?? "", branch: branch || undefined });

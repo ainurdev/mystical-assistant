@@ -479,13 +479,13 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   }, [project, branch, initialFile, initialLine]);
   // Closed by default — a repo tree fully expanded is thousands of rows to
   // scroll past before reaching anything. Once per opening: a re-read keeps folders you opened.
-  const shutFor = useRef("");
-  useEffect(() => {
-    const k = `${project}\n${branch}\n${initialFile ?? ""}\n${initialLine ?? ""}`;
-    if (!tree || shutFor.current === k) return;
-    shutFor.current = k;
+  // Set while rendering, not in an effect: one frame of a whole repo expanded is thousands of rows.
+  const [shutFor, setShutFor] = useState("");
+  const openingId = `${project}\n${branch}\n${initialFile ?? ""}\n${initialLine ?? ""}`;
+  if (tree && shutFor !== openingId) {
+    setShutFor(openingId);
     setCollapsed(new Set(dirsOf(tree.files).filter((d) => !initialFile || !underPath(d, initialFile))));
-  }, [tree, project, branch, initialFile, initialLine]);
+  }
 
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const labels = useMemo(() => tabLabels(tabs), [tabs]);
@@ -908,7 +908,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   // A branch with no worktree reads as the project checkout's status — show
   // nothing rather than another branch's changes (the old GIT tab's rule).
   const gitFiles = g?.is_repo && (!branch || g.branch === branch) ? g.files : NO_GIT_FILES;
-  const gitBusy = gitQ.isFetching;
+  const gitBusy = gitQ.isPending;   // not isFetching: a poll would blink CHANGES to "…"
   const loadGit = () => void reread(code.git(treeArgs).queryKey);
   useEffect(() => { setHeads({}); }, [project, branch]);
   const changed = useMemo(() => new Set(gitFiles.map((f) => f.path)), [gitFiles]);
