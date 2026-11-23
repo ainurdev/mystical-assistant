@@ -18,6 +18,11 @@ anything, a token included. _scrub runs on every event in before_send, so one
 place decides what leaves. It is deliberately blunt (every string capped, every
 breadcrumb dropped): a report is for finding the bug, not for reading the chat.
 
+Slow spots (bridge call, turn start, start-up) go as warning events, not
+traces: SDK 3's spans stream on their own pipeline, which before_send never
+sees, so they would skip the scrubber and the caps. An event grouped by its
+name lands in the same project and carries the time and the phases.
+
 Sending never waits: capture_* only queues, the SDK's worker thread sends, its
 transport times out in _SEND_TIMEOUT, and a dead receiver changes nothing else.
 """
@@ -41,6 +46,9 @@ VENDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_vendor")
 
 _SEND_TIMEOUT = 5          # seconds, per send, on the SDK's own thread
 _SAME_EVERY = 60           # the same crash at most once a minute
+_SLOW_EVERY = 600          # the same slow spot, by name, at most once in 10 minutes
+_CALL_LIMIT = 0.5          # a dashboard request, seconds
+_TURN_LIMIT = 2.0          # a turn's start to the CLI's first line, seconds
 _HOUR_CAP = 100            # reports an hour from this side
 _CAP = 1000                # every string, a message included
 _PROMPT_CAP = 120          # a prompt keeps its first line, this long at most
@@ -50,6 +58,25 @@ _team: "dict | None" = None
 _lock = threading.Lock()
 _last: dict = {}           # crash key -> when it was last sent
 _sent: deque = deque()     # send times in the last hour
+STARTED: "float | None" = None   # time.monotonic() at the main script's first line
+_phases: dict = {}         # start-up phase -> seconds since STARTED
+
+# Dashboard routes left untimed, "METHOD /route" prefixes: streams, and routes
+# that run long on purpose (a build, a pull or push, a model call, an upload).
+UNTIMED = (
+    "GET /local/stream/", "GET /local/ws/",                                   # streams
+    "POST /local/live/build", "GET /local/graph/install", "POST /local/graph/install",
+    "POST /local/graph/update", "POST /local/update", "POST /local/claude/update",
+    "POST /local/restart", "POST /local/rivendell/devices/setup", "POST /local/projects/create",
+    "POST /local/tickets/build", "POST /local/files/format",                  # builds and installs
+    "POST /local/git/pull", "POST /local/git/push", "POST /local/git/fetch",
+    "POST /local/git/merge", "POST /local/git/update-base", "POST /local/github/pr",
+    "POST /local/skills/check", "POST /local/rivendell/test", "POST /local/rivendell/implement",
+    "POST /local/acp/test", "POST /local/acp/login",                          # the network
+    "GET /local/graph/explain", "POST /local/git/commit-message",             # a model call
+    "POST /local/wait",                                                       # waits by design
+    "POST /local/rivendell/team/send",                                        # an upload
+)
 
 
 def _os() -> str:
@@ -146,25 +173,78 @@ def turn_ended(job) -> None:
 
 
 def _turn_crash(job) -> None:
-    from bridge import outcomes, paths, store
+    from bridge import outcomes
     errors = [e.get("message") or "" for e in list(job.events) if e.get("type") == "error"]
     turn = {"status": "error", "elapsed": job.elapsed, "cost": job.cost, "runtime": job.runtime}
     if (outcomes.outcome(turn, {"errors": errors, "result_text": job.result}) or {}).get("code") != "crashed":
         return
-    t = store.last_turn(job.store_session_id) or {}
-    sess = store.get_session(job.store_session_id) or {}
-    flow = paths.get(job.store_session_id) or {}
     _sdk.capture_message(
         "turn crashed: " + next((m for m in reversed(errors) if m.strip()), job.result or ""),
         level="error",
         tags={"surface": "turn"},
-        contexts={"turn": {
-            "session": job.store_session_id, "project": sess.get("project"),
-            "account": job.runtime or (f"claude:{job.account_slot}" if job.account_slot else "default"),
-            "model": job.model, "flow": flow.get("path"), "step": (flow.get("next") or {}).get("station"),
-            "prompt": t.get("prompt") or "" if t.get("id") == job.id else "",
-        }},
+        contexts={"turn": _turn_context(job)},
     )
+
+
+def _turn_context(job) -> dict:
+    """The session's details a turn's report carries."""
+    from bridge import paths, store
+    t = store.last_turn(job.store_session_id) or {}
+    sess = store.get_session(job.store_session_id) or {}
+    flow = paths.get(job.store_session_id) or {}
+    return {
+        "session": job.store_session_id, "project": sess.get("project"),
+        "account": job.runtime or (f"claude:{job.account_slot}" if job.account_slot else "default"),
+        "model": job.model, "flow": flow.get("path"), "step": (flow.get("next") or {}).get("station"),
+        "prompt": t.get("prompt") or "" if t.get("id") == job.id else "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Slow spots
+# ---------------------------------------------------------------------------
+
+def _slow(name: str, secs: float, surface: str, **context) -> None:
+    _sdk.capture_message(name, level="warning", fingerprint=[name],
+                         tags={"surface": surface, "kind": "slow spot"},
+                         contexts={"slow": {"ms": round(secs * 1000), **context}})
+
+
+def bridge_call(method: str, path: str, status, secs: float) -> None:
+    """A dashboard request, from its first line read to its answer written."""
+    name = f"{method} {route(path)}"
+    if name == "GET /local/sessions" and "first session list" not in _phases:
+        phase("first session list")
+    if on() and secs > _CALL_LIMIT and not name.startswith(UNTIMED):
+        _slow(f"bridge call: {name}", secs, "dashboard", status=status, limit_ms=round(_CALL_LIMIT * 1000))
+
+
+def turn_start(job, secs: float) -> None:
+    """A turn's start, after any wait for the session's previous turn, to the
+    CLI's first line; job.boot is still what it waited on last."""
+    if not (on() and secs > _TURN_LIMIT):
+        return
+    try:
+        details = _turn_context(job) if job.store_session_id else {}
+        _slow("turn start", secs, "turn", waited_on=job.boot, limit_ms=round(_TURN_LIMIT * 1000), **details)
+    except Exception as e:  # noqa: BLE001 - a report never breaks the turn's reader
+        _sdk.capture_exception(e)
+
+
+_PHASES = ("imports", "store", "servers listening", "first session list")
+
+
+def phase(name: str) -> None:
+    """A start-up phase done. Once all four are in, `start-up: bridge` goes, on
+    every start. In any order: the page can ask for the session list while the
+    Mini App's tunnel still holds up "servers listening"."""
+    with _lock:
+        if STARTED is None or name in _phases:
+            return
+        _phases[name] = round(time.monotonic() - STARTED, 3)
+        done = len(_phases) == len(_PHASES)
+    if done and on():
+        _slow("start-up: bridge", max(_phases.values()), "start-up", phases=dict(_phases))
 
 
 # ---------------------------------------------------------------------------
@@ -220,16 +300,15 @@ def _key(event: dict) -> str:
     if vals := (event.get("exception") or {}).get("values"):
         top = ((vals[-1].get("stacktrace") or {}).get("frames") or [{}])[-1]
         return f"{vals[-1].get('type')}@{top.get('abs_path') or top.get('filename')}:{top.get('lineno')}"
-    msg = event.get("logentry") or {}
-    return str(msg.get("message") if isinstance(msg, dict) else msg) or str(event.get("message"))
+    return str((event.get("logentry") or {}).get("message") or event.get("message"))
 
 
-def _allowed(key: str) -> bool:
+def _allowed(key: str, every: int) -> bool:
     now = time.monotonic()
     with _lock:
         while _sent and now - _sent[0] > 3600:
             _sent.popleft()
-        if len(_sent) >= _HOUR_CAP or now - _last.get(key, -_SAME_EVERY) < _SAME_EVERY:
+        if len(_sent) >= _HOUR_CAP or now - _last.get(key, -every) < every:
             return False
         _last[key] = now
         _sent.append(now)
@@ -237,7 +316,8 @@ def _allowed(key: str) -> bool:
 
 
 def _before_send(event: dict, hint) -> "dict | None":
-    if not _allowed(_key(event)):
+    slow = (event.get("tags") or {}).get("kind") == "slow spot"
+    if not _allowed(_key(event), _SLOW_EVERY if slow else _SAME_EVERY):
         return None
     event = _scrub(event, _secrets())
     event["tags"] = {**(event.get("tags") or {}), "side": "bridge", "os": _os()}

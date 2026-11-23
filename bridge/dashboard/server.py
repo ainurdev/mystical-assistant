@@ -338,6 +338,22 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silence default logging
         pass
 
+    # Every request timed from its first line read to its answer written; a slow
+    # one is a report on a team install (bridge/reports.py bridge_call).
+    def handle_one_request(self):
+        self._t0 = self._status = None
+        super().handle_one_request()
+        if self._t0 is not None:
+            reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0)
+
+    def parse_request(self):
+        self._t0 = time.monotonic()
+        return super().parse_request()
+
+    def send_response(self, code, message=None):
+        self._status = code
+        super().send_response(code, message)
+
     # --- low-level ---
     def _send(self, data: bytes, code: int, ctype: str, cache: str = "no-cache"):
         self.send_response(code)

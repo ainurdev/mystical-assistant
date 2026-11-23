@@ -219,3 +219,91 @@ def test_the_vendored_sdk_imports_and_sends_under_python_3_10(receiver):
     assert out == {"booted": True, "python": [3, 10]}
     [ev] = receiver.events
     assert ev["exception"]["values"][-1]["value"] == "sent from an older Python"
+
+
+# --- slow spots ----------------------------------------------------------------------
+
+def _slow_spots(receiver):
+    return [ev for ev in receiver.events if ev["tags"].get("kind") == "slow spot"]
+
+
+def _name(ev):
+    return ev.get("logentry", {}).get("formatted") or ev.get("logentry", {}).get("message") or ev.get("message")
+
+
+def test_a_slow_route_sends_one_bridge_call_and_fast_streamed_or_long_ones_send_nothing(receiver):
+    out = _start(["GET /local/slow/7f3a9c01?sleep=0.7", "GET /local/fast?sleep=0",
+                  "GET /local/stream/session/abc123def?sleep=0.7", "GET /local/graph/explain?sleep=0.7"],
+                 receiver.dsn)
+    assert [c for c, _ in out["calls"]] == [200, 200, 200, 200]
+    [ev] = _slow_spots(receiver)
+    assert _name(ev) == "bridge call: GET /local/slow/:id"
+    assert ev["level"] == "warning" and ev["contexts"]["slow"]["status"] == 200
+    assert ev["contexts"]["slow"]["ms"] >= 700
+    assert ev["tags"]["side"] == "bridge" and ev["user"] == {"username": "mahzi"}
+
+
+def test_the_same_slow_spot_twice_in_ten_minutes_sends_one(receiver):
+    _start(["GET /local/slow/7f3a9c01?sleep=0.6", "GET /local/slow/9b2e4d07?sleep=0.6"], receiver.dsn)
+    assert len(_slow_spots(receiver)) == 1
+
+
+def _cli(tmp_path, wait):
+    cli = tmp_path / "claude"
+    cli.write_text("#!/bin/sh\n"
+                   f"sleep {wait}\n"
+                   """echo '{"type":"system","subtype":"init"}'\n"""
+                   """echo '{"type":"result","subtype":"success","result":"ok","num_turns":1}'\n""")
+    cli.chmod(0o755)
+    return str(cli)
+
+
+def test_a_turn_slow_to_start_sends_turn_start_naming_what_it_waited_on(receiver, tmp_path):
+    out = _start(["turn"], receiver.dsn, claude_bin=_cli(tmp_path, 2.5))
+    assert out["turn_status"] == "done"
+    [ev] = _slow_spots(receiver)
+    assert _name(ev) == "turn start"
+    slow = ev["contexts"]["slow"]
+    assert slow["waited_on"] == "starting Claude" and slow["ms"] >= 2500
+    assert slow["session"] == out["session"] and slow["project"] == "p-crash"
+    assert slow["prompt"] == "fix the login page"
+    _no_leaks(receiver)
+
+
+def test_a_turn_quick_to_start_sends_nothing(receiver, tmp_path):
+    out = _start(["turn"], receiver.dsn, claude_bin=_cli(tmp_path, 0))
+    assert out["turn_status"] == "done"
+    assert receiver.events == []
+
+
+def test_each_bridge_start_sends_its_start_up_with_four_phases(receiver):
+    _start(["GET /local/sessions", "GET /local/sessions"], receiver.dsn)
+    [ev] = _slow_spots(receiver)
+    assert _name(ev) == "start-up: bridge"
+    phases = ev["contexts"]["slow"]["phases"]
+    assert list(phases) == ["imports", "store", "servers listening", "first session list"]
+    assert phases["imports"] <= phases["store"] <= phases["servers listening"] <= phases["first session list"]
+
+
+def test_off_installs_time_nothing_and_send_nothing(receiver, tmp_path):
+    out = _start(["GET /local/sessions", "GET /local/slow/7f3a9c01?sleep=0.6"], receiver.dsn, instances=())
+    assert not out["booted"] and not out["sentry_imported"]
+    time.sleep(0.3)
+    assert receiver.raw == []
+
+
+@pytest.mark.parametrize("down", ["refusing", "hanging"])
+def test_a_dead_receiver_never_slows_a_slow_route_or_a_turn(receiver, down, tmp_path):
+    steps, cli = ["GET /local/slow/7f3a9c01?sleep=0.6", "turn"], _cli(tmp_path, 2.2)
+    up = _start(steps, receiver.dsn, claude_bin=cli)
+    r = _Receiver(hang=down == "hanging")
+    if down == "refusing":
+        r.close()
+    try:
+        out = _start(steps, r.dsn, flush=False, claude_bin=cli)
+    finally:
+        r.close()
+    assert out["booted"] and out["turn_status"] == "done"
+    assert len(_slow_spots(receiver)) == 2                    # both were slow spots, sent with it up
+    assert out["calls"][0][1] < up["calls"][0][1] + 0.3
+    assert out["turn_took"] < up["turn_took"] + 0.5
