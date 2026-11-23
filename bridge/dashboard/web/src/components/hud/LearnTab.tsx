@@ -106,7 +106,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
 
   const [repoOn, setRepoOn] = useState(true);
   const [selKey, setSelKey] = useStickyStr("hud-learn-sel");
-  const [revealed, setRevealed] = useState(false);
+  const [revealedK, setRevealedK] = useState("");   // the lesson revealed: another one opens asked again
   const [q, setQ] = useState("");
   // Every shelf starts shut, so the column opens on the concept map rather than
   // inside one concept — the old all-expanded default meant the thirty lessons
@@ -161,7 +161,6 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const bodyQ = useQuery({ ...rail.lesson({ project: selK.slice(0, cut) || project, file: selK.slice(cut + 2) }),
     enabled: !!selK, refetchInterval: false });
   const body = !selK ? null : bodyQ.data?.body ?? (bodyQ.error ? "_could not read this lesson._" : null);
-  useEffect(() => { setRevealed(false); }, [selK]);
 
   const toggleRepo = () => {
     const next = !repoOn;
@@ -174,7 +173,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const openLesson = (l: Lesson) => { setSelKey(lessonKey(l)); };
   // Opening the auto-picked lesson is what makes it *your* place — pin it, or
   // the next list refresh silently picks the following unread one instead.
-  const reveal = () => { if (selK) { markRead(selK); setSelKey(selK); } setRevealed(true); };
+  const reveal = () => { if (selK) { markRead(selK); setSelKey(selK); } setRevealedK(selK); };
 
   const unread = list ? list.filter((l) => !readSet.has(lessonKey(l))) : [];
   const total = list?.length ?? 0;
@@ -186,7 +185,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   // A due review is re-asked its question in STUDY even though it is read —
   // that is the point of the ladder. Browse mode never re-gates a read lesson.
   const isDueHere = study && !!sched[selK] && sched[selK].due <= Date.now();
-  const gated = !!sel && !revealed && !!question && (!readSet.has(selK) || isDueHere);
+  const gated = !!sel && revealedK !== selK && !!question && (!readSet.has(selK) || isDueHere);
 
   // A lesson whose body is on screen has been read, whether you answered a
   // question to get there or it never had one to ask. Without this the older
@@ -216,10 +215,11 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
       if (study) {
         const n = deal(list ?? [], new Set(readSet).add(selK), nextSched, Date.now(), last);
         setSelKey(n ? lessonKey(n) : "");
+        setRevealedK("");   // a card dealt again is asked again
         return;
       }
     } else if (study) { dealNext(last); return; }
-    setRevealed(true);   // browse SKIP: retired, but stays on screen
+    setRevealedK(selK);   // browse SKIP: retired, but stays on screen
   };
 
   if (err) {
