@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { code, main, queryClient } from "../lib/queries";
+import { useQuery } from "@tanstack/react-query";
+import { code, main, queryClient, reread } from "../lib/queries";
 import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
@@ -909,27 +910,19 @@ export function Composer({
   // and when a turn ends — that's when the bridge rebuilds the graph — then
   // follow the build so the age lands on the new map, not the one it replaced.
   // Nothing to poll for when the cluster is switched off.
-  const [graph, setGraph] = useState<GraphState | null>(null);
-  const graphRun = useRef(running);
+  // Shared with the rest of the page (lib/queries): the first look takes a fresh answer it
+  // already has; a turn's edge asks the bridge again, and a build is followed every 3 s.
   const mapOn = !!onOpenMap;
+  const graphRead = code.graphState({ project: project ?? "" });
+  const graphQ = useQuery({ ...graphRead, enabled: !!project && mapOn, refetchInterval: (q) => (q.state.data?.building ? 3000 : false) });
+  const graph: GraphState | null = project && mapOn && !graphQ.isError ? graphQ.data ?? null : null;
+  const graphRun = useRef(running);
   useEffect(() => {
-    if (!project || !mapOn) { setGraph(null); return; }
-    let live = true;
-    let t = 0;
-    // Shared with the rest of the page (lib/queries): the first look takes a fresh answer it
-    // already has; a turn's edge and a build being followed ask the bridge again.
-    const edge = graphRun.current !== running;
+    if (graphRun.current === running) return;
     graphRun.current = running;
-    const poll = (fresh: boolean) => queryClient.fetchQuery({ ...code.graphState({ project }), ...(fresh ? { staleTime: 0 } : {}) })
-      .then((s) => {
-        if (!live) return;
-        setGraph(s);
-        if (s.building) t = window.setTimeout(() => void poll(true), 3000);
-      })
-      .catch(() => { if (live) setGraph(null); });
-    void poll(edge);
-    return () => { live = false; if (t) window.clearTimeout(t); };
-  }, [project, running, mapOn]);
+    if (project && mapOn) void reread(graphRead.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a turn's edge
+  }, [running]);
 
   // --- @-mentions ----------------------------------------------------------
   // The project's file list, fetched once per project and kept for the session.

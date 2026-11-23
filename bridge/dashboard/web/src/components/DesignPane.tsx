@@ -6,6 +6,8 @@ import {
   type DesignBoard, type DesignComment,
 } from "../lib/designframe";
 import { designCall, uploadImage, useRefSession } from "../lib/readapi";
+import { useQuery } from "@tanstack/react-query";
+import { main, reread, type DesignCritique, type DesignRead } from "../lib/queries";
 import { DesignSystem } from "./DesignSystem";
 
 // The right half of the design-chat view (bridge/design_board.py): the page in its sandboxed frame
@@ -17,7 +19,7 @@ type Tool = "cursor" | "comment" | "draw" | "tweak";
 type Side = "comments" | "tweak" | "remix" | "critique" | "refs";
 type Picked = { selector: string; about: string; styles: Record<string, string>; rect?: number[] };
 type Editing = { comment: DesignComment; left: number; top: number; fresh: boolean };
-type Critique = { state: string; error?: string; verdict?: string; scores?: Record<string, number>; fixes?: { where: string; fix: string }[] };
+type Critique = DesignCritique;
 type Reference = { id: string; name: string; note?: string; url?: string; path?: string; style?: Record<string, unknown> };
 
 const WIDTHS = { desktop: 0, tablet: 820, phone: 390 };
@@ -96,29 +98,33 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
   const browserBtn = <button type="button" className="dg-btn" onClick={inBrowser}><AppWindow size={14} aria-hidden />Open in Mystical browser</button>;
 
   // ---- the board, kept current ---------------------------------------------------------
+  // lib/queries main.designBoard: every 1.5 s, sending the hash of the page it holds (`have`), so
+  // the page itself comes back only when it changed. Each answer lands once (meta.take).
+  const pageNow = useRef(page);
+  pageNow.current = page;
+  const boardQ = useQuery({
+    ...main.designBoard({ session_id: session ?? "", board: boardId, page: page || undefined }),
+    enabled: !!session, staleTime: 0, gcTime: 0,
+    meta: {
+      extra: () => ({ have: have.current }),
+      take: (r: DesignRead) => {
+        if (pageNow.current !== page) return;   // an answer for the page just left
+        setError("");
+        setMeta({ id: r.id, title: r.title, pages: r.pages, updated: r.updated });
+        setComments(r.comments);
+        setMissing(!!r.missing);
+        if (r.page && !page) setPage(r.page);
+        setLive(r.url ?? null);
+        if (r.url) { setVersions([]); setVersion(0); setHtml(null); }
+        if (r.versions) setVersions(r.versions);
+        if (r.version) setVersion(r.version);
+        if (r.html !== undefined && r.hash) { have.current = r.hash; setHash(r.hash); setHtml(r.html); }
+      },
+    },
+  });
   useEffect(() => {
-    if (!session) return;
-    let live = true;
-    const tick = () => {
-      call<DesignBoard & { comments: DesignComment[]; page?: string; url?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean }>("design", { page: page || undefined, have: have.current })
-        .then((r) => {
-          if (!live) return;
-          setError("");
-          setMeta({ id: r.id, title: r.title, pages: r.pages, updated: r.updated });
-          setComments(r.comments);
-          setMissing(!!r.missing);
-          if (r.page && !page) setPage(r.page);
-          setLive(r.url ?? null);
-          if (r.url) { setVersions([]); setVersion(0); setHtml(null); }
-          if (r.versions) setVersions(r.versions);
-          if (r.version) setVersion(r.version);
-          if (r.html !== undefined && r.hash) { have.current = r.hash; setHash(r.hash); setHtml(r.html); }
-        }, (e) => { if (live) setError(e instanceof Error ? e.message : "Couldn't read the board."); });
-    };
-    tick();
-    const t = window.setInterval(tick, 1500);
-    return () => { live = false; window.clearInterval(t); };
-  }, [session, call, page]);
+    if (boardQ.error) setError(boardQ.error.message || "Couldn't read the board.");
+  }, [boardQ.error]);
 
   const doc = useMemo(() => (html === null ? "" : frameDoc(html)), [html]);
   useEffect(() => {
@@ -280,11 +286,15 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
   const askCritic = (fresh: boolean) => {
     call<Critique>("design-critique", { page, fresh }).then(setCritique, (e) => setCritique({ state: "failed", error: e instanceof Error ? e.message : "It failed." }));
   };
-  useEffect(() => {
-    if (critique?.state !== "running") return;
-    const t = window.setInterval(() => askCritic(false), 3000);
-    return () => window.clearInterval(t);
+  // While it runs, its state every 3 s (lib/queries main.designCritique).
+  const criticQ = useQuery({
+    ...main.designCritique({ session_id: session ?? "", board: boardId, page, fresh: false }),
+    enabled: !!session && critique?.state === "running", staleTime: 0, gcTime: 0,
+    meta: { take: (c: Critique) => setCritique(c) },
   });
+  useEffect(() => {
+    if (criticQ.error) setCritique({ state: "failed", error: criticQ.error.message || "It failed." });
+  }, [criticQ.error]);
   useEffect(() => {
     if (side !== "refs" || !session) return;
     call<{ references: Reference[] }>("design-references").then((r) => setRefs(r.references), () => undefined);
@@ -551,16 +561,10 @@ export function DesignCard({ board, title, pages }: { board: string; title: stri
 export function BrowserCard({ session: given, url, profile }: { session?: string | null; url: string; profile: string }) {
   const open = useRefSession();
   const session = given ?? open;
-  const [st, setSt] = useState<{ running: boolean; pinned: number; to: string | null } | null>(null);
+  const o = main.browser({ session_id: session ?? "", op: "state", url });
+  const st = useQuery({ ...o, enabled: !!session }).data ?? null;
   const [bad, setBad] = useState("");
-  const poll = useCallback(() => {
-    if (session) designCall<{ running: boolean; pinned: number; to: string | null }>(session, "browser", { op: "state", url }).then(setSt, () => {});
-  }, [session, url]);
-  useEffect(() => {
-    poll();
-    const t = window.setInterval(poll, 4000);
-    return () => window.clearInterval(t);
-  }, [poll]);
+  const poll = () => reread(o.queryKey);
   const act = (op: string) => {
     if (!session) return;
     setBad("");

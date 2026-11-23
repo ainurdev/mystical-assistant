@@ -1,9 +1,9 @@
 import type { DataEv } from "./lib/dataview";
-import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+import type { Profile, ProfileWrite } from "./lib/profiles";
 import type { Flow, FlowOption, FlowSet, PastFlow } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
-import { posted, readWith } from "./lib/queries";
+import { code, fetchFresh, main, posted, queryClient, readWith } from "./lib/queries";
 
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
@@ -1692,7 +1692,7 @@ export type PluginAction =
 
 export async function req<T>(
   path: string,
-  opts: { method?: string; body?: unknown } = {},
+  opts: { method?: string; body?: unknown; read?: true } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) {
@@ -1715,10 +1715,11 @@ export async function req<T>(
     throw new Error(msg);
   }
   const out = (await res.json()) as T;
-  if (opts.method !== undefined && opts.method !== "GET") posted(path);
+  // `read`: a read the bridge answers on POST (lib/queries) changes nothing.
+  if (opts.method !== undefined && opts.method !== "GET" && !opts.read) posted(path);
   return out;
 }
-readWith((url) => req(url));
+readWith((url, body) => req(url, body ? { method: "POST", body, read: true } : {}));
 
 /** Fired on window after a successful push from any dashboard button (the GIT
  *  tab, the git popover, FILES, OPEN PR). The PR chip re-reads on it rather
@@ -2016,14 +2017,8 @@ export const api = {
     req<{ sessions: SessionBrief[] }>(
       `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
-  /** Each session's tool pictures handed back since `since` (epoch s), as
-   *  [path, at] pairs: the sidebar's unseen-picture tag (lib/seenshots). */
-  shots: (since: number) =>
-    req<Record<string, [string, number][]>>(`/local/shots?since=${Math.floor(since)}`),
   transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
-    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
-      (opts?.tail ? `&tail=${opts.tail}` : "") +
-      (opts?.before ? `&before=${opts.before}` : "")),
+    queryClient.fetchQuery({ ...main.session({ id, cursor, tail: opts?.tail || undefined, before: opts?.before || undefined }), staleTime: 0, gcTime: 0 }),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
@@ -2097,7 +2092,7 @@ export const api = {
       body: { session_id: id, ...body },
     }),
   // A bridge older than profiles answers these with its catch-all 404 "not found".
-  profiles: () => req<ProfilesInfo>("/local/profiles"),
+  profiles: () => fetchFresh(main.profiles()),
   /** create · update · delete. A refused field comes back as the bridge's message. */
   profileWrite: (body: ProfileWrite) =>
     req<{ ok: boolean; profile?: Profile }>("/local/profiles", { method: "POST", body }),
@@ -2202,7 +2197,7 @@ export const api = {
       body: { action: "login_cancel", slot },
     }),
   // Non-Claude agents (bridge/acp_agents.py). A bridge older than them 404s.
-  acpAgents: () => req<AcpAgentsInfo>("/local/acp/agents"),
+  acpAgents: () => fetchFresh(main.acpAgents()),
   /** create → the account, masked; a home login also gets the command to run
    *  once in a terminal. The key travels in this body only, never a URL. */
   acpAccount: (body: { action: "create"; agent: string; label: string; kind: "key" | "home"; key?: string }
@@ -2267,15 +2262,10 @@ export const api = {
       body: { login, window, profile: profile ?? null },
     }),
   /** Cached board — never spawns anything. */
-  nextBoard: (opts?: { project?: string; kind?: NextKind }) => {
-    // `kind` rides along with or without a project — refreshNext already sends
-    // it either way. With neither, the bare path the WORK tab has always used.
-    const q = new URLSearchParams();
-    if (opts?.project) q.set("project", opts.project);
-    if (opts?.kind) q.set("kind", opts.kind);
-    const qs = q.toString();
-    return req<NextBoard>(`/local/next${qs ? `?${qs}` : ""}`);
-  },
+  // `kind` rides along with or without a project — refreshNext already sends
+  // it either way. With neither, the bare path the WORK tab has always used.
+  nextBoard: (opts?: { project?: string; kind?: NextKind }) =>
+    fetchFresh(main.next({ project: opts?.project || undefined, kind: opts?.kind || undefined })),
   /** Recompute in the background; poll nextBoard() until `refreshing` clears. */
   refreshNext: (opts?: { project?: string; kind?: NextKind }) =>
     req<NextBoard & { ok: boolean }>("/local/next", {
@@ -2300,12 +2290,9 @@ export const api = {
     return r;
   }),
   // Search within one chat (bridge/chat_search.in_chat): prompts and the agent's words.
-  chatSearch: (session: string, q: string) =>
-    req<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(
-      `/local/chat-search?session=${encodeURIComponent(session)}&q=${encodeURIComponent(q)}`),
+  chatSearch: (session: string, q: string) => fetchFresh(main.chatSearch({ session, q })),
   // A report a show_report card points at.
-  chatReport: (session: string, path: string) =>
-    req<{ text: string }>(`/local/chat-report?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}`),
+  chatReport: (session: string, path: string) => fetchFresh(main.chatReport({ session, path })),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
   // A live job without its events (the cursor is past them all): the pending
@@ -2360,15 +2347,12 @@ export const api = {
     req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "unpark", session } }),
   noticePrefs: (patch: NoticePrefsPatch) =>
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
-  usage: () => req<UsageInfo>("/local/usage"),
+  usage: () => fetchFresh(main.usage()),
   today: () => req<TodayInfo>("/local/today"),
   wins: () => req<TodayWins>("/local/wins"),
   report: (back = 0) =>
     req<WeeklyReport>(`/local/report${back ? "?back=1" : ""}`),
-  history: (archived = false) =>
-    req<{ sessions: EnrichedSession[] }>(
-      `/local/history${archived ? "?archived=1" : ""}`,
-    ),
+  history: (archived = false) => fetchFresh(main.history({ archived: archived ? 1 : undefined })),
   // branch → operate on that branch's worktree (else the project checkout)
   git: (project: string, branch?: string) =>
     req<GitStatus>(
@@ -2460,18 +2444,13 @@ export const api = {
     ),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
   /** A chat's Claude sub-agents as a team, and one up close (bridge/agent_team.py). */
-  agentTeam: (sessionId: string) => req<import("./lib/agentteam").Team>(`/local/team?session=${encodeURIComponent(sessionId)}`),
-  agentTeamOne: (sessionId: string, agentId: string) =>
-    req<import("./lib/agentteam").AgentDetail>(`/local/team/agent?session=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agentId)}`),
+  agentTeam: (sessionId: string) => fetchFresh(main.team({ session: sessionId })),
+  agentTeamOne: (sessionId: string, agentId: string) => fetchFresh(main.teamAgent({ session: sessionId, agent: agentId })),
   /** What the composer completes from disk (bridge/complete.py). */
   completePaths: (project: string | null, prefix: string) =>
-    req<{ paths: { text: string; name: string; dir: boolean }[] }>(`/local/complete/paths?project=${encodeURIComponent(project ?? "")}&prefix=${encodeURIComponent(prefix)}`),
-  completeSymbols: (project: string) =>
-    req<{ symbols: { name: string; file: string }[] }>(`/local/complete/symbols?project=${encodeURIComponent(project)}`),
-  filesTree: (project: string, branch?: string) =>
-    req<{ files: string[]; ignored?: string[]; root?: string }>(
-      `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
+    fetchFresh(main.paths({ project: project ?? "", prefix })),
+  completeSymbols: (project: string) => fetchFresh(main.symbols({ project })),
+  filesTree: (project: string, branch?: string) => fetchFresh(main.filesTree({ project, branch: branch || undefined })),
   fileRead: (project: string, path: string, branch?: string) =>
     req<FileContent>(
       `/local/files/read?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
@@ -2495,7 +2474,7 @@ export const api = {
   revealFile: (path: string) =>
     req<{ ok: boolean }>("/local/files/reveal", { method: "POST", body: { path } }),
   /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
-  promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
+  promptHistory: () => fetchFresh(main.prompts()),
   /** Mint a read-only link to one session, or revoke every link it has. The
    *  page is served by the bridge itself — which binds loopback, so a link only
    *  opens elsewhere if you deliberately expose the port. */
@@ -2521,7 +2500,7 @@ export const api = {
       body: { project, op, path, ...(to ? { to } : {}), ...(branch ? { branch } : {}) },
     }),
   projectSettings: (ctx: RunCtx) =>
-    req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
+    fetchFresh(main.projectSettings({ cwd: ctx.cwd || undefined, cwd_rel: ctx.cwd_rel || undefined, project: ctx.project || undefined, branch: ctx.branch || undefined })),
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
@@ -2663,10 +2642,7 @@ export const api = {
       body: { unit },
     }),
   // --- branches, worktrees, PRs (unified projects view + Analyze modal) ---
-  branches: (project: string) =>
-    req<{ branches: string[]; current: string; default: string }>(
-      `/local/git/branches?project=${encodeURIComponent(project)}`,
-    ),
+  branches: (project: string) => fetchFresh(code.branches({ project })),
   // `merged`: branch names already contained in the default branch — the WORKTREES
   // tab marks them, worktree or not, so a finished branch is visible as finished.
   // The BRANCHES rail tab: every branch and checkout with its status (lib/branchrows).
@@ -2675,10 +2651,7 @@ export const api = {
   // Its PR chips, a beat later: gh is slower than git (bridge prstatus.branch_prs).
   branchPrs: (project: string) =>
     req<{ prs: Record<string, BranchPr> }>(`/local/github/prs?project=${encodeURIComponent(project)}`),
-  worktrees: (project: string) =>
-    req<{ worktrees: Worktree[]; merged: string[] }>(
-      `/local/git/worktrees?project=${encodeURIComponent(project)}`,
-    ),
+  worktrees: (project: string) => fetchFresh(code.worktrees({ project })),
   compare: (project: string, base: string, head: string, dots?: 2 | 3) =>
     req<CompareInfo>(
       `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}${
@@ -2733,8 +2706,7 @@ export const api = {
   /** Stop allowing a folder outside the projects folder. Nothing on disk changes. */
   removeRoot: (project: string) => req<{ ok: boolean; roots: string[] }>("/local/roots/remove", { method: "POST", body: { project } }),
   // --- prompt queue (per session) ---
-  queue: (sessionId: string) =>
-    req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
+  queue: (sessionId: string) => fetchFresh(main.queue({ session: sessionId })),
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
@@ -2749,12 +2721,6 @@ export const api = {
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(sessionId)}/wait`, { method: "POST", body: { action } }),
   agents: (sessionId: string) =>
     req<AgentsInfo>(`/local/agents?session=${encodeURIComponent(sessionId)}`),
-  agentActivity: (sessionId: string, agentId: string, cursor: number, workflowId?: string) =>
-    req<AgentActivity>(
-      `/local/agents/activity?session=${encodeURIComponent(sessionId)}` +
-        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
-        (workflowId ? `&workflow=${encodeURIComponent(workflowId)}` : ""),
-    ),
   // --- slash commands: what `/` offers in the composer (lib/slash.ts) ---
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),

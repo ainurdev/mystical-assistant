@@ -28,10 +28,13 @@ console.assert(main.commands().refetchInterval === false && rail.sysinfo().refet
 // --- every key that a change invalidates exists -------------------------------
 for (const [post, routes] of Object.entries(CHANGES))
   for (const r of routes) console.assert(reads().has(r), `${post} invalidates ${r}, which no read lists`);
-eq(changedBy("/local/sessions/abc/archive"), ["/local/sessions", "/local/running"], "an archive changes the lists");
-eq(changedBy("/local/run/j1/interrupt"), ["/local/running", "/local/sessions"], "a stop");
-eq(changedBy("/local/run"), ["/local/sessions", "/local/running"], "a send");
-eq(changedBy("/local/git/commit?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus"], "a commit, query ignored");
+const LISTS = ["/local/sessions", "/local/running", "/local/history"];
+eq(changedBy("/local/sessions/abc/archive"), LISTS, "an archive changes the lists");
+eq(changedBy("/local/sessions/abc/retitle"), LISTS, "a rename");
+eq(changedBy("/local/run/j1/interrupt"), LISTS, "a stop");
+eq(changedBy("/local/run"), LISTS, "a send");
+eq(changedBy("/local/channel/send"), ["/local/channel", "/local/tree"], "a helper message changes its channel and the tree");
+eq(changedBy("/local/git/commit?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus", "/local/git/branches", "/local/git/worktrees"], "a commit, query ignored");
 eq(changedBy("/local/restart"), [], "nothing listed, nothing invalidated");
 
 // --- a shared poll runs at its listed rate --------------------------------------
@@ -47,4 +50,14 @@ eq(asked.length, 2, "an invalidated key fetches at once");
 await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
 await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
 eq(asked.slice(2), ["/local/commands?project=p", "/local/commands?project=p"], "an unpolled read isn't held back");
+
+// --- a cursor read asks from the last answer each time, and hands each answer over once -----
+asked.length = 0;
+let cursor = 0;
+const took: number[] = [];
+const live = { ...main.session({ id: "s1" }), staleTime: 0, meta: { extra: () => ({ cursor }), take: (d: unknown) => { took.push((d as { n: number }).n); cursor = 7; } } };
+await queryClient.fetchQuery(live);
+await queryClient.fetchQuery(live);                             // right after: a delta poll is never held back
+eq(asked, ["/local/sessions/s1?cursor=0", "/local/sessions/s1?cursor=7"], "each delta read carries the cursor the last one left");
+eq(took.length, 2, "each answer is handed over once");
 queryClient.clear();

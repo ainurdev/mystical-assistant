@@ -21,18 +21,25 @@
 //
 // One part per area (the main column, Settings, the rail's code tabs, the rest of the rail):
 // the batches after the router (tickets 12-15) each add to their own part.
-import { QueryClient, hashKey, queryOptions } from "@tanstack/react-query";
+import { QueryClient, hashKey, queryOptions, type FetchQueryOptions } from "@tanstack/react-query";
 import type {
-  AccountsInfo, AgentsInfo, DashState, FlowSettings, GitBadge, GitStatus, GraphState, HostStats,
-  Notice, NoticePrefs, ProjectsListing, RunningInfo, SessionBrief, SlashCommand, Transcript, UpdateInfo,
+  AccountsInfo, AcpAgentsInfo, AgentActivity, AgentsInfo, DashState, EnrichedSession, FlowSettings, GitBadge, GitStatus,
+  GraphState, HostStats, NextBoard, Notice, NoticePrefs, ProjectSettings, ProjectsListing, QueueSnapshot, RunningInfo,
+  SessionBrief, SlashCommand, Transcript, UpdateInfo, UsageInfo, Worktree,
 } from "../api.ts";
+import type { AgentDetail, Team } from "./agentteam.ts";
 import type { BranchStatus } from "./branchrows.ts";
 import type { Flow, FlowSet, PastFlow } from "./flowview.ts";
+import type { AgentRow, ChannelView, HelperConfig } from "./multi.ts";
+import type { HandoffPreview, SkillShareRow } from "./multistore.ts";
+import type { ProfilesInfo } from "./profiles.ts";
+import type { DesignBoard, DesignComment } from "./designframe.ts";
 
 export type Params = Record<string, string | number | boolean | null | undefined>;
 export type Key = readonly [string, Params];
-/** `ms`: how often it polls while someone shows it; `hidden`: it polls while the page is hidden too. */
-export interface Poll { ms: number; hidden?: true }
+/** `ms`: how often it polls while someone shows it; `hidden`: it polls while the page is hidden too;
+ *  `delta`: each fetch asks from the last answer's cursor (meta.extra), so one is never answered from the cache. */
+export interface Poll { ms: number; hidden?: true; delta?: true }
 
 export const keyOf = (route: string, params: Params = {}): Key => [route, params];
 
@@ -48,6 +55,8 @@ export function urlOf(route: string, params: Params = {}): string {
 }
 
 const POLLS = new Map<string, Poll | null>();
+/** Reads the bridge answers on POST (the chat's design routes): their parameters are the body. */
+const BY_POST = new Set<string>();
 
 /** One read: call it with its parameters for the query's options. `extra` rides in the URL
  *  but not the key (what changes every call and must not split the cache). */
@@ -61,11 +70,18 @@ function read<T, P extends Params = Params>(route: string, poll: Poll | null = n
   }), { route, poll });
 }
 
+function readByPost<T, P extends Params = Params>(route: string, poll: Poll | null = null) {
+  BY_POST.add(route);
+  return read<T, P>(route, poll);
+}
+
 /** What the running poll tells the bridge about this page, read at each fetch (App sets them):
  *  it raises its own OS alerts (the tray companion stays quiet), and its last input (Telegram's "away"). */
 export const runningHints: { alerts?: 1; seen?: number } = {};
 
 export type NoticesAnswer = { notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean };
+export type DesignRead = DesignBoard & { comments: DesignComment[]; page?: string; url?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean };
+export type DesignCritique = { state: string; error?: string; verdict?: string; scores?: Record<string, number>; fixes?: { where: string; fix: string }[] };
 export type FlowAnswer = { flow: Flow | null; past?: PastFlow[]; set: FlowSet | null };
 
 /** The main column: the session list, the open session, its prompt box and what rides beside it. */
@@ -73,9 +89,10 @@ export const main = {
   state: read<DashState>("/local/state", { ms: 3000 }),
   projects: read<ProjectsListing, { dir?: string }>("/local/projects", { ms: 10000 }),
   sessions: read<{ sessions: SessionBrief[] }, { project?: string }>("/local/sessions", { ms: 5000 }),
-  // The open session's transcript, read by cursor. Its 1.5 s poll while a turn runs is still
-  // App's own timer (it merges deltas), paused while hidden; ticket 12 moves it here.
-  session: read<Transcript, { id: string; cursor: number; tail?: number; before?: number }>("/local/sessions/:id"),
+  // The open session's transcript. The live read is keyed by the session alone: its cursor (and
+  // the first read's tail) ride in meta.extra, and meta.take merges each delta once, in order
+  // (App). Polled while a turn runs. An older page is a one-off read with `before`.
+  session: read<Transcript, { id: string; cursor?: number; tail?: number; before?: number }>("/local/sessions/:id", { ms: 1500, delta: true }),
   running: read<RunningInfo>("/local/running", { ms: 4000, hidden: true }, () => runningHints),
   // Polled only while the session runs or an agent does (AgentsPill).
   agents: read<AgentsInfo, { session: string }>("/local/agents", { ms: 1500 }),
@@ -85,6 +102,43 @@ export const main = {
   worklist: read<unknown, { session: string; project: string }>("/local/worklist", { ms: 4000 }),
   commands: read<{ commands: SlashCommand[] }, { project?: string }>("/local/commands"),
   accounts: read<AccountsInfo, { fresh?: number }>("/local/accounts", { ms: 60000 }),
+  usage: read<UsageInfo>("/local/usage", { ms: 60000 }),
+  acpAgents: read<AcpAgentsInfo>("/local/acp/agents", { ms: 60000 }),
+  profiles: read<ProfilesInfo>("/local/profiles"),
+  projectSettings: read<ProjectSettings, { cwd?: string; cwd_rel?: string; project?: string; branch?: string }>("/local/project/settings"),
+  queue: read<QueueSnapshot, { session: string }>("/local/queue"),   // then its stream
+  prompts: read<{ prompts: string[] }>("/local/prompts"),
+  filesTree: read<{ files: string[]; ignored?: string[]; root?: string }, { project: string; branch?: string }>("/local/files/tree"),
+  paths: read<{ paths: { text: string; name: string; dir: boolean }[] }, { project: string; prefix: string }>("/local/complete/paths"),
+  symbols: read<{ symbols: { name: string; file: string }[] }, { project: string }>("/local/complete/symbols"),
+  chatSearch: read<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }, { session: string; q: string }>("/local/chat-search"),
+  chatReport: read<{ text: string }, { session: string; path: string }>("/local/chat-report"),
+  history: read<{ sessions: EnrichedSession[] }, { archived?: 1 }>("/local/history", { ms: 5000 }),
+  // The fresh screen's NEXT UP: polled only while a REFRESH's scouts run.
+  next: read<NextBoard, { project?: string; kind?: string }>("/local/next", { ms: 3000 }),
+  // The sidebar's unseen-picture tags: each session's tool pictures from the last day, as
+  // [path, at] pairs (lib/seenshots), `since` riding in the URL. A bridge without it 404s: no tags.
+  shots: read<Record<string, [string, number][]>>("/local/shots", { ms: 15000 }, () => ({ since: Math.floor(Date.now() / 1000 - 86400) })),
+  // The agents views: the chat's Claude sub-agents as a team, one up close (while it works),
+  // and an agent's run by cursor (while it runs).
+  team: read<Team, { session: string }>("/local/team", { ms: 2000 }),
+  teamAgent: read<AgentDetail, { session: string; agent: string }>("/local/team/agent", { ms: 2500 }),
+  agentActivity: read<AgentActivity, { session: string; agent: string; workflow?: string }>("/local/agents/activity", { ms: 1000, delta: true }),
+  // Multi-agent chats (lib/multistore): the switch, every wanted chat's agents in one read
+  // (only while the switch is on), a chat's channel, and a helper's brief by id.
+  experimental: read<{ enabled: boolean; defaults: HelperConfig }>("/local/experimental", { ms: 60000 }),
+  tree: read<{ trees: Record<string, AgentRow[]> }, { ids: string }>("/local/tree", { ms: 3000 }),
+  channel: read<ChannelView, { session: string }>("/local/channel", { ms: 2000 }),
+  brief: read<{ session: SessionBrief }, { session: string }>("/local/session/brief", { ms: 3000 }),
+  // What a PROFILE switch would carry over, and the shared skills an agent's / list offers.
+  handoff: read<HandoffPreview, { session: string; profile: string }>("/local/session/handoff"),
+  skillShare: read<{ skills: SkillShareRow[] }, { cwd?: string }>("/local/skill-share"),
+  // Results in the chat (bridge/multi_api.py _post_design): a design board, kept current by the
+  // hash of what the page holds (meta.extra `have`), its critic while it runs, and open_site's
+  // browser card.
+  designBoard: readByPost<DesignRead, { session_id: string; board: string; page?: string }>("/local/chat/design", { ms: 1500, delta: true }),
+  designCritique: readByPost<DesignCritique, { session_id: string; board: string; page: string; fresh: false }>("/local/chat/design-critique", { ms: 3000 }),
+  browser: readByPost<{ running: boolean; pinned: number; to: string | null }, { session_id: string; op: "state"; url: string }>("/local/chat/browser", { ms: 4000 }),
 };
 
 /** Settings. */
@@ -98,6 +152,9 @@ export const code = {
   gitAll: read<{ repos: Record<string, GitBadge> }>("/local/git/all", { ms: 10000 }),
   branchStatus: read<BranchStatus, { project: string }>("/local/git/branchstatus"),
   graphState: read<GraphState, { project: string }>("/local/graph/state"),
+  // The sidebar's NEW WORKTREE and relocate.
+  branches: read<{ branches: string[]; current: string; default: string }, { project: string }>("/local/git/branches"),
+  worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
 };
 
 /** The rest of the rail and the caps: the bell, HOME's vitals, UPDATE and the changelog. */
@@ -107,17 +164,26 @@ export const rail = {
   update: read<UpdateInfo>("/local/update", { ms: 5 * 60_000 }),
 };
 
-const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route];
+const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route, code.branches.route, code.worktrees.route];
+const LISTS = [main.sessions.route, main.running.route, main.history.route];
 /** A POST's route (as `req` is called with it, `:x` for one segment, a trailing `*` for the
  *  rest) and the reads it changes. */
 export const CHANGES: Record<string, string[]> = {
-  "/local/run": [main.sessions.route, main.running.route],
-  "/local/run/:id/interrupt": [main.running.route, main.sessions.route],
+  "/local/run": LISTS,
+  "/local/run/:id/interrupt": LISTS,
   "/local/run/:id/respond": [main.running.route, rail.notices.route],
-  "/local/sessions": [main.sessions.route],
-  "/local/sessions/:id/*": [main.sessions.route, main.running.route],
+  "/local/sessions": LISTS,
+  "/local/sessions/:id/*": LISTS,
+  "/local/session/profile": [main.sessions.route],
+  "/local/session/settings": [main.sessions.route],
+  "/local/profiles": [main.profiles.route],
+  "/local/project/profile": [main.profiles.route, main.projects.route],
+  "/local/next": [main.next.route],
+  "/local/experimental": [main.experimental.route],
+  "/local/channel/*": [main.channel.route, main.tree.route],
+  "/local/chat/config": [main.channel.route, main.tree.route],
   "/local/select": [main.state.route],
-  "/local/notices": [rail.notices.route],
+  "/local/notices": [rail.notices.route, main.sessions.route, main.running.route],
   "/local/accounts": [main.accounts.route],
   "/local/flow/*": [main.flow.route],
   "/local/flows": [settings.flows.route],
@@ -125,7 +191,7 @@ export const CHANGES: Record<string, string[]> = {
   "/local/graph/*": [code.graphState.route],
   "/local/git/*": GIT,
   "/local/update": [rail.update.route],
-  "/local/project/settings": [main.projects.route, code.graphState.route],
+  "/local/project/settings": [main.projects.route, main.projectSettings.route, code.graphState.route],
 };
 
 const matchers = Object.entries(CHANGES).map(([pat, routes]) => {
@@ -155,7 +221,7 @@ export const queryClient = new QueryClient({
 const lastFetch = new Map<string, number>();
 
 /** Hands the request function in as every read's query function (api.ts does it once). */
-export function readWith(get: (url: string) => Promise<unknown>): void {
+export function readWith(get: (url: string, body?: Params) => Promise<unknown>): void {
   queryClient.setDefaultOptions({
     queries: {
       ...queryClient.getDefaultOptions().queries,
@@ -166,11 +232,13 @@ export function readWith(get: (url: string) => Promise<unknown>): void {
         const st = queryClient.getQueryState(queryKey);
         const last = lastFetch.get(queryHash) ?? 0;
         // Another panel's interval on the same key, out of phase with the first: the answer is fresh.
-        if (poll && st?.status === "success" && !st.isInvalidated && Date.now() - last < poll.ms / 2)
+        if (poll && !poll.delta && st?.status === "success" && !st.isInvalidated && Date.now() - last < poll.ms / 2)
           return Promise.resolve(st.data);
         if (poll) lastFetch.set(queryHash, Date.now());
         const extra = (meta?.extra as (() => Params) | undefined)?.();
-        return get(urlOf(route, { ...params, ...extra }));
+        const take = meta?.take as ((d: unknown) => void) | undefined;
+        const out = BY_POST.has(route) ? get(route, { ...params, ...extra }) : get(urlOf(route, { ...params, ...extra }));
+        return take ? out.then((d) => { take(d); return d; }) : out;
       },
     },
   });
@@ -180,6 +248,10 @@ export function readWith(get: (url: string) => Promise<unknown>): void {
  *  answer: it started after whatever changed. */
 export const reread = (queryKey: readonly unknown[]) =>
   queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+
+/** A one-off read through the client: always asks the bridge, but joins a read of the same
+ *  key already on its way, and lands in the cache the polls and panels read. */
+export const fetchFresh = <T>(o: FetchQueryOptions<T, Error, T, Key>) => queryClient.fetchQuery({ ...o, staleTime: 0 });
 
 /** A successful POST to `path`: its reads go stale and refetch where they're shown. */
 export function posted(path: string): void {

@@ -24,9 +24,7 @@ import {
   type RunPick,
   type SessionBrief,
   type SessionStatus,
-  type UsageInfo,
   type AccountInfo,
-  type AcpAgentsInfo,
   type RivendellInstance,
   type Received,
   type ShareKind,
@@ -35,6 +33,7 @@ import {
   type Need,
   type NewProjectBody,
   type NewProjectNote,
+  type Transcript,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot, chipWindow, loginWindows } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -351,12 +350,14 @@ export function App() {
   // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
-  const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const usage = useQuery(main.usage()).data ?? null;
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   // Non-Claude agents: their labels and the options each last advertised,
   // which an agent session's pickers offer. null = not loaded, or a bridge
   // older than them (404) — an agent session then shows no pickers.
-  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
+  // ponytail: options a TEST or a turn just cached reach the composer on its 60s poll, not at once.
+  const acp = useQuery(main.acpAgents()).data ?? null;
+  useEffect(() => { if (acp) setAgentLabels(acp.presets); }, [acp]);
   // Server-side profiles and each project's default (bridge/profiles.py). null
   // until the first load; profilesAvailable false = a bridge older than them;
   // profilesError = why the last load failed otherwise (null once one lands).
@@ -1140,16 +1141,24 @@ export function App() {
     if (sessionId) rememberOpen(selected?.parent_session ?? sessionId);
   }, [sessionId, selected?.parent_session]);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    const fetchOnce = async () => {
-      try {
-        const first = seqRef.current === 0;
-        // Through the client (lib/queries), so a second ask for the same cursor joins the first.
-        const t = await queryClient.fetchQuery({
-          ...main.session({ id: sessionId, cursor: seqRef.current, ...(first ? { tail: TAIL_TURNS } : {}) }), staleTime: 0, gcTime: 0 });
-        if (!live) return;
+  // The open session's transcript (lib/queries main.session): read on open, then every 1.5 s
+  // while the session is producing output, paused while the page is hidden. Its cursor rides in
+  // meta.extra and each delta merges once, in order, in meta.take (mergeDelta dedups by seq, so a
+  // read that lands twice is harmless). A turn starting or ending reads at once (the effect
+  // below), which also catches the final delta the moment a turn completes.
+  const firstAsk = useRef(false);
+  const liveRead = main.session({ id: sessionId ?? "" });
+  const liveQ = useQuery({
+    ...liveRead, enabled: !!sessionId, staleTime: 0, gcTime: 0,
+    refetchInterval: running || openWorking ? liveRead.refetchInterval : false,
+    meta: {
+      extra: () => {
+        firstAsk.current = seqRef.current === 0;
+        return { cursor: seqRef.current, ...(firstAsk.current ? { tail: TAIL_TURNS } : {}) };
+      },
+      take: (t: Transcript) => {
+        if (sessionIdRef.current !== sessionId) return;   // an answer for the session just left
+        const first = firstAsk.current;
         const held = staleTurns.current;
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
@@ -1164,29 +1173,28 @@ export function App() {
             ? { has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false }
             : { has: false, seq: null, from: null, loading: false });
         markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
-      } catch {
-        // Never landed: drop the previous session's turns rather than pass them
-        // off as this one's.
-        if (live && staleTurns.current) {
-          staleTurns.current = false;
-          setTurns([]);
-          putOlder({ has: false, seq: null, from: null, loading: false });
-        }
-        markBoot("chat", "fail", "NO TRANSCRIPT");
-      }
-      finally { if (live) setLoadingSession(false); }
-    };
-    refetchTurns.current = fetchOnce;
-    void fetchOnce();                                   // always load once on open
-    // Then poll only while the session is actually producing output; an idle
-    // session doesn't change, so re-effect on the running/working transitions
-    // (this also captures the final delta the moment a turn completes).
-    // Paused while the page is hidden; the next tick after it shows again catches up.
-    const id = setInterval(() => {
-      if ((running || openWorking) && !document.hidden) void fetchOnce();
-    }, 1500);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, running, openWorking, markBoot]);
+        setLoadingSession(false);
+      },
+    },
+  });
+  refetchTurns.current = async () => { await queryClient.refetchQueries({ queryKey: liveRead.queryKey, exact: true }); };
+  useEffect(() => {
+    if (sessionId) void reread(liveRead.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the session's
+  }, [sessionId, running, openWorking]);
+  useEffect(() => {
+    if (!liveQ.errorUpdatedAt) return;
+    // Never landed: drop the previous session's turns rather than pass them
+    // off as this one's.
+    if (staleTurns.current) {
+      staleTurns.current = false;
+      setTurns([]);
+      putOlder({ has: false, seq: null, from: null, loading: false });
+    }
+    markBoot("chat", "fail", "NO TRANSCRIPT");
+    setLoadingSession(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once per failed read
+  }, [liveQ.errorUpdatedAt]);
 
   // Fetch the page of turns before the oldest loaded one and prepend it.
   // mergeDelta does the prepending for free: older turns already exist in the
@@ -1568,26 +1576,6 @@ export function App() {
     if (fresh === undefined) { await reread(main.accounts().queryKey); return; }
     try { queryClient.setQueryData(main.accounts().queryKey, await queryClient.fetchQuery({ ...main.accounts({ fresh }), staleTime: 0, gcTime: 0 })); }
     catch { /* the list's next poll */ }
-  }, []);
-
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      if (document.hidden) return;   // shortcut: usage and agents are App's own 60s timer until ticket 12 moves them
-      try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
-      // Same 60s tick: which agents you can pick from (the meters poll in lib/queries).
-      if (!live) return;
-      // ponytail: options a TEST or a turn just cached reach the composer on this 60s tick, not at once.
-      try {
-        const g = await api.acpAgents();
-        if (!live) return;
-        setAgentLabels(g.presets);
-        setAcp(g);
-      } catch { /* a bridge older than agents: none to show */ }
-    };
-    void tick();
-    const id = setInterval(tick, 60000);
-    return () => { live = false; clearInterval(id); };
   }, []);
 
   // Profiles change only when someone edits them — here (SETTINGS) or on
@@ -2640,13 +2628,10 @@ export function App() {
 
   // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
   // status above: the session's newest check, and whether its project is linked to Claude
-  // Design, held per project and read again on each visit (null until the first answer).
+  // Design, read by project (null until the first answer).
   const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
-  const [designLinks, setDesignLinks] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    if (sessionProject) api.projectSettings({ project: sessionProject })
-      .then((s) => setDesignLinks((m) => ({ ...m, [sessionProject]: !!s.design_project })), () => {});
-  }, [sessionProject]);
+  const projectSettingsQ = useQuery({ ...main.projectSettings({ project: sessionProject ?? undefined }), enabled: !!sessionProject });
+  const designLinked = projectSettingsQ.data ? !!projectSettingsQ.data.design_project : null;
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
@@ -3443,8 +3428,7 @@ export function App() {
   async function regenerateTitle(id: string) {
     try {
       await api.retitle(id);
-      notify("info", "Renaming — the new title lands in a moment.");
-      setTimeout(() => void loadSessions(), 4000);
+      notify("info", "Renaming — the new title lands in a moment.");   // on the list's next poll
     } catch (e) {
       notify("error", (e as Error).message);
     }
@@ -3798,7 +3782,7 @@ export function App() {
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
-                      designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
+                      designLinked={sessionProject ? designLinked : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental): SEND queues instead.
                       onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
