@@ -62,6 +62,11 @@ interface LongFrame extends PerformanceEntry { scripts: Script[] }
 
 /** Start every watcher this engine supports; each slow spot goes to `send`. */
 export function watchSlowSpots(send: (s: Spot) => void): void {
+  // Hidden, the page draws nothing: no gap across it is a frozen frame, and a
+  // start-up that waited on it says so.
+  let hidden = document.hidden;
+  let last = 0;
+  addEventListener("visibilitychange", () => { hidden ||= document.hidden; last = 0; });
   const has = (t: string) => PerformanceObserver.supportedEntryTypes?.includes(t);
   const observe = (type: string, cb: (list: PerformanceObserverEntryList) => void, opts: Record<string, unknown> = {}) =>
     new PerformanceObserver(cb).observe({ type, ...opts } as PerformanceObserverInit);
@@ -89,7 +94,6 @@ export function watchSlowSpots(send: (s: Spot) => void): void {
   // No event timing or no long frames: watch frames after each input, then stop.
   if (!timed || !longFrames) {
     let until = 0;
-    let last = 0;
     let after = "";
     const tick = (now: number) => {
       const s = last ? frameSpot({ duration: now - last }, after) : null;
@@ -123,6 +127,6 @@ export function watchSlowSpots(send: (s: Spot) => void): void {
       else if (e.name.startsWith("startup:")) marks[e.name.slice(8)] = e.startTime;
     }
     const s = sent ? null : startupSpot(marks, intro);
-    if (s) { sent = true; send(s); }
+    if (s) { sent = true; send(hidden ? { ...s, context: { ...s.context, hidden } } : s); }
   }, { buffered: true });
 }
