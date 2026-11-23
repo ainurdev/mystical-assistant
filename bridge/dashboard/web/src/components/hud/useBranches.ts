@@ -1,52 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { code, queryClient } from "../../lib/queries";
+import { useCallback, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { code, reread } from "../../lib/queries";
 import { api } from "../../api";
-import { autoClean, type BranchPr, type BranchStatus, type ShownRow } from "../../lib/branchrows";
+import { autoClean, type BranchPr, type ShownRow } from "../../lib/branchrows";
 import { notify } from "./Notifications";
 
+const NO_PRS: Record<string, BranchPr> = {};
+
 /** The open session's repo's branches and their PRs: the BRANCHES tab draws them
- *  and the rail tile counts what's ready to land (App). One poll, every 30s
- *  while the tab is open and every minute otherwise, and again on `nonce` (a
- *  commit, a push, a checkout). The PRs come a beat later (gh is slower than
+ *  and the rail tile counts what's ready to land (App). Polled every 30s while
+ *  the tab is open and every minute otherwise; a commit, a push or a checkout
+ *  invalidates them (lib/queries). The PRs come a beat later (gh is slower than
  *  git); the first time they name a base the bridge hadn't measured against,
  *  the branches are read once more (bridge prstatus.cached_bases). */
-export function useBranches(project: string | null, nonce: number, open: boolean) {
-  const [data, setData] = useState<BranchStatus | null>(null);
-  const [prs, setPrs] = useState<Record<string, BranchPr>>({});
-  const [err, setErr] = useState("");
-  const cur = useRef(project);
-  const reread = useRef("");   // the project already read again for its PR bases
-  cur.current = project;
-
-  const load = useCallback(async () => {
-    if (!project) return;
-    try {
-      const d = await queryClient.fetchQuery(code.branchStatus({ project }));
-      if (cur.current !== project) return;
-      setData(d); setErr("");
-      // gh only for a repo with something pushed: a local-only one has no PRs to find
-      if (!d.branches.some((b) => b.upstream && b.name !== d.base)) { setPrs({}); return; }
-      const p = await api.branchPrs(project).then((r) => r.prs ?? {}, () => ({} as Record<string, BranchPr>));
-      if (cur.current !== project) return;
-      setPrs(p);
-      const off = d.branches.some((b) => b.name && p[b.name]?.base && b.target !== undefined && !(b.name in (d.picks ?? {}))
-        && b.target.replace(/^origin\//, "") !== p[b.name].base);
-      if (off && reread.current !== project) {
-        reread.current = project;
-        const again = await queryClient.fetchQuery({ ...code.branchStatus({ project }), staleTime: 0 });
-        if (cur.current === project) setData(again);
-      }
-    } catch (e) { if (cur.current === project) setErr((e as Error).message); }
-  }, [project]);
-
-  useEffect(() => { setData(null); setPrs({}); setErr(""); }, [project]);
+export function useBranches(project: string | null, open: boolean) {
+  const every = open ? 30000 : 60000;
+  const bq = useQuery({ ...code.branchStatus({ project: project ?? "" }), enabled: !!project, refetchInterval: every });
+  const data = project ? bq.data ?? null : null;
+  // gh only for a repo with something pushed: a local-only one has no PRs to find
+  const pushed = !!data?.branches.some((b) => b.upstream && b.name !== data.base);
+  const pq = useQuery({ ...code.branchPrs({ project: project ?? "" }), enabled: pushed, refetchInterval: every });
+  const prs = (pushed && pq.data?.prs) || NO_PRS;
+  const again = useRef("");   // the project already read again for its PR bases
   useEffect(() => {
-    void load();
-    // shortcut: its own timer, paused while hidden, until ticket 14 makes it a listed poll
-    const id = setInterval(() => { if (!document.hidden) void load(); }, open ? 30000 : 60000);
-    return () => clearInterval(id);
-  }, [load, nonce, open]);
-  return { data, prs, err, load };
+    if (!project || !data || prs === NO_PRS || again.current === project) return;
+    const off = data.branches.some((b) => b.name && prs[b.name]?.base && b.target !== undefined && !(b.name in (data.picks ?? {}))
+      && b.target.replace(/^origin\//, "") !== prs[b.name].base);
+    if (off) { again.current = project; void reread(code.branchStatus({ project }).queryKey); }
+  }, [project, data, prs]);
+  const load = useCallback(() => {
+    if (!project) return;
+    void reread(code.branchStatus({ project }).queryKey);
+    void reread(code.branchPrs({ project }).queryKey);
+  }, [project]);
+  return { data, prs, err: project && bq.isError ? bq.error.message : "", load };
 }
 
 /** Auto clean-up: landed branches nothing holds go by themselves (lib/branchrows

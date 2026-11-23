@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/queries.check.ts
 import { hashKey } from "@tanstack/react-query";
-import { CHANGES, changedBy, code, main, queryClient, rail, readWith, reads, settings, urlOf } from "./queries.ts";
+import { CHANGES, changedBy, code, main, prHints, queryClient, rail, readWith, reads, settings, urlOf } from "./queries.ts";
 
 const eq = (a: unknown, b: unknown, what: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
 
@@ -34,7 +34,8 @@ eq(changedBy("/local/sessions/abc/retitle"), LISTS, "a rename");
 eq(changedBy("/local/run/j1/interrupt"), LISTS, "a stop");
 eq(changedBy("/local/run"), LISTS, "a send");
 eq(changedBy("/local/channel/send"), ["/local/channel", "/local/tree"], "a helper message changes its channel and the tree");
-eq(changedBy("/local/git/commit?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus", "/local/git/branches", "/local/git/worktrees"], "a commit, query ignored");
+eq(changedBy("/local/git/fetch?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus", "/local/git/branches",
+  "/local/git/ledger", "/local/git/incoming", "/local/git/log", "/local/git/worktrees"], "a fetch, query ignored");
 eq(changedBy("/local/restart"), [], "nothing listed, nothing invalidated");
 // Settings: a switch shows at once wherever it's read (the prompt box, the rail, the sidebar).
 eq(changedBy("/local/aifeatures"), ["/local/aifeatures"], "an AI switch");
@@ -48,6 +49,17 @@ eq(changedBy("/local/skills/check"), [], "a skills update check changes nothing"
 console.assert(hashKey(settings.skills({ project: "/r" }).queryKey) === hashKey(settings.skills({ project: "/r" }).queryKey)
   && hashKey(settings.skills({ project: undefined }).queryKey) === hashKey(settings.skills().queryKey), "Settings ▸ Skills and the rail's count share a key");
 eq(urlOf(settings.projectSettings.route, { project: "/a b" }), "/local/project/settings?project=%2Fa+b", "a project's settings");
+// The code tabs: what a commit, a checkout, a save and a file op change reaches every panel showing it.
+const filesRead = ["/local/files/tree", "/local/files/read", "/local/files/head", "/local/git"];
+for (const post of ["/local/git/commit", "/local/git/checkout", "/local/files/write", "/local/files/op"])
+  for (const r of filesRead) console.assert(changedBy(post).includes(r), `${post} changes ${r}`);
+console.assert(changedBy("/local/git/commit").includes("/local/git/log") && changedBy("/local/git/commit").includes("/local/git/ledger"),
+  "a commit moves the graph and the ledger");
+console.assert(!changedBy("/local/git/commit-message").includes("/local/files/tree"), "writing a message touches no file");
+eq(changedBy("/local/terminals/t1/close"), ["/local/terminals"], "closing a terminal");
+eq(changedBy("/local/server"), ["/local/state"], "a dev server start: the state poll carries the servers");
+// GIT's card and the chat header's chip share one PR read; the session rides in the URL, not the key.
+console.assert(hashKey(code.pr({ project: "p", branch: "b" }).queryKey) === hashKey(code.pr({ branch: "b", project: "p" }).queryKey), "one PR key");
 
 // --- a shared poll runs at its listed rate --------------------------------------
 const asked: string[] = [];
@@ -72,4 +84,8 @@ await queryClient.fetchQuery(live);
 await queryClient.fetchQuery(live);                             // right after: a delta poll is never held back
 eq(asked, ["/local/sessions/s1?cursor=0", "/local/sessions/s1?cursor=7"], "each delta read carries the cursor the last one left");
 eq(took.length, 2, "each answer is handed over once");
+
+prHints.session = "s1";
+await queryClient.fetchQuery(code.pr({ project: "p", branch: "b" }));
+eq(asked.at(-1), "/local/github/pr/status?project=p&branch=b&session=s1", "the PR read carries the chip's session");
 queryClient.clear();

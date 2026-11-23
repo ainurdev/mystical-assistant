@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Cloud, Ellipsis, ExternalLink, FileDiff, GitMerge,
   GitPullRequest, Laptop, LoaderCircle, Minus, Plus, RefreshCw, RotateCcw, Send, Sparkles, SquarePen, TriangleAlert, Undo2, X,
 } from "lucide-react";
-import { api, type CompareFile, type GitFile, type GitLedger, type GitStatus, type LedgerCommit, type PrStatus } from "../../api";
+import { api, type CompareFile, type GitFile, type GitStatus, type LedgerCommit } from "../../api";
+import { code, queryClient, reread } from "../../lib/queries";
 import { CommitGraph } from "../CommitGraph";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { askConfirm } from "../ui/Ask";
@@ -82,9 +84,6 @@ const ROWS = 3;      // a list's commits before "N more"
 const IN_ROWS = 3;   // origin's incoming stays short: the buttons are the point
 const STOPS = ["This Mac", "Committed", "Origin"];
 const STOP_IC: Record<Stop["icon"], typeof Check> = { laptop: Laptop, check: Check, up: ArrowUp, down: ArrowDown, cloud: Cloud, pr: GitPullRequest };
-// What each tree's line last read, so a switch back draws at once and re-reads in place.
-const LEDGERS = new Map<string, GitLedger>();
-const PRS = new Map<string, PrStatus>();
 const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const MOD = /Mac|iP/.test(navigator.platform) ? "⌘" : "Ctrl+";
@@ -186,7 +185,6 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   // Folds remember being closed — open is the default, so the flag is inverted.
   const [grOpen, setGrOpen] = useStickyFlag("git-graph-open");   // off by default: the tracker's list is the short answer
   const [branchOnly, setBranchOnly] = useStickyFlag("git-graph-branch-only");
-  const [nonce, setNonce] = useState(0);   // the graph re-reads on ⟳
   const ready = git !== null;
   // A clean `git status` answers fast; useLoadingPhase keeps the placeholder
   // from strobing on and off inside one frame budget.
@@ -202,7 +200,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     try {
       const r = await api.gitCommit(project, msg.trim(), undefined, branch || undefined);
       setNote(r.ok ? "Committed." : r.output || "Commit failed.");
-      if (r.ok) { setMsg(""); onGitChanged(); setNonce((n) => n + 1); }
+      if (r.ok) { setMsg(""); onGitChanged(); }
     } catch (e) { setNote((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -210,27 +208,13 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const s = syncOf(git);
   const up = s.kind === "diverged" ? s.ahead : s.kind === "ahead" || s.kind === "publish" ? s.n : 0;
   const down = s.kind === "diverged" ? s.behind : s.kind === "behind" ? s.n : 0;
-  // The line under the working tree, re-read when the counts or a sync op move.
-  const tkey = `${project}|${branch || ""}`;
-  const [led, setLed] = useState<GitLedger | null>(() => LEDGERS.get(tkey) ?? null);
-  useEffect(() => {
-    if (!project || !git?.is_repo) return;
-    let live = true;
-    void api.gitLedger(project, branch || undefined).then((r) => { if (live && r.local) { LEDGERS.set(tkey, r); setLed(r); } }).catch(() => undefined);
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tkey, git?.is_repo, up, down, git?.upstream, nonce]);
-  // The branch's pull request (the chat header's chip reads the same cached answer).
-  const [pr, setPr] = useState<PrStatus | null>(() => PRS.get(tkey) ?? null);
-  useEffect(() => {
-    if (!project || !branchName || !git?.upstream) return;
-    let live = true;
-    const read = () => void api.prStatus(project, branchName).then((r) => { if (live) { PRS.set(tkey, r); setPr(r); } }).catch(() => undefined);
-    read();
-    const t = setInterval(() => { if (document.visibilityState === "visible") read(); }, 60_000);
-    return () => { live = false; clearInterval(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tkey, branchName, git?.upstream, nonce]);
+  // The line under the working tree, asked again when the counts move; the last answer
+  // stays up while the next loads, and a switch back to a tree draws its last at once.
+  const heads = { project: project ?? "", branch: branch || undefined, at: `${up}|${down}|${git?.upstream ?? ""}` };
+  const ledQ = useQuery({ ...code.ledger(heads), enabled: !!project && !!git?.is_repo, placeholderData: keepPreviousData });
+  const led = ledQ.data?.local ? ledQ.data : null;
+  // The branch's pull request: the chat header's chip reads the same key (PrChip).
+  const pr = useQuery({ ...code.pr({ project: project ?? "", branch: branchName }), enabled: !!project && !!branchName && !!git?.upstream }).data ?? null;
   // One commit opened in place: its files, and one file's diff under it.
   const [openSha, setOpenSha] = useState("");
   const [shown, setShown] = useState<{ files: CompareFile[]; add: number; del: number } | null>(null);
@@ -239,12 +223,12 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     setFdiff(null); setShown(null);
     if (openSha === sha || !project) { setOpenSha(""); return; }
     setOpenSha(sha);
-    void api.gitShow(project, sha).then((r) => setShown({ files: r.files ?? [], add: r.add ?? 0, del: r.del ?? 0 })).catch(() => setShown({ files: [], add: 0, del: 0 }));
+    void queryClient.fetchQuery(code.show({ project, sha })).then((r) => setShown({ files: r.files ?? [], add: r.add ?? 0, del: r.del ?? 0 })).catch(() => setShown({ files: [], add: 0, del: 0 }));
   }
   function openCommitFile(sha: string, name: string) {
     if (fdiff?.name === name || !project) { setFdiff(null); return; }
     setFdiff({ name, text: null });
-    void api.gitShow(project, sha, name).then((r) => setFdiff({ name, text: r.diff ?? "" })).catch(() => setFdiff({ name, text: "" }));
+    void queryClient.fetchQuery(code.show({ project, sha, path: name })).then((r) => setFdiff({ name, text: r.diff ?? "" })).catch(() => setFdiff({ name, text: "" }));
   }
   const [allOf, setAllOf] = useState<Record<string, boolean>>({});   // a stretch showing every commit
   const [baseAt, setBaseAt] = useState<{ x: number; y: number } | null>(null);
@@ -252,21 +236,13 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   // COMING IN (origin's commits) and, diverged, the merge's dry run. The last
   // answer stays up while the next loads, so the rows don't blink; its verdict
   // only counts for the heads it was asked about (`key`).
-  type Incoming = { commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null; key: string };
-  const [incoming, setIncoming] = useState<Incoming | null>(null);
-  const ikey = `${project}|${branch}|${up}|${down}|${git?.upstream}`;
-  useEffect(() => {
-    if (!project || !down) { setIncoming(null); return; }
-    let live = true;
-    void api.gitIncoming(project, branch || undefined).then((r) => { if (live) setIncoming({ ...r, key: ikey }); })
-      .catch(() => { if (live) setIncoming({ commits: [], clash: null, key: ikey }); });
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ikey, nonce]);
+  const ikey = `${project}|${branch}|${heads.at}`;
+  const inQ = useQuery({ ...code.incoming(heads), enabled: !!project && !!down, placeholderData: keepPreviousData });
+  const incoming = !project || !down ? null : inQ.isError ? { commits: [], clash: null } : inQ.data ?? null;
   // A merge that clashed when it ran (no dry run on this git): its files, until the heads move.
   const [clashSeen, setClashSeen] = useState<{ files: string[]; key: string } | null>(null);
   const [clashAll, setClashAll] = useState(false);
-  const clashFiles = clashSeen?.key === ikey ? clashSeen.files : incoming?.key === ikey ? incoming.clash : undefined;
+  const clashFiles = clashSeen?.key === ikey ? clashSeen.files : incoming && !inQ.isPlaceholderData ? incoming.clash : undefined;
   useEffect(() => {
     if (op?.phase !== "done") return;
     const t = setTimeout(() => setOp(null), 4000);
@@ -288,7 +264,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       // A refused push is most often origin moving on: fetch, so the hero offers the merge.
       if (!r.ok && kind !== "pull") await api.gitFetch(project, branch || undefined).catch(() => undefined);
     } catch (e) { setOp({ kind, n, phase: "failed", output: (e as Error).message, project, branch }); }
-    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+    finally { setBusy(false); onGitChanged(); }
   }
 
   // Merge / Merge & push on a diverged branch, here: a merge commit, never a
@@ -313,7 +289,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         : { kind, n: ahead + 1, phase: "failed", output: p.output || "Push refused.", project, branch });
       if (!p.ok) await api.gitFetch(project, branch || undefined).catch(() => undefined);
     } catch (e) { setOp({ kind, n: kind === "push" ? ahead + 1 : behind, phase: "failed", output: (e as Error).message, project, branch, push: andPush }); }
-    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+    finally { setBusy(false); onGitChanged(); }
   }
 
   // ⟳ fetches first: behind, and the graph's remote rows, as of now.
@@ -321,14 +297,14 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     if (!project) return;
     // No repo, or a bridge not restarted since /local/git/fetch (no fetched_at
     // key): a plain re-read, as ⟳ always was.
-    if (s.kind === "none" || git?.fetched_at === undefined) { onGitChanged(); setNonce((x) => x + 1); return; }
+    if (s.kind === "none" || git?.fetched_at === undefined) { onGitChanged(); void reread([code.ledger.route]); void reread([code.log.route]); return; }
     setBusy(true);
     setOp({ kind: "fetch", n: 0, phase: "busy" });
     try {
       const r = await api.gitFetch(project, branch || undefined);
       setOp(r.ok ? null : { kind: "fetch", n: 0, phase: "failed", output: r.output || "Fetch failed.", project, branch });
     } catch (e) { setOp({ kind: "fetch", n: 0, phase: "failed", output: (e as Error).message, project, branch }); }
-    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+    finally { setBusy(false); onGitChanged(); }
   }
 
   /** Generate the commit message from what's about to be committed — the
@@ -477,7 +453,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         setNote(`Merging ${led.base} would clash in ${plural(r.clash.length, "file")}, so nothing changed. The merge is an unsent draft in a new session.`);
       } else setNote(r.ok ? `Merged ${led.base} into ${branchName}.` : r.output || "Update failed.");
     } catch (e) { setNote((e as Error).message); }
-    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+    finally { setBusy(false); onGitChanged(); }
   }
   function undoCommit(c: LedgerCommit) {
     void askConfirm(`Undo "${c.subject}"? The commit goes away and its changes stay, staged.`, { ok: "Undo commit" }).then(async (yes) => {
@@ -488,13 +464,12 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         setNote(r.ok ? "" : r.output || "Couldn't undo the commit.");
         if (r.ok) setOpenSha("");
       } catch (e) { setNote((e as Error).message); }
-      finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+      finally { setBusy(false); onGitChanged(); }
     });
   }
   async function setBase(target: string | null) {
     if (!project || !branchName) return;
     try { await api.setBranchTarget(project, branchName, target); } catch (e) { setNote((e as Error).message); }
-    setNonce((x) => x + 1);
   }
   async function openPr() {
     if (!project || !led?.base || !prForm?.title.trim()) return;
@@ -504,7 +479,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       setNote(r.ok ? `Opened pull request${r.number ? ` #${r.number}` : ""}.` : r.output || "Couldn't open the pull request.");
       if (r.ok) setPrForm(null);
     } catch (e) { setNote((e as Error).message); }
-    finally { setBusy(false); setNonce((x) => x + 1); }
+    finally { setBusy(false); }
   }
   // The kicker's short form of how fresh this is (the full words are in the title).
   const right = fetching ? "checking…" : autoErr ? "offline" : unchecked ? "not checked" : !t ? "" : t === "now" ? "just now" : `${t} ago`;
@@ -881,7 +856,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
                   </span>
                 </div>
                 <CommitGraph project={project} branch={branchOnly ? branchName || undefined : undefined}
-                  upstream={git?.upstream} ahead={ahead} behind={behind} nonce={nonce} />
+                  upstream={git?.upstream} ahead={ahead} behind={behind} />
               </div>
             )}
           </>)}

@@ -2558,7 +2558,7 @@ export function App() {
     [turns, selected?.work_cwd, selected?.cwd]);
   // BRANCHES (lib/branchrows): one read of the open repo's branches feeds the tab,
   // the rail tile's LAND n and auto clean-up (the tab header's broom).
-  const branchData = useBranches(sessionProject, gitNonce, settings.rightOpen && settings.rightTab === "branches");
+  const branchData = useBranches(sessionProject, settings.rightOpen && settings.rightTab === "branches");
   const branchView = useMemo<BranchView | null>(() => {
     if (!branchData.data) return null;
     const who = branchActivity(sessions, statusMap, sessionProject);
@@ -2621,7 +2621,11 @@ export function App() {
   // branch, and a tree opened before answers from its last status while this
   // read is on the way: the GIT tab keeps its shape instead of blanking and
   // filling back in.
-  const gitQ = useQuery({ ...code.git({ project: sessionProject ?? "", branch: sessionBranch || undefined }), enabled: !!sessionProject });
+  // The code tabs wait until the session list names the open session's branch: the project
+  // fallback before it would ask every GIT and FILES read once more, on a key nobody keeps.
+  const treeKnown = !sessionId || !!selected || !sessionsQ.isPending;
+  const gitQ = useQuery({ ...code.git({ project: sessionProject ?? "", branch: sessionBranch || undefined }),
+    enabled: !!sessionProject && treeKnown });
   // Not a repo / fetch failed — resolve to "no git" so the GIT tab's READING… clears instead of holding forever.
   const sessionGit = gitQ.data ?? (gitQ.isError ? NO_GIT : null);
   useEffect(() => { if (gitNonce) void reread([code.git.route]); }, [gitNonce]);
@@ -2851,7 +2855,7 @@ export function App() {
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
       render: () => (
         <FilesPanel
-          project={sessionProject} branch={sessionBranch}
+          project={treeKnown ? sessionProject : null} branch={sessionBranch}
           onOpenFile={openFileFromPanel}
           onSendFile={teammates.length && sessionProject
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
