@@ -32,7 +32,7 @@ export const SCENES_INLINE = [
 export const NYAN = [".nyan-ride", ".nyan-trail", ".nyan-star", ".nyan-sky"];
 // The boot intro is untouched: its files, and its scenes' CSS prefixes.
 export const INTRO_FILES = ["components/hud/BootIntro.tsx", "components/hud/BootScenes.tsx", "components/hud/BootFire.ts"];
-export const INTRO_PREFIXES = [".kd-", ".dd-", ".bootcontinue"];
+export const INTRO_PREFIXES = [".kd-", ".dd-"];
 
 // ---- parsing ------------------------------------------------------------------------------------
 
