@@ -1063,13 +1063,18 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listed, projectRel, sessionId, markBoot]);
 
-  // The open session is the URL: opening one adds a history entry, landing on #/
-  // replaces it. Under SETTINGS the URL stays SETTINGS; closing it names the session.
+  // The open session is the URL: opening one adds a history entry. One that
+  // follows no session (the load, the fresh screen, an archived chat's successor)
+  // replaces it, so back never lands on a session that isn't there. Under
+  // SETTINGS the URL stays SETTINGS; closing it names the session.
+  const prevSid = useRef<string | null>(null);
   useEffect(() => {
+    const was = prevSid.current;
+    prevSid.current = sessionId;
     if (!sessionId) return;
     const now = placeNow();
     if (now.kind === "settings" || (now.kind === "session" && now.id === sessionId)) return;
-    go({ kind: "session", id: sessionId }, now.kind === "home");
+    go({ kind: "session", id: sessionId }, was === null || now.kind === "home");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- go and placeNow read the router
   }, [sessionId]);
   // And back: back, forward or an edited URL opens the session it names. The
@@ -2105,6 +2110,7 @@ export function App() {
   // a worktree is waiting on), and the real session takes it over as it is.
   function openBlank(project?: string) {
     skipRestore.current = true;
+    go({ kind: "home" }, false);   // its own entry: back returns to the session left
     setSessionId(null);
     setTurns([]);
     setBoot(null);             // the session left's; its fresh screen would say it
