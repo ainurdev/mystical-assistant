@@ -27,6 +27,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { queryClient } from "./lib/queries";
+import { markStartup } from "./lib/reports";
+
+markStartup("script loaded", false);   // every static import above has run
 
 // React's root callbacks: render errors, route errors (the router's error screen
 // is a boundary) included. React's own console line is kept.
