@@ -3151,7 +3151,7 @@ export function App() {
           { icon: pol === "ask" ? "●" : "○", label: "Ask",
             hint: "offer the other-account choices", onClick: () => setPol("ask") },
           { icon: pol === "auto" ? "●" : "○", label: "Auto-switch",
-            hint: "take the best fallback silently", onClick: () => setPol("auto") },
+            hint: "move to the first login in the order with room", onClick: () => setPol("auto") },
           { icon: pol === "wait" ? "●" : "○", label: "Wait",
             hint: "only wait for the reset", onClick: () => setPol("wait") },
         ] });

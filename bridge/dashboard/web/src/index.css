@@ -5568,7 +5568,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-meter b { font-weight: 500; }
 .aim-usage { font: 11px var(--mono); white-space: nowrap; }
 .aim-acts { display: flex; gap: 6px; flex: none; align-items: center; }
-.aim-login > .aim-acts { margin-left: auto; }   /* wrapped onto a line of its own, the row's switches still line up at the end */
+.aim-login > .aim-acts { margin-left: auto; }   /* wrapped onto a line of its own, the row's buttons still line up at the end */
 /* the Auto-switch order (SettingsModal AutoSwitchOrder): the saved order on screen,
    the logins switched off under a dashed line at full strength; only disabled dims */
 .aim-ordhead { margin-top: 12px; }
@@ -5581,7 +5581,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-ord[data-over="after"] { box-shadow: inset 0 -2px 0 var(--acc); }
 .aim-ord b { flex: 1; min-width: 0; font: 500 13.5px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aim-grip { appearance: none; flex: none; width: 22px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--txl); display: grid; place-items: center; cursor: grab; }
-.aim-grip:hover, .aim-grip:focus-visible { color: var(--txm); background: var(--ac-06); outline: none; }
+.aim-grip:hover, .aim-grip:focus-visible { color: var(--txm); background: var(--ac-06); }
+.aim-grip:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .aim-rank { flex: none; width: 16px; text-align: center; font: 600 13px var(--mono); color: var(--acc); }
 .aim-ord[data-out] .aim-rank { color: var(--txl); }
 .aim-profs { border-top: 1px solid var(--l); background: var(--panel2); padding: 6px 10px 8px; }

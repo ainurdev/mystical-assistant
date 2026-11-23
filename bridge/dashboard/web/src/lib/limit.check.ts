@@ -39,9 +39,15 @@ eq(limitNudge(null), null, "no prompt");
 
 // --- the login to offer -------------------------------------------------------
 const acct = (slot: number, left: number | null, more: Partial<AccountInfo> = {}) =>
-  ({ slot, email: `a${slot}@x.y`, alias: null, disabled: false, default: slot === 1, left, resets_at: null,
+  ({ slot, email: `a${slot}@x.y`, alias: null, disabled: false, default: slot === 1, order: slot - 1, left, resets_at: null,
      five_hour: null, seven_day: null, ...more }) as AccountInfo;
-eq(otherLogin([acct(1, 0), acct(2, 85), acct(3, 40)], 1)?.slot, 2, "the one with the most left");
+eq(otherLogin([acct(1, 0), acct(2, 85), acct(3, 40)], 1)?.slot, 2, "the first with room");
+eq(otherLogin([acct(1, 0), acct(2, 85, { order: 2 }), acct(3, 40, { order: 1 })], 1)?.slot, 3,
+  "the first down the Auto-switch order with room, not the one with the most left");
+eq(otherLogin([acct(1, 0), acct(2, 85, { auto_switch: false }), acct(3, 40)], 1)?.slot, 3,
+  "a login kept out of Auto-switch comes after the ones still in");
+eq(otherLogin([acct(1, 0), acct(2, 85, { auto_switch: false }), acct(3, 0)], 1)?.slot, 2,
+  "and is still offered when it alone has room");
 eq(otherLogin([acct(1, 0), acct(2, null), acct(3, 40)], 1)?.slot, 3, "a known meter beats an unreadable one");
 eq(otherLogin([acct(1, 0), acct(2, null)], 1)?.slot, 2, "an unreadable meter is the last resort, not a skip");
 eq(otherLogin([acct(1, 0), acct(2, 0)], 1), null, "nobody has room");

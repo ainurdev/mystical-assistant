@@ -243,10 +243,10 @@ def list_accounts() -> list:
     out = []
     ambient = credentials.read(credentials_path(DEFAULT_SLOT))
     if ambient:
-        mine = reg.get(str(DEFAULT_SLOT)) or {}
+        slot1 = reg.get(str(DEFAULT_SLOT)) or {}
         out.append({"slot": DEFAULT_SLOT, "email": _email_at(IDENTITY),
                     "alias": None, "disabled": False, "default": True,
-                    "auto_switch": bool(mine.get("auto_switch", True)), "order": mine.get("order"),
+                    "auto_switch": bool(slot1.get("auto_switch", True)), "order": slot1.get("order"),
                     "plan": _plan_of(credentials.parse(ambient))})
     for key, e in reg.items():
         if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
@@ -730,7 +730,7 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
 def pick(exclude=(), auto_switch: bool = False) -> "int | None":
     """The slot that should take over, or None when nothing has headroom: the
     first login down the Auto-switch order (set_order) with room. The order is
-    the user's priority, so a login further down with more left still waits.
+    the user's to set, so a login further down with more left still waits.
 
     auto_switch picks only among accounts still in Auto-switch: the ones a
     limit may move work onto without asking you. Without it they still come

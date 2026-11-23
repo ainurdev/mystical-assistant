@@ -771,7 +771,7 @@ def test_resets_at_reports_the_window_that_is_capping_you():
 
 
 def test_pick_takes_the_first_login_down_the_order_with_room():
-    """The order is the user's priority, not a tiebreak: slot 2 has the most
+    """The order is the user's choice, not a tiebreak: slot 2 has the most
     left and still waits its turn."""
     _slots(3)
     accounts.set_order([3, 1, 2])
