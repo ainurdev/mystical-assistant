@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { code, main, queryClient } from "../lib/queries";
 import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
@@ -524,6 +525,9 @@ const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 /** One flows editor's state: the bridge's settings, the picked flow (or "general"), the last refusal. */
+/** The project's command list, through the shared read (lib/queries): the plates read it too. */
+const readCommands = (project?: string | null) => queryClient.fetchQuery(main.commands({ project: project || undefined }));
+
 function useFlowsEdit(initial: string) {
   const cfg = useFlowSettings();
   const [sel, setSel] = useState(initial);
@@ -906,19 +910,24 @@ export function Composer({
   // follow the build so the age lands on the new map, not the one it replaced.
   // Nothing to poll for when the cluster is switched off.
   const [graph, setGraph] = useState<GraphState | null>(null);
+  const graphRun = useRef(running);
   const mapOn = !!onOpenMap;
   useEffect(() => {
     if (!project || !mapOn) { setGraph(null); return; }
     let live = true;
     let t = 0;
-    const poll = () => api.graphState(project)
+    // Shared with the rest of the page (lib/queries): the first look takes a fresh answer it
+    // already has; a turn's edge and a build being followed ask the bridge again.
+    const edge = graphRun.current !== running;
+    graphRun.current = running;
+    const poll = (fresh: boolean) => queryClient.fetchQuery({ ...code.graphState({ project }), ...(fresh ? { staleTime: 0 } : {}) })
       .then((s) => {
         if (!live) return;
         setGraph(s);
-        if (s.building) t = window.setTimeout(poll, 3000);
+        if (s.building) t = window.setTimeout(() => void poll(true), 3000);
       })
       .catch(() => { if (live) setGraph(null); });
-    void poll();
+    void poll(edge);
     return () => { live = false; if (t) window.clearTimeout(t); };
   }, [project, running, mapOn]);
 
@@ -1033,14 +1042,14 @@ export function Composer({
     if (noList || (!slashOn && !leadsSlash)) return;
     let live = true;
     void (skillPrefix
-      ? Promise.all([api.commands(project), multiApi.skillShare(cwd)]).then(([c, s]) => {
+      ? Promise.all([readCommands(project), multiApi.skillShare(cwd)]).then(([c, s]) => {
           const about = new Map(c.commands.map((x) => [x.name, x.description]));
           const out: SlashCommand[] = s.skills.filter((x) => x.on && !x.conflict).map((x) => ({
             name: x.name, description: about.get(x.name) ?? "", scope: x.scope === "project" ? "project" : "user",
           }));
           return goals ? [...out, { name: "goal", description: "Set what this chat is for; the loop works toward it", scope: "builtin" as const }] : out;
         })
-      : api.commands(project).then((r) => r.commands))
+      : readCommands(project).then((r) => r.commands))
       .then((list) => { if (live) { setCmds(list); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
@@ -1049,7 +1058,7 @@ export function Composer({
   useEffect(() => {
     if ((!routing && !shelled) || onAgent) return;
     let live = true;
-    void api.commands(project)
+    void readCommands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };

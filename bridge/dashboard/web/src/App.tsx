@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { code, main, queryClient, reread, runningHints } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
 } from "lucide-react";
@@ -133,7 +135,6 @@ import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
 import { WorkPanel } from "./components/WorkPanel";
-import { workGet } from "./lib/readapi";
 import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
@@ -180,6 +181,7 @@ import { Spinner } from "./components/ui";
 // these read as grey smudges on the scanlined panel; 18px with a heavier
 // stroke is the smallest that stays a recognisable glyph.
 const RAIL = { size: 18, strokeWidth: 1.8 } as const;
+const NO_GIT: GitStatus = { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] };
 
 // A rail badge is ~20px wide. Three digits (200 unread lessons) spill over the
 // icon next to it, and past ~99 the exact number stopped being the point.
@@ -336,10 +338,6 @@ export function App() {
   const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
   const [lessonKeys, setLessonKeys] = useState<string[]>([]);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
-  // Each session's own working tree (its worktree when it has one), which
-  // gitBadges can't answer — those are keyed by project, one badge per repo.
-  // Keyed by tree, so going back to a session shows its last status at once.
-  const [gitByTree, setGitByTree] = useState<Map<string, GitStatus>>(new Map());
   // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
@@ -839,7 +837,8 @@ export function App() {
   // let the real response (and the 3s state poll) reconcile.
   function selectProjectBg(rel: string) {
     setState((st) => st ? { ...st, project: { rel, name: projectName(rel) } } : st);
-    void api.select(rel).then(() => api.state()).then(setState).catch(() => { /* ignore */ });
+    // The POST rereads the state (lib/queries CHANGES); a failed one puts the last answer back.
+    void api.select(rel).catch(() => { const s = queryClient.getQueryData(main.state().queryKey); if (s) setState(s); });
   }
 
   function selectSession(s: SessionBrief) {
@@ -907,20 +906,13 @@ export function App() {
     return () => { window.removeEventListener("mousedown", down); window.removeEventListener("dblclick", dbl); };
   }, []);
 
-  // --- polls (unchanged data flow) ---
+  // --- polls (lib/queries: one request per answer, paused while hidden) ---
+  const stateQ = useQuery(main.state());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const s = await api.state();
-        if (live) setState(s);
-        markBoot("bridge", "ok", "LINKED");
-      } catch { markBoot("bridge", "fail", "OFFLINE"); }
-    };
-    void tick();
-    const id = setInterval(tick, 3000);
-    return () => { live = false; clearInterval(id); };
-  }, [markBoot]);
+    if (stateQ.data) setState(stateQ.data);
+    if (stateQ.status === "success") markBoot("bridge", "ok", "LINKED");
+    else if (stateQ.status === "error") markBoot("bridge", "fail", "OFFLINE");
+  }, [stateQ.data, stateQ.status, markBoot]);
 
   useEffect(() => {
     try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects })); }
@@ -933,9 +925,13 @@ export function App() {
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
   const marksMoved = useRef(false);
-  const refreshProjects = useCallback(async () => {
-    try {
-      const p = await api.projects();
+  const projectsQ = useQuery(main.projects());
+  const refreshProjects = useCallback(() => reread(main.projects().queryKey), []);
+  useEffect(() => {
+    const p = projectsQ.data;
+    if (projectsQ.status === "error") { markBoot("projects", "fail", "NO SCAN"); return; } /* old backend without discovery — panel stays session-derived */
+    if (!p) return;
+    {
       setDiscovered(p.projects ?? []);
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
@@ -958,38 +954,40 @@ export function App() {
       }
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
-    } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
-  }, [markBoot]);
-  useEffect(() => {
-    void refreshProjects();
-    const id = setInterval(refreshProjects, 10000);
-    return () => clearInterval(id);
-  }, [refreshProjects]);
+    }
+  }, [projectsQ.data, projectsQ.status, markBoot]);
 
+  const sessionsQ = useQuery(main.sessions());
+  useEffect(() => {
+    const list = sessionsQ.data?.sessions;
+    if (sessionsQ.status === "pending") return;
+    setBooted(true);
+    if (!list) { markBoot("sessions", "fail", "UNREADABLE"); return; }
+    // A poll already in flight when a session is created comes back without
+    // it and would drop the chat you just opened (startIn/newSession add it
+    // optimistically) out of the lists — keep the open one until a poll
+    // carries it.
+    setSessions((prev) => {
+      const sid = sessionIdRef.current;
+      const open = sid && !list.some((s) => s.id === sid)
+        ? prev.find((s) => s.id === sid) : undefined;
+      return open ? [open, ...list] : list;
+    });
+    markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
+  }, [sessionsQ.data, sessionsQ.status, markBoot]);
+  /** Read the list again now (after a change), and answer with it. */
   const loadSessions = useCallback(async () => {
-    try {
-      const { sessions: list } = await api.sessions();
-      // A poll already in flight when a session is created comes back without
-      // it and would drop the chat you just opened (startIn/newSession add it
-      // optimistically) out of the lists — keep the open one until a poll
-      // carries it.
-      setSessions((prev) => {
-        const sid = sessionIdRef.current;
-        const open = sid && !list.some((s) => s.id === sid)
-          ? prev.find((s) => s.id === sid) : undefined;
-        return open ? [open, ...list] : list;
-      });
-      markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
-      return list;
-    } catch { markBoot("sessions", "fail", "UNREADABLE"); return [] as SessionBrief[]; }
-    finally { setBooted(true); }
-  }, [markBoot]);
+    await reread(main.sessions().queryKey);
+    return queryClient.getQueryData(main.sessions().queryKey)?.sessions ?? [];
+  }, []);
 
   const projectRel = state?.project?.rel ?? null;
+  // Opening the chat you had open, once the first list has answered (or failed).
+  const listed = sessionsQ.status !== "pending";
   useEffect(() => {
-    let live = true;
-    void loadSessions().then((ss) => {
-      if (!live) return;
+    if (!listed) return;
+    const ss = queryClient.getQueryData(main.sessions().queryKey)?.sessions ?? [];
+    {
       if (!sessionId) {
         if (skipRestore.current) { skipRestore.current = false; return; }
         // Back to the chat you had open, wherever it lives; one that's gone
@@ -1022,10 +1020,10 @@ export function App() {
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
       }
-    });
-    const id = setInterval(loadSessions, 5000);
-    return () => { live = false; clearInterval(id); };
-  }, [loadSessions, projectRel, sessionId, markBoot]);
+    }
+  // The list's own answers don't re-run it: only the first, a session closing, or the project moving.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listed, projectRel, sessionId, markBoot]);
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
@@ -1039,7 +1037,9 @@ export function App() {
     const fetchOnce = async () => {
       try {
         const first = seqRef.current === 0;
-        const t = await api.transcript(sessionId, seqRef.current, first ? { tail: TAIL_TURNS } : undefined);
+        // Through the client (lib/queries), so a second ask for the same cursor joins the first.
+        const t = await queryClient.fetchQuery({
+          ...main.session({ id: sessionId, cursor: seqRef.current, ...(first ? { tail: TAIL_TURNS } : {}) }), staleTime: 0, gcTime: 0 });
         if (!live) return;
         const held = staleTurns.current;
         staleTurns.current = false;
@@ -1072,8 +1072,9 @@ export function App() {
     // Then poll only while the session is actually producing output; an idle
     // session doesn't change, so re-effect on the running/working transitions
     // (this also captures the final delta the moment a turn completes).
+    // Paused while the page is hidden; the next tick after it shows again catches up.
     const id = setInterval(() => {
-      if (running || openWorking) void fetchOnce();
+      if ((running || openWorking) && !document.hidden) void fetchOnce();
     }, 1500);
     return () => { live = false; clearInterval(id); };
   }, [sessionId, running, openWorking, markBoot]);
@@ -1327,23 +1328,23 @@ export function App() {
   // Tells the bridge this page alerts by itself, so the tray companion
   // (windows/, linux/) stays quiet rather than alerting twice. A ref: the poll
   // below is set up once, and the toggle can change under it.
-  const alertsOn = useRef(false);
-  useEffect(() => { alertsOn.current = settings.push && pushGranted(); }, [settings.push]);
+  useEffect(() => { runningHints.alerts = settings.push && pushGranted() ? 1 : undefined; }, [settings.push]);
   // Your last click or keypress here rides the same poll: Telegram's "away" is
   // nobody touching any dashboard for a while (bridge/notices.py).
-  const lastInput = useRef(Math.floor(Date.now() / 1000));
   useEffect(() => {
-    const on = () => { lastInput.current = Math.floor(Date.now() / 1000); };
+    runningHints.seen = Math.floor(Date.now() / 1000);
+    const on = () => { runningHints.seen = Math.floor(Date.now() / 1000); };
     window.addEventListener("pointerdown", on, true);
     window.addEventListener("keydown", on, true);
     return () => { window.removeEventListener("pointerdown", on, true); window.removeEventListener("keydown", on, true); };
   }, []);
+  // Polls while hidden too: the bell, the Dock badge and OS banners hang on it.
+  const runningQ = useQuery(main.running());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const r = await api.running(alertsOn.current, lastInput.current);
-        if (!live) return;
+    const r = runningQ.data;
+    if (!r) return;
+    {
+      {
         // A working row says how long its turn has run: the bridge's job holds the
         // start, so it rides along as the state's `since` (waiting already has one).
         const started = new Map((r.jobs ?? []).map((j) => [j.session_id, j.started]));
@@ -1354,12 +1355,9 @@ export function App() {
         setNeeds(r.needs);
         needsRef.current = r.needs ?? [];
         noteStyling(r.styling);
-      } catch { /* ignore */ }
-    };
-    void tick();
-    const id = setInterval(tick, 4000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
+      }
+    }
+  }, [runningQ.data]);
 
   // working → not-working (and not awaiting, which the list already flags) on a
   // session you don't have open = it finished without you = DONE.
@@ -1433,40 +1431,42 @@ export function App() {
     try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch { /* ignore */ }
   }, [drafts]);
 
+  const gitAllQ = useQuery(code.gitAll());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const { repos } = await api.gitAll();
-        if (live) setGitBadges(new Map(Object.entries(repos)));
-        const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
-        markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
-          : bootCount(Object.keys(repos).length, "REPO"));
-      } catch { markBoot("git", "fail", "NO STATUS"); }
-    };
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => { live = false; clearInterval(id); };
-  }, [markBoot]);
+    if (gitAllQ.status === "error") { markBoot("git", "fail", "NO STATUS"); return; }
+    const repos = gitAllQ.data?.repos;
+    if (!repos) return;
+    setGitBadges(new Map(Object.entries(repos)));
+    const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
+    markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
+      : bootCount(Object.keys(repos).length, "REPO"));
+  }, [gitAllQ.data, gitAllQ.status, markBoot]);
 
   // Every login with its meter (bridge accounts.with_meters). The footer and the
   // MODEL menu read the one the open session spends, and the PROFILE menu reads
   // what each profile's login has left. Polled on the usage tick below, and
   // reloaded at once after SETTINGS ▸ ACCOUNTS changes one. `fresh`: the PROFILE
   // menu has the bridge re-read, through the CLI, any meter older than that (s).
-  const loadAccounts = useCallback((fresh?: number) => api.accounts(fresh)
-    .then((a) => {
-      setAccounts(a.accounts);
-      markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
-    })
-    .catch(() => markBoot("auth", "fail", "NO LOGIN")), [markBoot]);
+  const accountsQ = useQuery(main.accounts());
+  useEffect(() => {
+    if (accountsQ.data) {
+      setAccounts(accountsQ.data.accounts);
+      markBoot("auth", "ok", bootCount(accountsQ.data.accounts.length, "ACCOUNT"));
+    } else if (accountsQ.status === "error") markBoot("auth", "fail", "NO LOGIN");
+  }, [accountsQ.data, accountsQ.status, markBoot]);
+  // A `fresh` read (re-read through the CLI) is its own request, and its answer is the list's.
+  const loadAccounts = useCallback(async (fresh?: number) => {
+    if (fresh === undefined) { await reread(main.accounts().queryKey); return; }
+    try { queryClient.setQueryData(main.accounts().queryKey, await queryClient.fetchQuery({ ...main.accounts({ fresh }), staleTime: 0, gcTime: 0 })); }
+    catch { /* the list's next poll */ }
+  }, []);
 
   useEffect(() => {
     let live = true;
     const tick = async () => {
+      if (document.hidden) return;   // shortcut: usage and agents are App's own 60s timer until ticket 12 moves them
       try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
-      // Same 60s tick: every login's meter, then which agents you can pick from.
-      await loadAccounts();
+      // Same 60s tick: which agents you can pick from (the meters poll in lib/queries).
       if (!live) return;
       // ponytail: options a TEST or a turn just cached reach the composer on this 60s tick, not at once.
       try {
@@ -1479,7 +1479,7 @@ export function App() {
     void tick();
     const id = setInterval(tick, 60000);
     return () => { live = false; clearInterval(id); };
-  }, [loadAccounts]);
+  }, []);
 
   // Profiles change only when someone edits them — here (SETTINGS) or on
   // another dashboard — or when a login is added, which gets one of its own
@@ -2480,7 +2480,7 @@ export function App() {
   useEffect(() => {
     if (!ai.graph || !sessionProject || settingsOpen) { if (!ai.graph || !sessionProject) setMapOn(false); return; }
     let live = true;
-    void api.graphState(sessionProject).then((g) => { if (live) setMapOn(g.repo_on !== false); })
+    void queryClient.fetchQuery(code.graphState({ project: sessionProject })).then((g) => { if (live) setMapOn(g.repo_on !== false); })
       .catch(() => { if (live) setMapOn(false); });
     return () => { live = false; };
   }, [ai.graph, sessionProject, settingsOpen]);
@@ -2523,26 +2523,10 @@ export function App() {
   // branch, and a tree opened before answers from its last status while this
   // read is on the way: the GIT tab keeps its shape instead of blanking and
   // filling back in.
-  const treeKey = `${sessionProject ?? ""}@${sessionBranch ?? ""}`;
-  const sessionGit = gitByTree.get(treeKey) ?? null;
-  useEffect(() => {
-    if (!sessionProject) return;
-    let live = true;
-    const tick = async () => {
-      try {
-        const g = await api.git(sessionProject, sessionBranch || undefined);
-        if (live) setGitByTree((m) => new Map(m).set(treeKey, g));
-      } catch {
-        // Not a repo / fetch failed — resolve to "no git" so the GIT tab's
-        // READING… clears instead of holding forever.
-        if (live) setGitByTree((m) => m.has(treeKey) ? m
-          : new Map(m).set(treeKey, { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] }));
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionProject, sessionBranch, gitNonce]);
+  const gitQ = useQuery({ ...code.git({ project: sessionProject ?? "", branch: sessionBranch || undefined }), enabled: !!sessionProject });
+  // Not a repo / fetch failed — resolve to "no git" so the GIT tab's READING… clears instead of holding forever.
+  const sessionGit = gitQ.data ?? (gitQ.isError ? NO_GIT : null);
+  useEffect(() => { if (gitNonce) void reread([code.git.route]); }, [gitNonce]);
 
   // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
   // status above: the session's newest check, and whether its project is linked to Claude
@@ -2722,20 +2706,12 @@ export function App() {
   // A run starting in this chat, from anywhere, opens the work list once, so you can watch it.
   // Its open items are the rail's badge.
   const [workOpen, setWorkOpen] = useState(0);
+  // The rail tile counts the tasks being built (bridge/worklist.py groups them).
+  const workQ = useQuery({ ...main.worklist({ session: sessionId ?? "", project: "" }), enabled: multiOn && !!sessionId });
+  const workItems = (workQ.data as { items?: { group: string }[] } | undefined)?.items;
   useEffect(() => {
-    if (!multiOn || !sessionId) { setWorkOpen(0); return; }
-    let gone = false;
-    // The rail tile counts the tasks being built (bridge/worklist.py groups them).
-    const look = () => {
-      workGet<{ items: { group: string }[] }>(sessionId, null).then((r) => {
-        if (!gone) setWorkOpen(r.items.filter((i) => i.group === "building" || i.group === "needs").length);
-      }, () => { if (!gone) setWorkOpen(0); });
-    };
-    look();
-    const t = window.setInterval(look, 4000);
-    return () => { gone = true; window.clearInterval(t); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [multiOn, sessionId]);
+    setWorkOpen(multiOn && sessionId && !workQ.isError ? (workItems ?? []).filter((i) => i.group === "building" || i.group === "needs").length : 0);
+  }, [multiOn, sessionId, workItems, workQ.isError]);
 
   // The chat's code-like words, for the composer to complete. Only on a new turn or a finished one:
   // a streamed chunk doesn't change what's worth offering.

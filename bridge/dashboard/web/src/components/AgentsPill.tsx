@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main, reread } from "../lib/queries";
 import { useMultiOn } from "../lib/multistore";
-import { api, type AgentsInfo, type SessionStatus } from "../api";
+import type { AgentsInfo, SessionStatus } from "../api";
 import type { HudSettings } from "../lib/theme";
 import { OPEN_AGENT, setRoster } from "../lib/subagents";
 import { bgView } from "../lib/clisignals";
@@ -39,25 +41,26 @@ export function AgentsPill({
   const runningRef = useRef(running);
   runningRef.current = running;
 
+  // Polled every 1.5 s while the session or one of its agents runs; read again on a turn's edges.
+  const key = main.agents({ session: sessionId ?? "" });
+  const q = useQuery({ ...key, enabled: !!sessionId,
+    refetchInterval: (qq) => (runningRef.current || (qq.state.data?.running ?? 0) > 0 ? 1500 : false) });
+  const edge = useRef(running);
   useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    const poll = async () => {
-      try {
-        const d = await api.agents(sessionId);
-        if (!live) return;
-        setData(d);
-        setDataFor(sessionId);
-        setOpen((o) => (typeof o === "string" && d.total === 0 ? false : o));  // nothing to open it on
-        setRoster(d);            // the transcript's AGENT plates read it (lib/subagents)
-        if (live && (runningRef.current || d.running > 0)) {
-          setTimeout(poll, 1500);
-        }
-      } catch { /* ignore */ }
-    };
-    void poll();
-    return () => { live = false; };
-  }, [sessionId, running]);
+    if (edge.current === running) return;
+    edge.current = running;
+    if (sessionId) void reread(key.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, sessionId]);
+  useEffect(() => {
+    const d = q.data;
+    if (!d || !sessionId) return;
+    setData(d);
+    setDataFor(sessionId);
+    setOpen((o) => (typeof o === "string" && d.total === 0 ? false : o));  // nothing to open it on
+    setRoster(d);            // the transcript's AGENT plates read it (lib/subagents)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.data]);
 
   useEffect(() => () => setRoster(null), [sessionId]);
 

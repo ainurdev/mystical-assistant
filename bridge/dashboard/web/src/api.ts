@@ -3,6 +3,7 @@ import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
 import type { Flow, FlowOption, FlowSet, PastFlow } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
+import { posted, readWith } from "./lib/queries";
 
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
@@ -1713,8 +1714,11 @@ export async function req<T>(
     }
     throw new Error(msg);
   }
-  return (await res.json()) as T;
+  const out = (await res.json()) as T;
+  if (opts.method !== undefined && opts.method !== "GET") posted(path);
+  return out;
 }
+readWith((url) => req(url));
 
 /** Fired on window after a successful push from any dashboard button (the GIT
  *  tab, the git popover, FILES, OPEN PR). The PR chip re-reads on it rather

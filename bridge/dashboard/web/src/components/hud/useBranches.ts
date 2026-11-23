@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { code, queryClient } from "../../lib/queries";
 import { api } from "../../api";
 import { autoClean, type BranchPr, type BranchStatus, type ShownRow } from "../../lib/branchrows";
 import { notify } from "./Notifications";
@@ -20,7 +21,7 @@ export function useBranches(project: string | null, nonce: number, open: boolean
   const load = useCallback(async () => {
     if (!project) return;
     try {
-      const d = await api.branchStatus(project);
+      const d = await queryClient.fetchQuery(code.branchStatus({ project }));
       if (cur.current !== project) return;
       setData(d); setErr("");
       // gh only for a repo with something pushed: a local-only one has no PRs to find
@@ -32,7 +33,7 @@ export function useBranches(project: string | null, nonce: number, open: boolean
         && b.target.replace(/^origin\//, "") !== p[b.name].base);
       if (off && reread.current !== project) {
         reread.current = project;
-        const again = await api.branchStatus(project);
+        const again = await queryClient.fetchQuery({ ...code.branchStatus({ project }), staleTime: 0 });
         if (cur.current === project) setData(again);
       }
     } catch (e) { if (cur.current === project) setErr((e as Error).message); }
@@ -41,7 +42,8 @@ export function useBranches(project: string | null, nonce: number, open: boolean
   useEffect(() => { setData(null); setPrs({}); setErr(""); }, [project]);
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), open ? 30000 : 60000);
+    // shortcut: its own timer, paused while hidden, until ticket 14 makes it a listed poll
+    const id = setInterval(() => { if (!document.hidden) void load(); }, open ? 30000 : 60000);
     return () => clearInterval(id);
   }, [load, nonce, open]);
   return { data, prs, err, load };

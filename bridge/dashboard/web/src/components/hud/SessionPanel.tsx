@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main, reread as readAgain } from "../../lib/queries";
 import { ArrowUp, Bot, Check, ChevronRight, ChevronsDownUp, Clock, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, Layers, ListEnd, Route, Search, Shrink, SkipForward, Sparkles, X, Zap } from "lucide-react";
 import { api, type Meter, type MeterHelper, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
@@ -312,13 +314,23 @@ export function SessionPanel({
   const glob = flowGlobals(flow, useFlowSettings(), ai);   // the session's flow's NEXT and TICKETS
   const busy = running || movesElsewhere(flow, set, glob.nextstep);
   // Read on a turn's edges, and every few seconds while one runs: a flow moves
-  // mid-turn (StepDone), and the window grows request by request.
+  // mid-turn (StepDone), and the window grows request by request. The flow is the
+  // prompt box's read too (lib/queries), so the two share one request.
+  const flowKey = main.flow({ session: sessionId ?? "" });
+  const flowQ = useQuery({ ...flowKey, enabled: !!sessionId && ai.router, refetchInterval: busy ? flowKey.refetchInterval : false });
+  // A turn's start and end: read again at once (the prompt box's read joins it).
+  const ranWas = useRef(running);
+  useEffect(() => {
+    if (ranWas.current === running) return;
+    ranWas.current = running;
+    if (sessionId && ai.router) void readAgain(flowKey.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
   useEffect(() => {
     if (!sessionId) { setFlow(null); setPast([]); setSet(null); setMeter(null); return; }
     let live = true;
     const read = () => {
       api.getMeter(sessionId).then((m) => { if (live) setMeter((m as Partial<Meter>).series?.length ? (m as Meter) : null); }).catch(() => {});
-      if (ai.router) api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setPast(r.past ?? []); setSet(r.set ?? null); setFlowRead(true); } }).catch(() => {});
     };
     read();
     if (!busy) return () => { live = false; };
@@ -329,6 +341,10 @@ export function SessionPanel({
   const [moreOf, setMoreOf] = useState<Record<string, boolean>>({});   // HELPERS groups shown whole
   // Another session's flows never show under this one while its own load.
   useEffect(() => { setFlow(null); setPast([]); setSet(null); setFlowRead(false); setPick(null); setMoreOf({}); }, [sessionId]);
+  useEffect(() => {
+    const r = flowQ.data;
+    if (r) { setFlow(r.flow); setPast(r.past ?? []); setSet(r.set ?? null); setFlowRead(true); }
+  }, [flowQ.data, sessionId]);
   // A change from the prompt box's FLOW chip shows here at once.
   useEffect(() => {
     const heard = (e: Event) => {

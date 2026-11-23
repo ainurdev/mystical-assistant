@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main, reread } from "../../lib/queries";
 import { ChevronDown, ChevronUp, Hand, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
 import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../api";
 import { derivePending } from "../../chat";
@@ -136,25 +138,14 @@ function urgent(set: TicketSet, ns: string[], kinds: Record<string, Kind>): stri
  *  builds or merges, lazy when it rests, nothing while the window is hidden. Ticket turns
  *  end on the bridge with no dashboard event to announce them. */
 function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
-  const [set, setSet] = useState<TicketSet | null>(null);
-  const [gen, setGen] = useState(0);
-  useEffect(() => {
-    let live = true, t = 0;
-    const next = (fast: boolean) => { t = window.setTimeout(tick, fast ? 4000 : 15000); };
-    const tick = () => {
-      if (document.hidden) return next(false);
-      // GET /local/flow's `set` is tickets.summary_for: the whole set.json plus its folder.
-      api.getFlow(sessionId).then((r) => {
-        if (!live) return;
-        const s = (r.set as unknown as TicketSet | null) ?? null;
-        setSet(s);
-        next(!!s && (s.status === "building" || s.status === "merging"));
-      }).catch(() => { if (live) next(false); });
-    };
-    tick();
-    return () => { live = false; window.clearTimeout(t); };
-  }, [sessionId, gen]);
-  return [set, () => setGen((g) => g + 1)];
+  // GET /local/flow's `set` is tickets.summary_for: the whole set.json plus its folder. The
+  // prompt box and the SESSION tab read the same key (lib/queries), so they share it.
+  const key = main.flow({ session: sessionId });
+  const q = useQuery({ ...key, refetchInterval: (qq) => {
+    const s = qq.state.data?.set as unknown as TicketSet | null | undefined;
+    return s && (s.status === "building" || s.status === "merging") ? 4000 : 15000;
+  } });
+  return [(q.data?.set as unknown as TicketSet | null | undefined) ?? null, () => void reread(key.queryKey)];
 }
 
 /** AUTO-START beside Approve & build while a set waits: every flow that builds as tickets at once

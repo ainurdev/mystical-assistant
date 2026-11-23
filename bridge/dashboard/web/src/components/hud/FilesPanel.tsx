@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { code, reread } from "../../lib/queries";
 import { AtSign, ChevronRight, Copy, Diff, Folder, FolderOpen, FoldVertical, RotateCw, Sparkle, UnfoldVertical } from "lucide-react";
 import { api, type GitFile } from "../../api";
 import { buildRows, dirsOf } from "./EditorTab";
@@ -32,6 +34,8 @@ import { revealItems } from "../../lib/revealfile";
 // ⌘P asks for the find field from anywhere, sometimes before this panel has
 // mounted (the rail was on another tab): the request waits here until it has.
 let findWanted = false;
+const NO_FILES: GitFile[] = [];
+
 export function requestFileFind(): void {
   findWanted = true;
   window.dispatchEvent(new Event("files:find"));
@@ -92,7 +96,6 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
   const [root, setRoot] = useState("");   // the tree's absolute dir, for Show in Finder
-  const [files, setFiles] = useState<GitFile[]>([]);
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Has the tree read come back yet? An empty list before the first answer
@@ -130,23 +133,14 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
 
   useEffect(() => { void loadTree(); }, [loadTree]);
 
-  const loadGit = useCallback(async () => {
-    if (!project) { setFiles([]); return; }
-    try {
-      const g = await api.git(project, branch || undefined);
-      setFiles(g.files);
-    } catch { setFiles([]); }
-  }, [project, branch]);
+  // Working-tree status, the GIT tab's read too (lib/queries), on the same cadence as the git badges.
+  const gitKey = code.git({ project: project ?? "", branch: branch || undefined });
+  const gitQ = useQuery({ ...gitKey, enabled: !!project });
+  const files: GitFile[] = (project && !gitQ.isError && gitQ.data?.files) || NO_FILES;
+  const loadGit = () => reread(gitKey.queryKey);
 
   const changed = useMemo(
     () => new Map(files.map((f) => [f.path, f.status])), [files]);
-
-  // Working-tree status, refreshed on the same cadence as the git badges.
-  useEffect(() => {
-    void loadGit();
-    const id = setInterval(() => void loadGit(), 10000);
-    return () => clearInterval(id);
-  }, [loadGit]);
 
   const rows: Row[] = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
