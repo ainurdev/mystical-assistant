@@ -183,7 +183,7 @@ export const CHANGES: Record<string, string[]> = {
   "/local/channel/*": [main.channel.route, main.tree.route],
   "/local/chat/config": [main.channel.route, main.tree.route],
   "/local/select": [main.state.route],
-  "/local/notices": [rail.notices.route, main.sessions.route, main.running.route],
+  "/local/notices": [rail.notices.route],
   "/local/accounts": [main.accounts.route],
   "/local/flow/*": [main.flow.route],
   "/local/flows": [settings.flows.route],

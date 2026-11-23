@@ -6,6 +6,7 @@ import { DEFAULT_SLOT } from "../models";
 import { limitNudge, limitResets, limitWindow, loginName, otherLogin, span } from "../lib/limit";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { Card } from "./ui";
+import { main, reread } from "../lib/queries";
 import { notify } from "./hud/Notifications";
 
 /** The open session, parked on a usage limit: its last turn draws the live card. */
@@ -83,7 +84,8 @@ function useAct() {
   const [busy, setBusy] = useState(false);
   const act = (p: Promise<{ ok: boolean }>, fail: string) => {
     setBusy(true);
-    p.then((r) => { if (!r.ok) notify("error", fail); },
+    // The bell's route moves the session too: the lists read again (lib/queries).
+    p.then((r) => { if (!r.ok) notify("error", fail); else { void reread([main.sessions.route]); void reread([main.running.route]); } },
       (e: Error) => notify("error", /op must/.test(e.message) ? "Restart the bridge to use this." : e.message))
       .finally(() => setBusy(false));
   };
