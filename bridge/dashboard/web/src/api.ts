@@ -2315,7 +2315,6 @@ export const api = {
   server: (action: "start" | "stop", opts: { cmd?: string } & RunCtx = {}) =>
     req<{ message: string; server: DevServerInfo; servers: DevServerInfo[] }>(
       "/local/server", { method: "POST", body: { action, ...opts } }),
-  servers: () => req<{ servers: DevServerInfo[] }>("/local/servers"),
   // Path is historical — this only works out a project's run command now.
   detectRunCommand: (ctx: RunCtx) =>
     req<{ command: string; source: string; explanation: string }>(

@@ -12,7 +12,9 @@ import { highlightSelectionMatches } from "@codemirror/search";
 import { getChunks, goToNextChunk, goToPreviousChunk, unifiedMergeView } from "@codemirror/merge";
 import { tags as t } from "@lezer/highlight";
 import { Vim, vim } from "@replit/codemirror-vim";
+import { useQuery } from "@tanstack/react-query";
 import { api, type FileContent, type GitFile, type GrepHit } from "../../api";
+import { code, queryClient, reread } from "../../lib/queries";
 import { Markdown } from "../Markdown";
 import { ImageLightbox } from "../ImageLightbox";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
@@ -349,20 +351,21 @@ const crtTheme = EditorView.theme({
   "&.cm-diff-gutter .cm-changedLine": { backgroundColor: "transparent" },
 }, { dark: true });
 
-/* The modal unmounts this tab on every switch, and walking a repo again costs
-   ~130ms of empty explorer. The last tree per project+branch paints straight
-   away; the fresh walk still runs and replaces it.
-   ponytail: unbounded — one file list per project+branch opened this session. */
-const treeCache = new Map<string, { files: string[]; ignored: string[]; root?: string }>();
-const treeKey = (project: string, branch: string) => `${project}\n${branch}`;
+const NO_PATHS: string[] = [];
+const NO_GIT_FILES: GitFile[] = [];
 
 export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, onFile, mapView, drawer, onToggleTerm }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [paths, setPaths] = useState<string[]>([]);
+  // The working tree's files, FILES' read too (lib/queries). The modal unmounts this tab on
+  // every switch; the cached tree paints straight away while the fresh walk runs.
+  const treeArgs = { project, branch: branch || undefined };
+  const treeQ = useQuery(code.tree(treeArgs));
+  const tree = treeQ.isError ? undefined : treeQ.data;
+  const paths = tree?.files ?? NO_PATHS;
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
-  const [ignored, setIgnored] = useState<string[]>([]);
+  const ignored = tree?.ignored ?? NO_PATHS;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
   const [peek, setPeek] = useState<string | null>(null);      // the preview tab, if any (see peekTab)
@@ -405,8 +408,6 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const [mapOpen, setMapOpen] = useState(initialMode === "map");
   // CHANGES: the branch's uncommitted files, each one's text at HEAD (null:
   // couldn't read it) and how its diff shows.
-  const [gitFiles, setGitFiles] = useState<GitFile[]>([]);
-  const [gitBusy, setGitBusy] = useState(false);
   const [heads, setHeads] = useState<Record<string, string | null>>({});
   const [diffs, setDiffs] = useState<Record<string, "inline" | "gutter">>(
     initialMode === "changes" && initialFile ? { [initialFile]: "inline" } : {});
@@ -456,17 +457,11 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   }
   useEffect(() => () => { if (noteT.current) clearTimeout(noteT.current); }, []);
 
-  const loadTree = () =>
-    api.filesTree(project, branch || undefined)
-      .then((r) => {
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
-        setPaths(r.files); setIgnored(r.ignored ?? []);
-      })
-      .catch(() => { setPaths([]); setIgnored([]); });
+  const loadTree = () => reread(code.tree(treeArgs).queryKey);
 
   // A row's absolute path, for Show in Finder: the tree's dir comes with its file list.
   const abs = (p: string) => {
-    const root = treeCache.get(treeKey(project, branch))?.root;
+    const root = tree?.root;
     return root && (p ? `${root}/${p}` : root);
   };
 
@@ -475,30 +470,22 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   // exception to folders-start-closed, so its row renders and the
   // scroll-into-view below reveals it.
   useEffect(() => {
-    let live = true;
     // A different project/branch is a different working tree — the old buffers
     // no longer describe anything on disk, so they go.
     bufs.current.clear();
     setTabs(initialFile ? [initialFile] : []); setPeek(null);
     setOpen(initialFile ?? null); setMeta(null);
     jumpRef.current = initialLine ?? 0;
-    // Closed by default — a repo tree fully expanded is thousands of rows to
-    // scroll past before reaching anything.
-    const shut = (files: string[]) =>
-      new Set(dirsOf(files).filter((d) => !initialFile || !underPath(d, initialFile)));
-    const seed = treeCache.get(treeKey(project, branch));
-    if (seed) { setPaths(seed.files); setIgnored(seed.ignored); setCollapsed(shut(seed.files)); }
-    void api.filesTree(project, branch || undefined)
-      .then((r) => {
-        if (!live) return;
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
-        setPaths(r.files);
-        setIgnored(r.ignored ?? []);
-        if (!seed) setCollapsed(shut(r.files));   // a seeded tree keeps folders you opened
-      })
-      .catch(() => { if (live) { setPaths([]); setIgnored([]); } });
-    return () => { live = false; };
   }, [project, branch, initialFile, initialLine]);
+  // Closed by default — a repo tree fully expanded is thousands of rows to
+  // scroll past before reaching anything. Once per opening: a re-read keeps folders you opened.
+  const shutFor = useRef("");
+  useEffect(() => {
+    const k = `${project}\n${branch}\n${initialFile ?? ""}\n${initialLine ?? ""}`;
+    if (!tree || shutFor.current === k) return;
+    shutFor.current = k;
+    setCollapsed(new Set(dirsOf(tree.files).filter((d) => !initialFile || !underPath(d, initialFile))));
+  }, [tree, project, branch, initialFile, initialLine]);
 
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const labels = useMemo(() => tabLabels(tabs), [tabs]);
@@ -521,7 +508,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     }
     let live = true;
     setMeta(null); setDirty(false); setPreview(null);
-    void api.fileRead(project, open, branch || undefined)
+    void queryClient.fetchQuery({ ...code.file({ ...treeArgs, path: open }), staleTime: 0 })
       .then((r) => {
         if (!live) return;
         const text = r.content ?? "";
@@ -751,7 +738,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const textOf = (p: string) => {
     let t = cache.current.text.get(p);
     if (!t) {
-      t = api.fileRead(project, p, branch || undefined)
+      t = queryClient.fetchQuery(code.file({ ...treeArgs, path: p }))
         .then((r) => (r.ok && !r.binary && !r.too_large ? r.content ?? "" : null)).catch(() => null);
       cache.current.text.set(p, t);
     }
@@ -761,7 +748,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     let h = cache.current[mode].get(w);
     if (!h) {
       // Prose mentions (a plan's code fence, a README) aren't definitions or uses.
-      h = api.filesGrep(project, w, branch || undefined, mode)
+      h = queryClient.fetchQuery(code.grep({ ...treeArgs, q: w, mode }))
         .then((r) => r.hits.filter((x) => !/\.(md|mdx|markdown|txt|rst)$/i.test(x.path))).catch(() => [] as Hit[]);
       cache.current[mode].set(w, h);
     }
@@ -915,17 +902,15 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
 
   /* ---- CHANGES: the branch's uncommitted files, each one's diff vs HEAD ---- */
 
-  const loadGit = () => {
-    setGitBusy(true);
-    void api.git(project, branch || undefined)
-      // A branch with no worktree reads as the project checkout's status — show
-      // nothing rather than another branch's changes (the old GIT tab's rule).
-      .then((g) => setGitFiles(g.is_repo && (!branch || g.branch === branch) ? g.files : []))
-      .catch(() => setGitFiles([]))
-      .finally(() => setGitBusy(false));
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadGit(); setHeads({}); }, [project, branch]);
+  // The GIT tab's status read (lib/queries): a save or a commit anywhere re-reads it.
+  const gitQ = useQuery(code.git(treeArgs));
+  const g = gitQ.isError ? undefined : gitQ.data;
+  // A branch with no worktree reads as the project checkout's status — show
+  // nothing rather than another branch's changes (the old GIT tab's rule).
+  const gitFiles = g?.is_repo && (!branch || g.branch === branch) ? g.files : NO_GIT_FILES;
+  const gitBusy = gitQ.isFetching;
+  const loadGit = () => void reread(code.git(treeArgs).queryKey);
+  useEffect(() => { setHeads({}); }, [project, branch]);
   const changed = useMemo(() => new Set(gitFiles.map((f) => f.path)), [gitFiles]);
   // A changed file shows its changes in the gutter; CHANGES opens them inline.
   useEffect(() => {
@@ -937,7 +922,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   useEffect(() => {
     if (!open || !diffMode || head !== undefined) return;
     let live = true;
-    void api.fileHead(project, open, branch || undefined)
+    void queryClient.fetchQuery({ ...code.head({ ...treeArgs, path: open }), staleTime: 0 })
       .then((r) => { if (live) setHeads((h) => ({ ...h, [open]: r.ok ? r.content ?? "" : null })); })
       .catch(() => { if (live) setHeads((h) => ({ ...h, [open]: null })); });
     return () => { live = false; };
@@ -1115,7 +1100,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     let live = true;
     setGrepBusy(true);
     const t = setTimeout(() => {
-      void api.filesGrep(project, q, branch || undefined)
+      void queryClient.fetchQuery({ ...code.grep({ ...treeArgs, q }), staleTime: 0 })
         .then((r) => { if (live) setHits(r.hits); })
         .catch(() => { if (live) setHits([]); })
         .finally(() => { if (live) setGrepBusy(false); });

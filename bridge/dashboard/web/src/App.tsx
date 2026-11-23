@@ -2570,7 +2570,7 @@ export function App() {
     [turns, selected?.work_cwd, selected?.cwd]);
   // BRANCHES (lib/branchrows): one read of the open repo's branches feeds the tab,
   // the rail tile's LAND n and auto clean-up (the tab header's broom).
-  const branchData = useBranches(sessionProject, gitNonce, settings.rightOpen && settings.rightTab === "branches");
+  const branchData = useBranches(sessionProject, settings.rightOpen && settings.rightTab === "branches");
   const branchView = useMemo<BranchView | null>(() => {
     if (!branchData.data) return null;
     const who = branchActivity(sessions, statusMap, sessionProject);

@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/queries.check.ts
 import { hashKey } from "@tanstack/react-query";
-import { CHANGES, changedBy, code, main, queryClient, rail, readWith, reads, urlOf } from "./queries.ts";
+import { CHANGES, changedBy, code, main, prHints, queryClient, rail, readWith, reads, urlOf } from "./queries.ts";
 
 const eq = (a: unknown, b: unknown, what: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
 
@@ -31,8 +31,20 @@ for (const [post, routes] of Object.entries(CHANGES))
 eq(changedBy("/local/sessions/abc/archive"), ["/local/sessions", "/local/running"], "an archive changes the lists");
 eq(changedBy("/local/run/j1/interrupt"), ["/local/running", "/local/sessions"], "a stop");
 eq(changedBy("/local/run"), ["/local/sessions", "/local/running"], "a send");
-eq(changedBy("/local/git/commit?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus"], "a commit, query ignored");
+eq(changedBy("/local/git/fetch?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus", "/local/git/ledger",
+  "/local/git/incoming", "/local/git/log", "/local/git/worktrees"], "a fetch, query ignored");
 eq(changedBy("/local/restart"), [], "nothing listed, nothing invalidated");
+// The code tabs: what a commit, a checkout, a save and a file op change reaches every panel showing it.
+const filesRead = ["/local/files/tree", "/local/files/read", "/local/files/head", "/local/git"];
+for (const post of ["/local/git/commit", "/local/git/checkout", "/local/files/write", "/local/files/op"])
+  for (const r of filesRead) console.assert(changedBy(post).includes(r), `${post} changes ${r}`);
+console.assert(changedBy("/local/git/commit").includes("/local/git/log") && changedBy("/local/git/commit").includes("/local/git/ledger"),
+  "a commit moves the graph and the ledger");
+console.assert(!changedBy("/local/git/commit-message").includes("/local/files/tree"), "writing a message touches no file");
+eq(changedBy("/local/terminals/t1/close"), ["/local/terminals"], "closing a terminal");
+eq(changedBy("/local/server"), ["/local/state"], "a dev server start: the state poll carries the servers");
+// GIT's card and the chat header's chip share one PR read; the session rides in the URL, not the key.
+console.assert(hashKey(code.pr({ project: "p", branch: "b" }).queryKey) === hashKey(code.pr({ branch: "b", project: "p" }).queryKey), "one PR key");
 
 // --- a shared poll runs at its listed rate --------------------------------------
 const asked: string[] = [];
@@ -47,4 +59,7 @@ eq(asked.length, 2, "an invalidated key fetches at once");
 await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
 await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
 eq(asked.slice(2), ["/local/commands?project=p", "/local/commands?project=p"], "an unpolled read isn't held back");
+prHints.session = "s1";
+await queryClient.fetchQuery(code.pr({ project: "p", branch: "b" }));
+eq(asked.at(-1), "/local/github/pr/status?project=p&branch=b&session=s1", "the PR read carries the chip's session");
 queryClient.clear();
