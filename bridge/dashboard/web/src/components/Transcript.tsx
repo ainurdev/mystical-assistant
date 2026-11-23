@@ -325,7 +325,7 @@ function TurnBlock({
       data-cut={carriedOn ? "" : undefined}
       data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
-        style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
+        style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}>
         {turn.prompt && !nudge && !seam && (
           <div data-prompt-idx={promptIdx}>
             {note ? <MysticalNote note={note} text={dropNoPath(turn.prompt)} at={turn.started} />

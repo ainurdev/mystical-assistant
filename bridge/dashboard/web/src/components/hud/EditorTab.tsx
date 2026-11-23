@@ -1666,7 +1666,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
         {palQ !== null && (
           <>
             <div onClick={() => setPalQ(null)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }} />
-            <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
+            <div style={{ position: "absolute", top: 14, left: 0, right: 0, margin: "0 auto", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease backwards" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
                 <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", flex: "none" }}>
                   {palMode === "@" ? "@" : palMode === ">" ? ">" : "⌕"}

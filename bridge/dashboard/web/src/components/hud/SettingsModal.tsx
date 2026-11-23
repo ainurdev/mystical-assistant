@@ -4789,7 +4789,7 @@ export function SettingsModal(props: SettingsModalProps) {
         || pane.current?.querySelector(`[data-sec="${jump.sec}"]`);
       if (el) {
         el.scrollIntoView({ block: "center", behavior: "smooth" });
-        (el as HTMLElement).style.animation = "resultflash 1.2s ease both";
+        (el as HTMLElement).style.animation = "resultflash 1.2s ease backwards";
         setJump(null);
       } else if (++tries < 10) {
         timer = window.setTimeout(find, 150);
@@ -4829,7 +4829,7 @@ export function SettingsModal(props: SettingsModalProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        animation: "backdropIn .22s ease both",
+        animation: "backdropIn .22s ease backwards",
       }}
     >
       <div
@@ -4843,7 +4843,7 @@ export function SettingsModal(props: SettingsModalProps) {
           border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
           background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
           boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)",
-          animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both",
+          animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) backwards", clipPath: "inset(0)",
         }}
       >
         {/* Header. The storage note used to stand in a footer bar under every
@@ -4910,7 +4910,7 @@ export function SettingsModal(props: SettingsModalProps) {
           height: 1,
           background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 10%, transparent) 62%, transparent)",
           transformOrigin: "left",
-          animation: "drawline .55s cubic-bezier(.2,.8,.2,1) .12s both",
+          animation: "drawline .55s cubic-bezier(.2,.8,.2,1) .12s backwards",
         }} />
         </div>
 

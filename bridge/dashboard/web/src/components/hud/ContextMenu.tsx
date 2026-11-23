@@ -81,6 +81,7 @@ function Checks({ checks }: { checks: CtxCheck[] }) {
 
 const PANEL: React.CSSProperties = {
   position: "fixed",
+  clipPath: "inset(0)", // ctxIn's end state, so the entrance needs no fill
   border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
   background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
   boxShadow: "0 12px 44px var(--shadow-pop),0 0 26px color-mix(in srgb, var(--acc) 8%, transparent)",
@@ -217,7 +218,7 @@ export function ContextMenu({ ctx, items, closing, onClose, width: W = W0 }: {
     <div ref={root} style={{ display: "contents" }}>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
       <div data-ctxmenu="1"
-        style={{ ...PANEL, width: W, ...(W !== W0 && { "--ctx-w": `${W}px` }), left: x, top: y, zIndex: 97, animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ ...PANEL, width: W, ...(W !== W0 && { "--ctx-w": `${W}px` }), left: x, top: y, zIndex: 97, animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) backwards" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
           <span style={{ width: 6, height: 6, background: "var(--acc)", transform: "rotate(45deg)", flex: "none" }} />
           <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>{TYPE_LABEL[ctx.type] || ctx.type.toUpperCase()}</span>
@@ -229,7 +230,7 @@ export function ContextMenu({ ctx, items, closing, onClose, width: W = W0 }: {
       </div>
       {open && !closing && (
         <div data-ctxmenu="1" onMouseEnter={() => clearTimeout(shut.current)}
-          style={{ ...PANEL, width: W0, left: subX, top: subY, zIndex: 98, animation: "ctxIn .18s cubic-bezier(.16,.84,.3,1) both" }}>
+          style={{ ...PANEL, width: W0, left: subX, top: subY, zIndex: 98, animation: "ctxIn .18s cubic-bezier(.16,.84,.3,1) backwards" }}>
           {/* Clamped to what's left below the submenu's own top, not the whole
               viewport — menuH only estimates wrapped hints, so a long section
               (More, with a relocate row per worktree) otherwise runs off the

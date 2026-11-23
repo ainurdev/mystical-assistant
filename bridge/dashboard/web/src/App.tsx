@@ -236,7 +236,7 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         position: "relative", overflow: "hidden", margin: "0 16px 9px", padding: "10px 12px",
         border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 13%, transparent)",
         boxShadow: "0 0 18px color-mix(in srgb, var(--purple) 22%, transparent)",
-        animation: "mpop .18s ease both",
+        animation: "mpop .18s ease backwards",
       }}
     >
       <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s steps(11) infinite" }} />

@@ -81,12 +81,12 @@ export function CommandPalette({
   return (
     <div
       onClick={requestClose}
-      style={{ ...PALETTE_BOX.backdrop, animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
+      style={{ ...PALETTE_BOX.backdrop, animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease backwards" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ ...PALETTE_BOX.panel, animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ ...PALETTE_BOX.panel, animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) backwards", clipPath: "inset(0)" }}
       >
         <div style={PALETTE_BOX.head}>
           <span style={{ color: "var(--acc)" }}>~ ❯</span>
@@ -129,7 +129,7 @@ export function CommandPalette({
                   display: "flex", alignItems: "center", gap: 12, padding: "9px 11px",
                   border: 0, borderLeft: `2px solid ${i === highlight ? "var(--acc)" : "transparent"}`,
                   background: i === highlight ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-                  animation: "mfadeup .3s ease both", animationDelay: `${i * 50}ms`,
+                  animation: "mfadeup .3s ease backwards", animationDelay: `${i * 50}ms`,
                 }}
               >
                 <span style={{ fontSize: "var(--t11)", color: c.iconColor ?? "var(--acc)", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>

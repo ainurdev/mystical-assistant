@@ -248,9 +248,9 @@ tr[data-open] > .at-name { box-shadow: inset 2px 0 0 var(--acc); }
 .at-formfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 /* ---- the .mystical panel ---- */
-.my-scrim { position: fixed; inset: 0; z-index: 95; display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; background: color-mix(in srgb, var(--panel3) 74%, transparent); animation: backdropIn .2s ease both; }
+.my-scrim { position: fixed; inset: 0; z-index: 95; display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; background: color-mix(in srgb, var(--panel3) 74%, transparent); animation: backdropIn .2s ease backwards; }
 .my-scrim[data-top] { z-index: 95; padding-top: 6vh; }
-.my-panel { width: min(820px, 94vw); max-height: 82vh; display: flex; flex-direction: column; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--panel2) 98%, transparent); box-shadow: 0 0 60px var(--shadow-modal); animation: mslide .2s ease both; }
+.my-panel { width: min(820px, 94vw); max-height: 82vh; display: flex; flex-direction: column; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--panel2) 98%, transparent); box-shadow: 0 0 60px var(--shadow-modal); animation: mslide .2s ease backwards; }
 .my-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 16px 8px; }
 .my-title { font-family: var(--mono); font-size: var(--t13); color: var(--txb); }
 .my-head select { max-width: 220px; }
