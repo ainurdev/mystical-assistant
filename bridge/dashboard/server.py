@@ -189,20 +189,20 @@ def _load_saved_sessions() -> dict:
 
 
 _sessions_boot = _load_saved_sessions()
+_sessions_disk = dict(_sessions_boot)   # what the file holds, so a save never re-reads it
 _sessions_behind: set = set()   # lists being built behind a saved answer
 
 
-def _save_sessions(skey: str) -> None:
-    """Every list this process built, over what the file had: a temp file, then a
-    replace, the way toolsets saves its list. Called holding _sessions_lock."""
+def _save_sessions(skey: str, payload: dict) -> None:
+    """This list over what the file had: a temp file, then a replace, the way
+    toolsets saves its list. Called holding _sessions_lock."""
     if time.time() - _sessions_written.get(skey, 0.0) < _SESSIONS_SAVE_EVERY:
         return
     _sessions_written[skey] = time.time()
-    lists = {**_load_saved_sessions(),
-             **{json.dumps(list(k)): v[1] for k, v in _sessions_cache.items()}}
+    _sessions_disk[skey] = payload
     try:
         with open(_sessions_file() + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(lists, f)
+            json.dump(_sessions_disk, f)
         os.replace(_sessions_file() + ".tmp", _sessions_file())
     except OSError:
         pass   # the next start just builds, as before
@@ -215,7 +215,7 @@ def _sessions_build(key) -> dict:
             hit = (time.time(), _sessions_payload(*key))
             _sessions_cache[key] = hit
             _sessions_boot.pop(json.dumps(list(key)), None)
-            _save_sessions(json.dumps(list(key)))
+            _save_sessions(json.dumps(list(key)), hit[1])
         return hit[1]
 
 

@@ -61,6 +61,7 @@ def sessions(monkeypatch):
     monkeypatch.setattr(server, "_sessions_payload", scan)
     monkeypatch.setattr(server, "_sessions_cache", {})
     monkeypatch.setattr(server, "_sessions_written", {})
+    monkeypatch.setattr(server, "_sessions_disk", {})
     try:
         os.remove(server._sessions_file())
     except OSError:
@@ -72,6 +73,7 @@ def sessions(monkeypatch):
 def _restart_sessions(monkeypatch):
     monkeypatch.setattr(server, "_sessions_cache", {})
     monkeypatch.setattr(server, "_sessions_boot", server._load_saved_sessions())
+    monkeypatch.setattr(server, "_sessions_disk", dict(server._sessions_boot))
 
 
 def test_a_restart_answers_the_first_session_list_from_the_last_run(sessions, monkeypatch):
@@ -231,23 +233,20 @@ def test_the_update_check_never_waits_on_a_fetch(monkeypatch):
 
 def test_the_hourly_watch_fetches_first_at_five_minutes(monkeypatch):
     waits, fetched = [], threading.Event()
-    block = threading.Event()
 
     def sleep(s):
         waits.append(s)
         if len(waits) > 1:
-            block.wait(5)
+            threading.Event().wait()   # parked for good: it never runs past its fakes
 
     monkeypatch.setattr(whatsnew, "time", type("T", (), {"sleep": staticmethod(sleep), "time": time.time}))
     monkeypatch.setattr(git, "fetch", lambda *a, **k: fetched.set() or (True, ""))
     monkeypatch.setattr(whatsnew, "preview", lambda info: None)
     monkeypatch.setattr(whatsnew, "retry", lambda: None)
     whatsnew.watch()
-    try:
-        assert fetched.wait(5)
-        assert waits[0] == 300
-    finally:
-        block.set()
+    assert fetched.wait(5)
+    assert waits[0] == 300
+    assert _until(lambda: len(waits) == 2)     # parked before the fakes are undone
 
 
 def test_update_still_pulls(monkeypatch):
