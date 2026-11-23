@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { main, reread } from "../../lib/queries";
+import { main } from "../../lib/queries";
 import { ChevronDown, ChevronUp, Hand, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
-import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../api";
+import { api, type SessionStatus, type TicketSet } from "../../api";
 import { derivePending } from "../../chat";
 import { dagLayout, graphWidth, kindOf, waveLabel, type Kind } from "../../lib/ticketdag";
 import { changeFlows, useFlowSettings } from "../../lib/flowsettings";
@@ -137,7 +137,7 @@ function urgent(set: TicketSet, ns: string[], kinds: Record<string, Kind>): stri
 /** The flow session's ticket set, polled while its chat is open: quick while the set
  *  builds or merges, lazy when it rests, nothing while the window is hidden. Ticket turns
  *  end on the bridge with no dashboard event to announce them. */
-function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
+function useTicketSet(sessionId: string): TicketSet | null {
   // GET /local/flow's `set` is tickets.summary_for: the whole set.json plus its folder. The
   // prompt box and the SESSION tab read the same key (lib/queries), so they share it.
   const key = main.flow({ session: sessionId });
@@ -145,7 +145,7 @@ function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
     const s = qq.state.data?.set as unknown as TicketSet | null | undefined;
     return s && (s.status === "building" || s.status === "merging") ? 4000 : 15000;
   } });
-  return [(q.data?.set as unknown as TicketSet | null | undefined) ?? null, () => void reread(key.queryKey)];
+  return (q.data?.set as unknown as TicketSet | null | undefined) ?? null;
 }
 
 /** AUTO-START beside Approve & build while a set waits: every flow that builds as tickets at once
@@ -163,7 +163,7 @@ function AutoStart({ onErr }: { onErr: (text: string) => void }) {
 }
 
 /** What a set says in a few words, and the buttons that act on it: the strip and TICKETS share these. */
-function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, reload: () => void, onOpenSession: (id: string) => void) {
+function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, onOpenSession: (id: string) => void) {
   const [note, setNoteNow] = useState("");
   const noteT = useRef(0);
   useEffect(() => () => window.clearTimeout(noteT.current), []);
@@ -174,7 +174,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     window.clearTimeout(noteT.current);
     if (text) noteT.current = window.setTimeout(() => setNoteNow(""), 8000);
   };
-  const act = (p: Promise<{ text: string }>, fail: string) => { p.then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : fail)).then(reload); };
+  const act = (p: Promise<{ text: string }>, fail: string) => { p.then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : fail)); };   // a move rereads the set (lib/queries CHANGES)
   const ns = Object.keys(set.tickets).sort();
   const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id)?.state)])) as Record<string, Kind>;
   const name = set.slug.replace(/-/g, " ");
@@ -245,10 +245,10 @@ export const showTicketsLive = (on: boolean) => window.dispatchEvent(new CustomE
 export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void; except?: string;
 }) {
-  const [set, reload] = useTicketSet(sessionId);
+  const set = useTicketSet(sessionId);
   const [wide, setWide] = useState(false);
   useEffect(() => { setWide(!!set && localStorage.getItem(openKey(set.folder)) === "1"); }, [set?.folder]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const v = useSetView(set, status, reload, onOpenSession);
+  const v = useSetView(set, status, onOpenSession);
   if (!v) return null;
   const { ns, kinds, name, facts, call, action, dots } = v;
   if (except) return <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} except={except} />;
@@ -304,8 +304,8 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   /** Where the list starts: below the chat's header island, which floats over the column. */
   top?: number;
 }) {
-  const [set, reload] = useTicketSet(sessionId);
-  const v = useSetView(set, status, reload, onOpenSession);
+  const set = useTicketSet(sessionId);
+  const v = useSetView(set, status, onOpenSession);
   if (!v) return <div className="tl-live" style={{ paddingTop: top }}><div className="tl-empty">No parts in this session.</div></div>;
   const { ns, kinds, name, facts, ops, call, action, dots } = v;
   const tk = v.set.tickets;
@@ -379,7 +379,7 @@ function partOf(set: TicketSet, sessionId: string) {
 /** The ticket crumb's count (prompt box B · ISLAND): which part this is, of how many; "merge" on the merge pass. */
 export function TicketPart({ superId, sessionId }: { superId: string; sessionId: string }) {
   // shortcut: polls the set a second time beside TicketBrief's poll, lift the hook into Terminal if a third reader appears.
-  const [set] = useTicketSet(superId);
+  const set = useTicketSet(superId);
   if (!set?.tickets) return null;
   const { ns, n, merge } = partOf(set, sessionId);
   if (!n && !merge) return null;
@@ -389,7 +389,7 @@ export function TicketPart({ superId, sessionId }: { superId: string; sessionId:
 /** What a ticket session is, pinned at the top of its transcript: its number of the set, the
  *  super session it came from, what it waits on, its branch and where it merges. */
 export function TicketBrief({ superId, sessionId, superTitle }: { superId: string; sessionId: string; superTitle?: string }) {
-  const [set] = useTicketSet(superId);
+  const set = useTicketSet(superId);
   if (!set?.tickets) return null;
   const { ns, n, merge } = partOf(set, sessionId);
   if (!n && !merge) return null;
@@ -409,26 +409,14 @@ export function TicketBrief({ superId, sessionId, superTitle }: { superId: strin
   );
 }
 /** A session's last turn, polled: quick while it runs, lazy at rest, nothing while hidden.
- *  `gen` bumps it after an answer, so the card it answered goes at once. */
+ *  An answer rereads it (lib/queries CHANGES), so the card it answered goes at once. */
 function useTail(sid: string) {
-  const [turn, setTurn] = useState<{ id: string; status: string; events: TimedEvent[] } | null>(null);
-  const [gen, setGen] = useState(0);
-  useEffect(() => {
-    let live = true, t = 0;
-    const tick = () => {
-      if (document.hidden) { t = window.setTimeout(tick, 5000); return; }
-      api.transcript(sid, 0, { tail: 1 }).then((r) => {
-        if (!live) return;
-        const last = r.turns[r.turns.length - 1];
-        setTurn(last ? { id: last.id, status: last.status, events: r.events.filter((e) => e.turn_id === last.id) } : null);
-        t = window.setTimeout(tick, last?.status === "running" ? 2500 : 8000);
-      }).catch(() => { if (live) t = window.setTimeout(tick, 8000); });
-    };
-    tick();
-    return () => { live = false; window.clearTimeout(t); };
-  }, [sid, gen]);
+  const r = useQuery({ ...main.session({ id: sid, cursor: 0, tail: 1 }),
+    refetchInterval: (q) => (q.state.data?.turns.at(-1)?.status === "running" ? 2500 : 8000) }).data;
+  const last = r?.turns[r.turns.length - 1];
+  const turn = r && last ? { id: last.id, status: last.status, events: r.events.filter((e) => e.turn_id === last.id) } : null;
   const pending = turn?.status === "running" ? derivePending(turn.events) : [];
-  return { turn, q: pending[0], refresh: () => setGen((g) => g + 1) };
+  return { turn, q: pending[0] };
 }
 
 /** NEEDS YOU: every ticket session that waits on you, one full-width row each, stacked like
@@ -451,10 +439,10 @@ function TicketAsks({ set, kinds, status, onOpenSession, except }: {
 }
 
 function AskRow({ n, title, sid, st, onOpen }: { n: string; title: string; sid: string; st?: SessionStatus; onOpen: () => void }) {
-  const { turn, q, refresh } = useTail(sid);
+  const { turn, q } = useTail(sid);
   const one = q?.kind === "question" && q.questions?.length === 1 && !q.questions[0].multiSelect ? q.questions[0] : null;
   const ask = q?.kind === "question" ? q.questions?.[0]?.question : q?.kind === "permission" ? `${q.tool_name}: ${q.summary ?? ""}` : st?.label;
-  const answer = (body: Parameters<typeof api.respond>[1]) => { if (turn) void api.respond(turn.id, body).then(refresh); };
+  const answer = (body: Parameters<typeof api.respond>[1]) => { if (turn) void api.respond(turn.id, body); };
   return (
     <div className="tk-ask">
       <span className="no">#{n}</span>

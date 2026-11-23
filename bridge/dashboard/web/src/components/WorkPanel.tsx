@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Inbox, ListPlus, LoaderCircle, MessageSquare, Pencil, Plus, SkipForward, Sparkles, Trash2, X } from "lucide-react";
-import { useRefSession, workCall, workGet, workSources } from "../lib/readapi";
+import { useRefSession, workCall, workRead, workSources } from "../lib/readapi";
 import { wordDiff } from "../lib/worddiff";
 import { Markdown } from "./Markdown";
 
@@ -467,23 +468,18 @@ export function WorkPanel({ project, chat, asking = [], onAsk, onOpen }: { proje
   // The dashboard's rail sits outside the chat's scope, so it says which chat; the Mini App's page reads it.
   const scoped = useRefSession();
   const session = chat ?? scoped;
-  const [data, setData] = useState<Listing | null>(null);
-  const [error, setError] = useState("");
   const [screen, setScreen] = useState<Screen>({ k: "list" });
-  const load = useCallback(() => {
-    workGet<Listing>(session, project).then((r) => { setData(r); setError(""); }, (e) => setError(errorOf(e)));
-  }, [session, project]);
-  const fast = screen.k === "refine";
-  useEffect(() => {
-    load();
-    const t = window.setInterval(load, fast ? 1500 : 3000);
-    return () => window.clearInterval(t);
-  }, [load, fast]);
+  const read = workRead<Listing>(session, project);
+  const q = useQuery({ ...read, refetchInterval: screen.k === "refine" ? 1500 : 3000 });
+  const data = q.data ?? null;
+  const qc = useQueryClient();
+  const [error, setError] = useState("");
+  useEffect(() => setError(""), [q.dataUpdatedAt]);   // a read that lands clears a press's failure, as before
   const call: Call = async (path, body) => {
     try {
       const r = await workCall<Listing>(path, session, project, body);
       // A plan route answers with the plan alone; everything else, with the whole listing.
-      setData((d) => (path.startsWith("plan/") ? (d ? { ...d, plan: r.plan ?? null } : d) : r));
+      qc.setQueryData<Listing>(read.queryKey, (d) => (path.startsWith("plan/") ? (d ? { ...d, plan: r.plan ?? null } : d) : r));
       setError("");
       return true;
     } catch (e) {
@@ -493,7 +489,8 @@ export function WorkPanel({ project, chat, asking = [], onAsk, onOpen }: { proje
   };
   const items = data?.items ?? [];
   const back = () => setScreen({ k: "list" });
-  const failed = error ? <p className="ds-err wl-err" role="alert">{error}</p> : null;
+  const shown = error || (q.error ? errorOf(q.error) : "");
+  const failed = shown ? <p className="ds-err wl-err" role="alert">{shown}</p> : null;
 
   if (screen.k === "refine" || screen.k === "edit") {
     const item = items.find((i) => i.id === screen.id);

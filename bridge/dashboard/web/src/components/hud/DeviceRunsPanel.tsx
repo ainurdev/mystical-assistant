@@ -11,9 +11,11 @@
    Drafts H, I and J: rivendell/.mystical/design-drafts/device-runs/
    05-mystical-share-this-device.html. */
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Key, LaptopMinimal } from "lucide-react";
 import { api, type AccountInfo, type RivendellDevice } from "../../api";
+import { main, queryClient, rail } from "../../lib/queries";
 import { accountChoices, setupActions, stateText } from "../../lib/deviceruns";
 import { openSession } from "../../lib/devicerun";
 import { CARD, Row, Section, Switch, riStatusView, useVoice } from "./SettingsModal";
@@ -122,34 +124,20 @@ function AccountRow({ d, logins, first, busy, onSave }: {
 }
 
 export function DeviceRunsPanel() {
-  const [rows, setRows] = useState<RivendellDevice[] | null>(null);
-  const [logins, setLogins] = useState<AccountInfo[] | null>(null);
+  const logins: AccountInfo[] | null = useQuery(main.accounts()).data?.accounts ?? null;
   // An instance id while one of its saves is in flight, or "setup" | "remove"
   // while this tab's Set up or Remove runs (up to 15 minutes).
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState({ at: "", text: "" });
-  const answered = useRef(0);   // bumped by each change's answer: a read sent before it is dropped
   const say = useSay();
   const saving = busy !== "" && busy !== "setup" && busy !== "remove";
 
-  useEffect(() => { void api.accounts().then((r) => setLogins(r.accounts)).catch(() => {}); }, []);
-
   // Read now, then every 4 s while open, as RivendellPanel does. A save holds
-  // the reads off, being quick; a Set up doesn't, so every tab, a reload too,
-  // shows its WAITING… from setup_running. A read sent before a change's answer
-  // would put the old state back, so it is dropped.
-  useEffect(() => {
-    if (saving) return;
-    let live = true;
-    const read = () => {
-      const sent = answered.current;
-      void api.rivendellDevices()
-        .then((r) => { if (live && sent === answered.current) setRows(r.instances); }).catch(() => {});
-    };
-    read();
-    const t = setInterval(read, 4000);
-    return () => { live = false; clearInterval(t); };
-  }, [saving]);
+  // the poll off, being quick; a Set up doesn't, so every tab, a reload too,
+  // shows its WAITING… from setup_running. A change's answer cancels a read sent
+  // before it (lib/queries CHANGES), so the old state never comes back.
+  const key = rail.devices();
+  const rows = useQuery({ ...key, refetchInterval: saving ? false : 4000 }).data?.instances ?? null;
 
   /** One change: its answer is the panel's new state, and a refusal shows at `at`. */
   async function act(what: string, at: string,
@@ -159,8 +147,7 @@ export function DeviceRunsPanel() {
     setErr({ at: "", text: "" });
     try {
       const r = await call();
-      answered.current++;
-      setRows(r.instances);
+      queryClient.setQueryData(key.queryKey, { instances: r.instances });
       if (r.error) setErr({ at, text: r.error });
       return !r.error;
     } catch (e) {

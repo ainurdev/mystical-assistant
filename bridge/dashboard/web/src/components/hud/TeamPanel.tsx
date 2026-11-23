@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Users, X } from "lucide-react";
 import type { Received, Receiving, RivendellTask, TeamOverview, Teammate } from "../../api";
-import { api } from "../../api";
+import { rail } from "../../lib/queries";
 import { initials, splitTitle } from "../../lib/rivendelltasks";
 import { hhmm, useClock12 } from "../../lib/surfaces";
 import { byDay, teamFeed, type FeedItem } from "../../lib/teamfeed";
@@ -76,7 +77,8 @@ const Day = ({ label }: { label: string }) => (
  *  continued. Flat, as TASKS since rivendell-tab-v3: no fills, a share to you is
  *  the one left rule. App owns the team data (it polls, and the rail badge and
  *  the session menu read it too); the task list is read here, once a minute while
- *  showing. `sessionTitle` is null when the open session isn't yours to send.
+ *  showing (the RIVENDELL tab's key, lib/queries). `sessionTitle` is null when
+ *  the open session isn't yours to send.
  *  Design: .mystical/design-drafts/team-flat (C · STREAM). */
 export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
   data: TeamOverview | null;
@@ -100,15 +102,8 @@ export function TeamPanel({ data, fail, project, sessionTitle, onRefresh, onSend
   const roster = [...(data?.roster ?? [])].sort(byPresence);
   const faceOf = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
   const feed = data ? teamFeed(data, now) : { today: [], earlier: [] };
-  const [tasks, setTasks] = useState<RivendellTask[]>([]);
-  useEffect(() => {
-    if (!project) return;
-    let alive = true;
-    const read = () => api.rivendellTasks(project).then((r) => { if (alive) setTasks(r.tasks); }).catch(() => {});
-    read();
-    const t = setInterval(read, 60_000);
-    return () => { alive = false; clearInterval(t); };
-  }, [project]);
+  // RIVENDELL's key: one request when both tabs show it.
+  const tasks: RivendellTask[] = useQuery({ ...rail.rivendellTasks({ project: project ?? "" }), enabled: !!project, refetchInterval: 60_000 }).data?.tasks ?? [];
 
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);

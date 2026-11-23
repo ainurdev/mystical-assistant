@@ -28,6 +28,13 @@ import type {
 } from "../api.ts";
 import type { BranchStatus } from "./branchrows.ts";
 import type { Flow, FlowSet, PastFlow } from "./flowview.ts";
+import type { LiveInfo } from "../api.ts"; // rail B
+import type {
+  RivendellDevice, RivendellInstance, RivendellQueueItem, RivendellTaskDetail, RivendellTasks, RivendellTodolist,
+  TaskState, TeamOverview, VideoTools,
+} from "../api.ts"; // rail A
+import type { InspectorState, NextBoard, StyleCandidates, StyleRun, TermInfo, WeeklyReport, Worktree } from "../api.ts"; // rail D
+import type { CouncilBrief, Lesson, Meter, TodayWins, Weather } from "../api.ts"; // rail C
 
 export type Params = Record<string, string | number | boolean | null | undefined>;
 export type Key = readonly [string, Params];
@@ -82,7 +89,8 @@ export const main = {
   // Polled only while a turn runs or its tickets move (useFlow, SessionPanel, TicketMap); the
   // ticket map also every 15 s while its set rests.
   flow: read<FlowAnswer, { session: string }>("/local/flow", { ms: 4000 }),
-  worklist: read<unknown, { session: string; project: string }>("/local/worklist", { ms: 4000 }),
+  // Listed at 2.5 s so readWith's half-interval skip never eats WORK's 1.5 s refine poll; readers set their own rate.
+  worklist: read<unknown, { session: string; project: string }>("/local/worklist", { ms: 2500 }),
   commands: read<{ commands: SlashCommand[] }, { project?: string }>("/local/commands"),
   accounts: read<AccountsInfo, { fresh?: number }>("/local/accounts", { ms: 60000 }),
 };
@@ -105,6 +113,52 @@ export const rail = {
   notices: read<NoticesAnswer>("/local/notices", { ms: 4000, hidden: true }),
   sysinfo: read<HostStats>("/local/sysinfo", { ms: 2000 }),
   update: read<UpdateInfo>("/local/update", { ms: 5 * 60_000 }),
+  // -- rail A: Rivendell, TEAM, device runs
+  // Polled while Settings is closed and Rivendell is installed (App).
+  rivendell: read<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell", { ms: 10000 }),
+  // 1 s only while a share is coming in, else 30 s (App).
+  team: read<TeamOverview>("/local/rivendell/team", { ms: 1000 }),
+  queue: read<{ queue: RivendellQueueItem[] }>("/local/rivendell/queue", { ms: 4000 }),
+  // RIVENDELL polls it at 10 s (30 s in the everywhere view), TEAM at 60 s: one key.
+  rivendellTasks: read<RivendellTasks, { project: string }>("/local/rivendell/tasks", { ms: 10000 }),
+  rivendellTask: read<RivendellTaskDetail, { instance_id: string; task_id: string }>("/local/rivendell/task"),
+  rivendellTodolist: read<{ todolist: RivendellTodolist | null }, { instance_id: string; project_id: string }>("/local/rivendell/todolist"),
+  devices: read<{ instances: RivendellDevice[] }>("/local/rivendell/devices", { ms: 4000 }),
+  taskState: read<{ task: TaskState | null }, { project: string; branch: string }>("/local/rivendell/taskstate", { ms: 60000 }),
+  // -- end rail A
+  // -- rail B: update, changelog, go-live, restart, notices' actions
+  changelog: read<{ notices: Notice[]; project?: string }>("/local/changelog", { ms: 60_000 }),
+  // 30 s at rest; the 4 s listed is its rate while AFTER N TURNS waits (ChangelogButton picks).
+  live: read<LiveInfo>("/local/live", { ms: 4000 }),
+  // -- end rail B
+  // -- rail C: HOME, SESSION, COUNCIL, LEARN, the ticket map
+  wins: read<TodayWins>("/local/wins", { ms: 60_000 }),
+  weather: read<Weather>("/local/weather", { ms: 600_000 }),
+  // {} when the session has no transcript yet. Polled only while the SESSION tab's flow is busy.
+  meter: read<Meter | Record<string, never>, { id: string }>("/local/sessions/:id/meter", { ms: 4000 }),
+  // Light (no git) for App's tile; `full: 1` while the COUNCIL tab shows a resting run. 3 s while
+  // a run moves, else 15 s (CouncilPanel councilRead).
+  council: read<CouncilBrief, { sid: string; full?: 1 }>("/local/council/:sid", { ms: 3000 }),
+  // The LEARN list (App polls `*` for the badge) and one lesson's body share the route, so one poll entry.
+  lessons: read<{ lessons: Lesson[]; repo_enabled: boolean }, { project: string }>("/local/learn", { ms: 60_000 }),
+  lesson: read<{ file: string; body: string }, { project: string; file: string }>("/local/learn", { ms: 60_000 }),
+  // -- end rail C
+  // -- rail D: Analyze, the inspector, USAGE, MAP, style runs, WORK, DOCS, AUTO, NEXT
+  // The file window's branch menu, worktrees and terminal count: read when it opens.
+  branches: read<{ branches: string[]; current: string; default: string }, { project: string }>("/local/git/branches"),
+  worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
+  terminals: read<{ terminals: TermInfo[] }, { project: string }>("/local/terminals"),
+  inspector: read<InspectorState>("/local/inspector", { ms: 2000 }),
+  report: read<WeeklyReport, { back?: 1 }>("/local/report", { ms: 60_000 }),
+  // Polled only while a style run runs (lib/stylerun follows it).
+  styleRun: read<StyleRun>("/local/project-mark/style", { ms: 500 }),
+  styleCandidates: read<StyleCandidates>("/local/project-mark/style/candidates"),
+  // Polled only while a REFRESH's scouts run.
+  next: read<NextBoard>("/local/next", { ms: 3000 }),
+  // A POST the bridge answers with the listing (readapi's queryFn); the agent writes pages as you watch.
+  docs: read<unknown, { session: string }>("/local/chat/docs", { ms: 6000 }),
+  automations: read<unknown>("/local/automations", { ms: 5000 }),
+  // -- end rail D
 };
 
 const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route];
@@ -113,11 +167,11 @@ const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route];
 export const CHANGES: Record<string, string[]> = {
   "/local/run": [main.sessions.route, main.running.route],
   "/local/run/:id/interrupt": [main.running.route, main.sessions.route],
-  "/local/run/:id/respond": [main.running.route, rail.notices.route],
+  "/local/run/:id/respond": [main.running.route, rail.notices.route, main.session.route],   // session: a ticket map row's tail
   "/local/sessions": [main.sessions.route],
   "/local/sessions/:id/*": [main.sessions.route, main.running.route],
   "/local/select": [main.state.route],
-  "/local/notices": [rail.notices.route],
+  "/local/notices": [rail.notices.route, main.running.route, rail.changelog.route],   // a dismiss, a read, a limit hand-off (parked session moves)
   "/local/accounts": [main.accounts.route],
   "/local/flow/*": [main.flow.route],
   "/local/flows": [settings.flows.route],
@@ -126,6 +180,33 @@ export const CHANGES: Record<string, string[]> = {
   "/local/git/*": GIT,
   "/local/update": [rail.update.route],
   "/local/project/settings": [main.projects.route, code.graphState.route],
+  // -- rail A
+  "/local/rivendell": [rail.rivendell.route],
+  "/local/rivendell/test": [rail.rivendell.route, rail.rivendellTasks.route],
+  "/local/rivendell/queue": [rail.queue.route, rail.notices.route, rail.rivendellTasks.route],
+  "/local/rivendell/implement": [rail.rivendellTasks.route],
+  "/local/rivendell/again": [rail.rivendellTasks.route],
+  "/local/rivendell/devices": [rail.devices.route],
+  "/local/rivendell/devices/*": [rail.devices.route],
+  "/local/rivendell/taskstate": [rail.taskState.route],
+  "/local/rivendell/team/*": [rail.team.route],
+  // -- end rail A
+  // -- rail B
+  "/local/live/*": [rail.live.route],
+  // -- end rail B
+  // -- rail C
+  "/local/weather/*": [rail.weather.route],
+  "/local/council/:sid": [rail.council.route],
+  "/local/git/push": [rail.council.route],
+  "/local/learn/toggle": [rail.lessons.route],
+  "/local/tickets/*": [main.flow.route],
+  // -- end rail C
+  // -- rail D
+  "/local/inspector": [rail.inspector.route],
+  "/local/project-mark/style": [rail.styleRun.route],
+  "/local/next": [rail.next.route],
+  "/local/automations/*": [rail.automations.route],
+  // -- end rail D
 };
 
 const matchers = Object.entries(CHANGES).map(([pat, routes]) => {
