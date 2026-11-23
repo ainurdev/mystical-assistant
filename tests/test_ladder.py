@@ -413,6 +413,7 @@ def _fable_deaths(meters, deaths):
             limits._timer = limits._fire_at = None
             limits._pending.clear()
         limits._last_tries.clear()
+        ladder.accounts._model_out.clear()
 
 
 def test_auto_switch_drops_to_opus_when_every_login_is_out_of_fable():
@@ -432,6 +433,17 @@ def test_a_login_with_fable_left_still_takes_the_work_on_fable():
     went, s = _fable_deaths({1: _meter(90, 100), 2: _meter(30, 100), 3: _meter(70, 40)}, deaths=1)
     assert went == [(3, "claude-fable-5-2")]
     assert s["model"] != "opus"
+
+
+def test_a_login_that_just_refused_fable_gets_no_more_fable_whatever_its_meter_says():
+    """A meter's model caps refresh only on a full read (every 5 minutes), and a
+    meter that won't read has none: either way both logins can look like they
+    have Fable left after both refused it, and the bounce came back. The refusal
+    is first-hand: at most one wasted hop, then Opus."""
+    for meters in ({1: _meter(60, 97), 2: _meter(50, 97)},             # read before the caps ran out
+                   {1: {"available": False}, 2: {"available": False}}):  # won't read
+        went, _s = _fable_deaths(meters, deaths=6)
+        assert [m for _slot, m in went] == ["claude-fable-5-2", "opus"], went
 
 
 if __name__ == "__main__":
