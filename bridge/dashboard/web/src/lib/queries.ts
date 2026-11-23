@@ -29,17 +29,13 @@ import type {
   RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState, StorageScan,
   Transcript, UpdateInfo, VideoTools, WorkspaceSet,
 } from "../api.ts";
-import type { HookListing, RuleLogRow, RuleRow, Scope, ToolGrid } from "./agenttools.ts";
 import type { BranchStatus } from "./branchrows.ts";
-import type { DirListing } from "./mysticaldir.ts";
 import type { Flow, FlowSet, PastFlow } from "./flowview.ts";
 
 export type Params = Record<string, string | number | boolean | null | undefined>;
 export type Key = readonly [string, Params];
 /** `ms`: how often it polls while someone shows it; `hidden`: it polls while the page is hidden too. */
 export interface Poll { ms: number; hidden?: true }
-
-type ScopeP = Pick<Scope, keyof Scope>;   // an interface has no index signature
 
 export const keyOf = (route: string, params: Params = {}): Key => [route, params];
 
@@ -128,13 +124,6 @@ export const settings = {
   plugins: read<PluginsInfo>("/local/plugins"),
   repoImages: read<RepoImages, { project: string }>("/local/project-mark/repo"),
   lessons: read<{ lessons: Lesson[]; repo_enabled: boolean }, { project: string }>("/local/learn"),
-  // AGENT TOOLS: multi-agent routes, read through multistore's call (lib/agenttoolsapi).
-  agentTools: read<ToolGrid, ScopeP>("/local/agent-tools"),
-  rules: read<{ rules: RuleRow[] }, ScopeP>("/local/rules"),
-  ruleLog: read<{ rows: RuleLogRow[] }, { session?: string }>("/local/rules/log"),
-  hooks: read<HookListing, ScopeP>("/local/hooks"),
-  mysticalDir: read<DirListing, { project?: string | null; session?: string | null; sub: string }>("/local/mystical-dir"),
-  mysticalFile: read<{ text: string }, { project?: string | null; session?: string | null; path: string }>("/local/mystical-dir/read"),
 };
 
 /** The rail's code tabs: GIT, FILES, BRANCHES, MAP, the editor. */
@@ -178,7 +167,9 @@ export const CHANGES: Record<string, string[]> = {
   "/local/policy/default": [main.accounts.route],
   "/local/savers": [settings.savers.route],
   "/local/council/settings": [settings.council.route],
-  "/local/move/*": [settings.movePlan.route, settings.moveFiles.route, settings.moveRead.route, settings.moveJobs.route],
+  // Not the plan: it runs git over every repo (seconds), and only an import changes what it lists.
+  "/local/move/*": [settings.moveFiles.route, settings.moveRead.route, settings.moveJobs.route],
+  "/local/move/import": [settings.movePlan.route],
   "/local/workspaces": [settings.workspaces.route],
   "/local/workspaces/*": [settings.workspaces.route],
   "/local/skills/install": [settings.skills.route],

@@ -38,7 +38,8 @@ eq(changedBy("/local/aifeatures"), ["/local/aifeatures"], "an AI switch");
 eq(changedBy("/local/flows"), ["/local/flows", "/local/aifeatures"], "a flow setting, which can be an AI switch");
 eq(changedBy("/local/integrations"), ["/local/integrations"], "an install or remove");
 eq(changedBy("/local/rivendell"), ["/local/rivendell", "/local/integrations"], "an instance saved: the integration's count");
-eq(changedBy("/local/move/export"), ["/local/move/plan", "/local/move/files", "/local/move/read", "/local/move/jobs"], "a move started");
+eq(changedBy("/local/move/dismiss"), ["/local/move/files", "/local/move/read", "/local/move/jobs"], "a move dismissed: no plan scan");
+eq(changedBy("/local/move/import"), ["/local/move/files", "/local/move/read", "/local/move/jobs", "/local/move/plan"], "an import changes the plan");
 eq(changedBy("/local/acp/login"), [], "a sign-in's status poll changes nothing");
 eq(changedBy("/local/skills/check"), [], "a skills update check changes nothing");
 console.assert(hashKey(settings.skills({ project: "/r" }).queryKey) === hashKey(settings.skills({ project: "/r" }).queryKey)

@@ -32,7 +32,7 @@ export function useGraphify() {
     // The POST invalidates the read, which then polls while the install runs.
     install: () => {
       put({ installed: false, state: "running" });
-      void api.installGraphify().catch((e: Error) => put({ installed: false, state: "error", error: e.message }));
+      void api.installGraphify().then(put, (e: Error) => put({ installed: false, state: "error", error: e.message }));
     },
   };
 }
