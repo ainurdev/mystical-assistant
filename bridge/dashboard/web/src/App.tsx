@@ -174,6 +174,7 @@ import { useFlowSettings } from "./lib/flowsettings";
 import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
 import { Spinner } from "./components/ui";
+import { useStableFn } from "./lib/stablefn";
 
 
 // One size for every right-rail icon — the rail's buttons are 38px. At 15px
@@ -2013,6 +2014,13 @@ export function App() {
       if (lastTurnId) setDroppedAsks((d) => new Set(d).add(lastTurnId));
     } else void send(text, []);
   }
+  // The transcript's handlers, one identity for the window's life (lib/stablefn):
+  // as plain functions they changed on every App render and re-rendered every
+  // visible turn's RunStream with them. onOpenFile above is the same idea.
+  const onRunCommandT = useStableFn(runCommand);
+  const onQuoteT = useStableFn(quote);
+  const onRespondT = useStableFn(respond);
+  const onAnswerT = useStableFn(answerAsk);
   async function stop() {
     if (!active) return;
     try { await api.interrupt(active.id); } catch { /* poll reconciles */ }
@@ -3568,7 +3576,7 @@ export function App() {
                 teamMe={team?.inbox.find((r) => r.id === selected?.team?.share)?.relation === "back"
                   ? team?.outbox.find((o) => !o.queued)?.from.id ?? null : null}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={respond}
+                activeId={active?.id ?? null} onRespond={onRespondT}
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
                 onJumpTo={(id, seq) => {
@@ -3590,10 +3598,10 @@ export function App() {
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
                 navRef={transcriptNav} restoringRef={restoreTo} correctingRef={correctingRef}
-                onRunCommand={runCommand}
-                onQuote={quote}
+                onRunCommand={onRunCommandT}
+                onQuote={onQuoteT}
                 // A reply to a question asked in prose (answerAsk); none once it's dismissed.
-                onAnswer={lastTurnId && droppedAsks.has(lastTurnId) ? undefined : answerAsk}
+                onAnswer={lastTurnId && droppedAsks.has(lastTurnId) ? undefined : onAnswerT}
                 askDocked={!!dock && !(selected && (isDeviceRun(selected.origin) || isTeam(selected.origin)))}
                 onOpenFile={onOpenFile}
                 run={sessionRun}
