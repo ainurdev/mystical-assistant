@@ -53,6 +53,20 @@ ok(asked[0].pending.length === 1, "an unanswered question blocks while the turn 
 const over = mergeDelta(asked, tx([{ ...storeTurn("a", 0), status: "error" }], []));
 ok(over[0].pending.length === 0, "the turn ending clears the unanswered question");
 
+// A delta that repeats a seq inside itself keeps the first, in arrival order; and a
+// long turn loads in linear time (one copy per event was quadratic).
+{
+  const twice = mergeDelta(first, tx([storeTurn("a", 0), storeTurn("b", 1)],
+    [text("b", 5), text("a", 4), text("b", 5), text("b", 3), text("b", 1)]));
+  ok(twice[1].events.map((e) => (e as { seq?: number }).seq).join() === "1,5,3", "in-delta duplicates dropped, order kept");
+  ok(twice[0].events.length === 2, "each turn gets its own events");
+  const many = Array.from({ length: 20000 }, (_, i) => text("a", i));
+  const t0 = performance.now();
+  const big = mergeDelta([], tx([storeTurn("a", 0)], many));
+  ok(big[0].events.length === 20000, "a 20k-event turn loads whole");
+  ok(performance.now() - t0 < 1000, "and in well under a second");
+}
+
 console.log("all mergeDelta identity checks passed");
 
 // A turn's outline comes with a tailed load only; the polls after it carry none

@@ -131,12 +131,26 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         sum: st.sum,
       });
   }
+  // One copy of a turn's events per delta, not one per event: a `some` scan plus a
+  // spread per event was O(events²) on a long turn (8.5k events on a session's
+  // first load is ~36M element copies and as many compares), and every poll paid
+  // O(new × held). Same result: deduped by seq (within the delta too), order kept.
+  const seen = new Map<string, Set<number | undefined>>();
+  const fresh = new Map<string, RunEvent[]>();
   for (const ev of t.events) {
     const turn = map.get(ev.turn_id);
     if (!turn) continue;
-    if (turn.events.some((e) => seqOf(e) === ev.seq)) continue;
-    map.set(ev.turn_id, { ...turn, events: [...turn.events, ev] });
-    touched.add(ev.turn_id);
+    let seqs = seen.get(ev.turn_id);
+    if (!seqs) seen.set(ev.turn_id, seqs = new Set(turn.events.map(seqOf)));
+    if (seqs.has(ev.seq)) continue;
+    seqs.add(ev.seq);
+    const add = fresh.get(ev.turn_id);
+    if (add) add.push(ev); else fresh.set(ev.turn_id, [ev]);
+  }
+  for (const [id, add] of fresh) {
+    const turn = map.get(id)!;
+    map.set(id, { ...turn, events: [...turn.events, ...add] });
+    touched.add(id);
   }
   for (const id of touched) {
     const turn = map.get(id)!;
