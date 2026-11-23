@@ -65,7 +65,7 @@ _phases: dict = {}         # start-up phase -> seconds since STARTED
 # that run long on purpose (a build, a pull or push, a model call, an upload).
 UNTIMED = (
     "GET /local/stream/", "GET /local/ws/",                                   # streams
-    "POST /local/live/build", "GET /local/graph/install", "POST /local/graph/install",
+    "POST /local/live/build", "POST /local/graph/install",
     "POST /local/graph/update", "POST /local/update", "POST /local/claude/update",
     "POST /local/restart", "POST /local/rivendell/devices/setup", "POST /local/projects/create",
     "POST /local/tickets/build", "POST /local/files/format",                  # builds and installs

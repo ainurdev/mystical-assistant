@@ -83,9 +83,22 @@ dash.Handler._stream = _slow_stream
 mini.Handler._serve_static = _mini_boom
 
 
+ERRORS = []
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = False     # server_close() then waits for every handler, its report included
+    def handle_error(self, request, client_address):   # a handler that raised past the stdlib
+        ERRORS.append(sys.exc_info()[1])
+
+
+SERVERS = []
+
+
 def _serve(handler):
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv = _Server(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    SERVERS.append(srv)
     return srv.server_address[1]
 
 
@@ -121,6 +134,12 @@ for step in case["steps"]:
     elif step.startswith("GET "):   # "GET /local/x?sleep=0.7": its code and time
         code, _, took = _get(dport, step[4:])
         out.setdefault("calls", []).append([code, took])
+    elif step == "blank":        # a line that is not a request at all
+        import socket
+        with socket.create_connection(("127.0.0.1", dport), timeout=5) as sock:
+            sock.sendall(b"   \r\n")
+            out["blank"] = sock.recv(64).decode(errors="replace")
+        time.sleep(0.2)
     elif step == "status":
         out["status"] = _get(dport, "/local/reports")[1]
     elif step == "thread":
@@ -146,9 +165,12 @@ for step in case["steps"]:
         out["session"], out["turn_status"] = sid, job.status
         out["turn_took"] = time.time() - job.started
 
+for srv in SERVERS:            # a request's report is captured just after its answer is written
+    srv.shutdown()
+    srv.server_close()
 if reports.on() and case.get("flush", True):
-    time.sleep(0.2)            # a request's report is captured just after its answer is written
     reports._sdk.flush(5)
 out["sentry_imported"] = any(m == "sentry_sdk" or m.startswith("sentry_sdk.") for m in sys.modules)
 out["vendor_on_path"] = reports.VENDOR in sys.path
+out["handler_errors"] = len(ERRORS)
 print(json.dumps(out))

@@ -347,8 +347,10 @@ class Handler(BaseHTTPRequestHandler):
             reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0)
 
     def parse_request(self):
-        self._t0 = time.monotonic()
-        return super().parse_request()
+        t0 = time.monotonic()
+        ok = super().parse_request()
+        self._t0 = t0 if ok else None   # a line it refused was never a request
+        return ok
 
     def send_response(self, code, message=None):
         self._status = code

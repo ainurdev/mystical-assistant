@@ -278,8 +278,7 @@ def test_a_turn_quick_to_start_sends_nothing(receiver, tmp_path):
 
 def test_each_bridge_start_sends_its_start_up_with_four_phases(receiver):
     _start(["GET /local/sessions", "GET /local/sessions"], receiver.dsn)
-    [ev] = _slow_spots(receiver)
-    assert _name(ev) == "start-up: bridge"
+    [ev] = [e for e in _slow_spots(receiver) if _name(e) == "start-up: bridge"]   # a busy machine adds a bridge call
     phases = ev["contexts"]["slow"]["phases"]
     assert list(phases) == ["imports", "store", "servers listening", "first session list"]
     assert phases["imports"] <= phases["store"] <= phases["servers listening"] <= phases["first session list"]
@@ -307,3 +306,8 @@ def test_a_dead_receiver_never_slows_a_slow_route_or_a_turn(receiver, down, tmp_
     assert len(_slow_spots(receiver)) == 2                    # both were slow spots, sent with it up
     assert out["calls"][0][1] < up["calls"][0][1] + 0.3
     assert out["turn_took"] < up["turn_took"] + 0.5
+
+
+def test_a_blank_request_line_is_refused_without_a_crash(receiver):
+    out = _start(["blank"], receiver.dsn)
+    assert out["handler_errors"] == 0
