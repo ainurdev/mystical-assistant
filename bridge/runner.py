@@ -32,7 +32,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, chat_images, config, devserver,
                     experimental, git, inspector, integrations, ladder, limits, machine,
-                    native_activity, notices, paths, profiles, pubsub, relevance, savers, state,
+                    native_activity, notices, paths, profiles, pubsub, relevance, reports, savers, state,
                     store, team, tgask, tgtopics, transcript_jsonl, transcript_page, ux_mcp, waits)
 from bridge.browser import rel, within_base
 from bridge.telegram import panel_kb, send
@@ -3535,6 +3535,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             if not restart_killed:   # else leave 'running' for boot recovery to resume
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
                 savers.check_done()   # a trial that just got its sessions says so
+                if job.status == "error":
+                    reports.turn_ended(job)   # a CRASHED turn, on a team install
         job.clear_pending()
         job.close_stdin()
         _prune_uploads()
