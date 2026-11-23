@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { ArrowUp, Check, MessageSquare, Play, RotateCw, Send, Settings, Square, X } from "lucide-react";
 import { api, type CouncilBrief, type CouncilFinding } from "../../api";
 import { agreed, answered, coin, coinName, columns, hero, reviewerName, reviewers, rollWhy, rules, who } from "../../lib/council";
@@ -6,6 +7,7 @@ import { ICON_BODY } from "../../lib/fileicons.gen";
 import { openSettings } from "../../lib/opensettings";
 import { notify } from "./Notifications";
 import { FRAME, RULE } from "./SessionPanel";
+import { rail } from "../../lib/queries";
 
 /* The COUNCIL tab (docs/superpowers/specs/council-tab.md; design:
    .mystical/design-drafts/council-tab, A · SCOREBOARD). The score leads: a
@@ -17,10 +19,10 @@ import { FRAME, RULE } from "./SessionPanel";
    out. Then the list: before a run what it would review, during and after one
    the whole run as To fix, Fixed and Answered (council.py ledger), most urgent
    first. Its one or two moves are pinned under it.
-   It polls bridge/council.py's brief(): every 3 s while a run reviews or
-   fixes, every 15 s otherwise, and only then `full`, whose git read is what
-   RUN would review and what PUSH would send. Every read also goes up to App
-   (onBrief), so a tap here moves the rail tile at once. Styles under COUNCIL
+   It polls bridge/council.py's brief() (councilRead): every 3 s while a run
+   reviews or fixes, every 15 s otherwise, and only then `full`, whose git read
+   is what RUN would review and what PUSH would send. App's rail tile reads the
+   same key while the tab is open, so one poll feeds both. Styles under COUNCIL
    TAB in index.css. */
 
 const STALE = /^(HTTP 404|not found)$/i;     // a bridge from before the council
@@ -52,6 +54,15 @@ export const Mark = ({ agent, dim }: { agent: string; dim?: boolean }) =>
 const NOTE = <>Each round your reviewers read it fresh. <b>The session that wrote it</b> gets what they found as one prompt, fixes it or answers why not, and they read it again.</>;
 
 const live = (c: CouncilBrief | null) => c?.status === "reviewing" || c?.status === "fixing";
+
+/** The run as this tab and App's COUNCIL tile read it: `full` only while the tab shows a run
+ *  that rests. gcTime 0: a key nobody shows leaves the cache, so a switch between light and
+ *  full never shows the other's older answer. An interval never starts a read while one is
+ *  out, so a slow full read never stacks a second git run. */
+export const councilRead = (sid: string, full: boolean) => queryOptions({
+  ...rail.council(full ? { sid, full: 1 } : { sid }), enabled: !!sid, gcTime: 0,
+  refetchInterval: (q) => (live(q.state.data ?? null) ? 3000 : 15000),
+});
 const at = (f: CouncilFinding) => (f.line == null ? f.file : `${f.file}:${f.line}`);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 // A finding you sided with the session on never blocks again: it reads settled.
@@ -81,7 +92,7 @@ function Finding({ f, ran, seats, right }: { f: CouncilFinding; ran: string[]; s
   );
 }
 
-export function CouncilPanel({ sid, project, branch, busy, initial = null, onBrief, onOpenChat, onSend, onPushed }: {
+export function CouncilPanel({ sid, project, branch, busy, initial = null, onOpenChat, onSend, onPushed }: {
   sid: string | null;
   /** What GIT's PUSH pushes: Push N commits and Push anyway are that push. */
   project: string | null;
@@ -90,8 +101,6 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   busy: boolean;
   /** App's last light read of this run, so the board draws before the first poll lands. */
   initial?: CouncilBrief | null;
-  /** Every brief read here, for the rail tile. */
-  onBrief?: (c: CouncilBrief) => void;
   /** The chat at its latest turn, as TURNS' latest button takes you. */
   onOpenChat: () => void;
   /** To this session's chat: one piece of advice. */
@@ -100,50 +109,30 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
   onPushed?: () => void;
 }) {
   const [c, setC] = useState<CouncilBrief | null>(initial);
-  const [fail, setFail] = useState("");
   const [doing, setDoing] = useState("");                             // the move in flight
   const [sent, setSent] = useState<Set<string>>(() => new Set());     // advice sent one at a time
-  const [nonce, setNonce] = useState(0);                              // bumped: read now
-  // Bumped on both sides of every move. The server is threaded and brief() takes
-  // its snapshot before a full read's git runs, so a read begun before a move
-  // ends can answer after it with the state from before (Send all live again,
-  // a side taken undone). Only a read begun after the move may land.
-  const gen = useRef(0);
-  const tell = useRef(onBrief);
-  tell.current = onBrief;
   const on = live(c);
 
   // An answer without the material (an action's, a light poll's) keeps the one a full read brought.
-  const land = (b: CouncilBrief) => {
-    setC((p) => ("material" in b || !p ? b : { ...b, material: p.material }));
-    setFail("");
-    tell.current?.(b);
-  };
-  useEffect(() => {
-    if (!sid) return;
-    let alive = true, t = 0;
-    // `full` runs git, so only while no run moves; a run that moves is read lightly and often.
-    // The next read is set when this one ends, so a slow full read never stacks a second git run.
-    const read = () => {
-      const g = gen.current;
-      api.council(sid, !on)
-        .then((b) => { if (alive && g === gen.current) land(b); }, (e: Error) => { if (alive && g === gen.current) setFail(e.message); })
-        .finally(() => { if (alive) t = window.setTimeout(read, on ? 3000 : 15000); });
-    };
-    read();
-    return () => { alive = false; window.clearTimeout(t); };
-  }, [sid, on, nonce]);
+  const land = (b: CouncilBrief) => setC((p) => ("material" in b || !p ? b : { ...b, material: p.material }));
+  // `full` runs git, so only while no run moves; a run that moves is read lightly and often.
+  // The server is threaded and brief() takes its snapshot before a full read's git runs, so a
+  // read begun before a move ends could answer after it with the state from before (Send all
+  // live again, a side taken undone): the move's POST invalidates the run (lib/queries CHANGES),
+  // which drops a read still out and starts one after the move.
+  const q = useQuery(councilRead(sid ?? "", !on));
+  useEffect(() => { if (q.data) land(q.data); }, [q.data]);
+  const fail = q.error?.message ?? "";
 
   const act = async (action: string, key?: string) => {
     if (!sid) return;
     setDoing(action);
-    gen.current++;
     try {
       land(await api.councilAct(sid, action, key));
     } catch (e) {
       const m = (e as Error).message;
       notify("error", STALE.test(m) ? "Restart the bridge to use the council." : SAY[m] ?? m);
-    } finally { gen.current++; setDoing(""); }   // no await between the answer and here: no read lands in between
+    } finally { setDoing(""); }
   };
   const n = c?.material?.commits.length ?? 0;
   // GIT's push (GitPanel sync("push")): the same call on the same project and branch.
@@ -154,7 +143,7 @@ export function CouncilPanel({ sid, project, branch, busy, initial = null, onBri
       const r = await api.gitPush(project, branch || undefined);
       notify(r.ok ? "info" : "error", r.ok ? `Pushed ${plural(n, "commit")}.` : r.output || "Push refused.");
     } catch (e) { notify("error", (e as Error).message); }
-    finally { setDoing(""); onPushed?.(); setNonce((x) => x + 1); }
+    finally { setDoing(""); onPushed?.(); }   // a push rereads the run (lib/queries CHANGES)
   };
   // One piece of advice, in the shape Send all's lines take (council.py _line).
   const sendOne = (f: CouncilFinding) => {

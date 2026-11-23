@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { lazyRouteComponent, useRouter, useRouterState } from "@tanstack/react-router";
 import { pathOf, placeOf, type Place } from "./lib/routes";
 import { closePopup, extrasNow, hashSearch, openPopup, setExtras } from "./lib/nav";
-import { code, main, queryClient, reread, runningHints } from "./lib/queries";
+import { code, main, queryClient, rail, reread, runningHints, settings as setq } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
 } from "lucide-react";
@@ -140,7 +140,7 @@ import { WorkPanel } from "./components/WorkPanel";
 import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
-import { CouncilPanel } from "./components/hud/CouncilPanel";
+import { CouncilPanel, councilRead } from "./components/hud/CouncilPanel";
 import { hero as councilHero, railTile, tileKey } from "./lib/council";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -345,7 +345,6 @@ export function App() {
   // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
   // two copies of the read set would drift apart (same reason as pins).
   const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
-  const [lessonKeys, setLessonKeys] = useState<string[]>([]);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
@@ -2640,25 +2639,18 @@ export function App() {
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
   // Held by session, so a switch never shows the last one's. While the tab is
-  // open its panel reads the run and hands each read up (onBrief), so this poll
-  // rests: one poller, not two. A read that changes nothing on the rail
-  // (lib/council tileKey) keeps the brief held, so it doesn't re-render App.
-  const [councilOf, setCouncilOf] = useState<{ sid: string; c: CouncilBrief } | null>(null);
-  const council = councilOf && councilOf.sid === sessionId ? councilOf.c : null;
-  const councilLive = council?.status === "reviewing" || council?.status === "fixing";
+  // open this reads the panel's key (CouncilPanel councilRead): one poller, not
+  // two. A read that changes nothing on the rail (lib/council tileKey) keeps the
+  // brief held, so it doesn't re-render App. A bridge from before the council: the tile stays calm.
+  const councilHeld = useRef<{ sid: string; c: CouncilBrief } | null>(null);
+  const heldCouncil = councilHeld.current?.sid === sessionId ? councilHeld.current.c : null;
+  const councilLive = heldCouncil?.status === "reviewing" || heldCouncil?.status === "fixing";
   const councilOpen = settings.rightOpen && settings.rightTab === "council";
-  const keepCouncil = (sid: string, c: CouncilBrief) =>
-    setCouncilOf((p) => (p && p.sid === sid && tileKey(p.c) === tileKey(c) ? p : { sid, c }));
-  useEffect(() => {
-    if (!sessionId || councilOpen) return;
-    let live = true;
-    const tick = () => api.council(sessionId)
-      .then((c) => { if (live) keepCouncil(sessionId, c); })
-      .catch(() => { /* a bridge from before the council: the tile stays calm */ });
-    void tick();
-    const id = setInterval(tick, councilLive ? 3000 : 15000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, councilLive, councilOpen]);
+  const council = useQuery({ ...councilRead(sessionId ?? "", councilOpen && !councilLive), select: (c: CouncilBrief) => {
+    const p = councilHeld.current;
+    if (!p || p.sid !== sessionId || tileKey(p.c) !== tileKey(c)) councilHeld.current = { sid: sessionId ?? "", c };
+    return councilHeld.current!.c;
+  } }).data ?? heldCouncil;
   const councilTile = railTile(council);
 
   // Auto-fetch (/design-first auto-fetch): behind is only as true as the last
@@ -2689,57 +2681,31 @@ export function App() {
   // Unread lessons, for the LEARN tab's badge — the whole reason to open a tab
   // you are not already looking at. Every repo's, because the panel reads that
   // way too. One listdir per repo, so a slow tick is plenty.
-  useEffect(() => {
-    if (!ai.learn) return;
-    let live = true;
-    const tick = () => api.lessons("*")
-      .then((r) => { if (live) setLessonKeys(r.lessons.map((l) => `${l.project ?? ""}::${l.file}`)); })
-      .catch(() => { /* ignore */ });
-    void tick();
-    const id = setInterval(tick, 60000);
-    return () => { live = false; clearInterval(id); };
-  }, [ai.learn]);
-  const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
+  const lessons = useQuery({ ...rail.lessons({ project: "*" }), enabled: ai.learn }).data?.lessons ?? [];
+  const unreadLessons = lessons.filter((l) => !lessonsRead.has(`${l.project ?? ""}::${l.file}`)).length;
   // The RIVENDELL tab exists only with a Rivendell connection to ask. Polled,
   // not only re-read when SETTINGS closes (where one is added or removed): a
   // link breaks with no dashboard event to say so, and the castle's dot and the
   // bell follow each connection's break (bridge/rivendell.py, alert_at — set
   // once per break, cleared when the link proves itself). Not polled at all
   // while Rivendell isn't installed: its route answers 404.
-  const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
-  useEffect(() => {
-    if (settingsOpen || !plugins.rivendell) return;
-    const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => clearInterval(id);
-  }, [settingsOpen, plugins.rivendell]);
+  const rivendell = useQuery({ ...setq.rivendell(), refetchInterval: 10000, enabled: !settingsOpen && !!plugins.rivendell }).data?.instances;
   // What the tab, the castle's dot and the bell read, so REMOVE clears all three
   // at once instead of leaving the last poll's connections on screen.
-  const links = useMemo(() => (plugins.rivendell ? rivendell : []), [plugins.rivendell, rivendell]);
+  const links = useMemo((): RivendellInstance[] => (plugins.rivendell ? rivendell ?? [] : []), [plugins.rivendell, rivendell]);
   const rivendellOn = links.length > 0;
   const rivendellDown = links.some((i) => i.enable && !!i.status?.alert_at);
   // TEAM (bridge/team.py, components/hud/TeamPanel): the roster, what teammates
   // sent here and what you sent. Polled while Rivendell is linked, since the rail
   // badge, the session menu's Send to teammate and the lightbox read it too.
-  const [team, setTeam] = useState<TeamOverview | null>(null);
-  const [teamFail, setTeamFail] = useState<string | null>(null);
   const [sendWhat, setSendWhat] = useState<{ what: SendWhat; to?: string } | null>(null);
-  const loadTeam = useCallback(() => api.team().then((t) => { setTeam(t); setTeamFail(null); },
-    (e: Error) => setTeamFail(e.message)), []);
-  useEffect(() => {
-    if (!rivendellOn) { setTeam(null); return; }
-    void loadTeam();
-    const id = setInterval(() => void loadTeam(), 30000);
-    return () => clearInterval(id);
-  }, [rivendellOn, loadTeam]);
   // A share coming in has a bar (TeamPanel): each second until it's in, the 30 s look otherwise.
+  const teamQ = useQuery({ ...rail.team(), enabled: rivendellOn,
+    refetchInterval: (q) => (q.state.data?.receiving?.length ? 1000 : 30000) });
+  const team: TeamOverview | null = rivendellOn ? teamQ.data ?? null : null;
+  const teamFail = rivendellOn ? teamQ.error?.message ?? null : null;
+  const loadTeam = useCallback(() => reread(rail.team().queryKey), []);
   const coming = team?.receiving?.length ?? 0;
-  useEffect(() => {
-    if (!coming) return;
-    const id = setInterval(() => void loadTeam(), 1000);
-    return () => clearInterval(id);
-  }, [coming, loadTeam]);
   const teammates = team && !team.error ? team.roster : [];
   const teamNew = (team?.inbox.filter((r) => !seen(r)).length ?? 0) + coming;     // what SENT TO YOU shows, and what is coming
   // The lightbox's SEND, and a bell row for a picture or a file, reach here.
@@ -2806,7 +2772,7 @@ export function App() {
   // Its open items are the rail's badge.
   const [workOpen, setWorkOpen] = useState(0);
   // The rail tile counts the tasks being built (bridge/worklist.py groups them).
-  const workQ = useQuery({ ...main.worklist({ session: sessionId ?? "", project: "" }), enabled: multiOn && !!sessionId });
+  const workQ = useQuery({ ...main.worklist({ session: sessionId ?? "", project: "" }), refetchInterval: 4000, enabled: multiOn && !!sessionId });
   const workItems = (workQ.data as { items?: { group: string }[] } | undefined)?.items;
   useEffect(() => {
     setWorkOpen(multiOn && sessionId && !workQ.isError ? (workItems ?? []).filter((i) => i.group === "building" || i.group === "needs").length : 0);
@@ -2900,7 +2866,6 @@ export function App() {
         // The session's own project, never activeProject: its push must not land in another repo.
         <CouncilPanel key={sessionId ?? ""} sid={sessionId} project={selected?.project ?? null} branch={sessionBranch}
           busy={running || openWorking} initial={council}
-          onBrief={(c) => { if (sessionId) keepCouncil(sessionId, c); }}
           onOpenChat={() => { toChat(); jumpToBottom(); }}
           onSend={(text) => void send(text, [], { force: true })}
           onPushed={() => setGitNonce((n) => n + 1)} />

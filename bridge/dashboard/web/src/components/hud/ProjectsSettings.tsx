@@ -5,7 +5,7 @@ import {
   FolderX,
 } from "lucide-react";
 import { api, type AccountInfo, type InstalledSkill, type PickResult } from "../../api";
-import { main, queryClient, settings as setq } from "../../lib/queries";
+import { main, queryClient, rail, settings as setq } from "../../lib/queries";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
 import { ago, projectGivenName, projectMark, projectName, setProjectMarks } from "../../lib/surfaces";
@@ -325,7 +325,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     let live = true;
     // The keys SKILLS and LEARN read too, so a page opened after asks nothing again.
     const q = { project: focus };
-    void Promise.all([queryClient.fetchQuery(setq.projectSettings(q)), queryClient.fetchQuery(setq.lessons(q)).catch(() => null),
+    void Promise.all([queryClient.fetchQuery(setq.projectSettings(q)), queryClient.fetchQuery(rail.lessons(q)).catch(() => null),
                       queryClient.fetchQuery(setq.skills(q)).catch(() => null)])
       .then(([s, l, k]) => {
         if (!live) return;

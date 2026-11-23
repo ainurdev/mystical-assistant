@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, type Lesson } from "../../api";
+import { rail, reread } from "../../lib/queries";
 import { Markdown } from "../Markdown";
 import { ago, projectName } from "../../lib/surfaces";
 import { checkYourself, deal, dueCount, grade, lessonKey, nextUnread, shelves,
@@ -102,11 +104,9 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const canNarrow = !!allowAll && !!project;
   const scope = allowAll ? (canNarrow && repoOnly ? project : "*") : project;
 
-  const [list, setList] = useState<Lesson[] | null>(null);
   const [repoOn, setRepoOn] = useState(true);
   const [selKey, setSelKey] = useStickyStr("hud-learn-sel");
-  const [body, setBody] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [revealedK, setRevealedK] = useState("");   // the lesson revealed: another one opens asked again
   const [q, setQ] = useState("");
   // Every shelf starts shut, so the column opens on the concept map rather than
   // inside one concept — the old all-expanded default meant the thirty lessons
@@ -122,23 +122,18 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   });
   // A study run deals the unread ones in turn: no list, one card, next.
   const [study, setStudy] = useState(false);
-  const [err, setErr] = useState(false);
-
-  const load = useCallback(() => {
-    api.lessons(scope).then((r) => {
-      setErr(false);
-      // A single repo's lessons come back unstamped. Stamp them, or the same
-      // lesson keys differently in each scope and reads stop carrying over.
-      const stamped = r.lessons.map((l) => ({ ...l, project: l.project ?? project }));
-      setList(stamped);
-      setRepoOn(r.repo_enabled);
-      // The selection is deliberately not cleared when it falls out of scope:
-      // narrowing to one repo shows a fallback lesson, and widening again puts
-      // you back where you were rather than on whatever is newest.
-    }).catch(() => { setErr(true); setList(null); });
-  }, [scope, project]);
-
-  useEffect(() => { load(); }, [load]);
+  // The `*` list is App's badge read too (lib/queries): one request. Read when shown, never polled here.
+  const listKey = rail.lessons({ project: scope });
+  const listQ = useQuery({ ...listKey, refetchInterval: false });
+  const err = !!listQ.error;
+  const load = () => void reread(listKey.queryKey);
+  // A single repo's lessons come back unstamped. Stamp them, or the same
+  // lesson keys differently in each scope and reads stop carrying over.
+  // The selection is deliberately not cleared when it falls out of scope:
+  // narrowing to one repo shows a fallback lesson, and widening again puts
+  // you back where you were rather than on whatever is newest.
+  const list = useMemo(() => listQ.data?.lessons.map((l) => ({ ...l, project: l.project ?? project })) ?? null, [listQ.data, project]);
+  useEffect(() => { if (listQ.data) setRepoOn(listQ.data.repo_enabled); }, [listQ.data]);
 
   // Search narrows what the shelves are built from, so a hit's concept still
   // frames it — a flat result list would drop the one thing that sorts them.
@@ -162,17 +157,10 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   // The key already encodes which repo the lesson is in, so the fetch depends on
   // it alone — a list refresh re-renders without re-reading the open lesson.
   const selK = sel ? lessonKey(sel) : "";
-  useEffect(() => {
-    setRevealed(false);
-    setBody(null);
-    if (!selK) return;
-    const cut = selK.indexOf("::");
-    let live = true;
-    api.lesson(selK.slice(0, cut) || project, selK.slice(cut + 2))
-      .then((r) => { if (live) setBody(r.body); })
-      .catch(() => { if (live) setBody("_could not read this lesson._"); });
-    return () => { live = false; };
-  }, [selK, project]);
+  const cut = selK.indexOf("::");
+  const bodyQ = useQuery({ ...rail.lesson({ project: selK.slice(0, cut) || project, file: selK.slice(cut + 2) }),
+    enabled: !!selK, refetchInterval: false });
+  const body = !selK ? null : bodyQ.data?.body ?? (bodyQ.error ? "_could not read this lesson._" : null);
 
   const toggleRepo = () => {
     const next = !repoOn;
@@ -185,7 +173,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const openLesson = (l: Lesson) => { setSelKey(lessonKey(l)); };
   // Opening the auto-picked lesson is what makes it *your* place — pin it, or
   // the next list refresh silently picks the following unread one instead.
-  const reveal = () => { if (selK) { markRead(selK); setSelKey(selK); } setRevealed(true); };
+  const reveal = () => { if (selK) { markRead(selK); setSelKey(selK); } setRevealedK(selK); };
 
   const unread = list ? list.filter((l) => !readSet.has(lessonKey(l))) : [];
   const total = list?.length ?? 0;
@@ -197,7 +185,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   // A due review is re-asked its question in STUDY even though it is read —
   // that is the point of the ladder. Browse mode never re-gates a read lesson.
   const isDueHere = study && !!sched[selK] && sched[selK].due <= Date.now();
-  const gated = !!sel && !revealed && !!question && (!readSet.has(selK) || isDueHere);
+  const gated = !!sel && revealedK !== selK && !!question && (!readSet.has(selK) || isDueHere);
 
   // A lesson whose body is on screen has been read, whether you answered a
   // question to get there or it never had one to ask. Without this the older
@@ -227,10 +215,11 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
       if (study) {
         const n = deal(list ?? [], new Set(readSet).add(selK), nextSched, Date.now(), last);
         setSelKey(n ? lessonKey(n) : "");
+        setRevealedK("");   // a card dealt again is asked again
         return;
       }
     } else if (study) { dealNext(last); return; }
-    setRevealed(true);   // browse SKIP: retired, but stays on screen
+    setRevealedK(selK);   // browse SKIP: retired, but stays on screen
   };
 
   if (err) {

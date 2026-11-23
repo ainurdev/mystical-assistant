@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, PUSHED_EVENT, type TaskState } from "../../api";
+import { queryClient, rail, reread } from "../../lib/queries";
 import { RivendellIcon } from "../../lib/rivendellicon";
 import { hairline } from "../../lib/shell";
 import { ContextMenu, menuH, type CtxItem } from "./ContextMenu";
@@ -15,12 +17,11 @@ import { notify } from "./Notifications";
  *  runner's note, held to it by bridge/taskcheck.py). This is where you see the
  *  state, and can answer before the push asks.
  *
- *  Polls like PrChip: on mount, every 60s while the tab is visible, on focus,
- *  after a dashboard push, and when a turn starts or ends (it may have answered
- *  the card, filed a task or renamed the branch). Every failure draws nothing:
- *  a bridge still on pre-restart code 404s the route. */
+ *  Polls like PrChip: on mount, every 60s while the tab is visible (one key,
+ *  lib/queries), on focus, after a dashboard push, and when a turn starts or
+ *  ends (it may have answered the card, filed a task or renamed the branch).
+ *  Every failure draws nothing: a bridge still on pre-restart code 404s the route. */
 
-const POLL_MS = 60_000;
 const LINK_NOW = "Link this work to a Rivendell task now: check the board, and ask me with the Task card instead of waiting for the push.";
 const LOOK = {
   none: { mark: "var(--ask)", ink: "var(--txd)" },
@@ -31,34 +32,23 @@ const label = (t: TaskState) => t.state === "linked" ? t.key : t.state === "skip
 const open = (url: string | null) => { if (url) window.open(url, "_blank", "noopener"); };
 
 function useTaskState(project: string | null, branch: string, busy = false) {
-  const [task, setTask] = useState<TaskState | null>(null);
+  // A pre-restart bridge (404) or offline: no tab, never a toast.
+  const key = rail.taskState({ project: project ?? "", branch });
+  const task: TaskState | null = useQuery({ ...key, enabled: !!project && !!branch }).data?.task ?? null;
   const load = useRef(() => {});
+  load.current = () => { if (project && branch && document.visibilityState === "visible") void reread(key.queryKey); };
   useEffect(() => {
-    setTask(null);
-    load.current = () => {};
-    if (!project || !branch) return;
-    let live = true;
-    const get = () => {
-      if (document.visibilityState !== "visible") return;
-      api.taskState(project, branch)
-        .then((r) => { if (live) setTask(r.task); })
-        .catch(() => { /* a pre-restart bridge (404) or offline: no tab, never a toast */ });
-    };
+    const get = () => load.current();
     const onVisible = () => { if (document.visibilityState === "visible") get(); };
-    load.current = get;
-    get();
-    const id = window.setInterval(get, POLL_MS);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     window.addEventListener(PUSHED_EVENT, get);
     return () => {
-      live = false;
-      window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener(PUSHED_EVENT, get);
     };
-  }, [project, branch]);
+  }, []);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -69,7 +59,7 @@ function useTaskState(project: string | null, branch: string, busy = false) {
     if (!project) return;
     const r = await api.taskSkip(project, branch)
       .catch((e: Error) => { notify("error", `Not a task wasn't saved: ${e.message}`); return null; });
-    if (r) setTask(r.task);
+    if (r) queryClient.setQueryData(key.queryKey, r);
   }
   return { task, skip };
 }

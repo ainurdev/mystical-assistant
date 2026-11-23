@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { main, reread as readAgain } from "../../lib/queries";
+import { main, rail, reread as readAgain } from "../../lib/queries";
 import { ArrowUp, Bot, Check, ChevronRight, ChevronsDownUp, Clock, Copy, CornerDownLeft, GitCommitHorizontal, GitMerge, GitPullRequest, Hand, Layers, ListEnd, Route, Search, Shrink, SkipForward, Sparkles, X, Zap } from "lucide-react";
 import { api, type Meter, type MeterHelper, type MeterItem, type MeterWho } from "../../api";
 import { activeOf, type Turn } from "../../chat";
@@ -307,8 +307,6 @@ export function SessionPanel({
   const [past, setPast] = useState<PastFlow[]>([]);
   const [flowRead, setFlowRead] = useState(false);   // "none yet" only once the bridge said so
   const [set, setSet] = useState<FlowSet | null>(null);
-  const [meter, setMeter] = useState<Meter | null>(null);
-  const [reread, setReread] = useState(0);   // bumped to read the flow again, after a Skip
   // Tickets build and merge, and the council reviews, in sessions of their own: no turn
   // here says when they move.
   const glob = flowGlobals(flow, useFlowSettings(), ai);   // the session's flow's NEXT and TICKETS
@@ -326,17 +324,19 @@ export function SessionPanel({
     if (sessionId && ai.router) void readAgain(flowKey.queryKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
+  const meterKey = rail.meter({ id: sessionId ?? "" });
+  const meterQ = useQuery({ ...meterKey, enabled: !!sessionId, refetchInterval: busy ? meterKey.refetchInterval : false });
+  const meter = sessionId && (meterQ.data as Partial<Meter> | undefined)?.series?.length ? (meterQ.data as Meter) : null;
+  // The meter on a busy edge too; the clock ticks with it while busy.
+  const busyWas = useRef(busy);
   useEffect(() => {
-    if (!sessionId) { setFlow(null); setPast([]); setSet(null); setMeter(null); return; }
-    let live = true;
-    const read = () => {
-      api.getMeter(sessionId).then((m) => { if (live) setMeter((m as Partial<Meter>).series?.length ? (m as Meter) : null); }).catch(() => {});
-    };
-    read();
-    if (!busy) return () => { live = false; };
-    const id = setInterval(() => { setNow(Date.now() / 1000); read(); }, 4000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, busy, ai.router, reread]);
+    if (busyWas.current !== busy && sessionId) void readAgain(meterKey.queryKey);
+    busyWas.current = busy;
+    if (!busy) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 4000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
   const [pick, setPick] = useState<string | null>(null);   // the FLOWS segment opened
   const [moreOf, setMoreOf] = useState<Record<string, boolean>>({});   // HELPERS groups shown whole
   // Another session's flows never show under this one while its own load.
@@ -519,7 +519,7 @@ export function SessionPanel({
   };
   // Skip shows on a REVIEW that isn't running: one that stopped, or never started.
   const skipReview = () => {
-    if (sessionId) api.skipReview(sessionId).then(() => setReread((n) => n + 1)).catch(() => {});
+    if (sessionId) api.skipReview(sessionId).catch(() => {});   // its POST rereads the flow (lib/queries CHANGES)
   };
   const nextLine = flow && (
     <div className="ss-next">

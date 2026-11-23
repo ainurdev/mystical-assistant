@@ -7,9 +7,11 @@
 // even rows, the line in the project's colour, dashed where you were away.
 // Not shown, by the user's cuts over six rounds: anything another tab or the
 // chat already says (the running turn, session states, git state, meters).
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { Cloud } from "lucide-react";
-import { api, type TodayWins, type Weather } from "../../api";
+import { useQuery } from "@tanstack/react-query";
+import type { TodayWins, Weather } from "../../api";
+import { rail } from "../../lib/queries";
 import { HOME_TOP, dur, spine, type Sky } from "../../lib/home";
 import { projectName, projectTint, useClock12 } from "../../lib/surfaces";
 import { WX_ICON } from "./Almanac";
@@ -59,18 +61,10 @@ export function HomePanel({ clock, weather, sky, onClock, onOpen }: {
   onOpen: (session: string) => void;
 }) {
   const h12 = useClock12();
-  const [day, setDay] = useState<TodayWins | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    const load = () => api.wins()
-      .then((d) => { if (live) { setDay(d); setErr(null); } })
-      .catch((e: Error) => { if (live) setErr(e.message); });
-    void load();
-    // shortcut: re-read once a minute while HOME is open; a push from the turn's end when a minute ever feels slow.
-    const id = setInterval(load, 60_000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
+  // shortcut: re-read once a minute while HOME is open (lib/queries); a push from the turn's end when a minute ever feels slow.
+  const winsQ = useQuery(rail.wins());
+  const day: TodayWins | null = winsQ.data ?? null;
+  const err = winsQ.error?.message ?? null;
 
   const [hh = "00", mm = "00"] = clock.split(":");
   const h = parseInt(hh, 10) || 0;

@@ -9,8 +9,9 @@
    fed between reads by /local/running's `styling` (App). */
 
 import { useSyncExternalStore } from "react";
+import { QueryObserver } from "@tanstack/react-query";
 import { api, projectLogoUrl, type StyleCandidates, type StyleLive, type StyleRun } from "../api";
-import { setProjectMarks } from "./surfaces";
+import { main, queryClient, rail, reread } from "./queries";
 
 export interface StyleState {
   run: StyleRun | null;            // the bridge's run, as last read
@@ -26,13 +27,15 @@ let state: StyleState = { run: null, live: null, drawing: false, error: "", dism
 const subs = new Set<() => void>();
 const set = (patch: Partial<StyleState>) => { state = { ...state, ...patch }; subs.forEach((fn) => fn()); };
 let asked = false;
-let timer = 0;
+let stopFollow: (() => void) | null = null;   // the run's poll (a QueryObserver on its key) while it runs
+const runKey = rail.styleRun();
+const readRun = () => queryClient.fetchQuery(runKey);
 
 function subscribe(fn: () => void): () => void {
   subs.add(fn);
   if (!asked) {
     asked = true;
-    void api.styleRun().then((run) => {
+    void readRun().then((run) => {
       if (run.state === "idle") return;
       set({ run, dismissed: !!run.id && localStorage.getItem(SEEN_KEY) === run.id });
       if (run.state === "running") follow();
@@ -54,28 +57,28 @@ const liveOf = (r: StyleRun): StyleLive | null => r.state !== "running" || !r.id
 export function noteStyling(live: StyleLive | null | undefined): void {
   if ((live ?? null) === null && state.live === null) return;
   set({ live: live ?? null });
-  if (live && !timer) follow();
+  if (live && !stopFollow) follow();
 }
 
-const refreshMarks = async () => { try { setProjectMarks((await api.projects()).marks); } catch { /* the next listing */ } };
+// The project listing App watches sets the marks (App.tsx); a failed read waits for the next listing.
+const refreshMarks = () => reread(main.projects().queryKey);
 
 function follow(): void {
-  if (timer) return;
-  const tick = async () => {
-    try {
-      const run = await api.styleRun();
-      const same = run.id === state.run?.id;
-      const before = same ? state.run?.items?.length ?? 0 : 0;
-      const items = run.items ?? [];
-      const landed = same ? { ...state.landed } : {};
-      for (const it of items.slice(before)) landed[it.rel] = Date.now();
-      set({ run, live: liveOf(run), landed });
-      if (items.length !== before || run.state !== "running") await refreshMarks();
-      if (run.state !== "running") { window.clearInterval(timer); timer = 0; }
-    } catch { /* the next tick */ }
+  if (stopFollow) return;
+  let seen = -1;
+  const obs = new QueryObserver(queryClient, { ...runKey, staleTime: 0 });
+  const tick = (run: StyleRun) => {
+    const same = run.id === state.run?.id;
+    const before = same ? state.run?.items?.length ?? 0 : 0;
+    const items = run.items ?? [];
+    const landed = same ? { ...state.landed } : {};
+    for (const it of items.slice(before)) landed[it.rel] = Date.now();
+    set({ run, live: liveOf(run), landed });
+    if (items.length !== before || run.state !== "running") void refreshMarks();
+    if (run.state !== "running") { stopFollow?.(); stopFollow = null; }
   };
-  timer = window.setInterval(tick, 500);
-  void tick();
+  // Each answer once (a failed read: the next one); an unchanged answer keeps its object, so go by its time.
+  stopFollow = obs.subscribe((r) => { if (r.data && r.dataUpdatedAt !== seen && r.isFetchedAfterMount) { seen = r.dataUpdatedAt; tick(r.data); } });
 }
 
 // The login the last press picked (undefined: the default one), so Try again runs on it too.
@@ -89,7 +92,7 @@ export async function startStyle(account?: number | null): Promise<void> {
   if (account !== undefined) lastAccount = account ?? undefined;
   set({ drawing: true, error: "", dismissed: false, landed: {} });
   try {
-    const c = await api.styleCandidates();
+    const c = await queryClient.fetchQuery({ ...rail.styleCandidates(), staleTime: 0 });
     const { sheet, hashes } = await drawSheet(c);
     const run = await api.styleStart(sheet, c.sig, hashes, lastAccount);
     set({ run, drawing: false, live: liveOf(run) });
@@ -107,7 +110,7 @@ export async function stopStyle(): Promise<void> {
 export async function undoStyle(rel?: string): Promise<void> {
   try {
     await api.styleUndo(rel);
-    set({ run: await api.styleRun() });
+    set({ run: await readRun() });   // its POST made the run's key stale (lib/queries CHANGES)
     await refreshMarks();
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });

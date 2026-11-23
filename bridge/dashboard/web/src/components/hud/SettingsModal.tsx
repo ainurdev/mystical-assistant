@@ -2574,7 +2574,7 @@ function AgentsSection({ profileRows, onChanged, signIn }: {
    *  editor keeps its own copy of this list and must re-read it. */
   onChanged?: (info: AcpAgentsInfo) => void;
 }) {
-  const key = setq.acpAgents();
+  const key = main.acpAgents();
   const agentsQ = useQuery(key);
   const info = agentsQ.data ?? null;
   const gone = agentsQ.error?.message === "not found"; // a bridge older than agents (404)
@@ -3553,7 +3553,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   const [pErr, setPErr] = useState<string | null>(null);
   const [loginsErr, setLoginsErr] = useState<string | null>(null);
   // The same read as the AGENTS list's, so the page asks once.
-  const acpKey = setq.acpAgents();
+  const acpKey = main.acpAgents();
   const acp = useQuery(acpKey).data ?? null;
   const loadAcp = () => reread(acpKey.queryKey);
   useEffect(() => {

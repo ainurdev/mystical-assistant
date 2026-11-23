@@ -60,6 +60,15 @@ eq(changedBy("/local/terminals/t1/close"), ["/local/terminals"], "closing a term
 eq(changedBy("/local/server"), ["/local/state"], "a dev server start: the state poll carries the servers");
 // GIT's card and the chat header's chip share one PR read; the session rides in the URL, not the key.
 console.assert(hashKey(code.pr({ project: "p", branch: "b" }).queryKey) === hashKey(code.pr({ branch: "b", project: "p" }).queryKey), "one PR key");
+// the rest of the rail: what a press there changes shows at once wherever it appears
+eq(changedBy("/local/notices"), ["/local/notices", "/local/running", "/local/changelog"], "a dismiss, a read, a limit hand-off");
+eq(changedBy("/local/run/j1/respond"), ["/local/running", "/local/notices", "/local/sessions/:id"], "an answer from WAITING ON YOU");
+eq(changedBy("/local/rivendell/queue"), ["/local/rivendell/queue", "/local/notices", "/local/rivendell/tasks"], "an accept or reject");
+eq(changedBy("/local/live/build"), ["/local/live"], "GO LIVE");
+eq(changedBy("/local/council/s1"), ["/local/council/:sid"], "a council move");
+eq(changedBy("/local/tickets/approve"), ["/local/flow"], "a ticket move");
+eq(urlOf(rail.council.route, { sid: "s/1", full: 1 }), "/local/council/s%2F1?full=1", "the council's full read");
+eq(urlOf(rail.lessons.route, { project: "*" }), "/local/learn?project=*", "every repo's lessons");
 
 // --- a shared poll runs at its listed rate --------------------------------------
 const asked: string[] = [];

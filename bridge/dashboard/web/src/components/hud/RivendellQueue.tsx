@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { RivendellQueueItem } from "../../api";
 import { api } from "../../api";
+import { queryClient, rail } from "../../lib/queries";
 import { ago } from "../../lib/surfaces";
 import { askConfirm } from "../ui/Ask";
 
@@ -28,19 +30,10 @@ const rid = (it: RivendellQueueItem) => `${it.instance_id}|${it.key}`;
  *  ACCEPT confirms too (it runs here with your accounts), and REJECT only drops
  *  it from this queue. */
 export function RivendellQueue({ active }: { active: boolean }) {
-  const [items, setItems] = useState<RivendellQueueItem[] | null>(null);
+  const key = rail.queue();
+  const items = useQuery({ ...key, enabled: active }).data?.queue.filter((x) => x.status === "held") ?? null;
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [hov, setHov] = useState("");
-
-  useEffect(() => {
-    if (!active) return;
-    let live = true;
-    const load = () =>
-      void api.rivendellQueue().then((r) => { if (live) setItems(r.queue.filter((x) => x.status === "held")); }).catch(() => {});
-    load();
-    const t = setInterval(load, 4000);
-    return () => { live = false; clearInterval(t); };
-  }, [active]);
 
   const decide = async (it: RivendellQueueItem, accept: boolean) => {
     const what = `${labelOf(it)} request${it.label ? ` — ${it.label}` : ""}`;
@@ -58,7 +51,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
       await (accept ? api.acceptRivendell(it.instance_id, it.key)
                     : api.rejectRivendell(it.instance_id, it.key));
       // Drop it now; the next poll reconciles against the worker's truth.
-      setItems((cur) => cur?.filter((x) => rid(x) !== id) ?? cur);
+      queryClient.setQueryData(key.queryKey, (cur) => cur && { ...cur, queue: cur.queue.filter((x) => rid(x) !== id) });
     } catch { /* leave it — the poll will refetch */ }
     finally { setBusy((b) => { const n = new Set(b); n.delete(id); return n; }); }
   };
