@@ -5,7 +5,10 @@ module is the *choosing* half: it reads the session's fallback policy and offers
 the rungs actually available right now,
 
   1. another Claude account   (accounts.pick — full fidelity, resumes the session)
-  2. stay parked              (limits.py, always available, never removed)
+  2. the next model down      (Auto-switch only: the turn died on a model's own
+                               cap, "You've hit your Fable limit", and every
+                               login in Auto-switch is out of that model)
+  3. stay parked              (limits.py, always available, never removed)
 
 The order at every limit-death site is park first, escalate second, so there is
 never a moment where a session is neither parked nor running. Kept out of
@@ -109,14 +112,15 @@ def same_agent(runtime: "str | None") -> tuple:
 
 
 def rungs(session: "dict | None", dead_slot: "int | None" = None,
-          strategy: str = "best", auto_switch: bool = False) -> list:
+          strategy: str = "best", auto_switch: bool = False,
+          model: "str | None" = None) -> list:
     """Alternatives to waiting, best first. Waiting itself is always available
     and is not listed here -- the caller offers it alongside these. With
     auto_switch, only accounts still in Auto-switch: those it may move to
-    without asking."""
+    without asking. With model, only accounts with room left for it."""
     out = []
     slot = accounts.pick(exclude=(dead_slot,) if dead_slot else (),
-                         strategy=strategy, auto_switch=auto_switch)
+                         strategy=strategy, auto_switch=auto_switch, model=model)
     if slot:
         left = accounts.headroom(slot)
         room = f" ({left}% left)" if left is not None else ""
@@ -126,20 +130,31 @@ def rungs(session: "dict | None", dead_slot: "int | None" = None,
 
 
 def escalate(session: dict, chat_id: int, *, dead_slot: "int | None" = None,
-             model=None, effort=None, run=None, notify=None) -> "dict | None":
+             model=None, effort=None, out_of: "str | None" = None,
+             run=None, notify=None) -> "dict | None":
     """Consulted right after limits.defer() parked the session. Returns the rung
     that took the work (and the park is cancelled), or None when the park stands.
+
+    out_of is the model whose own cap the turn died on (limits.limit_model).
+    A login out of it is no rung: handing the work there, on that model, only
+    dies again, and two such logins used to pass it back and forth for good.
 
     run/notify are injectable for tests; both default to the real ones.
     """
     policy = policy_for(session)
     if policy == "wait":
         return None
-    available = rungs(session, dead_slot=dead_slot, auto_switch=policy == "auto")
+    available = rungs(session, dead_slot=dead_slot, auto_switch=policy == "auto", model=out_of)
+    if policy == "auto" and not available and out_of in config.MODELS_LOW_TO_HIGH[1:]:
+        # Every login in Auto-switch is out of that model: the next model down, on
+        # any of them, the one it died on too (only that model ran out there).
+        lower = config.MODELS_LOW_TO_HIGH[config.MODELS_LOW_TO_HIGH.index(out_of) - 1]
+        available = [{**r, "model": lower, "label": f"{lower.capitalize()}, {r['label']}"}
+                     for r in rungs(session, auto_switch=True, model=lower)]
     why = None
     if policy == "auto" and not available:
         # Only accounts you kept out of Auto-switch may have room: ask instead.
-        available = rungs(session, dead_slot=dead_slot)
+        available = rungs(session, dead_slot=dead_slot, model=out_of)
         if available:
             policy = "ask"
             # The label says how much room only when its meter reads (pick's last resort may not).
@@ -164,6 +179,11 @@ def escalate(session: dict, chat_id: int, *, dead_slot: "int | None" = None,
 ACCOUNT_NUDGE = (
     "⏮ Your previous turn was cut off because the Claude usage limit was "
     "reached — not by the user. It has been resumed on another account. Review "
+    "your recent transcript and continue exactly where you left off; finish the "
+    "task you were doing. Don't start over.")
+MODEL_NUDGE = (
+    "⏮ Your previous turn was cut off because the Claude usage limit was "
+    "reached — not by the user. It has been resumed on another model. Review "
     "your recent transcript and continue exactly where you left off; finish the "
     "task you were doing. Don't start over.")
 
@@ -209,15 +229,21 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
     if notify is None:
         from bridge import telegram
         notify = telegram.send
+    lower = rung.get("model")
     kw = {"project": session.get("cwd"), "session_id": session["id"],
-          "model": model, "effort": effort, "account_slot": rung["slot"]}
+          "model": lower or model, "effort": effort, "account_slot": rung["slot"]}
     try:
-        job = run(chat_id, ACCOUNT_NUDGE, [], **kw)
+        job = run(chat_id, MODEL_NUDGE if lower else ACCOUNT_NUDGE, [], **kw)
     except Exception as e:  # noqa: BLE001
         print(f"[ladder] account handover failed: {e}", file=sys.stderr)
         return None
     if job is None:
         return None          # session already running: the user moved on
+    if lower:
+        # It stays on that model, as a moved session stays on its new login
+        # (profiles.follow_account): its next turn would die on the old one.
+        from bridge import profiles, store
+        profiles.save_pick(store.get_session(session["id"]) or session, "model", lower)
     limits.cancel(session["id"])
     from bridge import notices
     notices.emit("resumed", session["id"], body=f"Continuing on {rung['label']}.")

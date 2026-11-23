@@ -75,6 +75,17 @@ def is_limit_error(text: "str | None") -> bool:
     return bool(_LIMIT_RE.search(t))
 
 
+_MODEL_LIMIT_RE = re.compile(r"you've (?:hit|reached) your (opus|sonnet|fable)\b", re.IGNORECASE)
+
+
+def limit_model(text: "str | None") -> "str | None":
+    """The model whose own weekly cap a limit death names ("You've hit your
+    Fable limit"), as config.MODELS_LOW_TO_HIGH spells it; None for a window
+    every model shares. Other logins can be out of that cap too."""
+    m = _MODEL_LIMIT_RE.search(text or "")
+    return m.group(1).lower() if m else None
+
+
 # Turn-death texts that mean "the API failed on its side, transiently": the
 # CLI's "API Error: <5xx>" family, its prose variants, and the server-side 429
 # that is explicitly not a usage limit (backing off is the whole point there).

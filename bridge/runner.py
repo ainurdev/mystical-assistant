@@ -2029,8 +2029,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # Parked (the safety net). Now see whether the fallback ladder can do
         # better than waiting: another account. A taken rung unparks the
         # session and announces itself, so we stay quiet then.
-        if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot,
-                           model=model, effort=effort):
+        if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot, model=model, effort=effort,
+                           out_of=limits.limit_model(job.result or job.error_msg)):
             return True
         if first:
             from bridge import tgboard           # lazy: tgboard imports runner

@@ -30,11 +30,13 @@ export function limitResets(text: string): { h: number; m: number; day?: string 
 }
 
 /** A turn the bridge sent to carry on after a limit (bridge/ladder.py
- *  ACCOUNT_NUDGE, bridge/limits.py NUDGE): "account" when another login took the
- *  work, "reset" when the window refilled. null for anything you wrote. */
-export function limitNudge(prompt: string | null | undefined): "account" | "reset" | null {
+ *  ACCOUNT_NUDGE and MODEL_NUDGE, bridge/limits.py NUDGE): "account" when another
+ *  login took the work, "model" when the next model down did (every login was out
+ *  of its own cap), "reset" when the window refilled. null for anything you wrote. */
+export function limitNudge(prompt: string | null | undefined): "account" | "model" | "reset" | null {
   if (!prompt?.startsWith("⏮ ") || !prompt.includes("usage limit was reached")) return null;
-  return prompt.includes("resumed on another account") ? "account" : "reset";
+  return prompt.includes("resumed on another account") ? "account"
+    : prompt.includes("resumed on another model") ? "model" : "reset";
 }
 
 /** The login to offer instead of a dry one, picked the way the ladder picks

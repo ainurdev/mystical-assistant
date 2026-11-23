@@ -85,6 +85,17 @@ def test_is_limit_error_matches_real_shapes():
         assert not limits.is_limit_error(t), f"should NOT match: {t!r}"
 
 
+def test_limit_model_names_only_a_models_own_cap():
+    """Other logins can be out of a model's own cap too; never out of yours."""
+    assert limits.limit_model("You've hit your Fable limit · resets Nov 27 at 6am (Asia/Yerevan). "
+                              "Switch to another model, or …") == "fable"
+    assert limits.limit_model("You've hit your Fable 5 limit · resets 6pm") == "fable"
+    assert limits.limit_model("You've hit your Opus limit · resets 6pm") == "opus"
+    for shared in ("You've hit your session limit · resets 9:30pm", "You've hit your weekly limit",
+                   "You've hit your usage limit · resets 3pm", "Claude AI usage limit reached|1751234567", None):
+        assert limits.limit_model(shared) is None, shared
+
+
 def test_is_server_error_matches_real_shapes():
     yes = [
         "API Error: 500 {\"type\":\"error\",\"error\":{\"type\":\"api_error\"}}",
