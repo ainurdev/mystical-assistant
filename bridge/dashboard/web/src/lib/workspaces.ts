@@ -51,10 +51,6 @@ function setCur(id: string) {
   cur = id;
   listeners.forEach((f) => f());
 }
-function keep(set: WorkspaceSet) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(set)); } catch { /* private mode */ }
-  queryClient.setQueryData(key(), set);
-}
 
 /** A set the read answered with; a workspace that's gone drops you on DEFAULT. */
 function take(set: WorkspaceSet) {
@@ -81,7 +77,7 @@ export function switchWorkspace(id: string): void {
 
 /** How the sidebar's switch draws, for every window. */
 export async function setWorkspaceDisplay(display: WorkspaceDisplay): Promise<void> {
-  keep(await api.workspacePrefs({ display }));
+  queryClient.setQueryData(key(), await api.workspacePrefs({ display }));   // the effect keeps it (take)
 }
 
 /** Save the whole set and adopt what the bridge kept. Throws the bridge's reason. */
@@ -97,8 +93,9 @@ const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listen
 
 export function useWorkspaces(): Snap {
   // The last listing first (localStorage), so the first paint shows the right workspace; it
-  // counts as stale, so the bridge is asked at once.
-  const q = useQuery({ ...settings.workspaces(), initialData: cached ?? undefined, initialDataUpdatedAt: 0 });
+  // counts as stale, so the bridge is asked at once. A focus reads it again: another window may
+  // have edited the set, and this read has no poll.
+  const q = useQuery({ ...settings.workspaces(), initialData: cached ?? undefined, initialDataUpdatedAt: 0, refetchOnWindowFocus: true });
   useEffect(() => { if (q.data && q.dataUpdatedAt) take(q.data); }, [q.data, q.dataUpdatedAt]);
   const c = useSyncExternalStore(subscribe, () => cur, () => cur);
   return useMemo(() => ({ set: q.data ?? null, cur: c }), [q.data, c]);
