@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryClient, settings as setq } from "../../lib/queries";
 import { api, type AvailablePlugin, type PluginAction, type PluginsInfo } from "../../api";
 
 /* Claude Code plugins, for SETTINGS ▸ Skills (SkillsFold.tsx). It was the HUD
@@ -12,19 +14,14 @@ const LABEL = { fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)" 
    MCP servers) installed and versioned by Claude Code itself, so everything
    here is a relay to `claude plugin`. Machine-wide, hence no project scope. */
 export function PluginsView() {
-  const [info, setInfo] = useState<PluginsInfo | null>(null);
-  const [err, setErr] = useState("");
+  const pluginsKey = setq.plugins();
+  const pluginsQ = useQuery(pluginsKey);
+  const info: PluginsInfo | null = pluginsQ.data ?? null;
+  const [failed, setErr] = useState("");
+  const err = failed || pluginsQ.error?.message || "";
   const [busy, setBusy] = useState("");
   const [src, setSrc] = useState("");
   const [q, setQ] = useState("");
-
-  useEffect(() => {
-    let live = true;
-    void api.plugins()
-      .then((d) => { if (live) setInfo(d); })
-      .catch((e: Error) => { if (live) setErr(e.message); });
-    return () => { live = false; };
-  }, []);
 
   async function act(key: string, action: PluginAction, id: string,
                      extra?: { scope?: string; enabled?: boolean }) {
@@ -32,7 +29,7 @@ export function PluginsView() {
     setBusy(key); setErr("");
     try {
       const r = await api.pluginAct(action, id, extra);
-      setInfo({ marketplaces: r.marketplaces, installed: r.installed, available: r.available });
+      queryClient.setQueryData(pluginsKey.queryKey, { marketplaces: r.marketplaces, installed: r.installed, available: r.available });
       if (!r.ok && r.error) setErr(r.error);
     } catch (e) {
       setErr((e as Error).message);

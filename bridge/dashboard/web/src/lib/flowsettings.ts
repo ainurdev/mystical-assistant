@@ -1,43 +1,20 @@
-import { useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, type FlowChange, type FlowSettings } from "../api";
-import { refreshAiFeatures } from "./ai";
+import { queryClient, reread, settings } from "./queries";
 
-/** The FLOWS sheet's settings (bridge/flowsettings.py), one fetch shared by the box and its sheet,
- *  as lib/ai shares the AI switches. Kept on the bridge, so a change made in another browser or app
- *  shows the next time the sheet opens (it re-reads then). null until the bridge has answered. */
+/** The FLOWS sheet's settings (bridge/flowsettings.py), one query (lib/queries settings.flows)
+ *  shared by the box, its sheet and SETTINGS. Kept on the bridge, so a change made in another
+ *  browser or app shows the next time the sheet opens (it re-reads then). null until the bridge
+ *  has answered; a failed read keeps the last answer. */
 
-let snapshot: FlowSettings | null = null;
-let asked = false;
-const subs = new Set<() => void>();
+export const refreshFlowSettings = () => reread(settings.flows().queryKey);
 
-function publish(s: FlowSettings): void {
-  snapshot = s;
-  subs.forEach((fn) => fn());
-}
-
-export async function refreshFlowSettings(): Promise<void> {
-  try {
-    publish(await api.flows());
-  } catch {
-    /* an older bridge, or a blip: keep the last answer */
-  }
-}
-
-/** One change; FLOWS, AUTO PICKS and SMART ZONE are AI switches too, so those re-read. */
+/** One change. Its answer is every setting, shown at once; the POST also invalidates the AI
+ *  switches, since FLOWS, AUTO PICKS and SMART ZONE are AI switches too. */
 export async function changeFlows(body: FlowChange): Promise<void> {
-  publish(await api.setFlows(body));
-  if ("key" in body && !("flow" in body)) void refreshAiFeatures();
-}
-
-function subscribe(fn: () => void): () => void {
-  subs.add(fn);
-  if (!asked) {
-    asked = true;
-    void refreshFlowSettings();
-  }
-  return () => subs.delete(fn);
+  queryClient.setQueryData(settings.flows().queryKey, await api.setFlows(body));
 }
 
 export function useFlowSettings(): FlowSettings | null {
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useQuery(settings.flows()).data ?? null;
 }
