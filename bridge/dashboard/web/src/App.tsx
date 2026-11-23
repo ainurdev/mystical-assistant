@@ -1485,16 +1485,22 @@ export function App() {
   // another dashboard — or when a login is added, which gets one of its own
   // (bridge profiles.add_default). So they load on mount, after every edit or
   // account change and whenever the PROFILES panel opens, unpolled. A bridge
-  // started before they existed answers its catch-all 404; any other failure
-  // says so, here and in the panel.
-  const loadProfiles = useCallback(() => api.profiles()
-    .then((r) => { setProfiles(r); setProfilesAvailable(true); setProfilesError(null); })
-    .catch((e) => {
-      const msg = (e as Error).message;
-      if (msg === "not found") { setProfilesAvailable(false); return; }
-      setProfilesError(msg);
-      notify("error", `Couldn't load profiles — ${msg}`);
-    }), []);
+  // started before they existed answers its catch-all 404; any other failure is
+  // tried again at 1, 2 and 4 s before it says so, here and in the panel. Unpolled
+  // means one call lost in the page's opening burst (the bridge resets a
+  // connection it has no room to queue) hid the composer's PROFILE pill until a reload.
+  const loadProfiles = useCallback(() => {
+    const load = (tries: number): Promise<void> => api.profiles()
+      .then((r) => { setProfiles(r); setProfilesAvailable(true); setProfilesError(null); })
+      .catch((e) => {
+        const msg = (e as Error).message;
+        if (msg === "not found") { setProfilesAvailable(false); return; }
+        if (tries < 3) { setTimeout(() => void load(tries + 1), 1000 * 2 ** tries); return; }
+        setProfilesError(msg);
+        notify("error", `Couldn't load profiles — ${msg}`);
+      });
+    return load(0);
+  }, []);
   useEffect(() => { void loadProfiles(); }, [loadProfiles]);
   const onAccountsChanged = useCallback(() => { void loadAccounts(); void loadProfiles(); },
     [loadAccounts, loadProfiles]);

@@ -3184,13 +3184,21 @@ def _cursor(body) -> int:
 _httpd: ThreadingHTTPServer | None = None
 
 
+class _Server(ThreadingHTTPServer):
+    # socketserver's default listen queue is 5, and macOS answers a connection
+    # past a full queue with a reset. A page opening a dozen calls at once
+    # against a busy bridge (its accept loop waiting on the GIL) lost some of
+    # them, ECONNRESET: a boot that lost /local/profiles drew no PROFILE pill.
+    request_queue_size = 128
+
+
 def start() -> ThreadingHTTPServer:
     global _httpd
     from bridge import newproject
     newproject.ensure_general()
     from bridge import site_browser
     site_browser.serve_if_used()      # a Mystical browser left open keeps reaching its chats
-    _httpd = ThreadingHTTPServer((config.DASH_HOST, config.DASH_PORT), Handler)
+    _httpd = _Server((config.DASH_HOST, config.DASH_PORT), Handler)
     Thread(target=_httpd.serve_forever, daemon=True).start()
     return _httpd
 
