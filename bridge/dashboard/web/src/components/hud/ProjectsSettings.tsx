@@ -5,6 +5,7 @@ import {
   FolderX,
 } from "lucide-react";
 import { api, type AccountInfo, type InstalledSkill, type PickResult } from "../../api";
+import { main, queryClient, settings as setq } from "../../lib/queries";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
 import { ago, projectGivenName, projectMark, projectName, setProjectMarks } from "../../lib/surfaces";
@@ -322,8 +323,10 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     setCfg(null); setRun(""); setErr("");
     if (!focus?.startsWith("/")) return;
     let live = true;
-    void Promise.all([api.projectSettings({ project: focus }), api.lessons(focus).catch(() => null),
-                      api.skills(focus).catch(() => null)])
+    // The keys SKILLS and LEARN read too, so a page opened after asks nothing again.
+    const q = { project: focus };
+    void Promise.all([queryClient.fetchQuery(setq.projectSettings(q)), queryClient.fetchQuery(setq.lessons(q)).catch(() => null),
+                      queryClient.fetchQuery(setq.skills(q)).catch(() => null)])
       .then(([s, l, k]) => {
         if (!live) return;
         const pulled = s.design_project
@@ -380,7 +383,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     setPicking(true);
     try {
       const res = await api.pickLogos(action);
-      setProjectMarks((await api.projects()).marks);
+      setProjectMarks((await queryClient.fetchQuery(main.projects())).marks);   // the pick invalidated it
       // Pressed again with nothing new to pick: the last run's strip, and its Undo, stay.
       setPickRes((prev) => action === "undo" ? null
         : !res.picked.length && prev && typeof prev !== "string" && prev.picked.length ? prev : res);

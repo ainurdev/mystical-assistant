@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/queries.check.ts
 import { hashKey } from "@tanstack/react-query";
-import { CHANGES, changedBy, code, main, queryClient, rail, readWith, reads, urlOf } from "./queries.ts";
+import { CHANGES, changedBy, code, main, queryClient, rail, readWith, reads, settings, urlOf } from "./queries.ts";
 
 const eq = (a: unknown, b: unknown, what: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
 
@@ -33,6 +33,17 @@ eq(changedBy("/local/run/j1/interrupt"), ["/local/running", "/local/sessions"], 
 eq(changedBy("/local/run"), ["/local/sessions", "/local/running"], "a send");
 eq(changedBy("/local/git/commit?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus"], "a commit, query ignored");
 eq(changedBy("/local/restart"), [], "nothing listed, nothing invalidated");
+// Settings: a switch shows at once wherever it's read (the prompt box, the rail, the sidebar).
+eq(changedBy("/local/aifeatures"), ["/local/aifeatures"], "an AI switch");
+eq(changedBy("/local/flows"), ["/local/flows", "/local/aifeatures"], "a flow setting, which can be an AI switch");
+eq(changedBy("/local/integrations"), ["/local/integrations"], "an install or remove");
+eq(changedBy("/local/rivendell"), ["/local/rivendell", "/local/integrations"], "an instance saved: the integration's count");
+eq(changedBy("/local/move/export"), ["/local/move/plan", "/local/move/files", "/local/move/read", "/local/move/jobs"], "a move started");
+eq(changedBy("/local/acp/login"), [], "a sign-in's status poll changes nothing");
+eq(changedBy("/local/skills/check"), [], "a skills update check changes nothing");
+console.assert(hashKey(settings.skills({ project: "/r" }).queryKey) === hashKey(settings.skills({ project: "/r" }).queryKey)
+  && hashKey(settings.skills({ project: undefined }).queryKey) === hashKey(settings.skills().queryKey), "Settings ▸ Skills and the rail's count share a key");
+eq(urlOf(settings.projectSettings.route, { project: "/a b" }), "/local/project/settings?project=%2Fa+b", "a project's settings");
 
 // --- a shared poll runs at its listed rate --------------------------------------
 const asked: string[] = [];
