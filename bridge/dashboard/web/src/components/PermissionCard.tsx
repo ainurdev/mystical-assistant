@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Wrench } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import { Keys, useAskKeys } from "./ui/Keys";
+import { SCOPE_WORD, type AllowScope } from "../api";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
 // Most live permissions dock on the prompt box instead (AskDock's PermissionDock):
@@ -10,7 +11,9 @@ export function PermissionCard({
   toolName,
   summary,
   detail,
+  scopes,
   onAllow,
+  onAllowScope,
   onDeny,
 }: {
   toolName: string;
@@ -19,12 +22,15 @@ export function PermissionCard({
   detail?: string;
   /** Resolve when the answer has reached the bridge; `false` means it didn't. */
   onAllow: () => void | Promise<boolean | void>;
+  /** How far an Allow may reach past this call, and the click for each. */
+  scopes?: AllowScope[];
+  onAllowScope?: (scope: AllowScope) => void | Promise<boolean | void>;
   onDeny: () => void | Promise<boolean | void>;
 }) {
   // The card only flips to Allowed/Denied on the next transcript poll — without
   // this the click looks like it did nothing. See QuestionCard.
-  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
-  async function answer(which: "allow" | "deny", fn: () => void | Promise<boolean | void>) {
+  const [sending, setSending] = useState<"allow" | "deny" | AllowScope | null>(null);
+  async function answer(which: "allow" | "deny" | AllowScope, fn: () => void | Promise<boolean | void>) {
     if (sending) return;
     setSending(which);
     if ((await fn()) === false) setSending(null);
@@ -56,11 +62,16 @@ export function PermissionCard({
           {detail}
         </pre>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <span ref={mark} data-ask-keys hidden />
         <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
           {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : <>Allow <Keys k="Ctrl+1" hover /></>}
         </Button>
+        {onAllowScope && (scopes ?? []).map((sc) => (
+          <Button key={sc} variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer(sc, () => onAllowScope(sc))}>
+            {sending === sc ? <Spinner className="h-3 w-3 border" /> : SCOPE_WORD[sc]}
+          </Button>
+        ))}
         <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
           {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <>Deny <Keys k="Ctrl+2" hover /></>}
         </Button>

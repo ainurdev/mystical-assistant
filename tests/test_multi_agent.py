@@ -322,10 +322,70 @@ def test_limits_apply_live(tmp_path, on, monkeypatch):
     assert "login may carry" in why
 
 
-def test_card_answer_reads_labels():
-    assert channel.approved([{"labels": ["Start"]}]) is True
-    assert channel.approved([{"labels": ["Not now"]}]) is False
-    assert channel.approved([]) is False
+class _CardJob:
+    """Enough of a job for a card that blocks its tool call (tests/test_gateway_tools FakeJob)."""
+    def __init__(self, sid):
+        self.id, self.store_session_id, self.chat_id = f"j{time.time_ns()}", sid, CHAT
+        self.events, self.pending, self.tg_live, self.status = [], [], False, "running"
+        self.exited = threading.Event()
+
+    def add(self, ev):
+        self.events.append(ev)
+
+    def add_pending(self, e):
+        self.pending.append(e)
+
+
+def _delegate(s, job, **answer):
+    """One delegate call; the card, if one shows, gets `answer`. Returns (tool text, card)."""
+    seen, over = {}, threading.Event()
+
+    def click():
+        while not job.pending and not over.wait(0.01):
+            pass
+        if job.pending:
+            seen["card"] = job.pending.pop()
+            gateway.answer_card(job, seen["card"], answer.get("answers"), answer.get("behavior", "allow"),
+                                answer.get("message"))
+    t = threading.Thread(target=click, daemon=True)
+    t.start()
+    res = gateway._delegate(store.get_session(s["id"]), job, {"tasks": [{"brief": "review it"}]})  # noqa: SLF001
+    over.set()
+    t.join(5)
+    return res["content"][0]["text"], seen.get("card")
+
+
+def test_the_helper_card_is_a_tool_call_with_no_note_and_an_allow_that_can_reach_further(tmp_path, monkeypatch, on):
+    monkeypatch.setattr(gateway, "_started", lambda s, plan: "started")
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *a, **k: None)
+    s = _session(tmp_path, agent=None, prompts=("do these things fast",))
+    scope = lambda w: [{"header": "scope", "labels": [w]}]  # noqa: E731
+
+    job = _CardJob(s["id"])
+    text, card = _delegate(s, job)
+    assert text == "started"
+    assert (card["kind"], card["tool_name"], card["scopes"]) == ("permission", "delegate", ["turn", "chat"])
+    assert card["summary"] == "Start 1 helper" and "review it" in card["detail"]
+    assert [e["type"] for e in job.events] == ["permission", "permission_resolved"]   # no question, so no note box
+    assert job.events[-1] == {"type": "permission_resolved", "request_id": card["request_id"], "behavior": "allow"}
+
+    text, _ = _delegate(s, _CardJob(s["id"]), behavior="deny", message="commit first")
+    assert text == "The user said not now. Carry on alone. They added: commit first"
+
+    # This turn: the same job isn't asked again, the next turn's job is.
+    text, card = _delegate(s, job, answers=scope("turn"))
+    assert text == "started" and job.events[-1]["scope"] == "turn"
+    job.events.clear()
+    assert _delegate(s, job)[0] == "started" and job.events == []
+    assert _delegate(s, _CardJob(s["id"]))[1] is not None
+
+    # This chat: the helpers setting goes to auto, as the HELPERS row would set it.
+    _delegate(s, _CardJob(s["id"]), answers=scope("chat"))
+    assert channel.config_for(store.get_session(s["id"]))["helpers"] == "auto"
+    later = _CardJob(s["id"])
+    assert _delegate(s, later)[0] == "started" and later.events == []
+    # A scope means nothing on a Deny.
+    assert gateway._scope(scope("nope")) == ""  # noqa: SLF001
 
 
 # ---- helpers end to end ----------------------------------------------------------
@@ -398,6 +458,23 @@ def test_quiet_pings(tmp_path, monkeypatch, on):
     assert channel.quiet_ping(kid["id"]) is True
     monkeypatch.setattr(channel, "_running", lambda sid: sid == kid["id"])
     assert channel.quiet_ping(chat["id"]) is True
+
+
+def test_a_chat_waiting_on_its_helpers_reads_waiting_not_idle(tmp_path, on):
+    chat = _session(tmp_path, agent=None)
+    mk = lambda n: store.create_member(chat, name=n, cwd=str(tmp_path), profile_id=None,  # noqa: E731
+                                       permission_mode=None, member={})["id"]
+    a, b = mk("products-fix"), mk("review")
+    status = lambda run, ask=(): runner._build_status(  # noqa: E731, SLF001
+        list(run), [{"session_id": x, "kind": "question"} for x in ask], [], [], {})
+    assert chat["id"] not in status([])
+    one = status([a])[chat["id"]]
+    assert (one["state"], one["label"], one["agents"]) == ("waiting", "waiting on products-fix", 1)
+    assert "on" not in one                      # WaitForSession's: a prompt of yours ends no wait here
+    assert status([a, b])[chat["id"]]["label"] == "waiting on 2 agents"
+    stuck = status([a, b], ask=[b])[chat["id"]]
+    assert (stuck["label"], stuck["needs"]) == ("review needs you", 1)
+    assert status([chat["id"], a])[chat["id"]]["state"] == "working"   # its own turn wins
 
 
 # ---- merging ----------------------------------------------------------------------

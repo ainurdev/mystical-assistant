@@ -1719,6 +1719,17 @@ def member_counts(ids: list) -> dict:
     return {r["parent_session"]: r["n"] for r in rows}
 
 
+def helper_parents(ids: list) -> dict:
+    """helper session id -> (its chat's id, the helper's name), for the ids that are helpers."""
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    with closing(_connect()) as c:
+        rows = c.execute(f"SELECT id, parent_session, title FROM sessions "
+                         f"WHERE id IN ({marks}) AND parent_session IS NOT NULL", list(ids)).fetchall()
+    return {r["id"]: (r["parent_session"], r["title"] or "helper") for r in rows}
+
+
 def set_member(session_id: str, member: dict) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET member=? WHERE id=?", (json.dumps(member), session_id))

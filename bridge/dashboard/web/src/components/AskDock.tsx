@@ -3,7 +3,7 @@ import {
   ArrowDown, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
   KeyRound, Minimize2, Plug, SquareTerminal, X,
 } from "lucide-react";
-import { api, type AnswerSelection, type CardAnswer, type Question } from "../api";
+import { api, SCOPE_WORD, scopeAnswer, type AllowScope, type AnswerSelection, type CardAnswer, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
 import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
@@ -515,16 +515,18 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
   onSteer: (text: string) => void;
   bind: (mode: AskMode | null) => void;
 }) {
-  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
+  const [sending, setSending] = useState<"allow" | "deny" | AllowScope | null>(null);
   const [failed, setFailed] = useState(false);
   const mcp = d.tool.startsWith("mcp__") ? mcpParts(d.tool) : null;
   const plan = d.tool === "ExitPlanMode";
   const bash = d.tool === "Bash";
-  async function answer(behavior: "allow" | "deny", note = "") {
+  // Mystical's own card for a delegate call (bridge/gateway.py): what it would start.
+  const helpers = d.tool === "delegate";
+  async function answer(behavior: "allow" | "deny", note = "", scope?: AllowScope) {
     if (sending) return;
-    setSending(behavior);
+    setSending(scope ?? behavior);
     setFailed(false);
-    const res = await onRespond(d.requestId, note ? { behavior, message: note } : { behavior });
+    const res = await onRespond(d.requestId, scope ? { behavior, answers: scopeAnswer(scope) } : note ? { behavior, message: note } : { behavior });
     if (res === false) { setSending(null); setFailed(true); return; }
     if (note) {
       setDraft("");
@@ -549,7 +551,7 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
     return true;
   });
 
-  const topic = bash ? "Bash" : plan ? "ready to build" : mcp ? `${mcp.server} · ${mcp.tool}` : d.tool;
+  const topic = bash ? "Bash" : plan ? "ready to build" : helpers ? "helpers" : mcp ? `${mcp.server} · ${mcp.tool}` : d.tool;
   return (
     <>
       <Head icon={plan ? <ListChecks size={13} strokeWidth={2.2} /> : mcp ? <Plug size={13} strokeWidth={2.2} /> : <SquareTerminal size={13} strokeWidth={2.2} />}
@@ -574,6 +576,11 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
               ? <div className="ad-kv">{kvRows(d.detail).map(([k, v], i) => <div key={i} className="ad-kvr"><span className="k">{k}</span><span className="v"><KvValue v={v} /></span></div>)}</div>
               : d.summary && <pre className="ad-cmd">{d.summary}</pre>}
           </>
+        ) : helpers ? (
+          <>
+            <p className="ad-ask">{d.summary}?</p>
+            {d.detail && <pre className="ad-cmd">{d.detail}</pre>}
+          </>
         ) : (
           <>
             <p className="ad-ask">Allow <b>{d.tool}</b>?</p>
@@ -587,6 +594,13 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
             {plan ? "Approve & build" : "Allow"}
             <Keys k="Ctrl+1" hover />
           </button>
+          {(d.scopes ?? []).map((sc) => (
+            <button key={sc} type="button" className="ad-btn" disabled={!!sending} onClick={() => void answer("allow", "", sc)}
+              title={sc === "turn" ? "Allow this and every later one until this turn ends" : "Allow this and stop asking in this chat"}>
+              {sending === sc ? <Spinner className="h-3 w-3 border" /> : <Check size={13} strokeWidth={2.6} aria-hidden />}
+              {SCOPE_WORD[sc]}
+            </button>
+          ))}
           <button type="button" className="ad-btn" disabled={!!sending} onClick={() => void answer("deny", draft.trim())}>
             {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : <X size={13} strokeWidth={2.6} aria-hidden />}
             {plan ? "Keep planning" : typed ? "Deny with note" : "Deny"}

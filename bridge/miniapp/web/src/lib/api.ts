@@ -378,7 +378,8 @@ export type RunEvent =
   // The card's checkbox (id + notify: prompt the agent if the wait runs out), or the
   // agent's own limit on the wait, in seconds (cap, no id).
   | { type: "background_set"; id?: string; notify?: boolean; cap?: number }
-  | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
+  // `scopes`: how far an Allow may reach past this one call (bridge/gateway.py SCOPES).
+  | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string; scopes?: AllowScope[] }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
@@ -446,6 +447,12 @@ export interface RunStatus {
 export interface SecretAnswer {
   value: string;
 }
+
+/** An Allow that stands for the rest of the turn, or for the chat from now on. It goes
+ *  back as an answer headed `scope`. */
+export type AllowScope = "turn" | "chat";
+export const SCOPE_WORD: Record<AllowScope, string> = { turn: "Always allow in this turn", chat: "Always allow in this chat" };
+export const scopeAnswer = (scope: AllowScope): AnswerSelection[] => [{ header: "scope", labels: [scope] }];
 
 export interface RespondBody {
   request_id: string;

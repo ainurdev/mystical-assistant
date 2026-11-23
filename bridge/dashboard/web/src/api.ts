@@ -240,6 +240,10 @@ export interface AnswerSelection {
 /** What a respond can carry: a question's selections, or a gateway card's value
  *  (request_secret). The value goes to the route and nowhere else. */
 export type CardAnswer = AnswerSelection | { value: string };
+/** An Allow that stands for the rest of the turn, or for the chat from now on. */
+export type AllowScope = "turn" | "chat";
+export const SCOPE_WORD: Record<AllowScope, string> = { turn: "Always allow in this turn", chat: "Always allow in this chat" };
+export const scopeAnswer = (scope: AllowScope): CardAnswer[] => [{ header: "scope", labels: [scope] }];
 /** One card a running job is blocked on (runner.py Job.pending). */
 export interface PendingCard {
   request_id: string;
@@ -352,9 +356,11 @@ export type RunEvent =
   // `detail`: what the card asks about in full — an MCP call's input (a tracker
   // comment is judged on its whole text, not on 120 chars of it), a Bash command
   // longer than the summary, an ExitPlanMode's plan.
-  | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
+  // `scopes`: how far an Allow may reach past this one call (bridge/gateway.py SCOPES;
+  // the helpers card). The pick goes back as an answer headed `scope`.
+  | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string; scopes?: AllowScope[] }
   | { type: "question"; request_id: string; questions: Question[] }
-  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
+  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
   // The CLI retrying a request (system/api_retry), one per try. `error` is its
   // class: overloaded, rate_limit, server_error, http_529, connection…
@@ -1059,7 +1065,11 @@ export interface SessionStatus {
   label: string | null;
   // `waiting` only: the session it waits on, what it will do then, since when (epoch s).
   // `since` on `working` is the turn's start, folded in by App from /running's jobs.
+  // No `on`: the chat waits on its own helpers (bridge/channel.py), `agents` of them
+  // mid-turn and `needs` of those stopped on a card for you.
   on?: string;
+  agents?: number;
+  needs?: number;
   then?: string;
   since?: number;
   // `parked` only (bridge/limits.py), with `since` = when it stopped: when it

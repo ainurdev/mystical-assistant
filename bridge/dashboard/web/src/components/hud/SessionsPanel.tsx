@@ -109,14 +109,26 @@ const fieldsFor = (mode: Mode, multi: boolean) => FIELDS.filter((f) =>
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
  *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
- *  own stream again. Agents start off in every tab, and PLUGINS, which has no
- *  menu to tick them on in, never lists them. */
+ *  own stream again. Agents start on wherever a menu can tick them off: off, a
+ *  chat's helpers showed nowhere at all (2026-11-21). PLUGINS never lists them. */
 const DETAIL_DEFAULT: Record<Mode, Detail> = {
-  attention: { proj: true, branch: true, wt: true, agents: false, tickets: false },
-  projects: { proj: false, branch: true, wt: true, agents: false, tickets: false },
+  attention: { proj: true, branch: true, wt: true, agents: true, tickets: false },
+  projects: { proj: false, branch: true, wt: true, agents: true, tickets: false },
   plugins: { proj: true, branch: true, wt: true, agents: false, tickets: false },
-  recent: { proj: true, branch: true, wt: true, agents: false, tickets: false },
+  recent: { proj: true, branch: true, wt: true, agents: true, tickets: false },
 };
+const DETAIL_KEY = "hud-sessions-fields-2";
+/** The first load under DETAIL_KEY: the ticks saved under the old key, except an
+ *  agents tick that is off. The old key saved every default at once, so an off
+ *  there is the old default, never a choice anyone can be shown to have made. */
+function seedDetail(): Record<Mode, Detail> {
+  let old: Partial<Record<Mode, Partial<Detail>>> = {};
+  try { old = JSON.parse(localStorage.getItem("hud-sessions-fields") || "{}") ?? {}; } catch { /* ignore */ }
+  const out = {} as Record<Mode, Detail>;
+  for (const m of Object.keys(DETAIL_DEFAULT) as Mode[])
+    out[m] = { ...DETAIL_DEFAULT[m], ...old[m], agents: !!old[m]?.agents || DETAIL_DEFAULT[m].agents };
+  return out;
+}
 
 /** Rivendell jobs wear the PLUGINS lane's purple, apart from your own projects'. */
 const JOB_TINT: ProjectTint = {
@@ -668,7 +680,8 @@ export function SessionsPanel(props: Props) {
   // level deep, so a stored preset string would survive as a Detail that has no
   // fields and silently print nothing. Ticks are cheaper to re-pick. A new tick
   // is no shape change: a saved Detail without it takes its default below.
-  const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-fields", DETAIL_DEFAULT);
+  const [detailSeed] = useState(seedDetail);
+  const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>(DETAIL_KEY, detailSeed);
   const detail = { ...DETAIL_DEFAULT[mode], ...detailPrefs[mode] };
   const toggleField = (k: keyof Detail) =>
     setDetailPrefs((p) => ({ ...p, [mode]: { ...detail, [k]: !detail[k] } }));
@@ -966,8 +979,10 @@ export function SessionsPanel(props: Props) {
 
   // A WAITING row's hourglass turns amber when the session it waits on waits on you.
   const waitOf = (s: SessionBrief): WaitLine | undefined => {
-    const on = status.get(s.id)?.state === "waiting" ? status.get(s.id)?.on : undefined;
-    if (!on) return undefined;
+    const st = status.get(s.id);
+    const on = st?.state === "waiting" ? st.on : undefined;
+    // Waiting on its own helpers (no `on`): the bridge says whether one of them waits on you.
+    if (!on) return st?.state === "waiting" && st.needs ? { needs: true } : undefined;
     const t = views.get(on) ?? resolve(status.get(on), done.has(on), flags.get(on));
     return { needs: t.lane === "ask" };
   };
