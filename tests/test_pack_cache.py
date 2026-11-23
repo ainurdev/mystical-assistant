@@ -1,4 +1,4 @@
-"""A session's graph pack rides --append-system-prompt on every turn, frozen at
+"""A session's pack (the nightly digest; the graph pack is gone) rides --append-system-prompt on every turn, frozen at
 the text its first turn got.
 
 Every turn: Claude Code records the appended prompt on a conversation's first
@@ -29,7 +29,7 @@ def _cmd(sid: str, new: bool = False) -> list:
 
 
 def _stub_pack(monkeypatch, pack: str) -> None:
-    monkeypatch.setattr(runner, "_graph_pack_for", lambda *a, **k: pack)
+    monkeypatch.setattr(runner, "_dream_pack_for", lambda *a, **k: pack)
 
 
 def test_pack_resent_every_turn(monkeypatch):

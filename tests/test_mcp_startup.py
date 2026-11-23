@@ -57,9 +57,10 @@ def test_unconfigured_session_never_asks_claude_mcp_list(no_mcp_list):
 
 
 def test_unconfigured_session_emits_no_deny_list(no_mcp_list):
-    # Nothing external is loaded, so there is nothing left to deny. An empty
-    # --disallowedTools would also read as a rule named "".
-    assert "--disallowedTools" not in _cmd(disabled_tools=None)
+    # Nothing external is loaded, so there is no server left to deny: only the
+    # two tools every session goes without, and never an empty rule named "".
+    cmd = _cmd(disabled_tools=None)
+    assert cmd[cmd.index("--disallowedTools") + 1] == "Workflow,ReportFindings"
 
 
 def test_server_left_on_is_redeclared_under_strict(monkeypatch):
@@ -122,7 +123,16 @@ def test_configured_session_still_denies_builtins(monkeypatch):
     monkeypatch.setattr(toolsets, "servers", lambda: [])
     monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
     cmd = _cmd(disabled_tools=["Bash", "Write"])
-    assert cmd[cmd.index("--disallowedTools") + 1] == "Bash,Write"
+    assert cmd[cmd.index("--disallowedTools") + 1] == "Bash,Write,Workflow,ReportFindings"
+
+
+def test_a_session_never_carries_workflow_or_report_findings(monkeypatch, no_mcp_list):
+    """Their descriptions were fixed context every step re-read; a session uses neither."""
+    monkeypatch.setattr(toolsets, "servers", lambda: [])
+    monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
+    for dt in (None, [], ["Workflow"]):
+        cmd = _cmd(disabled_tools=dt)
+        assert cmd[cmd.index("--disallowedTools") + 1].split(",") == ["Workflow", "ReportFindings"]
 
 
 # --- secrets stay off the command line -----------------------------------------

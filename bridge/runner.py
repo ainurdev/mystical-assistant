@@ -249,10 +249,13 @@ _EXPERIMENTAL_NOTE = (
     "tested and just needs a check, go ahead normally.")
 
 
+_SESSION_DENIED = ("Workflow", "ReportFindings")
+
+
 def _compose_system_prompt(graph: str = "", rivendell: str = "", paths_pack: str = "",
                            chrome: bool = False) -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
-    session that gets it), then the graph pack.
+    session that gets it), then the nightly digest.
 
     Ordering does NOT protect the cache: the whole string lands in
     --append-system-prompt, which sits after the last cache breakpoint, so any
@@ -402,6 +405,9 @@ def _run_env(ponytail: "str | None",
         over["PONYTAIL_DEFAULT_MODE"] = ponytail
     # The graph pack sends the agent to run `graphify explain` itself; that run
     # inherits this env, so it stays code-only and unlogged like the bridge's own.
+    # Ponytail's codebase map off, its rules on: the map was fixed context every
+    # step of a turn re-read (the plugin's SessionStart hook reads PONYTAIL_MAP).
+    over["PONYTAIL_MAP"] = "0"
     from bridge import graphmap
     over.update(graphmap.local_only_env())
     base = inspector.base_url()
@@ -703,10 +709,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     elif claude_session_id and claude_session_id in _session_packs:
         graph = _session_packs[claude_session_id]
     else:
-        graph = _graph_pack_for(chat_id, cwd)
-        # The nightly digest is frozen the same way: something that moved
-        # between turns must not re-write the appended prompt.
-        graph = "\n\n".join(p for p in (graph, _dream_pack_for(chat_id, cwd)) if p)
+        # No graph pack: every step of a turn re-read it and sessions never used
+        # it (speed-and-sentry ticket 04). The nightly digest is frozen once per
+        # session: something that moved between turns must not re-write the
+        # appended prompt.
+        graph = _dream_pack_for(chat_id, cwd)
         if claude_session_id:
             _session_packs[claude_session_id] = graph
     _ensure_mystical(cwd)
@@ -759,6 +766,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # as ON is the UI lying.
         cmd.append("--strict-mcp-config")
         disabled_tools = []
+    if interactive and claude_session_id and not skip_pack:
+        # A session never runs a workflow or reports review findings; their
+        # descriptions were fixed context every step re-read.
+        disabled_tools = [*(disabled_tools or []),
+                          *[t for t in _SESSION_DENIED if t not in (disabled_tools or [])]]
     if policy_denied:
         disabled_tools = [*(disabled_tools or []), *[r for r in policy_denied if r not in (disabled_tools or [])]]
     if disabled_tools:
