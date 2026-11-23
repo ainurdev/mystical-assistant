@@ -4,19 +4,21 @@
  *  bar draws as LINE, BLOCKS, ASCII or SWEEP — all per MOVE ▸ PROGRESS.
  *
  *  The jobs live in the bridge, so the dock only reads: once on load (a reload
- *  reattaches to a running job), every second while one runs, and whenever the
- *  MOVE tab says it started or dismissed one (MOVE_EVENT). A bridge older than
+ *  reattaches to a running job), every second while one runs, and whenever a
+ *  POST under /local/move/ changes them (lib/queries CHANGES). A bridge older than
  *  this bundle has no /local/move routes, so the first read fails and the dock
  *  stays empty rather than drawing a broken card.
  *
  *  ponytail: polling, not the SSE stream. One small GET a second, and only while
  *  a job runs; move it onto pubsub if a second consumer ever wants these events. */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Ban, CircleCheck, CircleX, FileSearch, HardDriveDownload, HardDriveUpload, Minus, X,
   type LucideIcon,
 } from "lucide-react";
-import { api, MOVE_EVENT, type MoveJob, type MoveNext } from "../../api";
+import { api, type MoveJob, type MoveNext } from "../../api";
+import { queryClient, settings } from "../../lib/queries";
 import { notify } from "./Notifications";
 import { openSettings } from "../../lib/opensettings";
 import { restartBridge } from "../../lib/restart";
@@ -155,8 +157,7 @@ export function nextAction(n: MoveNext): [string, () => void, boolean?] {
     rivendell: ["OPEN INTEGRATIONS ▸", () => openSettings("plugins")] as [string, () => void],
     delete: ["DELETE", () => {
       void askConfirm(`Delete ${n.path}? It holds your .env files and tokens; this can't be undone.`, { ok: "Delete", danger: true })
-        .then((ok) => ok && api.moveDelete(n.path ?? "").then(() => window.dispatchEvent(new Event(MOVE_EVENT)),
-          (e: Error) => notify("error", `Couldn't delete the move file — ${e.message}`)));
+        .then((ok) => { if (ok) api.moveDelete(n.path ?? "").catch((e: Error) => notify("error", `Couldn't delete the move file — ${e.message}`)); });
     }, true] as [string, () => void, boolean],
     parked: ["COPY PATH", () => void navigator.clipboard?.writeText(n.path ?? "")] as [string, () => void],
   }[n.key];
@@ -185,7 +186,7 @@ export function JobCard({ job, prefs, onMin, onClose, preview }: {
   const retry = () => {
     const go = job.kind === "export" ? api.moveExport(job.out ?? "", job.skip ?? [])
       : job.kind === "read" ? api.moveStartRead(job.file ?? "") : api.moveImport(job.skip ?? []);
-    void go.then(() => { onClose?.(); window.dispatchEvent(new Event(MOVE_EVENT)); },
+    void go.then(() => onClose?.(),
       (e: Error) => notify("error", `Couldn't start it again — ${e.message}`));
   };
   const meta: string[] = [];
@@ -352,6 +353,7 @@ export function Frame({ job, prefs, onOpen, size = 38 }: { job: MoveJob; prefs: 
 }
 
 const MINI_KEY = "hud-move-mini";
+const NO_JOBS: MoveJob[] = [];
 function loadMini(): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(MINI_KEY) || "{}") as Record<string, boolean>; } catch { return {}; }
 }
@@ -366,11 +368,11 @@ const CORNER: Record<MovePrefs["corner"], CSSProperties> = {
 /** Mounted once by App. */
 export function MoveDock() {
   const prefs = PREFS;
-  const [jobs, setJobs] = useState<MoveJob[]>([]);
+  const jobs = useQuery({ ...settings.moveJobs(), refetchInterval: (q) => (q.state.data?.jobs.some((j) => j.status === "running") ? 1000 : false) })
+    .data?.jobs ?? NO_JOBS;
   const [mini, setMini] = useState<Record<string, boolean>>(loadMini);
   const seen = useRef<Map<string, string>>(new Map());
   const first = useRef(true);
-  const timer = useRef<number | undefined>(undefined);
   const hiding = useRef<Set<string>>(new Set());
 
   const setFold = useCallback((id: string, v: boolean) => {
@@ -381,23 +383,9 @@ export function MoveDock() {
     });
   }, []);
   const dismiss = useCallback((id: string) => {
-    setJobs((js) => js.filter((j) => j.id !== id));
+    queryClient.setQueryData(settings.moveJobs().queryKey, (d) => d && { jobs: d.jobs.filter((j) => j.id !== id) });
     void api.moveDismiss(id).catch(() => undefined);
   }, []);
-
-  const poll = useCallback(() => {
-    window.clearTimeout(timer.current);
-    void api.moveJobs().then(({ jobs: js }) => {
-      setJobs(js);
-      if (js.some((j) => j.status === "running")) timer.current = window.setTimeout(poll, 1000);
-    }, () => undefined);   // an older bridge: no routes, no dock
-  }, []);
-
-  useEffect(() => {
-    poll();
-    window.addEventListener(MOVE_EVENT, poll);
-    return () => { window.removeEventListener(MOVE_EVENT, poll); window.clearTimeout(timer.current); };
-  }, [poll]);
 
   // A job that ends is the bridge's news (bridge/movejob.py writes the bell's
   // row, and NOTIFY decides whether it pops or sounds). Here only the dock's own

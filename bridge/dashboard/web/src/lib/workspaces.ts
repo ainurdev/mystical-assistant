@@ -1,5 +1,7 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, type Workspace, type WorkspaceDisplay, type WorkspaceSet } from "../api";
+import { queryClient, settings } from "./queries";
 
 /** The sidebar's workspaces (bridge/workspaces.py), and which one this window
  *  shows.
@@ -10,7 +12,7 @@ import { api, type Workspace, type WorkspaceDisplay, type WorkspaceSet } from ".
  *  switch is also the bridge's `last`, and a window opens on that one, so
  *  opening Mystical lands where you left it whichever address or app it is.
  *
- *  The last listing is cached in localStorage, so the first paint already
+ *  The last listing is kept in localStorage, so the first paint already
  *  shows the right workspace: before it, a window on Personal with no sets
  *  yet listed nothing until the bridge answered.
  *
@@ -21,9 +23,11 @@ const CUR_KEY = "hud-workspace";
 const CACHE_KEY = "hud-workspaces-cache";
 
 type Snap = { set: WorkspaceSet | null; cur: string };
+// The set is the query cache's (lib/queries settings.workspaces); only which one this window
+// is on lives here, because it's this window's and no read's.
 const listeners = new Set<() => void>();
 // The bridge's first answer to this window decides where it opens; later ones
-// (a save, a focus) leave the window where it is.
+// (a save) leave the window where it is.
 let opened = false;
 
 function readCache(): WorkspaceSet | null {
@@ -38,40 +42,46 @@ function readCur(set: WorkspaceSet | null): string {
   return set && !set.workspaces.some((w) => w.id === id) ? DEFAULT_WS : id;
 }
 const cached = readCache();
-let snap: Snap = { set: cached, cur: readCur(cached) };
+let cur = readCur(cached);
+const key = () => settings.workspaces().queryKey;
 
-function emit(next: Snap) {
-  snap = next;
+function setCur(id: string) {
+  try { localStorage.setItem(CUR_KEY, id); } catch { /* private mode: this window only */ }
+  if (id === cur) return;
+  cur = id;
   listeners.forEach((f) => f());
 }
+function keep(set: WorkspaceSet) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(set)); } catch { /* private mode */ }
+  queryClient.setQueryData(key(), set);
+}
 
-/** Take a set the bridge answered with; a workspace that's gone drops you on DEFAULT. */
-export function adoptWorkspaces(set: WorkspaceSet): WorkspaceSet {
-  const want = opened ? snap.cur : set.last || snap.cur;
+/** A set the read answered with; a workspace that's gone drops you on DEFAULT. */
+function take(set: WorkspaceSet) {
+  const want = opened ? cur : set.last || cur;
   opened = true;
-  const cur = set.workspaces.some((w) => w.id === want) ? want : DEFAULT_WS;
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(set)); localStorage.setItem(CUR_KEY, cur); } catch { /* private mode */ }
-  emit({ set, cur });
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(set)); } catch { /* private mode */ }
+  setCur(set.workspaces.some((w) => w.id === want) ? want : DEFAULT_WS);
+}
+
+/** Take a set a save answered with. */
+function adoptWorkspaces(set: WorkspaceSet): WorkspaceSet {
+  queryClient.setQueryData(key(), set);
+  take(set);
   return set;
 }
 
-export function loadWorkspaces(): void {
-  void api.workspaces().then(adoptWorkspaces).catch(() => {});
-}
-
 export function switchWorkspace(id: string): void {
-  if (id === snap.cur) return;
-  try { localStorage.setItem(CUR_KEY, id); } catch { /* private mode: this window only */ }
-  emit({ ...snap, cur: id, set: snap.set && { ...snap.set, last: id } });
+  if (id === cur) return;
+  setCur(id);
+  queryClient.setQueryData(key(), (s) => s && { ...s, last: id });
   // The next window opens here. Fire and forget: this window has already moved.
   void api.workspacePrefs({ last: id }).catch(() => {});
 }
 
 /** How the sidebar's switch draws, for every window. */
 export async function setWorkspaceDisplay(display: WorkspaceDisplay): Promise<void> {
-  const set = await api.workspacePrefs({ display });
-  emit({ ...snap, set: { ...set } });
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(set)); } catch { /* private mode */ }
+  keep(await api.workspacePrefs({ display }));
 }
 
 /** Save the whole set and adopt what the bridge kept. Throws the bridge's reason. */
@@ -83,21 +93,15 @@ export async function saveWorkspaces(workspaces: Workspace[], assign: Record<str
 export const workspaceOf = (set: WorkspaceSet | null, key: string): string =>
   set?.assign[key] ?? DEFAULT_WS;
 
-function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
-  // First subscriber loads; a focus picks up an edit made in another window.
-  if (listeners.size === 1) {
-    if (!snap.set) loadWorkspaces();
-    window.addEventListener("focus", loadWorkspaces);
-  }
-  return () => {
-    listeners.delete(fn);
-    if (!listeners.size) window.removeEventListener("focus", loadWorkspaces);
-  };
-}
+const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 
 export function useWorkspaces(): Snap {
-  return useSyncExternalStore(subscribe, () => snap, () => snap);
+  // The last listing first (localStorage), so the first paint shows the right workspace; it
+  // counts as stale, so the bridge is asked at once.
+  const q = useQuery({ ...settings.workspaces(), initialData: cached ?? undefined, initialDataUpdatedAt: 0 });
+  useEffect(() => { if (q.data && q.dataUpdatedAt) take(q.data); }, [q.data, q.dataUpdatedAt]);
+  const c = useSyncExternalStore(subscribe, () => cur, () => cur);
+  return useMemo(() => ({ set: q.data ?? null, cur: c }), [q.data, c]);
 }
 
 /** A picture picked for a workspace, as the bridge stores it: a raster cropped

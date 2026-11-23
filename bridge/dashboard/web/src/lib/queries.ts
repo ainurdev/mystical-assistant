@@ -177,8 +177,8 @@ export const settings = {
   movePlan: read<MovePlan>("/local/move/plan"),
   moveFiles: read<{ files: MoveFile[] }>("/local/move/files"),
   moveRead: read<{ read: MoveRead | null }>("/local/move/read"),
-  // Every 5 s while MOVE is open, every second while a move runs.
-  moveJobs: read<{ jobs: MoveJob[] }>("/local/move/jobs", { ms: 5000 }),
+  // Listed at its fastest: every second while a move runs. MOVE asks every 5 s at rest, the dock not at all.
+  moveJobs: read<{ jobs: MoveJob[] }>("/local/move/jobs", { ms: 1000 }),
   weatherSearch: read<{ results?: Place[]; error?: string }, { q: string }>("/local/weather/search"),
   workspaces: read<WorkspaceSet>("/local/workspaces"),
   skills: read<SkillsInfo, { project?: string }>("/local/skills"),
@@ -187,6 +187,8 @@ export const settings = {
   projectSettings: read<ProjectSettings, { project: string }>("/local/project/settings"),
   plugins: read<PluginsInfo>("/local/plugins"),
   repoImages: read<RepoImages, { project: string }>("/local/project-mark/repo"),
+  // SYSTEM ▸ Send images: another surface can change it, so the 60 s.
+  chatImages: read<{ mode?: string; shown?: string }>("/local/chat-images", { ms: 60_000 }),
 };
 
 type Tree = { project: string; branch?: string };
