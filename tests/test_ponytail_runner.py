@@ -45,6 +45,14 @@ def test_run_env_lets_one_command_outlast_the_clis_ten_minutes():
     assert 600_000 < cap < runner.config.RUN_TIMEOUT * 1000
 
 
+def test_run_env_turns_the_map_off_and_leaves_ponytail_on():
+    """The map was fixed context every step re-read; ponytail's level is untouched."""
+    env = runner._run_env(None)
+    assert env["PONYTAIL_MAP"] == "0"
+    assert env.get("PONYTAIL_DEFAULT_MODE") == os.environ.get("PONYTAIL_DEFAULT_MODE")
+    assert runner._run_env("lite")["PONYTAIL_DEFAULT_MODE"] == "lite"
+
+
 def test_run_env_sets_mode():
     env = runner._run_env("lite")
     assert env["PONYTAIL_DEFAULT_MODE"] == "lite"

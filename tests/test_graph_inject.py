@@ -13,10 +13,15 @@ def _sysprompt(cmd: list) -> str:
     return cmd[cmd.index("--append-system-prompt") + 1]
 
 
-def test_base_cmd_includes_graph_pack(monkeypatch):
+def test_appended_prompt_has_no_graph_pack(monkeypatch):
+    """Every step of a turn re-read it and sessions never used it; the nightly
+    digest still rides along."""
     monkeypatch.setattr(runner, "_graph_pack_for", lambda *a: "# Project map\nX")
-    cmd = runner._base_cmd("hi", 555, stream=False)
-    assert "# Project map" in _sysprompt(cmd)
+    monkeypatch.setattr(runner, "_dream_pack_for", lambda *a: "# Nightly digest\nY")
+    for kw in ({}, {"interactive": True, "claude_session_id": "33333333-2222-3333-4444-555555555555"}):
+        prompt = _sysprompt(runner._base_cmd("hi", 555, stream=bool(kw), **kw))
+        assert "# Project map" not in prompt
+        assert "# Nightly digest" in prompt
 
 
 def test_skip_pack_skips_graph_too(monkeypatch):
