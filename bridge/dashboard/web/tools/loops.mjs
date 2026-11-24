@@ -32,6 +32,9 @@ export const SCENES_INLINE = [
 ];
 // The nyan cat keeps its exact glide (the user's call, 2026-11-23): smooth, never paused.
 export const NYAN = [".nyan-ride", ".nyan-trail", ".nyan-star", ".nyan-sky"];
+// The live row's ring and node turn smooth too (the user's call, 2026-11-24: stepped read as laggy). They
+// turn with transform, which runs in the compositor: 0% of WebKit's processes, against 4% stepped.
+export const LIVE = ['[data-style="dossier"] .live-spin::before', '[data-style="dossier"] .live-node::before'];
 // The boot intro is untouched: its files, and its scenes' CSS prefixes.
 export const INTRO_FILES = ["components/hud/BootIntro.tsx", "components/hud/BootScenes.tsx", "components/hud/BootFire.ts"];
 export const INTRO_PREFIXES = [".kd-", ".dd-", ".boot-"];   // .boot-: the intro's exit title swap (BootIntro)
@@ -167,7 +170,7 @@ export function audit(files) {
     if (intro(l.selector)) continue;
     layout(l.name, where);
     if (l.stepped || l.prop.startsWith("--animate-")) continue;
-    if (NYAN.includes(l.selector)) continue;
+    if (NYAN.includes(l.selector) || LIVE.includes(l.selector)) continue;
     if (SCENES.includes(l.selector)) {
       if (!still.has(l.selector)) bad.push(`${where}: listed scene, but the still rule (${STILL} … paused) doesn't name it`);
       continue;

@@ -436,7 +436,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/agents/activity":
                     return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
-                    return self._json(usage.get_usage())
+                    return self._json(usage.shown() or usage.get_usage())
                 if path == "/api/accounts":
                     # Read-only: adding and removing logins stays on the
                     # dashboard and the bot.

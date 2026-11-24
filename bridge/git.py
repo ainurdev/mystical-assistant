@@ -838,22 +838,44 @@ def head_sha(cwd: str) -> str:
     return out.strip() if rc == 0 else ""
 
 
-_branch_cache: dict[str, tuple[str, float]] = {}
-_BRANCH_TTL = 3.0
+_branch_cache: dict[str, tuple[str, float, "tuple | None"]] = {}
+_BRANCH_TTL = 3.0      # a cwd that is no checkout's root: ask git again after this
+_BRANCH_HOLD = 60.0    # an unmoved HEAD: refs can still rename a detached one
+
+
+def _head_stamp(cwd: str) -> "tuple | None":
+    """(inode, mtime) of the HEAD of the checkout rooted at cwd: .git/HEAD, or the
+    one in the gitdir a linked worktree's .git file names. Git replaces HEAD on
+    every checkout, switch and detached commit, so a new stamp is a new answer.
+    None when cwd is no checkout's root."""
+    dot = os.path.join(cwd, ".git")
+    try:
+        if os.path.isfile(dot):
+            with open(dot, encoding="utf-8") as f:
+                line = f.readline().strip()
+            if not line.startswith("gitdir:"):
+                return None
+            dot = os.path.join(cwd, line[len("gitdir:"):].strip())   # an absolute gitdir wins the join
+        st = os.stat(os.path.join(dot, "HEAD"))
+    except (OSError, UnicodeDecodeError):
+        return None
+    return st.st_ino, st.st_mtime_ns
 
 
 def current_branch_cached(cwd: str) -> str:
-    """current_branch with a short TTL cache. /local/sessions polls every 5s and
-    many sessions share one cwd (the project dir), so this avoids spawning a git
-    per session on every poll."""
+    """current_branch, asked again once the checkout's HEAD changes, or after
+    _BRANCH_HOLD at the latest. /local/sessions asks it for every session on every
+    5 s poll: a 3 s TTL alone spawned ~35 gits per poll, 0.3 s of a 0.34 s list
+    (Sentry MYSTICAL-9). A cwd that is no checkout's root keeps the TTL."""
     if not cwd:
         return ""
-    now = time.monotonic()
+    now, stamp = time.monotonic(), _head_stamp(cwd)
     hit = _branch_cache.get(cwd)
-    if hit is not None and now - hit[1] < _BRANCH_TTL:
+    if hit is not None and hit[2] == stamp and \
+            now - hit[1] < (_BRANCH_TTL if stamp is None else _BRANCH_HOLD):
         return hit[0]
     b = current_branch(cwd)
-    _branch_cache[cwd] = (b, now)
+    _branch_cache[cwd] = (b, now, stamp)
     return b
 
 

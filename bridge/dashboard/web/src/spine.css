@@ -473,7 +473,7 @@
 
 /* ── the live row (LiveRow, .mystical/design-drafts/chat-notes-live): the running turn's current action as
    the chat's last row, its node on the line; the host is sticky, so scrolled up the row stays at the
-   foot over a fade, with the way back down. The ring turns on --pb-a and pb-orbit (index.css). ── */
+   foot over a fade, with the way back down. The ring and the node turn smooth on transform (live-turn). ── */
 .live-host { position: sticky; bottom: 0; z-index: 5; }
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
@@ -488,12 +488,21 @@
   background: linear-gradient(to bottom, transparent, var(--lr-gnd));
 }
 [data-style="dossier"] .live-ring {
-  position: relative; border-radius: 12px; padding: 1.5px;
-  background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
-    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
+  position: relative; isolation: isolate; border-radius: 12px; padding: 1.5px;
   box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
-  animation: pb-orbit 3.2s steps(26) infinite;
 }
+/* The ring's light: a still gradient on a square that turns under the card, clipped to the ring. A turn of
+   transform runs in the compositor; turning the gradient's own angle restyled and repainted it every frame
+   (2026-11-24, off-screen WebKit: 12% of a core smooth, 4% stepped, 0% this way). Its own clip, not the
+   ring's: the node sits outside the ring. margin-top's % is of the width, so the square stays centred. */
+[data-style="dossier"] .live-spin { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
+[data-style="dossier"] .live-spin::before {
+  content: ""; position: absolute; left: -32px; top: 50%; margin-top: calc(-50% - 32px); width: calc(100% + 64px); aspect-ratio: 1;
+  background: conic-gradient(color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
+    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
+  animation: live-turn 3.2s linear infinite;
+}
+@keyframes live-turn { to { transform: rotate(1turn); } }
 [data-style="dossier"] .live-card {
   display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
   background: color-mix(in oklab, var(--acc) 6%, var(--panel2));
@@ -505,9 +514,9 @@
 }
 [data-style="dossier"] .live-node::before {
   content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2px;
-  background: conic-gradient(from var(--pb-a), transparent 0 55%, var(--acc) 85%, transparent);
+  background: conic-gradient(transparent 0 55%, var(--acc) 85%, transparent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: pb-orbit 1.4s steps(11) infinite;
+  animation: live-turn 1.4s linear infinite;
   box-sizing: border-box;
 }
 [data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
@@ -538,7 +547,7 @@
 .pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
 .pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }
 body[data-liverow] .pb-hold { display: none; }
-@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-ring, [data-style="dossier"] .live-node::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-spin::before, [data-style="dossier"] .live-node::before { animation: none; } }
 
 /* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the
    line with a small ring in the Mystical colour, no bubble ── */
