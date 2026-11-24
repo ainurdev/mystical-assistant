@@ -163,14 +163,82 @@ def _sessions_payload(chat, project) -> dict:
                          for b in map(_session_brief, rows)]}
 
 
-def _sessions_cached(chat, project) -> dict:
-    key = (chat, project)
+# After a restart the first ask is answered from the last run's list, saved beside
+# the DB, while the real one builds behind (the first build took 2.5 s on 2026-11-23).
+# The page's next poll gets the real list. _sessions_boot holds what the file had at
+# start, per list asked; a list leaves it once built, and a dashboard POST empties it.
+_SESSIONS_SAVE_EVERY = 30.0   # a list is ~700 KB: the saved copy may be this much behind
+_sessions_written: dict = {}   # json [chat, project] -> when this process last saved it
+
+
+def _sessions_file() -> str:
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "sessions_list.json")
+
+
+def _load_saved_sessions() -> dict:
+    """The saved lists by json [chat, project]; {} when missing or garbled (today's start)."""
+    try:
+        with open(_sessions_file(), encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(saved, dict):
+        return {}
+    return {k: v for k, v in saved.items()
+            if isinstance(v, dict) and isinstance(v.get("sessions"), list)}
+
+
+_sessions_boot = _load_saved_sessions()
+_sessions_disk = dict(_sessions_boot)   # what the file holds, so a save never re-reads it
+_sessions_behind: set = set()   # lists being built behind a saved answer
+
+
+def _save_sessions(skey: str, payload: dict) -> None:
+    """This list over what the file had: a temp file, then a replace, the way
+    toolsets saves its list. Called holding _sessions_lock."""
+    if time.time() - _sessions_written.get(skey, 0.0) < _SESSIONS_SAVE_EVERY:
+        return
+    _sessions_written[skey] = time.time()
+    _sessions_disk[skey] = payload
+    try:
+        with open(_sessions_file() + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(_sessions_disk, f)
+        os.replace(_sessions_file() + ".tmp", _sessions_file())
+    except OSError:
+        pass   # the next start just builds, as before
+
+
+def _sessions_build(key) -> dict:
     with _sessions_lock:
         hit = _sessions_cache.get(key)
         if hit is None or time.time() - hit[0] > _SESSIONS_TTL:
-            hit = (time.time(), _sessions_payload(chat, project))
+            hit = (time.time(), _sessions_payload(*key))
             _sessions_cache[key] = hit
+            _sessions_boot.pop(json.dumps(list(key)), None)
+            _save_sessions(json.dumps(list(key)), hit[1])
         return hit[1]
+
+
+def _sessions_cached(chat, project) -> dict:
+    key = (chat, project)
+    saved = _sessions_boot.get(json.dumps([chat, project]))
+    if saved is not None and key not in _sessions_cache:
+        if key not in _sessions_behind:   # a racing second ask only builds once more, harmlessly
+            _sessions_behind.add(key)
+            threading.Thread(target=_sessions_build_behind, args=(key,),
+                             daemon=True, name="sessions-behind").start()
+        return {**saved, "stale": True}
+    return _sessions_build(key)
+
+
+def _sessions_build_behind(key) -> None:
+    try:
+        _sessions_build(key)
+    except Exception:  # noqa: BLE001 — the next ask builds in the request, as before
+        _sessions_boot.pop(json.dumps(list(key)), None)
+        traceback.print_exc()
+    finally:
+        _sessions_behind.discard(key)
 
 
 def _reveal_target(path) -> str | None:
@@ -514,6 +582,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._post_api(path, body)
             finally:
                 _sessions_cache.clear()    # a user change shows on the next poll, not 2 s later
+                _sessions_boot.clear()     # ... and never the last run's list again
         except Exception as e:  # noqa: BLE001
             self._safe500(e)
 
@@ -1235,9 +1304,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(selfupdate.live())
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream? and, once
-            # whatsnew has written it, what they bring (bridge/whatsnew.py preview)
+            # whatsnew has written it, what they bring (bridge/whatsnew.py preview).
+            # Against the last fetch: the hourly watch fetches, UPDATE's pull too.
             from bridge import whatsnew
-            info = selfupdate.check()
+            info = selfupdate.check(fetch=False)
             whatsnew.preview(info)
             info["coming"] = notices.coming()
             return self._json(info)

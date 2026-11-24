@@ -49,13 +49,16 @@ def project() -> str:
     return browser.rel(real) if browser.within_base(real) else ""
 
 
-def check() -> dict:
+def check(fetch: bool = True) -> dict:
     """Fetch, then report what this checkout is out of sync on — theirs (commits
-    waiting upstream) and ours (uncommitted changes, unpushed commits)."""
+    waiting upstream) and ours (uncommitted changes, unpushed commits).
+    fetch=False reads against the upstream as of the last fetch: the dashboard's
+    UPDATE poll, which took 0.7 s a call asking GitHub. whatsnew.watch fetches."""
     if not git.is_repo(REPO):
         return {"repo": False, "path": REPO, "branch": "", "behind": 0,
                 "ahead": 0, "dirty": 0, "commits": [], "outgoing": [], "files": []}
-    git.fetch(REPO)
+    if fetch:
+        git.fetch(REPO)
     st = git.status(REPO)
     return {"repo": True, "path": REPO, "branch": st["branch"], "project": project(),
             "behind": st["behind"], "ahead": st["ahead"], "dirty": st["dirty"],
