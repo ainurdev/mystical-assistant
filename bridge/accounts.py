@@ -720,7 +720,7 @@ def meter(slot: int, max_age: float = usage.CACHE_TTL) -> dict:
     from bridge import runner                   # lazy: runner imports the world
     if max_age < usage.CACHE_TTL:
         usage.get_usage(credentials_path(slot), max_age)   # read it now; usage_for gets this one
-    m = usage.shown(credentials_path(slot))             # a fresh bridge: the last run's, read behind
+    m = usage.shown(credentials_path(slot))             # an expired or last-run reading, read behind
     if m is None:
         m, left, resets = usage_for(slot), headroom(slot), resets_at(slot)
     else:

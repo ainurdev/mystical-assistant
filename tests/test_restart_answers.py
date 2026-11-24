@@ -231,6 +231,22 @@ def test_the_usage_meter_answers_at_once_after_a_restart_and_once_expired(meters
     assert _until(lambda: _get("/local/usage")["five_hour"]["percent"] == 70)
 
 
+def test_a_meter_past_stale_max_is_read_anew_not_shown(meters, monkeypatch):
+    # Nothing reads a meter while no screen looks, so the bot's /accounts (no age
+    # shown) put a 5 h old reading up as current.
+    now, spawns = meters
+    _get("/local/accounts")
+    _age(usage.STALE_MAX + 1)
+    now[1] = _reading(60)
+    assert _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 60
+
+    _restart_meters(monkeypatch)
+    for hit in usage._boot.values():
+        hit["ts"] -= usage.STALE_MAX + 1
+    now[1] = _reading(70)
+    assert _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 70
+
+
 def test_picking_an_account_reads_an_expired_meter_anew(meters):
     now, spawns = meters
     _get("/local/accounts")                                 # login 1 has room

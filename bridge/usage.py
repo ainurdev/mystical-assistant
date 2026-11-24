@@ -280,8 +280,8 @@ def shown(creds_path: str | None = None) -> "dict | None":
     """For a screen only, never for picking an Account: a reading past CACHE_TTL
     answers at once, keeping the time it was read, while a fresh one is read behind;
     so does the last run's, for a login this process hasn't read yet. None while the
-    reading is fresh, a failed read waits for its retry, or there is nothing to
-    show: get_usage() answers those."""
+    reading is fresh, past STALE_MAX (not every screen prints its age), a failed
+    read waits for its retry, or there is nothing to show: get_usage() answers those."""
     path = creds_path or CREDENTIALS_FILE
     now = time.time()
     with _lock:
@@ -294,6 +294,8 @@ def shown(creds_path: str | None = None) -> "dict | None":
             return None
         else:
             view = _view({"ts": hit["ts"], "data": hit["data"]})
+        if now - (view.get("read_at") or 0.0) >= STALE_MAX:
+            return None
         start = path not in _behind
         _behind.add(path)
     if start:
