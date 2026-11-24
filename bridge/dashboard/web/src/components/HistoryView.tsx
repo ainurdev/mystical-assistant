@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { api, type EnrichedSession } from "../api";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { EnrichedSession } from "../api";
+import { main } from "../lib/queries";
 import { readOnly } from "../lib/team";
 import { Skeleton } from "./ui";
 
@@ -37,52 +39,14 @@ function tok(n: number): string {
 }
 
 export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }) {
-  const [sessions, setSessions] = useState<EnrichedSession[]>([]);
-  const [running, setRunning] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    setLoaded(false);
-    const tick = async () => {
-      try {
-        const h = await api.history(showArchived);
-        if (live) {
-          // A teammate's device run or share lives in PLUGINS only.
-          setSessions(h.sessions.filter((s) => !readOnly(s.origin)));
-          setLoaded(true);
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 5000);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, [showArchived]);
-
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const r = await api.running();
-        if (live) setRunning(new Set(r.bridge_running));
-      } catch {
-        /* ignore */
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 4000);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, []);
+  const historyQ = useQuery(main.history({ archived: showArchived ? 1 : undefined }));
+  const loaded = historyQ.isSuccess;
+  // A teammate's device run or share lives in PLUGINS only.
+  const sessions = useMemo(() => (historyQ.data?.sessions ?? []).filter((s) => !readOnly(s.origin)), [historyQ.data]);
+  const runningIds = useQuery(main.running()).data?.bridge_running;
+  const running = useMemo(() => new Set(runningIds ?? []), [runningIds]);
 
   const rows = useMemo(() => {
     const q = filter.trim().toLowerCase();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, Clock, FileText, LoaderCircle, MessageSquare, Pin, Search, Square, SquareTerminal, TriangleAlert, Users } from "lucide-react";
-import { api } from "../api";
+import { useQuery } from "@tanstack/react-query";
+import { main } from "../lib/queries";
 import { Markdown } from "./Markdown";
 import { ago, KIND_WORD, MAIN, sayTo, span, STATUS_WORD, stopAsk, treeRows, type AgentDetail, type Status, type Step, type Team, type TeamAgent, type TeamMessage } from "../lib/agentteam";
 
@@ -48,16 +49,8 @@ function StepRow({ step, withDiff }: { step: Step; withDiff: boolean }) {
 
 /** One agent's detail, kept fresh while it's working. */
 function useDetail(sessionId: string, id: string | null, live: boolean): AgentDetail | null {
-  const [d, setD] = useState<AgentDetail | null>(null);
-  useEffect(() => {
-    if (!id) { setD(null); return; }
-    let on = true;
-    const load = () => { api.agentTeamOne(sessionId, id).then((r) => { if (on) setD(r); }, () => {}); };
-    load();
-    const t = live ? window.setInterval(load, 2500) : 0;
-    return () => { on = false; if (t) window.clearInterval(t); };
-  }, [sessionId, id, live]);
-  return d && d.id === id ? d : null;
+  const o = main.teamAgent({ session: sessionId, agent: id ?? "" });
+  return useQuery({ ...o, enabled: !!id, refetchInterval: live ? o.refetchInterval : false }).data ?? null;
 }
 
 function Monitor({ sessionId, agent, under, pinned, onFocus, onPin, onTalk }: {
@@ -154,8 +147,9 @@ function Message({ m, name, onFocus }: { m: TeamMessage; name: (id: string) => s
 export function AgentsView({ sessionId, top, running, onSay, onStop, onChat }: {
   sessionId: string; top: number; running: boolean; onSay: (text: string) => void; onStop: () => void; onChat: () => void;
 }) {
-  const [team, setTeam] = useState<Team | null>(null);
-  const [error, setError] = useState("");
+  const teamQ = useQuery(main.team({ session: sessionId }));
+  const team = teamQ.data ?? null;
+  const error = teamQ.error ? errorOf(teamQ.error) : "";
   const [filter, setFilter] = useState<Filter>("all");
   const [talk, setTalk] = useState<Talk>("all");
   const [shut, setShut] = useState<Set<string>>(new Set());
@@ -170,14 +164,6 @@ export function AgentsView({ sessionId, top, running, onSay, onStop, onChat }: {
   const [menu, setMenu] = useState<"" | "to" | "stop" | "all">("");
   const [said, setSaid] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    let on = true;
-    const load = () => { api.agentTeam(sessionId).then((r) => { if (on) { setTeam(r); setError(""); } }, (e) => { if (on) setError(errorOf(e)); }); };
-    load();
-    const t = window.setInterval(load, 2000);
-    return () => { on = false; window.clearInterval(t); };
-  }, [sessionId]);
 
   const agents = useMemo(() => team?.agents ?? [], [team]);
   const mainRow: TeamAgent | null = useMemo(() => (team?.main ? { ...team.main, parent: "", depth: 0, status: team.main.status === "running" ? (team.main.now.startsWith("Waiting") ? "waiting" : "running") : "done" } : null), [team]);

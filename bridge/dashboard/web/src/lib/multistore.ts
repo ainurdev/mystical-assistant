@@ -1,12 +1,13 @@
 // Multi-agent chats, the half that talks to the bridge (lib/multi is the pure half).
-// One read of the EXPERIMENTAL switch and one tree poll, however many readers: the
-// shape of lib/integrations. Off means off: with the switch off, or on a bridge
-// too old to know it (these routes 404, and that reads as off plus a "restart
-// the bridge" in Settings), the only request this file ever makes is the switch's
-// own, and nothing it feeds draws.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+// Every read here is a lib/queries read (main.experimental, tree, channel, brief), so one
+// request answers every reader. Off means off: with the switch off, or on a bridge too old to
+// know it (these routes 404, and that reads as off plus a "restart the bridge" in Settings),
+// the only request this file ever makes is the switch's own, and nothing it feeds draws.
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { req, type SessionBrief } from "../api";
-import { DEFAULT_CONFIG, treeIds, type AgentRow, type ChannelMessage, type ChannelView, type HelperConfig } from "./multi";
+import { DEFAULT_CONFIG, treeIds, type AgentRow, type ChannelView, type ChannelMessage, type HelperConfig } from "./multi";
+import { fetchFresh, main, queryClient, reread } from "./queries";
 
 export interface Experimental {
   loaded: boolean;
@@ -19,48 +20,35 @@ export interface Experimental {
 const isGone = (e: unknown) => e instanceof Error && /^(not found|HTTP 404)$/i.test(e.message);
 const isOff = (e: unknown) => e instanceof Error && /experimental features are off/i.test(e.message);
 
-let exp: Experimental = { loaded: false, enabled: false, defaults: DEFAULT_CONFIG, stale: false };
-let expStarted = false;
-const expSubs = new Set<() => void>();
+const refreshExperimental = () => reread(main.experimental().queryKey);
 
-function publishExp(next: Experimental): void {
-  const was = exp;
-  exp = next;
-  expSubs.forEach((fn) => fn());
-  if (was.enabled !== next.enabled) wakeTree();
-}
-
-export async function refreshExperimental(): Promise<void> {
-  try {
-    const d = await req<{ enabled: boolean; defaults: HelperConfig }>("/local/experimental");
-    publishExp({ loaded: true, enabled: d.enabled === true, defaults: { ...DEFAULT_CONFIG, ...d.defaults }, stale: false });
-  } catch (e) {
-    if (isGone(e)) publishExp({ ...exp, loaded: true, enabled: false, stale: true });
-    else if (!exp.loaded) publishExp({ ...exp, loaded: true });
-    /* any other failure keeps the last answer: a blip shouldn't redraw the app */
-  }
-}
-
-/** POST /local/experimental: the switch, the defaults, or both. Throws so the row can say why. */
+/** POST /local/experimental: the switch, the defaults, or both. Throws so the row can say why;
+ *  the switch's read refetches on its success (lib/queries CHANGES). */
 export async function setExperimental(patch: { enabled?: boolean; defaults?: Partial<HelperConfig> }): Promise<void> {
-  const d = await req<{ enabled: boolean; defaults: HelperConfig }>("/local/experimental", { method: "POST", body: patch });
-  publishExp({ loaded: true, enabled: d.enabled === true, defaults: { ...DEFAULT_CONFIG, ...d.defaults }, stale: false });
+  await req("/local/experimental", { method: "POST", body: patch });
 }
 
-function subscribeExp(fn: () => void): () => void {
-  expSubs.add(fn);
-  if (!expStarted) {
-    expStarted = true;
-    void refreshExperimental();
-    // Another surface can flip it; the 60 s and the return to the tab catch that.
-    window.setInterval(() => { if (!document.hidden) void refreshExperimental(); }, 60_000);
-    window.addEventListener("focus", () => void refreshExperimental());
-  }
-  return () => { expSubs.delete(fn); };
+/** The switch, polled once a minute (another surface can flip it). A failed read keeps the
+ *  last answer: a blip shouldn't redraw the app. */
+export function useExperimental(): Experimental {
+  const { data, error, isError } = useQuery(main.experimental());
+  return useMemo(() => {
+    const defaults = { ...DEFAULT_CONFIG, ...data?.defaults };
+    if (isGone(error)) return { loaded: true, enabled: false, defaults, stale: true };
+    return { loaded: !!data || isError, enabled: data?.enabled === true, defaults, stale: false };
+  }, [data, error, isError]);
 }
 
-export const useExperimental = (): Experimental => useSyncExternalStore(subscribeExp, () => exp);
-export const useMultiOn = (): boolean => useExperimental().enabled;
+/** The switch alone, for the many readers (every Markdown block): they read the one answer
+ *  useExperimental polls (App holds it), and add no timer and no read on mount. */
+export const useMultiOn = (): boolean =>
+  useQuery({ ...main.experimental(), refetchInterval: false, staleTime: Infinity }).data?.enabled === true;
+
+/** A failed multi-agent read that says they're off (409) or gone (404): re-read the switch, so
+ *  the UI goes away with the error. */
+function useOffCheck(e: Error | null): void {
+  useEffect(() => { if (isOff(e) || isGone(e)) void refreshExperimental(); }, [e]);
+}
 
 /** A multi-agent call. A 409 "they're off" means another surface turned them off
  *  since this page last looked: re-read, so the UI goes away with the error. */
@@ -74,6 +62,9 @@ export async function multiCall<T>(path: string, body?: unknown): Promise<T> {
 }
 
 const call = multiCall;
+/** A multi-agent read through the client (lib/queries), with multiCall's off check. */
+const read = <T>(p: Promise<T>): Promise<T> =>
+  p.catch((e) => { if (isOff(e) || isGone(e)) void refreshExperimental(); throw e; });
 const q = (v: string) => encodeURIComponent(v);
 
 export interface McpTool { name: string; sensitive: boolean; on: boolean }
@@ -90,8 +81,7 @@ export interface HandoffPreview {
 }
 
 export const multi = {
-  channel: (session: string) => call<ChannelView>(`channel?session=${q(session)}`),
-  brief: (session: string) => call<{ session: SessionBrief }>(`session/brief?session=${q(session)}`),
+  brief: (session: string) => read(fetchFresh(main.brief({ session }))),
   projectHelperOf: (project: string) => call<{ profile_id: string }>(`project/helper?project=${q(project)}`),
   send: (session_id: string, to: string, text: string) =>
     call<{ ok: boolean; message: ChannelMessage }>("channel/send", { session_id, to, text }),
@@ -103,7 +93,7 @@ export const multi = {
     call<{ ok: boolean; text: string }>("channel/merge", { session_id, name, action }),
   chatConfig: (session_id: string, config: Partial<HelperConfig>) =>
     call<{ ok: boolean; config: HelperConfig }>("chat/config", { session_id, config }),
-  handoff: (session: string, profile: string) => call<HandoffPreview>(`session/handoff?session=${q(session)}&profile=${q(profile)}`),
+  handoff: (session: string, profile: string) => read(fetchFresh(main.handoff({ session, profile }))),
   mcpShare: (cwd?: string | null) =>
     call<{ servers: McpShareRow[]; agents: string[] }>(`mcp-share${cwd ? `?cwd=${q(cwd)}` : ""}`),
   mcpSet: (body: { name: string; agent?: string; tool?: string; on: boolean; cwd?: string | null }) =>
@@ -111,144 +101,95 @@ export const multi = {
   mcpTools: (name: string, cwd?: string | null) => call<{ tools: McpTool[] }>("mcp-share/tools", { name, cwd }),
   mcpLogin: (name: string, cwd?: string | null) => call<{ url: string }>("mcp-share/login", { name, cwd }),
   mcpLogout: (name: string, cwd?: string | null) => call<{ ok: boolean }>("mcp-share/logout", { name, cwd }),
-  skillShare: (cwd?: string | null) => call<{ skills: SkillShareRow[] }>(`skill-share${cwd ? `?cwd=${q(cwd)}` : ""}`),
+  skillShare: (cwd?: string | null) => read(fetchFresh(main.skillShare({ cwd: cwd || undefined }))),
   skillSet: (key: string, on: boolean, cwd?: string | null) =>
     call<{ ok: boolean; skills: SkillShareRow[] }>("skill-share", { key, on, cwd }),
   projectHelper: (project: string, profile_id: string) => call<{ ok: boolean }>("project/helper", { project, profile_id }),
 };
 
 // ---- the tree ----------------------------------------------------------------
-// Everyone who wants a chat's agents says so under their own key; one 3 s poll asks
-// for the union while the switch is on and the tab is showing. The open chat goes
-// first, so the 40-chat ceiling (bridge/agent_tree.py MAX_IDS) never cuts it.
+// Everyone who wants a chat's agents says so under their own key; one read asks for the union
+// every 3 s while the switch is on and the tab is showing. The open chat goes first, so the
+// 40-chat ceiling (bridge/agent_tree.py MAX_IDS) never cuts it. The registry holds only who
+// wants what; the answer lives in the query cache.
 
-const TREE_MS = 3000;
 const EMPTY: AgentRow[] = [];
-let rowsByChat = new Map<string, AgentRow[]>();
-let rawByChat = new Map<string, string>();
-const memberRows = new Map<string, AgentRow>();
-const treeSubs = new Set<() => void>();
 const wants = new Map<string, { first: boolean; ids: string[] }>();
-let treeTimer = 0;
-let treeBusy = false;
+let wanted = "";
+const wantSubs = new Set<() => void>();
 
-async function pollTree(): Promise<void> {
-  if (treeBusy || !exp.enabled || document.hidden) return;
+function rewant(): void {
   const all = [...wants.values()];
-  const ids = treeIds(all.filter((w) => w.first).flatMap((w) => w.ids), all.filter((w) => !w.first).flatMap((w) => w.ids));
-  if (!ids.length) return;
-  treeBusy = true;
-  try {
-    const { trees } = await call<{ trees: Record<string, AgentRow[]> }>(`tree?ids=${ids.map(q).join(",")}`);
-    let changed = false;
-    const next = new Map(rowsByChat);
-    for (const id of ids) {
-      const rows = trees[id] ?? EMPTY;
-      const raw = JSON.stringify(rows);
-      if (rawByChat.get(id) === raw) continue;
-      rawByChat.set(id, raw);
-      next.set(id, rows);
-      for (const r of rows) if (r.kind === "member" && r.session_id) memberRows.set(r.session_id, r);
-      changed = true;
-    }
-    if (changed) { rowsByChat = next; treeSubs.forEach((fn) => fn()); }
-  } catch { /* keep the last rows: a blip shouldn't empty the sidebar */ }
-  finally { treeBusy = false; }
+  const next = treeIds(all.filter((w) => w.first).flatMap((w) => w.ids), all.filter((w) => !w.first).flatMap((w) => w.ids)).join(",");
+  if (next !== wanted) { wanted = next; wantSubs.forEach((fn) => fn()); }
 }
 
-function wakeTree(): void {
-  const live = exp.enabled && wants.size > 0;
-  if (live && !treeTimer) {
-    treeTimer = window.setInterval(() => void pollTree(), TREE_MS);
-    void pollTree();
-  } else if (!live && treeTimer) {
-    window.clearInterval(treeTimer);
-    treeTimer = 0;
-  }
-}
+const subscribeWants = (fn: () => void) => { wantSubs.add(fn); return () => { wantSubs.delete(fn); }; };
 
 /** Ask for these chats' agents while mounted. `first`: the open chat's, never cut. */
 export function useTreeWant(key: string, ids: string[], first = false): void {
   const joined = ids.join(",");
   useEffect(() => {
-    if (!joined) { wants.delete(key); wakeTree(); return; }
-    wants.set(key, { first, ids: joined.split(",") });
-    wakeTree();
-    void pollTree();
-    return () => { wants.delete(key); wakeTree(); };
+    if (joined) wants.set(key, { first, ids: joined.split(",") }); else wants.delete(key);
+    rewant();
+    return () => { wants.delete(key); rewant(); };
   }, [key, joined, first]);
 }
 
-const subscribeTree = (fn: () => void) => { treeSubs.add(fn); return () => { treeSubs.delete(fn); }; };
+type Trees = { trees: Record<string, AgentRow[]> };
+
+/** The union's answer, through `pick`. A new union keeps the last answer on screen while its
+ *  read is on the way, and a failed read keeps it too: a blip shouldn't empty the sidebar. */
+function useTree<T>(pick: (d: Trees) => T): T | undefined {
+  const on = useMultiOn();
+  const ids = useSyncExternalStore(subscribeWants, () => wanted);
+  const q = useQuery({ ...main.tree({ ids }), enabled: on && !!ids, placeholderData: keepPreviousData, select: pick });
+  useOffCheck(q.error);
+  return on ? q.data : undefined;
+}
 
 export function useTreeRows(chatId: string | null | undefined): AgentRow[] {
-  return useSyncExternalStore(subscribeTree, () => (chatId ? rowsByChat.get(chatId) ?? EMPTY : EMPTY));
+  return useTree((d) => (chatId ? d.trees[chatId] ?? EMPTY : EMPTY)) ?? EMPTY;
 }
 
 /** A helper's live row, wherever its chat is: a transcript's delegation row reads it. */
 export function useMemberRow(sessionId: string | undefined): AgentRow | undefined {
-  return useSyncExternalStore(subscribeTree, () => (sessionId ? memberRows.get(sessionId) : undefined));
+  return useTree((d) => {
+    if (!sessionId) return undefined;
+    for (const rows of Object.values(d.trees)) for (const r of rows) if (r.kind === "member" && r.session_id === sessionId) return r;
+    return undefined;
+  });
 }
 
 // ---- the channel -------------------------------------------------------------
 
-const CHANNEL_MS = 2000;
-
 /** The grid's feed: polled while mounted. An error keeps the last good view on
- *  screen and says so, and a chat you've left drops its answer. */
+ *  screen and says so, and a chat you've left drops its answer (its own key). */
 export function useChannel(sessionId: string | null | undefined) {
-  const [data, setData] = useState<ChannelView | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const seq = useRef(0);
-  const refresh = useCallback(async () => {
-    if (!sessionId) return;
-    const mine = ++seq.current;
-    try {
-      const d = await multi.channel(sessionId);
-      if (mine !== seq.current) return;
-      setData(d);
-      setError(null);
-    } catch (e) {
-      if (mine === seq.current) setError((e as Error).message);
-    } finally {
-      if (mine === seq.current) setLoading(false);
-    }
-  }, [sessionId]);
-  useEffect(() => {
-    setData(null);
-    setError(null);
-    setLoading(true);
-    void refresh();
-    const id = window.setInterval(() => { if (!document.hidden) void refresh(); }, CHANNEL_MS);
-    return () => { window.clearInterval(id); seq.current++; };
-  }, [refresh]);
-  return { data, error, loading, refresh, patch: setData };
+  const o = main.channel({ session: sessionId ?? "" });
+  const q = useQuery({ ...o, enabled: !!sessionId });
+  useOffCheck(q.error);
+  return {
+    data: q.data ?? null,
+    error: q.error ? q.error.message : null,
+    loading: q.isPending,
+    refresh: () => reread(o.queryKey),
+    patch: (v: ChannelView) => { queryClient.setQueryData(o.queryKey, v); },
+  };
 }
 
 // ---- an open helper ----------------------------------------------------------
 
 /** The brief of a session the list left out because it's a helper, by id alone (a
- *  notification, a delegation row). A session the list misses for any other reason
- *  (old, archived) has no parent and gets no more requests. */
+ *  notification, a delegation row), followed every 3 s. A session the list misses for any
+ *  other reason (old, archived) has no parent and gets no more requests. */
 export function useHelperBrief(sessionId: string | null, sessions: SessionBrief[], on: boolean): SessionBrief | null {
-  const [brief, setBrief] = useState<SessionBrief | null>(null);
   const listed = !sessionId || sessions.some((s) => s.id === sessionId);
-  useEffect(() => {
-    setBrief(null);
-    if (!on || listed || !sessionId) return;
-    let live = true, t = 0;
-    const read = async () => {
-      try {
-        const d = await multi.brief(sessionId);
-        if (!live) return;
-        if (!d.session.parent_session) return;   // its own chat: no helper, nothing to follow
-        setBrief(d.session);
-      } catch { /* the next read, or nothing to show */ }
-      if (live) t = window.setTimeout(read, TREE_MS);
-    };
-    void read();
-    return () => { live = false; window.clearTimeout(t); };
-  }, [sessionId, listed, on]);
-  return listed ? null : brief;
+  const q = useQuery({
+    ...main.brief({ session: sessionId ?? "" }), enabled: on && !listed,
+    refetchInterval: (query) => (query.state.data && !query.state.data.session.parent_session ? false : main.brief.poll?.ms),
+  });
+  useOffCheck(q.error);
+  const b = q.data?.session;
+  return listed || !b?.parent_session ? null : b;
 }

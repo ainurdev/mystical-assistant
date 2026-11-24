@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AgentTree } from "./AgentTree";
+import { main } from "../../lib/queries";
 import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, Hand, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NewProjectBody, NewProjectNote, SessionBrief, SessionStatus } from "../../api";
-import { api } from "../../api";
 import { NewProjectForm } from "./NewProjectForm";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import type { ProjectTint } from "../../lib/surfaces";
@@ -86,6 +87,7 @@ type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean; ti
 // from that while) is no order any more and loads as this one.
 // No project expanded. Shared, never mutated: every update copies.
 const NONE: Set<string> = new Set();
+const NO_PICS: Record<string, [string, number][]> = {};
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const ORDER_LABEL: Record<OrderMode, string> = {
@@ -750,14 +752,7 @@ export function SessionsPanel(props: Props) {
   // Each session's pictures from the last day, counted against what you have
   // had on screen: the WORK plate's own rule, so the tag and the plate agree.
   // A bridge older than GET /local/shots answers 404, and no tag shows.
-  const [pics, setPics] = useState<Record<string, [string, number][]>>({});
-  useEffect(() => {
-    let live = true;
-    const load = () => api.shots(Date.now() / 1000 - 86400).then((r) => { if (live) setPics(r); }, () => {});
-    void load();
-    const t = setInterval(load, 15000);
-    return () => { live = false; clearInterval(t); };
-  }, []);
+  const pics = useQuery(main.shots()).data ?? NO_PICS;
   // Opening a chat clears its tag, and so does leaving it: what landed while you
   // were in it was yours to see. Layout, so the chat you leave never paints a
   // tag for a frame before its stamp lands.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
-import { api } from "../api";
+import { useQuery } from "@tanstack/react-query";
+import { main } from "../lib/queries";
 import type { Turn } from "../chat";
 import { hitWord, MIN_QUERY, orderHits, snippetParts, stepHit, type ChatHit } from "../lib/chatsearch";
 import { hhmm, useClock12 } from "../lib/surfaces";
@@ -21,33 +22,29 @@ export function ChatSearch({ sessionId, turns, onJump }: {
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [raw, setRaw] = useState<ChatHit[] | null>(null);
-  const [err, setErr] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // The needle once typing rests: what the search asks (lib/queries main.chatSearch).
+  const [asked, setAsked] = useState("");
   const [at, setAt] = useState(-1);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const h12 = useClock12();
 
   // Another chat, another search.
-  useEffect(() => { setOpen(false); setQ(""); setRaw(null); setErr(false); setAt(-1); }, [sessionId]);
+  useEffect(() => { setOpen(false); setQ(""); setAt(-1); }, [sessionId]);
   useEffect(() => { if (open) input.current?.focus(); }, [open]);
 
   const needle = q.trim();
+  const want = open && needle.length >= MIN_QUERY ? needle : "";
   useEffect(() => {
     setAt(-1);
-    setErr(false);
-    if (!open || needle.length < MIN_QUERY) { setRaw(null); setBusy(false); return; }
-    let live = true;
-    setBusy(true);
-    const t = window.setTimeout(() => {
-      api.chatSearch(sessionId, needle).then(
-        (r) => { if (live) { setRaw(r.hits); setBusy(false); } },
-        () => { if (live) { setErr(true); setRaw(null); setBusy(false); } },
-      );
-    }, DEBOUNCE_MS);
-    return () => { live = false; clearTimeout(t); };
-  }, [sessionId, needle, open]);
+    const t = window.setTimeout(() => setAsked(want), want ? DEBOUNCE_MS : 0);
+    return () => clearTimeout(t);
+  }, [want]);
+  const searchQ = useQuery({ ...main.chatSearch({ session: sessionId, q: asked }), enabled: !!asked });
+  const current = !!want && asked === want;
+  const raw: ChatHit[] | null = current ? searchQ.data?.hits ?? null : null;
+  const err = current && searchQ.isError;
+  const busy = !!want && (!current || searchQ.isFetching);
 
   const ids = useMemo(() => turns.map((t) => t.id).join("\n"), [turns]);
   const hits = useMemo(() => orderHits(raw ?? [], ids ? ids.split("\n") : []), [raw, ids]);
