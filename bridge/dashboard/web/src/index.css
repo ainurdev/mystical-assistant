@@ -338,6 +338,14 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* A panel's boundary: the transcript's scroller, the sidebar's list and the
+   rail's body. A row landing in one doesn't lay out or restyle the other two.
+   Layout containment makes the box the containing block of every fixed and
+   absolute child, so a popup in here is portalled out (ContextMenu, Tip,
+   FileRef …) or it stays inside. Paint only on a scroller: it clips there
+   already, so nothing that showed before can be cut. */
+.bound { contain: layout style; }
+.bound.mscroll { contain: content; }
 /* Switching to a session in another project (or another worktree) rebuilds the
    right panel's body — that is what drops the previous session's rows. The
    frame did not go anywhere, though, so it must not move: only the regions a

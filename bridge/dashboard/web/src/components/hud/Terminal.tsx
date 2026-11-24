@@ -595,7 +595,7 @@ export function Terminal({
       {/* --isle-b: where an open WORK zone's header pins (index.css, DOSSIER): level with the
           compact pill, which then floats over the plate's right end (data-isle=pill hides those
           chips while pinned); under the island bar and its LAST row otherwise */}
-      <div ref={scrollRef} data-style="dossier" data-isle={pill && !restTo ? "pill" : "bar"} className="mscroll mscroll-bare" style={{ ...({ "--isle-b": `${pill ? restTo || ISLE_TOP : isleBottom + 6 + (showPeek ? PEEK_H : 0)}px` } as CSSProperties),
+      <div ref={scrollRef} data-style="dossier" data-isle={pill && !restTo ? "pill" : "bar"} className="mscroll mscroll-bare bound" style={{ ...({ "--isle-b": `${pill ? restTo || ISLE_TOP : isleBottom + 6 + (showPeek ? PEEK_H : 0)}px` } as CSSProperties),
           // Faded, a pinned WORK header waits below the fade, not level with the pill.
           ...(band ? { maskImage: fadeMask(band), WebkitMaskImage: fadeMask(band) } : {}), flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}

@@ -275,7 +275,7 @@ export function RightPanel({
           key={bodyKey}
           data-swap={seen.current.swap === "scope" ? "" : undefined}
           data-tabswap={seen.current.swap === "tab" ? "" : undefined}
-          className={`shellcol flex min-h-0 flex-none flex-col border-l border-border ${current?.ownScroll ? "" : "mscroll"}`}
+          className={`shellcol bound flex min-h-0 flex-none flex-col border-l border-border ${current?.ownScroll ? "" : "mscroll"}`}
           style={{ width: rightBodyW }}
         >
           {current?.render()}
