@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { rail, reread } from "../../lib/queries";
 import { createPortal } from "react-dom";
 import {
   ArrowDownToLine, ArrowRight, ArrowUpFromLine, ArrowUpRight, ChevronLeft, ChevronRight, Clapperboard, Clock, Copy, Download, Eye, Flame, Gauge, GitBranch, History,
@@ -8,7 +10,7 @@ import {
 import { api, type LiveInfo, type Notice, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { DONE, LiveReader } from "./LiveReader";
-import { UPDATE_POLL_MS, UpdateReader, type Feed } from "./UpdateButton";
+import { UpdateReader, type Feed } from "./UpdateButton";
 import { watchRestart } from "../../lib/restart";
 import { popFor } from "../../lib/golive";
 import { popPlace } from "../../lib/prchip";
@@ -181,7 +183,7 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
   const [zoom, setZoom] = useState<string | null>(null);                     // a picture full size (ImageLightbox)
   const [playing, setPlaying] = useState(false);                             // ▶ NEW walking the new changes
   const [live, setLive] = useState<LiveInfo | null>(null);                   // GO LIVE: what's on disk but not running
-  const [upd, setUpd] = useState<UpdateInfo | null>(null);                   // UPDATE / SHIP: this checkout vs its upstream
+  const upd: UpdateInfo | null = useQuery(rail.update()).data ?? null;     // UPDATE / SHIP: this checkout vs its upstream (polled, lib/queries)
   const [busy, setBusy] = useState(false);                                   // a reader's job is mid-flight: no closing, no switching
   const [livePop, setLivePop] = useState<{ subject: string; fresh: number; restart: boolean; total: number } | null>(null);
   const [updFresh, setUpdFresh] = useState<Notice | null>(null);             // a waiting update, popped out of the icon
@@ -203,9 +205,7 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
       if (queuedRef.current) { queuedRef.current = false; void watchRestart("GO LIVE"); }
     }
   }
-  async function loadUpd() {
-    try { setUpd(await api.update()); } catch { /* next poll */ }
-  }
+  const loadUpd = () => reread(rail.update().queryKey);
   // An id is a row's (an OS banner's, the popup's): open on that row's first change; a Sys key, on that row.
   const openOn = (id: number | Sys | null) => {
     setFresh(null); setLivePop(null); setUpdFresh(null);
@@ -213,9 +213,8 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
     setOpen(true); void load(); void loadLive(); void loadUpd();
   };
   useEffect(() => {
-    void load(); void loadUpd();
+    void load();
     const id = setInterval(load, POLL_MS);
-    const uid = setInterval(loadUpd, UPDATE_POLL_MS);
     const show = (e: Event) => { const id = (e as CustomEvent<unknown>).detail; openOn(typeof id === "number" ? id : null); };
     const landed = (e: Event) => { setFresh((e as CustomEvent<Notice>).detail); setPicGone(false); void load(); };
     const updShow = () => openOn("update");
@@ -228,7 +227,7 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
     const done = sessionStorage.getItem(DONE);
     if (done) { sessionStorage.removeItem(DONE); notify("info", done); }
     return () => {
-      clearInterval(id); clearInterval(uid);
+      clearInterval(id);
       window.removeEventListener("hud:changelog", show);
       window.removeEventListener("hud:changelog-pop", landed);
       window.removeEventListener("hud:update", updShow);

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { rail, reread, type NoticesAnswer } from "../../lib/queries";
 import { GitPullRequest, Moon, Settings, Sparkles, Truck, CalendarDays, Users } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
@@ -388,9 +390,10 @@ export function NotificationCenter() {
 
   // A toast or OS banner you clicked is news you read: its row needn't keep the bell's dot.
   const read = (id: number) => void api.noticesRead([id]).then(() => load.current(), () => { /* next poll */ });
-  const load = useRef(async () => {
-    try {
-      const r = await api.notices();
+  const load = useRef(() => reread(rail.notices().queryKey));
+  // Each new answer: what's fresh since the cursor pops, as a toast, an OS banner or a chime.
+  const take = useRef((r: NoticesAnswer) => {
+    {
       setFeed(r.notices); setPrefs(r.prefs); setStale(false);
       const top = r.notices.reduce((a, n) => Math.max(a, n.id), 0);
       const raw = localStorage.getItem(CURSOR_KEY);
@@ -429,15 +432,12 @@ export function NotificationCenter() {
           return { n, until: t + ms, left: ms, paused: false, seen: stillWaits(n, needs) };
         }), ...p].sort((a, b) => rank(a) - rank(b)));
       }
-    } catch (e) {
-      if (/404|not found/i.test((e as Error).message)) setStale(true);
     }
   });
-  useEffect(() => {
-    void load.current();
-    const id = window.setInterval(() => void load.current(), 4000);
-    return () => window.clearInterval(id);
-  }, []);
+  // Polls every 4 s, hidden or not (lib/queries): the bell, the Dock badge and OS banners hang on it.
+  const noticesQ = useQuery(rail.notices());
+  useEffect(() => { if (noticesQ.data) take.current(noticesQ.data); }, [noticesQ.data]);
+  useEffect(() => { if (noticesQ.error && /404|not found/i.test(noticesQ.error.message)) setStale(true); }, [noticesQ.error]);
 
   // Toast clock: expire, unless hovered (a hover freezes what's left).
   useEffect(() => {

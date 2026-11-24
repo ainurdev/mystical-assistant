@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main } from "../lib/queries";
 import { flushSync } from "react-dom";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SessionStatus, type SlashCommand, type TurnOutcome } from "../api";
@@ -34,26 +36,12 @@ const keepLast = (range: Range) => {
 };
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
-// leadCommand), checked against the project's command list: read once per
-// project and page, and shared by every plate.
-// shortcut: a skill installed after the page loaded stays words on its plates
-// until a reload; refresh this from the composer's re-read if that ever bites.
-const cmdLists = new Map<string, Promise<SlashCommand[]>>();
+// leadCommand), checked against the project's command list: one read per project,
+// shared by every plate and the prompt box (lib/queries). A plate never asks again
+// on its own; the prompt box's re-read reaches it.
+const NO_CMDS: SlashCommand[] = [];
 function useCommands(project?: string | null): SlashCommand[] {
-  const [cmds, setCmds] = useState<SlashCommand[]>([]);
-  useEffect(() => {
-    const key = project ?? "";
-    let list = cmdLists.get(key);
-    if (!list) {
-      // A failed read isn't kept, so the next switch here tries again.
-      list = api.commands(project).then((r) => r.commands, () => { cmdLists.delete(key); return []; });
-      cmdLists.set(key, list);
-    }
-    let live = true;
-    void list.then((c) => { if (live) setCmds(c); });
-    return () => { live = false; };
-  }, [project]);
-  return cmds;
+  return useQuery({ ...main.commands({ project: project || undefined }), staleTime: Infinity }).data?.commands ?? NO_CMDS;
 }
 
 function Attachments({ items }: { items: string[] }) {

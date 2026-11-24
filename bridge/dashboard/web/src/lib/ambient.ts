@@ -1,7 +1,9 @@
 // Ambient widgets for the WORKSPACE panel + strip: host vitals (psutil), weather
 // (open-meteo) and a locally-persisted focus timer.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, type HostStats, type Place, type Weather } from "../api";
+import { rail } from "./queries";
 
 const EMPTY_HOST: HostStats = {
   available: false, host: "host", cpu: 0, mem_used: 0, mem_total: 16, mem_pct: 0,
@@ -11,24 +13,9 @@ const EMPTY_WX: Weather = {
   available: false, temp: null, cond: "—", hi: null, lo: null, wind: "—", hum: "—", unit: "C", loc: "—",
 };
 
-/** Poll host vitals (psutil) ~every 2s. */
+/** Host vitals (psutil), polled every 2s while the page shows (lib/queries); a failed read keeps the last. */
 export function useHostVitals(): HostStats {
-  const [host, setHost] = useState<HostStats>(EMPTY_HOST);
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const h = await api.sysinfo();
-        if (live) setHost(h);
-      } catch {
-        /* keep last */
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 2000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
-  return host;
+  return useQuery(rail.sysinfo()).data ?? EMPTY_HOST;
 }
 
 /** Poll weather (cached server-side) every 10 minutes; setPlace moves it to a

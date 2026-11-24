@@ -21,13 +21,17 @@ import "./spine.css";
 // Side-effect import: `beforeinstallprompt` fires once, before React mounts, so
 // the listener has to be installed here rather than in the SETTINGS component.
 import "./lib/installprompt";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { watchStill } from "./lib/still";
+import { queryClient } from "./lib/queries";
 
 watchStill();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 );
