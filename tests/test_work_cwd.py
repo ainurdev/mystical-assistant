@@ -219,11 +219,34 @@ def test_note_work_cwd_ignores_non_worktrees(repo):
 
 def test_a_branch_made_in_the_checkout_needs_no_hook(repo):
     """`git checkout -b` in the session's own checkout: the brief reads the
-    checkout's branch on every poll (through a 3 s cache)."""
+    checkout's branch on every poll (through a cache kept until HEAD moves)."""
     s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
     _git(repo["proj"], "checkout", "-q", "-b", "feat/z")
     git._branch_cache.clear()
     assert _session_brief(store.get_session(s["id"]))["branch"] == "feat/z"
+
+
+def test_a_checkout_asks_git_again_only_once_its_head_moves(repo, monkeypatch):
+    """/local/sessions asks every session's branch on every 5 s poll. With a 3 s
+    TTL alone each poll spawned a git per checkout, 0.3 s of a 0.34 s list (Sentry
+    MYSTICAL-9). An unmoved HEAD answers from the cache; a switch shows at once."""
+    monkeypatch.setattr(git, "_BRANCH_TTL", 0.0)           # every ask is past the TTL
+    runs = []
+    real = git._run
+    monkeypatch.setattr(git, "_run", lambda cwd, *a, **k: (runs.append(cwd), real(cwd, *a, **k))[1])
+    git._branch_cache.clear()
+    assert git.current_branch_cached(repo["proj"]) == "master"
+    assert git.current_branch_cached(repo["wt"]) == "feat/x"
+    runs.clear()
+    assert git.current_branch_cached(repo["proj"]) == "master"
+    assert git.current_branch_cached(repo["wt"]) == "feat/x"
+    assert runs == []                                       # neither HEAD moved
+
+    _git(repo["wt"], "checkout", "-q", "-b", "feat/y")      # a linked worktree's HEAD
+    _git(repo["proj"], "checkout", "-q", "-b", "feat/z")    # and a main checkout's
+    assert git.current_branch_cached(repo["wt"]) == "feat/y"
+    assert git.current_branch_cached(repo["proj"]) == "feat/z"
+    git._branch_cache.clear()
 
 
 def test_brief_falls_back_when_the_worktree_is_gone(repo):
