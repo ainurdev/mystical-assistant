@@ -284,22 +284,26 @@ def effective(session: "dict | None") -> dict:
     return out
 
 
-def tools_for(session: "dict | None") -> list:
-    """The deny rules this session's next run uses."""
+def tools_for(session: "dict | None", default: "list | None" = None) -> list:
+    """The deny rules this session's next run uses. `default` is
+    store.default_disabled_tools() already read, by a caller doing many sessions."""
     t = effective(session)["disabled_tools"]
-    return store.default_disabled_tools() if t is None else t
+    if t is not None:
+        return t
+    return store.default_disabled_tools() if default is None else default
 
 
-def brief(session: dict) -> dict:
+def brief(session: dict, default_tools: "list | None" = None) -> dict:
     """The run-settings half of a session brief, defaults filled in, so both
-    composers show what the next turn will actually run."""
+    composers show what the next turn will actually run. A list passes
+    `default_tools` (see tools_for)."""
     e = effective(session)
     mode = e["permission_mode"]
     if mode is None and e["agent"] == CLAUDE:
         mode = config.MINIAPP_PERMISSION_MODE
     return {"profile_id": e["profile_id"], "agent": e["agent"], "account": e["account"],
             "model": e["model"], "permission_mode": mode, "effort": e["effort"],
-            "disabled_tools": tools_for(session), "overrides": e["overrides"]}
+            "disabled_tools": tools_for(session, default_tools), "overrides": e["overrides"]}
 
 
 def history(chat_id: int, include_archived: bool = False) -> list:

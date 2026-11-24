@@ -197,7 +197,8 @@ def _multi_brief(s: dict, run: dict) -> dict:
             "member": store.parse_member(s.get("member"))}
 
 
-def _session_brief(s: dict) -> dict:
+def _session_brief(s: dict, default_tools: "list | None" = None) -> dict:
+    # A list passes default_tools, read once: per session it was a SQLite connection each.
     cwd = s.get("cwd")
     # The branch the session is *working* on: the worktree its shell moved into
     # (runner._note_work_cwd) before its own checkout. A recorded worktree that
@@ -211,7 +212,7 @@ def _session_brief(s: dict) -> dict:
     # work_cwd only catches a shell that *moved* — so the name comes from the
     # working path either way.
     work = wt if wt_branch else (cwd or "")
-    run = profiles.brief(s)
+    run = profiles.brief(s, default_tools)
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             # Its project's folder is gone (moved, renamed, deleted): MOVE TO PROJECT puts it in one of yours.
             "missing": browser.gone(s["project"]),
@@ -698,7 +699,8 @@ class Handler(BaseHTTPRequestHandler):
         # itself, whose rel "/" is never a project) — see dashboard/server.py.
         rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                 or browser.project_exists(r["project"]) or browser.gone(r["project"])]
-        self._json({"sessions": [_session_brief(s) for s in rows]})
+        dt = store.default_disabled_tools()
+        self._json({"sessions": [_session_brief(s, dt) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):
         project = (body.get("project") or "").strip()

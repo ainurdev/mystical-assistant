@@ -158,9 +158,10 @@ def _sessions_payload(chat, project) -> dict:
     # Ticket and merge sessions name their super session; that one carries its set's count.
     from bridge import tickets
     of, counts = tickets.owners()
+    dt = store.default_disabled_tools()
     return {"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
                           **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
-                         for b in map(_session_brief, rows)]}
+                         for b in (_session_brief(r, dt) for r in rows)]}
 
 
 def _sessions_cached(chat, project) -> dict:
