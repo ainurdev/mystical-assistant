@@ -38,9 +38,8 @@ from urllib.parse import urlparse
 
 from bridge import config
 
-# Public by design: a DSN can send events, never read them. Empty until the
-# team's project exists, which keeps reports off on every install.
-DSN = ""
+# Public by design: a DSN can send events, never read them.
+DSN = "https://76da3cd86191afd0e2b0126ffd4d68a0@o4512487081705472.ingest.de.sentry.io/4512487086620753"
 TEAM_HOST = "api.rivendell.ainurhq.cloud"
 VENDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_vendor")
 
