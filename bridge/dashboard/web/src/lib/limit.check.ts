@@ -31,7 +31,9 @@ eq(limitResets("Claude AI usage limit reached|1729000000"), null, "no refill in 
 const ACCOUNT = "⏮ Your previous turn was cut off because the Claude usage limit was reached — not by the user. It has been resumed on another account. Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
 const RESET = "⏮ Your previous turn was cut off because the Claude usage limit was reached — not by the user. The limit has reset. Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
 const RESTART = "⏮ You were interrupted mid-task by a bridge restart — not by the user. Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
+const MODEL = "⏮ Your previous turn was cut off because the Claude usage limit was reached — not by the user. It has been resumed on another model. Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
 eq(limitNudge(ACCOUNT), "account", "another login took the work");
+eq(limitNudge(MODEL), "model", "the next model down took the work");
 eq(limitNudge(RESET), "reset", "the window refilled");
 eq(limitNudge(RESTART), null, "a restart's nudge isn't a limit's");
 eq(limitNudge("the usage limit was reached, can you check?"), null, "your own words never are");

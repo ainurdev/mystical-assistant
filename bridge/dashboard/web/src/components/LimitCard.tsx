@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { Ban, CornerDownRight, Gauge, Pause, RefreshCw } from "lucide-react";
 import { api, type AccountInfo, type SessionStatus } from "../api";
 import type { Turn } from "../chat";
-import { DEFAULT_SLOT } from "../models";
+import { DEFAULT_SLOT, modelName } from "../models";
 import { limitNudge, limitResets, limitWindow, loginName, otherLogin, span } from "../lib/limit";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { Card } from "./ui";
@@ -175,11 +175,12 @@ function LimitReceipt({ turn, next, logins, who, win, said }: Ctx & { turn: Turn
   const to = next ? slotOf(next.runtime, logins) : null;
   const [Icon, what] =
     carried === "account" ? [CornerDownRight, `Usage limit · continued on ${loginName(logins.find((a) => a.slot === to), to)}`] as const
+    : carried === "model" ? [CornerDownRight, `Usage limit · continued on ${modelName(next?.model ?? "") || "another model"}`] as const
     : carried === "reset" && next?.started ? [RefreshCw, `Usage limit · resumed at ${hhmm(next.started, h12)}`] as const
     : [Gauge, "Usage limit"] as const;
   const why = carried === "reset" && next?.started && end
     ? ` hit its ${win} limit · paused ${span(next.started - end)}, then picked up where it stopped`
-    : ` hit its ${win} limit${refill ? ` (refills ${refill})` : ""}${carried === "account" ? " · same session, nothing lost" : ""}`;
+    : ` hit its ${win} limit${refill ? ` (refills ${refill})` : ""}${carried === "account" || carried === "model" ? " · same session, nothing lost" : ""}`;
   const tokens = turn.tokens;
   return (
     <div className="resblk relative my-2 pl-[var(--rail)]" data-limit={carried ?? ""}>

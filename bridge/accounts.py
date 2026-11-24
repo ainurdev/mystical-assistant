@@ -648,6 +648,25 @@ def _used(meter: dict) -> "int | None":
     return None if b is None else b["percent"]
 
 
+def _model_used(meter: dict, model: str) -> int:
+    """Percent consumed of `model`'s own weekly cap (a limit scoped to it by
+    display name, "Fable"); 0 when the meter shows no cap of its own for it."""
+    return max([lim.get("percent") or 0 for lim in (meter or {}).get("limits") or []
+                if (((lim.get("scope") or {}).get("model") or {}).get("display_name") or "")
+                .lower().startswith(model)], default=0)
+
+
+_model_out: dict = {}   # (slot, model) -> epoch: a turn there died on that model's own cap
+
+
+def note_model_out(slot: "int | None", model: str, until: "float | None" = None) -> None:
+    """A turn on this login died on `model`'s own cap ("You've hit your Fable
+    limit"). pick(model=) skips the login until `until`, the reset the refusal
+    named, and for at least a meter cycle: the meter's model caps refresh only on
+    a full read, so it can show room there for usage.CACHE_TTL after the refusal."""
+    _model_out[(slot or DEFAULT_SLOT, model)] = max(until or 0.0, time.time() + usage.CACHE_TTL)
+
+
 def _weekly_reset(meter: dict) -> float:
     """Epoch of this account's weekly reset; +inf when unknown, so an account
     with no weekly window never wins consume-first."""
@@ -717,7 +736,7 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
 
 
 def pick(exclude=(), strategy: str = "best",
-         auto_switch: bool = False) -> "int | None":
+         auto_switch: bool = False, model: "str | None" = None) -> "int | None":
     """The slot that should take over, or None when nothing has headroom.
 
     best          -- most quota left (default)
@@ -726,6 +745,11 @@ def pick(exclude=(), strategy: str = "best",
 
     auto_switch picks only among accounts still in Auto-switch: the ones a
     limit may move work onto without asking you.
+
+    model ("fable") also skips an account whose own cap for that model is
+    spent, though its shared windows have room: the turn would die there too.
+    So does a turn that just died there on it (note_model_out), whatever the
+    meter says, or reads at all.
 
     An account whose meter won't read is a last resort rather than a skip: the
     usage endpoint 429s readily (the Claude CLI polls it too, and reading two
@@ -738,12 +762,14 @@ def pick(exclude=(), strategy: str = "best",
     for a in list_accounts():
         if a["slot"] in skip or a["disabled"] or (auto_switch and not a["auto_switch"]):
             continue
+        if model and _model_out.get((a["slot"], model), 0) > time.time():
+            continue
         meter = usage_for(a["slot"])
         used = _used(meter)
         if used is None:
             unknown.append(a["slot"])
             continue
-        if used >= EXHAUSTED:
+        if used >= EXHAUSTED or (model and _model_used(meter, model) >= EXHAUSTED):
             continue
         viable.append((a["slot"], used, _weekly_reset(meter)))
     if not viable:

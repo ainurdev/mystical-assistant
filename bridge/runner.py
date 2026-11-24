@@ -2062,6 +2062,9 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     if limits.is_limit_error(job.result or job.error_msg):
         # Usage window exhausted: an immediate resume would just fail again.
         # Park the session; limits fires it back up when the limit resets.
+        out_of = limits.limit_model(job.result or job.error_msg)
+        if out_of:
+            accounts.note_model_out(job.account_slot, out_of, _refused_reset(job))
         sess = store.get_session(sid)
         if not _resumable(job, sess):
             return False                          # died before init — nothing to resume
@@ -2073,8 +2076,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # Parked (the safety net). Now see whether the fallback ladder can do
         # better than waiting: another account. A taken rung unparks the
         # session and announces itself, so we stay quiet then.
-        if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot,
-                           model=model, effort=effort):
+        if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot, model=model, effort=effort,
+                           out_of=out_of):
             return True
         if first:
             from bridge import tgboard           # lazy: tgboard imports runner

@@ -9,6 +9,7 @@ than parking.
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -89,7 +90,9 @@ def _stub(accounts_pick=None, headroom=None):
     """Patch what rungs() consults: accounts_pick is a callable taking
     (exclude, strategy, auto_switch) so tests can model 'the next best account'."""
     saved = (ladder.accounts.pick, ladder.accounts.headroom)
-    ladder.accounts.pick = accounts_pick or (lambda exclude=(), strategy="best", auto_switch=False: None)
+    given = accounts_pick or (lambda exclude=(), strategy="best", auto_switch=False: None)
+    ladder.accounts.pick = lambda exclude=(), strategy="best", auto_switch=False, model=None: given(
+        exclude=exclude, strategy=strategy, auto_switch=auto_switch)
     ladder.accounts.headroom = headroom or (lambda slot: None)
 
     def restore():
@@ -349,10 +352,98 @@ def test_the_nudges_say_what_the_dashboard_reads():
     """The chat draws these turns as a receipt, not as your words, by matching
     their wording (dashboard lib/limit.ts limitNudge). Reword one, reword both."""
     from bridge import limits
-    for nudge in (limits.NUDGE, ladder.ACCOUNT_NUDGE):
+    for nudge in (limits.NUDGE, ladder.ACCOUNT_NUDGE, ladder.MODEL_NUDGE):
         assert nudge.startswith("⏮ ") and "usage limit was reached" in nudge
     assert "resumed on another account" in ladder.ACCOUNT_NUDGE
-    assert "resumed on another account" not in limits.NUDGE
+    assert "resumed on another model" in ladder.MODEL_NUDGE
+    assert "resumed on another" not in limits.NUDGE
+
+
+# --- a model's own limit: every login can be out of it -------------------------
+
+FABLE_OUT = ("You've hit your Fable limit · resets Nov 27 at 6am (Asia/Yerevan). Switch to "
+             "another model, or manage usage credits at https://claude.ai/settings/usage"
+             "?from=cc_cli_limit_message, to continue.")
+
+
+def _meter(weekly, fable):
+    """A login's meter as get_usage reads it (shape seen live 2026-11-23): the
+    weekly window every model shares, and Fable's own weekly cap."""
+    return {"available": True, "five_hour": None,
+            "seven_day": {"percent": weekly, "resets_at": None, "severity": "normal"},
+            "limits": [{"kind": "weekly_all", "group": "weekly", "percent": weekly, "scope": None},
+                       {"kind": "weekly_scoped", "group": "weekly", "percent": fable,
+                        "scope": {"model": {"id": None, "display_name": "Fable"}, "surface": None}}]}
+
+
+def _fable_deaths(meters, deaths):
+    """Turns on Fable die on its limit, up to `deaths` times, each on the login
+    the previous handover went to, through the runner's real limit path (park,
+    then the ladder). Returns the handovers as (account_slot, model) and the
+    session as it ends up."""
+    from bridge import config, limits, runner
+    saved = (ladder.accounts.list_accounts, ladder.accounts.usage_for,
+             runner.start_streaming_job, config.AUTO_RESUME)
+    ladder.accounts.list_accounts = lambda: [
+        {"slot": s, "disabled": False, "auto_switch": True} for s in sorted(meters)]
+    ladder.accounts.usage_for = lambda slot: meters[slot]
+    run = _Rec()
+    runner.start_streaming_job = run
+    config.AUTO_RESUME = True
+    s = _session("auto")
+    store.set_claude_session_id(s["id"], "c-" + s["id"])
+    slot, model = 1, "claude-fable-5-2"
+    try:
+        for _ in range(deaths):
+            job = runner.Job("j-" + os.urandom(4).hex(), CHAT, s["id"])
+            job.status, job.result, job.account_slot = "error", FABLE_OUT, slot
+            job.rate_limit = {"status": "rejected", "resetsAt": time.time() + 3 * 86400}
+            if not runner._maybe_auto_resume(job, "/p", model, None) or not run.calls:
+                break
+            slot, model = run.calls[-1][1]["account_slot"], run.calls[-1][1]["model"]
+            if model != "claude-fable-5-2":
+                break                       # off Fable: this turn would run
+        return [(kw["account_slot"], kw["model"]) for _a, kw in run.calls], store.get_session(s["id"])
+    finally:
+        (ladder.accounts.list_accounts, ladder.accounts.usage_for,
+         runner.start_streaming_job, config.AUTO_RESUME) = saved
+        with limits._lock:
+            if limits._timer is not None:
+                limits._timer.cancel()
+            limits._timer = limits._fire_at = None
+            limits._pending.clear()
+        limits._last_tries.clear()
+        ladder.accounts._model_out.clear()
+
+
+def test_auto_switch_drops_to_opus_when_every_login_is_out_of_fable():
+    """Both logins had room overall and none left for Fable: Auto-switch handed
+    the work back and forth between them every few seconds, Fable each time
+    (2026-11-23: four sessions, ~50 dead turns each). It goes on Opus instead,
+    once, and the session stays on Opus."""
+    went, s = _fable_deaths({1: _meter(90, 100), 2: _meter(52, 100)}, deaths=6)
+    assert went[0][1] == "opus", f"handed over on Fable again: {went}"
+    assert len(went) == 1
+    assert s["model"] == "opus", "its next turn would die on Fable all over again"
+
+
+def test_a_login_with_fable_left_still_takes_the_work_on_fable():
+    """Dropping a model is the last resort: a login in Auto-switch with room
+    for it keeps the work on the model it was on."""
+    went, s = _fable_deaths({1: _meter(90, 100), 2: _meter(30, 100), 3: _meter(70, 40)}, deaths=1)
+    assert went == [(3, "claude-fable-5-2")]
+    assert s["model"] != "opus"
+
+
+def test_a_login_that_just_refused_fable_gets_no_more_fable_whatever_its_meter_says():
+    """A meter's model caps refresh only on a full read (every 5 minutes), and a
+    meter that won't read has none: either way both logins can look like they
+    have Fable left after both refused it, and the bounce came back. The refusal
+    is first-hand: at most one wasted hop, then Opus."""
+    for meters in ({1: _meter(60, 97), 2: _meter(50, 97)},             # read before the caps ran out
+                   {1: {"available": False}, 2: {"available": False}}):  # won't read
+        went, _s = _fable_deaths(meters, deaths=6)
+        assert [m for _slot, m in went] == ["claude-fable-5-2", "opus"], went
 
 
 if __name__ == "__main__":
