@@ -40,7 +40,7 @@ from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
                     github, graphmap, httpgz, integrations, logostyle,
                     meter, models, native, notices, preview_detect, profiles, project_config, projectmarks,
                     prstatus,
-                    pubsub, queue_manager, relevance, report, rivendell,
+                    pubsub, queue_manager, relevance, report, reports, rivendell,
                     rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, team, terminals, titler,
@@ -504,6 +504,7 @@ class Handler(BaseHTTPRequestHandler):
             # Otherwise only the page sees it, and it's gone once that closes.
             print(f"[dashboard] {self.command} {urlparse(self.path).path} failed:", file=sys.stderr)
             traceback.print_exc()
+            reports.request_crash("dashboard", self.command, self.path, e)
         try:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
         except Exception:  # noqa: BLE001
@@ -696,6 +697,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/usage-sharing":
             from bridge import usagesharing
             return self._json({"share": usagesharing.answer()})
+        if path == "/local/reports":
+            return self._json(reports.status())
         if path == "/local/storage":
             # SETTINGS ▸ System ▸ Storage: what sessions left on disk (bridge/storage.py).
             from bridge import storage
