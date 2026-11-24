@@ -15,7 +15,7 @@
 .at-tabs button:hover { color: var(--txb); }
 .at-tabs button[data-on] { color: var(--txb); border-bottom-color: var(--acc); }
 .at-tabs small { font-size: var(--t85, var(--t9)); color: var(--txl); }
-.at :is(button, select, input):focus-visible, .my-panel :is(button, select, input):focus-visible, .at-cell:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
+.at button:focus-visible, .at select:focus-visible, .at input:focus-visible, .my-panel button:focus-visible, .my-panel select:focus-visible, .my-panel input:focus-visible, .at-cell:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
 
 .at-levelbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .at-seg { display: inline-flex; border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent); }

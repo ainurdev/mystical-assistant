@@ -54,7 +54,7 @@
 [data-fam] [data-style="dossier"][data-isle] .rstream > :not(.dwork, .resblk, .dprompt, .dask),
 [data-fam] [data-style="dossier"][data-isle] .dreply > :not(.rstream, .agent-rail),
 [data-fam] [data-style="dossier"][data-isle] .dseam { margin: 14px 0 14px var(--sp-in); }
-[data-fam] [data-style="dossier"][data-isle] .rstream > :is(.dwork, .resblk, .dprompt, .dask) { margin: 18px 0 0; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .dwork, [data-fam] [data-style="dossier"][data-isle] .rstream > .resblk, [data-fam] [data-style="dossier"][data-isle] .rstream > .dprompt, [data-fam] [data-style="dossier"][data-isle] .rstream > .dask { margin: 18px 0 0; }
 [data-fam] [data-style="dossier"][data-isle] .rstream > :first-child { margin-top: 18px; }
 
 /* ── you: a filled node and a bubble, the header inside it ── */
@@ -91,12 +91,12 @@
 }
 [data-fam] [data-style="dossier"][data-isle] .pmeta > * + * { padding-left: 0; border-left: 0; }
 [data-fam] [data-style="dossier"][data-isle] .pmeta * { text-transform: none !important; letter-spacing: 0 !important; }
-[data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ :is(.pacct, .psaver, .prun, .pstamp)::before {
+[data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ .pacct::before, [data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ .psaver::before, [data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ .prun::before, [data-fam] [data-style="dossier"][data-isle] .pmeta > :is(.pacct, .psaver, .prun, .pstamp) ~ .pstamp::before {
   content: "·"; margin-right: 7px; color: var(--txg);
 }
 [data-fam] [data-style="dossier"][data-isle] .pmeta > b { font-size: var(--t13); font-weight: 700; color: var(--txh) !important; }
 [data-fam] [data-style="dossier"][data-isle] .pmeta > .pcmd { font-weight: 700; color: var(--sp-you); }
-[data-fam] [data-style="dossier"][data-isle] .pmeta :is(.prun, .pmodel, .pstamp) { gap: 0; color: var(--txl); font-family: var(--ui-font); }
+[data-fam] [data-style="dossier"][data-isle] .pmeta .prun, [data-fam] [data-style="dossier"][data-isle] .pmeta .pmodel, [data-fam] [data-style="dossier"][data-isle] .pmeta .pstamp { gap: 0; color: var(--txl); font-family: var(--ui-font); }
 [data-fam] [data-style="dossier"][data-isle] .pmeta .prun[data-new] { color: var(--sp-you); }
 [data-fam] [data-style="dossier"][data-isle] .pmeta .pacct { color: var(--txm); }
 [data-fam] [data-style="dossier"][data-isle] .ppips { display: none; }
@@ -158,7 +158,7 @@
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork-row-thumbs img { border-radius: 8px; }
 /* the agent's words in the work are words: the UI face, code stays mono */
-[data-fam] [data-style="dossier"][data-isle] :is(.ma-looked-note, .pl-line) { font-family: var(--ui-font); letter-spacing: 0; }
+[data-fam] [data-style="dossier"][data-isle] .ma-looked-note, [data-fam] [data-style="dossier"][data-isle] .pl-line { font-family: var(--ui-font); letter-spacing: 0; }
 [data-fam] [data-style="dossier"][data-isle] .pl-line { border-left: 0; border-radius: 10px; background: color-mix(in oklab, var(--txl) 6%, transparent); }
 
 /* ── the work as a ledger (A · LEDGER, .mystical/design-drafts/session-chat-items): every step a sentence,
@@ -301,7 +301,7 @@
   box-sizing: border-box; border: 2px solid currentColor; background: var(--sp-gnd);
 }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-k { font-size: var(--t13); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--txh); }
-[data-fam] [data-style="dossier"][data-isle] .dask :is(.ask-rec-open, .ask-rec-at) { font-family: var(--mono); font-size: var(--t11); }
+[data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-open, [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-at { font-family: var(--mono); font-size: var(--t11); }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-chips { padding: 4px 0 0; }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-rec-body { margin-top: 8px; border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; background: var(--sp-card); }
 
@@ -373,7 +373,7 @@
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-w::before { content: "· "; }
 [data-fam] [data-style="dossier"][data-isle] .dask .ask-mark-go { font-family: var(--ui-font); font-weight: 700; color: var(--ask); }
 /* a card in the turn hangs off its node: the small corner by it, amber while it waits */
-[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] :is(.chatcard, .dg-card) {
+[data-fam] [data-style="dossier"][data-isle] .dask[data-wait] .chatcard, [data-fam] [data-style="dossier"][data-isle] .dask[data-wait] .dg-card {
   margin: 6px 0 0; border: 1px solid color-mix(in oklab, var(--ask) 30%, transparent); border-radius: 4px 14px 14px 14px;
   background: color-mix(in oklab, var(--ask) 4%, var(--sp-card));
 }
@@ -389,23 +389,23 @@
   --sp-ic-stop: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2'/></svg>");
   --sp-ic-refresh: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7'/></svg>");
 }
-[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam) {
+[data-fam] [data-style="dossier"][data-isle] .ev-err, [data-fam] [data-style="dossier"][data-isle] .ev-stop, [data-fam] [data-style="dossier"][data-isle] .doutcome, [data-fam] [data-style="dossier"][data-isle] .dseam {
   --kx: calc(var(--sp-nx) - var(--sp-in)); position: relative; min-height: var(--sp-n); font-family: var(--ui-font); letter-spacing: 0;
 }
 /* the stream's own rows paint only inside their box (content-visibility): they take the indent as padding */
-[data-fam] [data-style="dossier"][data-isle] .rstream > :is(.ev-err, .ev-stop) { --kx: var(--sp-nx); margin-left: 0 !important; padding-left: var(--sp-in); }
-[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam)::before {
+[data-fam] [data-style="dossier"][data-isle] .rstream > .ev-err, [data-fam] [data-style="dossier"][data-isle] .rstream > .ev-stop { --kx: var(--sp-nx); margin-left: 0 !important; padding-left: var(--sp-in); }
+[data-fam] [data-style="dossier"][data-isle] .ev-err::before, [data-fam] [data-style="dossier"][data-isle] .ev-stop::before, [data-fam] [data-style="dossier"][data-isle] .doutcome::before, [data-fam] [data-style="dossier"][data-isle] .dseam::before {
   content: ""; position: absolute; z-index: 1; left: var(--kx); top: 0; box-sizing: border-box;
   width: var(--sp-n); height: var(--sp-n); border-radius: 50%; border: 2px solid var(--sp-line); background: var(--sp-gnd);
   flex: none; min-width: 0;
 }
-[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .ev-stop, .doutcome, .dseam)::after {
+[data-fam] [data-style="dossier"][data-isle] .ev-err::after, [data-fam] [data-style="dossier"][data-isle] .ev-stop::after, [data-fam] [data-style="dossier"][data-isle] .doutcome::after, [data-fam] [data-style="dossier"][data-isle] .dseam::after {
   content: ""; position: absolute; z-index: 2; left: calc(var(--kx) + 6.5px); top: 6.5px; width: 13px; height: 13px;
   flex: none; min-width: 0; -webkit-mask: var(--sp-ic-alert) center / contain no-repeat; mask: var(--sp-ic-alert) center / contain no-repeat;
 }
 /* an error, and a failed turn's outcome: red */
-[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .doutcome)::before { border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, var(--sp-gnd)); }
-[data-fam] [data-style="dossier"][data-isle] :is(.ev-err, .doutcome)::after { background: var(--err); }
+[data-fam] [data-style="dossier"][data-isle] .ev-err::before, [data-fam] [data-style="dossier"][data-isle] .doutcome::before { border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, var(--sp-gnd)); }
+[data-fam] [data-style="dossier"][data-isle] .ev-err::after, [data-fam] [data-style="dossier"][data-isle] .doutcome::after { background: var(--err); }
 [data-fam] [data-style="dossier"][data-isle] .ev-err { align-items: center; padding-top: 3px; padding-bottom: 3px; border: 0; background: none; font-size: var(--t13); color: var(--tx); }
 [data-fam] [data-style="dossier"][data-isle] .doutcome-g { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .doutcome-l { text-transform: none; }
@@ -508,6 +508,7 @@
   background: conic-gradient(from var(--pb-a), transparent 0 55%, var(--acc) 85%, transparent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
   animation: pb-orbit 1.4s steps(11) infinite;
+  box-sizing: border-box;
 }
 [data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
 /* the zone's NowLine, as the card's line */
@@ -542,7 +543,7 @@ body[data-liverow] .pb-hold { display: none; }
 /* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the
    line with a small ring in the Mystical colour, no bubble ── */
 [data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg { padding-left: 0; }
-[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > :is(.rail-node, .rail-stub) { display: none; }
+[data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .rail-node, [data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg > .rail-stub { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .rstream > .group\/msg::before {
   content: ""; position: absolute; z-index: 1; box-sizing: border-box; left: calc(var(--sp-nx) - var(--sp-in) + (var(--sp-n) - 12px) / 2); top: 6px;
   width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--my, var(--info)); background: var(--sp-gnd);
