@@ -74,4 +74,14 @@ assert.deepEqual(tagsFor("Mozilla/5.0 (Windows NT 10.0) Chrome/130", "wsl"), { s
 assert.deepEqual(opts.initialScope, { tags: { side: "page", os: "macos", app: "Mystical.app" }, user: { username: "maziyar" } });
 assert.equal(opts.defaultIntegrations, false);
 
+// a slow spot goes by its name: the synthetic stack SDK 11 puts on every message is dropped
+// (Sentry titled the issue from it, "Module.tE"); a crash keeps its stack
+const frames = [{ function: "Module.tE", filename: `${ORIGIN}/assets/index.js`, lineno: 9 }];
+const spot = send({ message: "frame", tags: { kind: "slow spot" },
+  exception: { values: [{ value: "frame", mechanism: { type: "generic", synthetic: true }, stacktrace: { frames } }] } })!;
+assert.equal(spot.exception, undefined);
+assert.equal(spot.message, "frame");
+const crashed = send({ exception: { values: [{ type: "TypeError", value: "x is undefined", stacktrace: { frames } }] } })!;
+assert.equal(crashed.exception?.values?.[0].stacktrace?.frames?.length, 1);
+
 console.log("reports.check: ok");

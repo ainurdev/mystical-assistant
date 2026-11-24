@@ -154,7 +154,11 @@ export function options(s: ReportsStatus, token: string, ua: string, origin: str
     // the release is the commit the page was built from: Sentry's Vite plugin writes it into the bundle
     initialScope: { tags: tagsFor(ua, s.os ?? ""), user: { username: s.user ?? "" } },
     beforeBreadcrumb: (crumb, hint) => keepBreadcrumb(crumb, hint, origin),
-    beforeSend: (event, hint) => (fresh(event) ? scrubReport(event, hint, held) : null),
+    beforeSend: (event, hint) => {
+      // SDK 11 stacks every message; a slow spot's is the observer's own, and Sentry would title the issue from it
+      if (event.tags?.kind === "slow spot") delete event.exception;
+      return fresh(event) ? scrubReport(event, hint, held) : null;
+    },
   };
 }
 
