@@ -6041,7 +6041,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,
    with nothing behind it: no plate, tint or ring (the user's call, 2026-10-16).
    Last in the file, and !important, to beat every per-surface .ptile rule
-   above (.ps-row .ptile, :root[data-light] .ptile, the families). */
+   above (:root[data-light] .ptile, the families). */
 :root { --ink-lo: .65; --ink-hi: 1; }
 :root[data-light] { --ink-lo: 0; --ink-hi: .55; }
 .ptile svg { width: 72%; height: 72%; stroke-width: 2.1; flex: none; }
