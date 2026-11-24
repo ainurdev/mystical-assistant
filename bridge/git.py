@@ -141,14 +141,20 @@ def _porcelain(cwd: str) -> str | None:
 
 
 def badge(cwd: str) -> dict | None:
-    if not is_repo(cwd):
+    """Three git runs: GET /local/git/all asks this of every sidebar repo each 10 s.
+    status fails outside a work tree, so it answers is_repo too."""
+    porcelain = _porcelain(cwd)
+    if porcelain is None:
         return None
-    branch, upstream, ahead, behind, entries = _parse(_porcelain(cwd) or "")
+    branch, upstream, ahead, behind, entries = _parse(porcelain)
+    rc, heads, _ = _run(cwd, "for-each-ref", "--format=%(refname)", "refs/heads")
+    rc2, trees, _ = _run(cwd, "worktree", "list", "--porcelain")
     return {"branch": branch, "upstream": upstream,
             "ahead": ahead, "behind": behind, "dirty": len(entries),
-            "branches": len(branches(cwd)),
+            "branches": len(heads.split()) if rc == 0 else 0,
             # linked worktrees only (main checkout excluded), matching WORKTREES tab
-            "worktrees": sum(1 for w in worktrees(cwd) if not w.get("is_main"))}
+            "worktrees": max(0, sum(ln.startswith("worktree ") for ln in trees.splitlines()) - 1)
+                         if rc2 == 0 else 0}
 
 
 def status(cwd: str) -> dict:

@@ -465,6 +465,20 @@ def test_badge_counts_branches_and_worktrees():
     _run(d, "worktree", "add", os.path.join(tempfile.mkdtemp(), "w1"), "feat")
     b = g.badge(d)
     assert b["branches"] == 2 and b["worktrees"] == 1
+    assert g.badge(tempfile.mkdtemp()) is None          # not a repo
+
+
+def test_a_badge_is_three_git_runs(monkeypatch):
+    # GET /local/git/all badges every sidebar repo each 10 s (Sentry MYSTICAL-S):
+    # 7 runs a repo there, 3 of them the same is-it-a-repo question.
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    runs, real = [], g._run
+    monkeypatch.setattr(g, "_run", lambda *a, **k: runs.append(a[1:3]) or real(*a, **k))
+    assert g.badge(d)["branches"] == 1
+    assert len(runs) <= 3, runs
 
 
 def test_commit_files_and_show_file():
