@@ -29,6 +29,7 @@ import conftest  # noqa: F401,E402
 
 from bridge import config, reports, rivendell_instances, selfupdate, store  # noqa: E402
 
+reports.STARTED = time.monotonic()      # what the main script's first line does
 case = json.loads(sys.argv[1])
 PLANT = case.get("plant") or {}
 reports.DSN = case["dsn"]
@@ -38,6 +39,8 @@ store.init()
 for inst in case.get("instances", []):
     rivendell_instances.add_instance(**inst)
 reports.boot()
+reports.phase("imports")
+reports.phase("store")
 
 if case.get("sdk_only"):       # the SDK alone: the rest of the bridge needs 3.11's tomllib
     try:
@@ -55,6 +58,9 @@ _get_api = dash.Handler._get_api
 
 
 def _boom(self, path, qs):
+    if "sleep" in qs:              # any route, slowed: /local/x?sleep=0.7
+        time.sleep(float(qs["sleep"][0]))
+        return self._json({"ok": True})
     if not path.startswith("/local/boom/"):
         return _get_api(self, path, qs)
     planted_local = PLANT.get("local")  # noqa: F841 - must never reach a report
@@ -67,13 +73,32 @@ def _mini_boom(self, path):
     raise ValueError("mini app route failed")
 
 
+def _slow_stream(self, rest, qs):
+    time.sleep(float(qs["sleep"][0]))
+    self._json({"ok": True})
+
+
 dash.Handler._get_api = _boom
+dash.Handler._stream = _slow_stream
 mini.Handler._serve_static = _mini_boom
 
 
+ERRORS = []
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = False     # server_close() then waits for every handler, its report included
+    def handle_error(self, request, client_address):   # a handler that raised past the stdlib
+        ERRORS.append(sys.exc_info()[1])
+
+
+SERVERS = []
+
+
 def _serve(handler):
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv = _Server(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    SERVERS.append(srv)
     return srv.server_address[1]
 
 
@@ -91,6 +116,7 @@ def _get(port, path):
 
 out = {"booted": reports.on()}
 dport, mport = _serve(dash.Handler), _serve(mini.Handler)
+reports.phase("servers listening")
 for step in case["steps"]:
     if step == "crumbs":       # a log line and an outgoing call, before the crash
         logging.getLogger("bridge.test").warning(PLANT["log"])
@@ -105,6 +131,15 @@ for step in case["steps"]:
         out["slowest"] = max(t for _, _, t in got)
     elif step == "mini":
         out["mini"] = _get(mport, "/boom/abc123def")[0]
+    elif step.startswith("GET "):   # "GET /local/x?sleep=0.7": its code and time
+        code, _, took = _get(dport, step[4:])
+        out.setdefault("calls", []).append([code, took])
+    elif step == "blank":        # a line that is not a request at all
+        import socket
+        with socket.create_connection(("127.0.0.1", dport), timeout=5) as sock:
+            sock.sendall(b"   \r\n")
+            out["blank"] = sock.recv(64).decode(errors="replace")
+        time.sleep(0.2)
     elif step == "status":
         out["status"] = _get(dport, "/local/reports")[1]
     elif step == "thread":
@@ -128,9 +163,14 @@ for step in case["steps"]:
                                          model="claude-test-model")
         assert job.exited.wait(30)
         out["session"], out["turn_status"] = sid, job.status
+        out["turn_took"] = time.time() - job.started
 
+for srv in SERVERS:            # a request's report is captured just after its answer is written
+    srv.shutdown()
+    srv.server_close()
 if reports.on() and case.get("flush", True):
     reports._sdk.flush(5)
 out["sentry_imported"] = any(m == "sentry_sdk" or m.startswith("sentry_sdk.") for m in sys.modules)
 out["vendor_on_path"] = reports.VENDOR in sys.path
+out["handler_errors"] = len(ERRORS)
 print(json.dumps(out))

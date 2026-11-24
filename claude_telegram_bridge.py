@@ -35,6 +35,10 @@ Requirements
 >>> Read the SECURITY section at the bottom before exposing this. <<<
 """
 
+import time
+
+_STARTED = time.monotonic()   # start-up is timed from here (bridge/reports.py phase)
+
 import json
 import os
 import signal
@@ -144,6 +148,8 @@ def _shutdown():
 
 
 def main():
+    reports.STARTED = _STARTED
+    reports.phase("imports")
     # Before anything reads config: the SYSTEM tab's saved settings go on top of
     # what .env said, so the checks below and every server started here see them.
     envsettings.apply()
@@ -154,6 +160,7 @@ def main():
     signal.signal(signal.SIGINT, _on_stop_signal)
     signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()
+    reports.phase("store")
     profiles.seed_defaults()       # one profile per login, the first boot only
     # Discovery mode exists to learn a chat id off an incoming message; with no
     # bot there is no message to learn it from, and stopping here would leave a
@@ -180,6 +187,7 @@ def main():
         _setup_dashboard()
         _setup_miniapp()
         _setup_landing()
+        reports.phase("servers listening")   # the last, the first session list, sends start-up: bridge
         native_activity.start()        # tail live VS Code/terminal sessions
         resumed = recovery.recover()   # resume turns a restart interrupted (--resume + nudge)
         if resumed:
