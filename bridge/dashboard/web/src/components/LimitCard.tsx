@@ -185,7 +185,7 @@ function LimitReceipt({ turn, next, logins, who, win, said }: Ctx & { turn: Turn
   const tokens = turn.tokens;
   return (
     <div className="resblk relative my-2 pl-[var(--rail)]" data-limit={carried ?? ""}>
-      <div className="res">
+      <div className="res" data-bare="">
         <div className="res-head">
           <span className="res-lab"><Icon size={13} strokeWidth={2} aria-hidden />{what}</span>
           <span className="res-meta">
