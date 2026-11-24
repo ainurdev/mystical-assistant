@@ -62,8 +62,9 @@ def check_relevance(session: dict, prompt: str) -> dict:
 - `config.RELEVANCE_CHECK` is on,
 - `force` is falsy,
 - the session already has ≥1 prior turn (nothing to be unrelated to otherwise),
-- the prompt is "substantial": `len(prompt) >= RELEVANCE_MIN_CHARS` **or** it
-  contains a newline (multi-line paste).
+- the prompt is "substantial": `len(prompt) >= RELEVANCE_MIN_CHARS`. (Until
+  2026-11-24 any prompt with a newline counted too; an 80-character two-line
+  follow-up then waited ~4 s on the check.)
 
 Short follow-ups ("yes", "continue", "fix that") and brand-new/empty sessions
 never trigger the check.

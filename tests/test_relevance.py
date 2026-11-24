@@ -5,6 +5,7 @@ Run: python -m pytest tests/test_relevance.py -v"""
 
 import os
 import sys
+import time
 
 import pytest
 
@@ -39,8 +40,10 @@ def test_should_check_long_prompt_on_session_with_history():
     assert relevance.should_check(_session(), LONG) is True
 
 
-def test_should_check_multiline_prompt_qualifies_even_when_short():
-    assert relevance.should_check(_session(), "add a\nsecond line") is True
+def test_should_check_a_short_multiline_prompt_skips_too():
+    # Any multi-line prompt used to qualify: an 80-character follow-up waited ~4 s on it.
+    assert relevance.should_check(_session(), "add a\nsecond line") is False
+    assert relevance.should_check(_session(), LONG + "\nsecond line") is True
 
 
 def test_should_check_skips_short_single_line_prompt():
@@ -222,6 +225,19 @@ def test_related_prompt_runs_normally(monkeypatch):
     h, box = _handler()
     h._run(905, {"prompt": LONG, "session_id": s["id"]})
     assert box["obj"]["job_id"] == "job1" and len(started) == 1
+
+
+def test_the_check_is_left_out_of_the_run_calls_time(monkeypatch):
+    """A check is a model call (4 s on 2026-11-24, Sentry MYSTICAL-P), long by design
+    like the routes reports.UNTIMED skips: POST /local/run is timed without it."""
+    s = _session(chat=907)
+    _no_jobs(monkeypatch)
+    monkeypatch.setattr(relevance, "check_relevance", lambda *a, **k: time.sleep(0.3) or {
+        "related": True, "reason": "", "suggested_title": None})
+    h, _box = _handler()
+    h._t0 = time.monotonic()                 # what parse_request sets, the request's start
+    h._run(907, {"prompt": LONG, "session_id": s["id"]})
+    assert time.monotonic() - h._t0 < 0.2
 
 
 def test_session_shows_as_checking_while_the_check_runs(monkeypatch):

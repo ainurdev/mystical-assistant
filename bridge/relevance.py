@@ -46,8 +46,9 @@ def checking_ids() -> set[str]:
 
 def should_check(session: dict | None, prompt: str, force: bool = False) -> bool:
     """True only for a substantial prompt landing on a session that already has
-    turns. Short follow-ups ("yes", "fix that") and fresh sessions never pay for a
-    check — a session with no history has nothing to be unrelated to. Never a
+    turns. Short follow-ups ("yes", "fix that"), on one line or several, and fresh
+    sessions never pay for a check — a session with no history has nothing to be
+    unrelated to. Never a
     teammate's device run: its first turn is their request, which the check would
     send to a model on this account (the runner refuses the prompt anyway)."""
     if not aifeatures.enabled("relevance") or force or not session:
@@ -56,7 +57,7 @@ def should_check(session: dict | None, prompt: str, force: bool = False) -> bool
         return False
     if not store.recent_prompts(session["id"], 1):
         return False
-    return len(prompt) >= config.RELEVANCE_MIN_CHARS or "\n" in prompt
+    return len(prompt) >= config.RELEVANCE_MIN_CHARS
 
 
 def check_relevance(session: dict, prompt: str, *, run=None) -> dict:
