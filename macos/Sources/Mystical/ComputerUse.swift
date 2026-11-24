@@ -12,12 +12,19 @@ import ScreenCaptureKit
 ///
 /// Every order names the chat's apps. `see`: shown in screenshots, everything
 /// else blanked (ScreenCaptureKit includes only them). `full`: may be clicked
-/// and typed into, and input is refused unless one of them is in front, checked
-/// here at the moment of the event, where the bridge can't see.
+/// and typed into, checked here at the moment of the event, where the bridge
+/// can't see. One of them has to be in front. A pointer event also needs one of
+/// their windows on top under the point. Keys are posted to the front FULL app's
+/// own process, not into the system's event stream, so they can't land in
+/// whatever else holds the keyboard (Spotlight, a password box, the Dock), and
+/// system hot keys don't fire.
 ///
 /// While a chat drives: a teal edge and a pill on the main screen (Overlay), and
 /// an event tap that turns Esc into Stop. Our own posted events carry a marker
 /// in eventSourceUserData, so `key escape` from Claude doesn't stop itself.
+/// Stop, from here or from the bridge, reaches the order being done: each order
+/// is watched while it runs (`watch`), its waits are sliced (`pause`), and what
+/// it holds down is let go.
 /// Posting events and the tap need Accessibility; screenshots need Screen
 /// Recording. Both are this app's, which is why the bridge can't do this itself.
 @MainActor
@@ -31,6 +38,14 @@ final class ComputerUse {
     /// Set by Stop until the bridge confirms ("end", or a pull that isn't driving):
     /// an order already here or a batch half done goes no further.
     private var halted = false
+    /// The order being done, and whether the bridge stopped wanting it meanwhile
+    /// (the chat's own Stop, its turn ending, its caller giving up): see `watch`.
+    private var current: String?
+    private var cut = false
+    /// A Stop the bridge may not have heard: it goes again with the next pull.
+    private var unheard: (by: String, sid: String, at: Date)?
+    /// left_mouse_down with no up yet: the end of the drive lets go of it.
+    private var buttonDown = false
     private(set) var driving = false
     private(set) var title = ""
     /// The driving chat, for the menu bar's Open the chat.
@@ -58,8 +73,9 @@ final class ComputerUse {
     /// The menu bar's Stop, and Esc: told to the bridge at once, not with the next pull.
     func stop(_ by: String) {
         halted = true
+        unheard = (by, session, Date())
         end()
-        if let req = request(["stop": by], timeout: 5) { URLSession.shared.dataTask(with: req).resume() }
+        if let req = request(["stop": by, "sid": session], timeout: 5) { URLSession.shared.dataTask(with: req).resume() }
     }
 
     /// POST /local/computer/app with the dashboard token. Nil until a status names the bridge.
@@ -78,16 +94,26 @@ final class ComputerUse {
 
     private func loop() async {
         while running {
-            guard let req = request(["results": results, "perms": perms()], timeout: 35) else {
+            var body: [String: Any] = ["results": results, "perms": perms()]
+            let sent = results.count
+            // A Stop goes again until a pull gets through with it: its own request may
+            // not have. Not for long, and it names its chat, so it can't end a later drive.
+            if let u = unheard, Date().timeIntervalSince(u.at) >= 30 { unheard = nil }
+            let again = unheard
+            if let again { body["stop"] = again.by; body["sid"] = again.sid }
+            guard let req = request(body, timeout: 35) else {
                 try? await Task.sleep(for: .seconds(5)); continue
             }
-            results = []
             guard let (data, resp) = try? await URLSession.shared.data(for: req),
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                // Down, or a bridge too old for the route: try again later.
+                // Down, or a bridge too old for the route. With no bridge nothing drives:
+                // the overlay and the Esc tap must not outlive it.
+                if driving { end() }
                 try? await Task.sleep(for: .seconds(10)); continue
             }
+            results.removeFirst(sent)    // only now: a pull that failed still owes them
+            if unheard?.at == again?.at { unheard = nil }
             for order in o["orders"] as? [[String: Any]] ?? [] {
                 if let r = await run(order) { results.append(r) }
             }
@@ -127,6 +153,11 @@ final class ComputerUse {
         let full = order["full"] as? [String] ?? []
         let see = order["see"] as? [String] ?? []
         begin(order["title"] as? String ?? "", apps: see, session: order["sid"] as? String ?? "")
+        armEsc()    // every order, not only the first: Accessibility may have come since
+        current = id
+        cut = false
+        let watching = Task { await self.watch(id) }
+        defer { watching.cancel(); current = nil }
         var out: [String: Any] = ["id": id]
         do {
             let r = try await act(action, args, full: full, see: see)
@@ -141,6 +172,23 @@ final class ComputerUse {
             out["text"] = "\(error)"
         }
         return out
+    }
+
+    /// Beside the order being done: the bridge answers the moment nobody wants it
+    /// any more (the chat's own Stop, its turn ending, its caller giving up), and
+    /// the order is cut short. An answer that can't be had counts as a no.
+    private func watch(_ id: String) async {
+        while current == id, !Task.isCancelled {
+            var wanted = false
+            if let req = request(["watch": id], timeout: 35),
+               let (data, resp) = try? await URLSession.shared.data(for: req),
+               (resp as? HTTPURLResponse)?.statusCode == 200,
+               let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                wanted = o["wanted"] as? Bool ?? false
+            }
+            if Task.isCancelled || current != id { return }
+            if !wanted { cut = true; return }
+        }
     }
 
     struct Refusal: Error { let text: String }
@@ -182,15 +230,16 @@ final class ComputerUse {
         case "open_application": return try await open(a["app"] as? String ?? "", see: see)
         default: break
         }
+        // A move too: with the button held it is a drag, and where it ends is where the drop lands.
         let pointer: CGPoint? = switch action {
-        case "left_click", "double_click", "triple_click", "right_click", "middle_click", "scroll":
+        case "left_click", "double_click", "triple_click", "right_click", "middle_click", "scroll", "mouse_move":
             try point(a["coordinate"])
         case "left_click_drag": a["start_coordinate"] != nil ? try point(a["start_coordinate"]) : cursor()
         case "left_mouse_down", "left_mouse_up": cursor()
         default: nil
         }
-        try ready(full: full, at: pointer, keys: ["type", "key", "hold_key"].contains(action))
-        if action == "left_click_drag" { try ready(full: full, at: try point(a["coordinate"]), keys: false) }
+        let front = try ready(full: full, at: pointer)
+        if action == "left_click_drag" { try ready(full: full, at: try point(a["coordinate"])) }
         switch action {
         case "left_click", "double_click", "triple_click", "right_click", "middle_click":
             let p = try point(a["coordinate"])
@@ -216,25 +265,25 @@ final class ComputerUse {
                 .post(tap: .cghidEventTap)
             return ("", nil)
         case "type":
-            try await type(a["text"] as? String ?? "")
+            try await type(a["text"] as? String ?? "", to: front)
             return ("", nil)
         case "key":
             guard let c = ComputerCore.chord(a["text"] as? String ?? "") else {
                 throw Refusal(text: "\(a["text"] ?? "") isn't a key I know.")
             }
-            for _ in 0..<min(max(a["repeat"] as? Int ?? 1, 1), 100) { press(c) }
+            for _ in 0..<min(max(a["repeat"] as? Int ?? 1, 1), 100) { press(c, to: front) }
             return ("", nil)
         case "hold_key":
             guard let c = ComputerCore.chord(a["text"] as? String ?? "") else {
                 throw Refusal(text: "\(a["text"] ?? "") isn't a key I know.")
             }
-            press(c, down: true)
-            try await Task.sleep(for: .seconds(min(max(a["duration"] as? Double ?? 0.5, 0), 100)))
-            press(c, down: false)
+            press(c, down: true, to: front)
+            defer { press(c, down: false, to: front) }    // let go on Stop too
+            try await pause(a["duration"] as? Double ?? 0.5)
             return ("", nil)
         case "left_mouse_down", "left_mouse_up":
-            let down = action == "left_mouse_down"
-            CGEvent(mouseEventSource: source, mouseType: down ? .leftMouseDown : .leftMouseUp,
+            buttonDown = action == "left_mouse_down"
+            CGEvent(mouseEventSource: source, mouseType: buttonDown ? .leftMouseDown : .leftMouseUp,
                     mouseCursorPosition: cursor(), mouseButton: .left)?.post(tap: .cghidEventTap)
             return ("", nil)
         default:
@@ -243,19 +292,35 @@ final class ComputerUse {
     }
 
     private func wait(_ a: [String: Any]) async throws -> Result {
-        try await Task.sleep(for: .seconds(min(max(a["duration"] as? Double ?? 1, 0), 100)))
+        try await pause(a["duration"] as? Double ?? 1)
         return ("", nil)
     }
 
     private func checkHalt() throws {
         if halted { throw Refusal(text: "The user stopped computer use.") }
+        if cut {
+            throw Refusal(text: "Cut short: the bridge stopped waiting for this, or couldn't be reached. "
+                + "Take a screenshot before going on.")
+        }
     }
 
-    /// Input needs Accessibility and one of the chat's FULL apps in front. A pointer
-    /// action also needs one of them on top under the point: a click lands on
-    /// whatever window is there, which can be a LOOK app or one hidden from the
-    /// screenshot. Keys go to the top window, so that has to be a FULL app's too.
-    private func ready(full: [String], at p: CGPoint?, keys: Bool) throws {
+    /// A sleep that Stop ends: in slices, so a wait or a held key lets go within a moment.
+    private func pause(_ seconds: Double) async throws {
+        let until = Date().addingTimeInterval(min(max(seconds, 0), 100))
+        while Date() < until {
+            try checkHalt()
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try checkHalt()
+    }
+
+    /// Input needs Accessibility and one of the chat's FULL apps in front. Returns
+    /// that app's pid, which is where keys are sent (`press`). A pointer action
+    /// also needs one of them on top under the point: a click lands on whatever
+    /// window is there, which can be a LOOK app, Mystical itself, or an app hidden
+    /// from the screenshot.
+    @discardableResult
+    private func ready(full: [String], at p: CGPoint?) throws -> pid_t {
         try checkHalt()
         guard AXIsProcessTrusted() else {
             if !askedAccessibility {
@@ -267,40 +332,69 @@ final class ComputerUse {
                 + "user: System Settings › Privacy & Security › Accessibility, turn Mystical on.")
         }
         let front = NSWorkspace.shared.frontmostApplication
-        guard ComputerCore.granted(full, name: front?.localizedName, bundle: front?.bundleIdentifier) else {
+        guard let front, front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              ComputerCore.granted(full, name: front.localizedName, bundle: front.bundleIdentifier) else {
             let name = front?.localizedName ?? "Another app"
             throw Refusal(text: "\(name) is in front, and it isn't one of this chat's apps you may click or "
                 + "type into, so nothing happened. Bring a granted app to the front (open_application), or "
                 + "ask for \(name) with request_access.")
         }
-        if let p {
-            let o = owner(at: p)
-            // The menu bar's menus are the Window Server's, and belong to the front app checked above.
-            guard let o, o.name == "Window Server" || ComputerCore.granted(full, name: o.name, bundle: o.bundle) else {
-                throw Refusal(text: "Under that point is \(o?.name ?? "the desktop"), not one of this chat's apps you "
-                    + "may click, so nothing happened.")
-            }
-        } else if keys, let o = owner(at: nil), !ComputerCore.granted(full, name: o.name, bundle: o.bundle) {
-            throw Refusal(text: "\(o.name ?? "Another app")'s window is on top, so the keys would go there. Nothing "
-                + "was typed.")
+        guard let p else { return front.processIdentifier }
+        guard let o = owner(at: p) else {
+            throw Refusal(text: "Under that point is the desktop, not one of this chat's apps, so nothing happened.")
         }
+        // The menu bar shows the front app's menus (checked above) and one that isn't the app's.
+        // shortcut: the Apple menu is taken to be the bar's first 50 points, measure it if a layout (right-to-left) puts it elsewhere.
+        if let bar = o.menuBar, p.x - bar.minX < 50 {
+            throw Refusal(text: "That's the Apple menu (Restart, Log Out, Lock Screen), which isn't the app's. "
+                + "Nothing happened.")
+        }
+        if o.onBar {
+            // the front app's own menu titles
+        } else if o.mine || !ComputerCore.granted(full, name: o.name, bundle: o.bundle) {
+            throw Refusal(text: "Under that point is \(o.name ?? "another app"), not one of this chat's apps you "
+                + "may click, so nothing happened.")
+        }
+        return front.processIdentifier
     }
 
-    /// Whose window is on top at `p` (global top-left points), or the topmost
-    /// normal window when `p` is nil. Ours (the overlay) and invisible ones skipped.
-    private func owner(at p: CGPoint?) -> (name: String?, bundle: String?)? {
+    /// What a click at a point would land on.
+    private struct Under {
+        var name: String?
+        var bundle: String?
+        var mine = false          // a window of Mystical's own: the dashboard, the floating panel
+        var menuBar: CGRect?      // the point is inside the system menu bar's strip, shown or hidden
+        var onBar = false         // ...and the bar is showing, so it is what takes the click
+    }
+
+    /// The window on top at `p` (global top-left points). Passed over: the overlay
+    /// (it ignores the mouse), invisible windows, the Window Server's own
+    /// decorations (the privacy dot takes no clicks), and the menu bar while a
+    /// full-screen space hides it: its window stays listed, and the click goes to
+    /// what is under it.
+    private func owner(at p: CGPoint) -> Under? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
         let me = ProcessInfo.processInfo.processIdentifier
+        let overlays = Set(overlay.windowNumbers)
+        let barHidden = !NSApp.currentSystemPresentationOptions.isDisjoint(with: [.hideMenuBar, .autoHideMenuBar])
+        var bar: CGRect?
         for w in list {
-            guard let pid = w[kCGWindowOwnerPID as String] as? Int32, pid != me,
+            guard let pid = w[kCGWindowOwnerPID as String] as? Int32,
+                  let number = w[kCGWindowNumber as String] as? Int, !overlays.contains(number),
                   (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let layer = w[kCGWindowLayer as String] as? Int,
                   let b = w[kCGWindowBounds as String] as? NSDictionary,
-                  let r = CGRect(dictionaryRepresentation: b) else { continue }
-            if let p { if !r.contains(p) { continue } } else if layer != 0 { continue }
+                  let r = CGRect(dictionaryRepresentation: b), r.contains(p) else { continue }
             let app = NSRunningApplication(processIdentifier: pid)
-            return (app?.localizedName ?? w[kCGWindowOwnerName as String] as? String, app?.bundleIdentifier)
+            let name = app?.localizedName ?? w[kCGWindowOwnerName as String] as? String
+            if app == nil, name == "Window Server" {
+                guard layer == Int(CGWindowLevelForKey(.mainMenuWindow)) else { continue }
+                bar = r
+                if barHidden { continue }
+                return Under(name: name, menuBar: r, onBar: true)
+            }
+            return Under(name: name, bundle: app?.bundleIdentifier, mine: pid == me, menuBar: bar)
         }
         return nil
     }
@@ -323,8 +417,9 @@ final class ComputerUse {
     }
 
     private func move(to p: CGPoint) {
-        CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?
-            .post(tap: .cghidEventTap)
+        // With the button held (left_mouse_down), a move is a drag.
+        CGEvent(mouseEventSource: source, mouseType: buttonDown ? .leftMouseDragged : .mouseMoved,
+                mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
     }
 
     private func click(_ action: String, at p: CGPoint, flags: UInt64) {
@@ -348,39 +443,53 @@ final class ComputerUse {
         move(to: a)
         CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left)?
             .post(tap: .cghidEventTap)
+        var done = false
+        // The button always comes up. A Stop part-way takes the drag back to where it
+        // began and lets go there: not at the target, and not on whatever window the
+        // path was crossing (only the two ends were checked).
+        defer {
+            if !done {
+                CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: a, mouseButton: .left)?
+                    .post(tap: .cghidEventTap)
+            }
+            CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: done ? b : a, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
         for i in 1...12 {
-            if halted { break }
+            try checkHalt()
             let t = Double(i) / 12
             let p = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
             CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left)?
                 .post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(12))
         }
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left)?
-            .post(tap: .cghidEventTap)
+        done = true
     }
 
-    private func press(_ c: ComputerCore.Chord, down: Bool? = nil) {
+    /// Keys go to one process, the FULL app `ready` found in front, and not into the
+    /// system's event stream: whatever else holds the keyboard never sees them, system
+    /// hot keys don't fire, and a focus change part-way can't redirect the rest.
+    private func press(_ c: ComputerCore.Chord, down: Bool? = nil, to pid: pid_t) {
         let flags = CGEventFlags(rawValue: c.flags)
         let codes = c.key.map { [$0] } ?? c.modifierKeys
         for d in down.map({ [$0] }) ?? [true, false] {
             for code in codes {
                 let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: d)
                 e?.flags = flags
-                e?.post(tap: .cghidEventTap)
+                e?.postToPid(pid)
             }
         }
     }
 
-    private func type(_ text: String) async throws {
+    private func type(_ text: String, to pid: pid_t) async throws {
         for run in ComputerCore.typingRuns(text) {
             try checkHalt()
-            if run == "\n" { press(ComputerCore.chord("return")!); continue }
+            if run == "\n" { press(ComputerCore.chord("return")!, to: pid); continue }
             let units = Array(run.utf16)
             for d in [true, false] {
                 let e = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: d)
                 e?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
-                e?.post(tap: .cghidEventTap)
+                e?.postToPid(pid)
             }
             try await Task.sleep(for: .milliseconds(8))
         }
@@ -414,6 +523,7 @@ final class ComputerUse {
         cfg.height = h
         cfg.showsCursor = true
         let img = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
+        try checkHalt()     // a Stop during the capture: its picture must not become the next drive's
         let b = CGDisplayBounds(display.displayID)
         shot = ((img.width, img.height), (b.origin.x, b.origin.y), (b.width, b.height))
         return ("Screenshot \(img.width)x\(img.height). Showing: \(see.joined(separator: ", ")); "
@@ -469,12 +579,11 @@ final class ComputerUse {
     // MARK: driving on / off
 
     private func begin(_ title: String, apps: [String], session: String) {
-        guard !driving || title != self.title else { return }
+        guard !driving || session != self.session || title != self.title else { return }
         driving = true
         self.title = title
         self.session = session
         overlay.show(title: title, apps: apps)
-        armEsc()
         onChange?()
     }
 
@@ -482,6 +591,11 @@ final class ComputerUse {
         guard driving else { return }
         driving = false
         shot = nil
+        if buttonDown {     // a left_mouse_down nobody followed with its up
+            buttonDown = false
+            CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: cursor(), mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
         overlay.hide()
         disarmEsc()
         onChange?()
@@ -505,12 +619,19 @@ final class ComputerUse {
                 return Unmanaged.passUnretained(event)
             }
             let cu = Unmanaged<ComputerUse>.fromOpaque(info).takeUnretainedValue()
-            MainActor.assumeIsolated { cu.stop("esc") }
+            MainActor.assumeIsolated { cu.escPressed() }
             return nil    // swallowed: Esc stops the drive and does nothing else
         }, userInfo: me)
         guard let tap else { return }
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    /// From the tap's callback, which every key press on the Mac waits on: input
+    /// halts now, the rest (taking this very tap down, the menu) once it has returned.
+    private func escPressed() {
+        halted = true
+        Task { @MainActor in self.stop("esc") }
     }
 
     private func disarmEsc() {

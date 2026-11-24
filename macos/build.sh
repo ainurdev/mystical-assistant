@@ -86,6 +86,7 @@ PY
 
 # shellcheck source=signing.sh
 . "$HERE/signing.sh"
+printf '  %ssigning (macOS may ask to let codesign use the "Mystical Local" key: see macos/signing.sh)%s\n' "$c_d" "$c_0"
 signed="$(sign_app "$APP")" || die "codesign failed"
 [ "$signed" = ad-hoc ] && printf '  %s!%s signed ad-hoc: macOS will ask for Screen Recording and Accessibility again %s(macos/signing.sh)%s\n' "$c_r" "$c_0" "$c_d" "$c_0"
 

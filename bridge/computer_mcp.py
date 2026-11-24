@@ -2,7 +2,7 @@
 
 Declared by runner._mcp_config only for a chat that switched Computer use on in
 its Tools modal, on a Mac. Every tool call goes to the bridge's POST
-/local/computer/call with the dashboard token and the claude session id the
+/local/computer/call with the dashboard token and the store session id the
 bridge put in our environment. The grant, the desktop lock, the Allow card and
 the line to Mystical.app are all in bridge/computer.py, in the bridge process:
 this child holds no state, and nothing the model sends can name another chat.
@@ -126,7 +126,7 @@ def _call(name: str, args: dict) -> dict:
     if not base:
         return {"content": [{"type": "text", "text": "The bridge isn't reachable."}], "isError": True}
     body = json.dumps({"name": name, "arguments": args,
-                       "claude_session_id": os.environ.get("MYSTICAL_CLAUDE_SESSION_ID", "")}).encode()
+                       "session_id": os.environ.get("MYSTICAL_COMPUTER_SESSION", "")}).encode()
     req = urllib.request.Request(
         base.rstrip("/") + "/local/computer/call", data=body, method="POST",
         headers={"Content-Type": "application/json",

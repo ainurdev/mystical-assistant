@@ -117,7 +117,8 @@ public enum ComputerCore {
                 if !cur.isEmpty { out.append(cur); cur = "" }
                 out.append("\n")
             } else {
-                if cur.utf16.count + String(ch).utf16.count > 20 { out.append(cur); cur = "" }
+                // Never an empty run: typed, it is key code 0 with no text, which is "a".
+                if !cur.isEmpty, cur.utf16.count + String(ch).utf16.count > 20 { out.append(cur); cur = "" }
                 cur.append(ch)
             }
         }

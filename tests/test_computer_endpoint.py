@@ -59,7 +59,7 @@ def test_another_chats_switch_is_not_found():
 
 def test_the_relay_and_the_app_reach_the_module():
     h, box = _h()
-    h._post_api("/local/computer/call", {"claude_session_id": "nobody", "name": "screenshot"})
+    h._post_api("/local/computer/call", {"session_id": "nobody", "name": "screenshot"})
     assert box["obj"]["isError"]
     h._post_api("/local/computer/app", {"perms": {"screen": True, "accessibility": False, "signed": "Mystical Local"}})
     assert box["obj"] == {"orders": [], "driving": False}

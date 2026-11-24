@@ -444,6 +444,15 @@ private func row(_ subject: String, at: Double = 1) -> WaitingSession {
     #expect(ComputerCore.typingRuns(long).map(\.count) == [20, 20, 5])
 }
 
+@Test func aCharacterLongerThanARunNeverLeavesAnEmptyOne() {
+    // One grapheme of 22 UTF-16 units: first, after a newline, and after text.
+    let big = "e" + String(repeating: "\u{0301}", count: 21)
+    #expect(big.count == 1 && big.utf16.count == 22)
+    #expect(ComputerCore.typingRuns(big) == [big])
+    #expect(ComputerCore.typingRuns("a\n" + big + "b") == ["a", "\n", big, "b"])
+    #expect(!ComputerCore.typingRuns("hello " + big + big).contains(""))
+}
+
 @Test func tokenComesFromTheDashboardURL() {
     #expect(ComputerCore.token(from: URL(string: "http://127.0.0.1:8790/?token=abc")) == "abc")
     #expect(ComputerCore.token(from: URL(string: "http://127.0.0.1:8790/")) == nil)

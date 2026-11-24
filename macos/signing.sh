@@ -11,9 +11,13 @@
 # account, no Xcode. Linux and Windows don't need this: neither keys a desktop
 # permission to the app's signature.
 #
-# The key is imported with codesign allowed to use it (-T), so signing doesn't
-# ask; a newer macOS may still ask once ("codesign wants to sign using key"):
-# choose Always Allow. If anything here fails, the build falls back to ad-hoc.
+# The key is imported with codesign allowed to use it (-T); macOS still asks the
+# first time ("codesign wants to sign using key"). Always Allow means builds
+# never ask again. It also means any program running as you can sign something
+# as "Mystical Local", and macOS will then treat that thing as Mystical, with its
+# Screen Recording and Accessibility: the price of permissions that survive a
+# rebuild. Allow (once) asks at every build instead; Deny, or any failure here,
+# falls back to ad-hoc, where each build is a new app to macOS.
 
 SIGN_IDENT="Mystical Local"
 
@@ -56,8 +60,10 @@ sign_app() {
 
 # --check: make the identity in a throwaway keychain, sign two different builds of
 # a tiny program, and require the same designated requirement both times. Never
-# touches the login keychain.
-if [ "${1:-}" = "--check" ]; then
+# touches the login keychain. Only when run, never when sourced: a sourced file
+# sees its caller's arguments, and `build.sh --check` would otherwise sign the
+# real app from the throwaway keychain.
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = "--check" ]; then
   set -euo pipefail
   dir="$(mktemp -d)"
   trap 'security delete-keychain "$dir/t.keychain-db" >/dev/null 2>&1 || true; rm -rf "$dir"' EXIT

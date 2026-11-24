@@ -1643,9 +1643,9 @@ class Handler(BaseHTTPRequestHandler):
             store.set_setting(store.DEFAULT_TOOLS_KEY, json.dumps(rules))
             return self._json({"ok": True, "default": rules})
         if path == "/local/computer/call":
-            # computer_mcp's relay: the session is the claude id the bridge gave it.
+            # computer_mcp's relay: the session is the store id the bridge gave it.
             from bridge import computer
-            return self._json(computer.call(str(body.get("claude_session_id") or ""),
+            return self._json(computer.call(str(body.get("session_id") or ""),
                                             str(body.get("name") or ""), body.get("arguments") or {}))
         if path == "/local/computer/app":
             # Mystical.app's pull: results and permissions in, the next orders out.
