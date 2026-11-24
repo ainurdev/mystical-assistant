@@ -1377,7 +1377,7 @@ export function SessionsPanel(props: Props) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
+      <div ref={scrollRef} className="mscroll bound" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
         {npOpen && mode !== "plugins" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
