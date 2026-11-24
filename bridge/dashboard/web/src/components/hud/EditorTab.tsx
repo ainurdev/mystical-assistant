@@ -74,6 +74,8 @@ interface Props {
   onAsk?: (text: string, close: boolean) => void;
   /** COMMIT IN GIT ›: the rail's GIT tab commits and pushes. */
   onOpenGit?: () => void;
+  /** The file it has open, each time that changes (null: none) — the URL's `edit`. */
+  onFile?: (path: string | null) => void;
   /** The project map, shown in place of the code while its activity icon is on. */
   mapView?: ReactNode;
   /** The terminal drawer (TermDrawer), under the code. */
@@ -354,7 +356,7 @@ const crtTheme = EditorView.theme({
 const treeCache = new Map<string, { files: string[]; ignored: string[]; root?: string }>();
 const treeKey = (project: string, branch: string) => `${project}\n${branch}`;
 
-export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, mapView, drawer, onToggleTerm }: Props) {
+export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, onFile, mapView, drawer, onToggleTerm }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -365,6 +367,9 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
   const [peek, setPeek] = useState<string | null>(null);      // the preview tab, if any (see peekTab)
   const [open, setOpen] = useState<string | null>(null);      // path being edited
+  const fileTold = useRef(onFile);
+  fileTold.current = onFile;
+  useEffect(() => { fileTold.current?.(open); }, [open]);
   const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);

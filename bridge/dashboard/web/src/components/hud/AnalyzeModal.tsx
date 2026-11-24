@@ -45,6 +45,8 @@ interface Props {
   /** What this session wrote — ✦ in CHANGES. */
   edited?: Set<string>;
   onClose: () => void;
+  /** The file its editor has open, each time that changes (null: none). */
+  onFile?: (path: string | null) => void;
   /** ✦ Ask Claude / REVIEW: text for the prompt; `close` when no unsaved edits hold the window. */
   onAsk?: (text: string, close: boolean) => void;
   /** COMMIT IN GIT ›: close, and show the rail's GIT tab. */
@@ -185,7 +187,7 @@ export function AnalyzeModal(props: Props) {
       <div style={{ flex: 1, minHeight: 0 }}>
         <EditorTab project={project} branch={selectedBranch || cur}
           initialFile={props.initialFile} initialLine={props.initialLine} initialMode={props.initialTab}
-          bus={bus} edited={props.edited} onAsk={props.onAsk} onOpenGit={props.onOpenGit}
+          bus={bus} edited={props.edited} onAsk={props.onAsk} onOpenGit={props.onOpenGit} onFile={props.onFile}
           mapView={mapOn ? <MapTab project={project} /> : undefined}
           drawer={term === "none" ? undefined : (
             <TermDrawer project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}

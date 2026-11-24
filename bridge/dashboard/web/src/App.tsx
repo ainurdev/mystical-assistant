@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useQuery } from "@tanstack/react-query";
 import { lazyRouteComponent, useRouter, useRouterState } from "@tanstack/react-router";
 import { pathOf, placeOf, type Place } from "./lib/routes";
+import { closePopup, extrasNow, hashSearch, openPopup, setExtras } from "./lib/nav";
 import { code, main, queryClient, reread, runningHints } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
@@ -399,16 +400,24 @@ export function App() {
   const [projectRemotes, setProjectRemotes] = useState<Record<string, string>>({});
 
   // HUD chrome state.
-  const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
   // Where you are is the URL (lib/routes). The functions below read the router at
   // call time, not this render: listeners set up once call them.
   const router = useRouter();
+  // The rail's tab a loaded URL names wins over the one this browser kept.
+  const [settings, setSettings] = useState<HudSettings>(() => {
+    const s = loadSettings();
+    const rail = extrasNow(router).rail as RightTab | undefined;
+    return rail ? { ...s, rightTab: rail } : s;
+  });
   const path = useRouterState({ select: (r) => r.location.pathname });
+  const search = useRouterState({ select: (r) => r.location.searchStr });
   const place = placeOf(path);
+  // The search (the rail's tab, a pop-up) rides along to the new path.
   const go = (p: Place, replace: boolean) => {
     const to = pathOf(p);
     if (router.state.location.pathname === to) return;
-    if (replace) router.history.replace(to); else router.history.push(to);
+    const q = hashSearch(router);
+    if (replace) router.history.replace(to + q); else router.history.push(to + q);
   };
   const placeNow = () => placeOf(router.state.location.pathname);
   // SETTINGS is open while the URL says so; its page is the URL's (a name an
@@ -1089,6 +1098,41 @@ export function App() {
     if (s) selectSession(s); else openSession(place.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new path opens anything
   }, [path]);
+
+  // The rail's tab is the URL's `rail`, kept by replacing: moving between tabs
+  // adds no history. An entry back or forward lands on gets today's tab written
+  // over its old one, rather than the tab moving under you.
+  useEffect(() => {
+    setExtras(router, { rail: settings.rightTab }, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- router is stable
+  }, [settings.rightTab, search]);
+
+  // The project window is the URL's `analyze`, or `edit` on the file its editor
+  // has open (onFile, below). Opening pushes an entry, so back closes it; closing
+  // steps back off it. Only a change acts: on the load, the URL opens it (below).
+  const analyzeWas = useRef({ project: analyzeProject, file: analyzeFile });
+  useEffect(() => {
+    const was = analyzeWas.current;
+    analyzeWas.current = { project: analyzeProject, file: analyzeFile };
+    if (was.project === analyzeProject && was.file === analyzeFile) return;
+    const p = extrasNow(router).popup;
+    const shown = p?.kind === "analyze" || p?.kind === "edit";
+    if (!analyzeProject) { if (shown) closePopup(router); return; }
+    const want = analyzeFile ? { kind: "edit" as const, project: analyzeProject, path: analyzeFile.path }
+      : { kind: "analyze" as const, project: analyzeProject };
+    if (shown) setExtras(router, { popup: want }, true); else openPopup(router, want);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- router is stable
+  }, [analyzeProject, analyzeFile]);
+  // And back: a reload or forward opens it on the URL's file, back closes it.
+  // shortcut: a reload opens the file in the checked-out branch, not a worktree's
+  // the FILES deep-link named; carry the branch in `edit` if that bites.
+  useEffect(() => {
+    const p = extrasNow(router).popup;
+    if ((p?.kind === "analyze" || p?.kind === "edit") && !analyzeProject) {
+      openAnalyze(p.project, p.kind === "edit" ? { path: p.path } : undefined);
+    } else if (p?.kind !== "analyze" && p?.kind !== "edit" && analyzeProject) setAnalyzeProject(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new URL opens or closes it
+  }, [search]);
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
@@ -3842,6 +3886,12 @@ export function App() {
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 edited={analyzeProject === sessionProject ? filesEdits.edited : undefined}
                 onClose={() => setAnalyzeProject(null)}
+                onFile={(path) => {
+                  const p = extrasNow(router).popup;
+                  if (p?.kind !== "analyze" && p?.kind !== "edit") return;   // closing
+                  setExtras(router, { popup: path ? { kind: "edit", project: analyzeProject, path }
+                    : { kind: "analyze", project: analyzeProject } }, true);
+                }}
                 // ✦ Ask Claude / REVIEW: into the prompt, after whatever you were
                 // writing; the window goes unless it holds unsaved edits.
                 onAsk={(text, close) => {

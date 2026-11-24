@@ -2,7 +2,7 @@
 //
 // The dashboard's URLs: URL to place and back for a session and each Settings
 // page, old ?s= links, and unknown values ignored.
-import { fromLegacy, pathOf, placeOf, SETTINGS_PAGES, type Place } from "./routes.ts";
+import { extrasOf, fromLegacy, ownSearch, pathOf, placeOf, searchOf, SETTINGS_PAGES, type Extras, type Place } from "./routes.ts";
 
 const eq = (a: unknown, b: unknown, what: string) =>
   console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
@@ -32,3 +32,29 @@ eq(fromLegacy("http://127.0.0.1:8790/?skipboot&s=abc-1&token=t"), "http://127.0.
 eq(fromLegacy("http://127.0.0.1:8790/?s=abc-1#/settings/system"), "http://127.0.0.1:8790/#/s/abc-1", "an old link wins over a hash");
 eq(fromLegacy("http://127.0.0.1:8790/?token=t"), null, "no ?s= changes nothing");
 eq(fromLegacy("http://127.0.0.1:8790/?s=%3Cx%3E#/s/k"), "http://127.0.0.1:8790/#/s/k", "a garbled ?s= is dropped and ignored");
+
+// The rail's tab and the pop-ups, in the search.
+const RAILS = ["home", "git", "files"];
+const roundX = (e: Extras, what: string) => eq(extrasOf(searchOf(e), RAILS), e, what);
+roundX({}, "no extras round-trip");
+roundX({ rail: "git" }, "a rail tab round-trips");
+roundX({ rail: "files", popup: { kind: "analyze", project: "ainurhq/arda" } }, "analyze round-trips");
+roundX({ popup: { kind: "edit", project: "mystical-assistant", path: "bridge/a b:c.py" } }, "edit round-trips");
+roundX({ rail: "home", popup: { kind: "pic", turn: "t-12", pic: "k3x9" } }, "pic round-trips");
+eq(searchOf({ rail: "git" }), "?rail=git", "a rail tab's search");
+eq(searchOf({}), "", "nothing is no search");
+// Unknown values are ignored.
+eq(extrasOf("?rail=bogus", RAILS), {}, "an unknown rail tab is ignored");
+eq(extrasOf("?analyze=", RAILS), {}, "analyze with no project is ignored");
+eq(extrasOf("?edit=proj", RAILS), {}, "edit with no file is ignored");
+eq(extrasOf("?edit=:a.py", RAILS), {}, "edit with no project is ignored");
+eq(extrasOf("?pic=t1", RAILS), {}, "pic with no picture is ignored");
+eq(extrasOf("?pic=t1.a.b", RAILS), {}, "a garbled pic is ignored");
+eq(extrasOf("?zoom=1&rail=git", RAILS), { rail: "git" }, "an unknown key is ignored");
+// At most one pop-up: a hand-made URL naming two opens the first.
+eq(extrasOf("?pic=t1.k&analyze=p", RAILS), { popup: { kind: "analyze", project: "p" } }, "two pop-ups open one");
+
+// The page's own query (the token) never reads as the hash's search.
+eq(ownSearch("?rail=git?skipboot=1&token=t", "?skipboot=1&token=t"), "?rail=git", "the page's query is cut off");
+eq(ownSearch("?skipboot=1&token=t", "?skipboot=1&token=t"), "", "no hash search is none");
+eq(ownSearch("?rail=git", ""), "?rail=git", "no page query leaves it whole");
