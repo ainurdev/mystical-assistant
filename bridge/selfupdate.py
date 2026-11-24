@@ -60,9 +60,10 @@ def check(fetch: bool = True) -> dict:
     if fetch:
         git.fetch(REPO)
     st = git.status(REPO)
+    ahead = st["ahead"] if st["upstream"] else st.get("unpublished") or 0
     return {"repo": True, "path": REPO, "branch": st["branch"], "project": project(),
-            "behind": st["behind"], "ahead": st["ahead"], "dirty": st["dirty"],
-            "commits": git.incoming(REPO), "outgoing": git.outgoing(REPO),
+            "behind": st["behind"], "ahead": ahead, "dirty": st["dirty"],
+            "commits": git.incoming(REPO), "outgoing": git.outgoing(REPO) if ahead else [],
             "files": st["files"][:50]}
 
 

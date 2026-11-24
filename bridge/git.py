@@ -635,8 +635,8 @@ def merge_upstream(cwd: str, theirs: str = "@{u}") -> tuple[bool, str, list[str]
     return False, output, [p for p in names.split("\0") if p]
 
 
-def _commits(cwd: str, rng: str, limit: int) -> list[dict]:
-    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%ct\t%s", rng)
+def _commits(cwd: str, rng: str, limit: int, *more: str) -> list[dict]:
+    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%ct\t%s", rng, *more)
     if rc != 0:
         return []
     commits = []
@@ -655,8 +655,11 @@ def incoming(cwd: str, limit: int = 20) -> list[dict]:
 
 def outgoing(cwd: str, limit: int = 20) -> list[dict]:
     """The mirror: commits here that the upstream doesn't have — what a push
-    sends (newest first). Empty without an upstream, like status()'s ahead."""
-    return _commits(cwd, "@{u}..HEAD", limit)
+    sends (newest first). With no upstream push() publishes the branch, so it
+    sends what no remote has yet, like status()'s unpublished."""
+    if _run(cwd, "rev-parse", "-q", "--verify", "@{u}")[0] == 0:
+        return _commits(cwd, "@{u}..HEAD", limit)
+    return _commits(cwd, "HEAD", limit, "--not", "--remotes")
 
 
 def base_ref(cwd: str, base: str) -> str:

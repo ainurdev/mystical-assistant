@@ -101,6 +101,22 @@ def test_publish_pushes_an_already_committed_branch():
     assert selfupdate.check()["ahead"] == 0
 
 
+def test_check_counts_a_never_pushed_branch_as_what_a_push_publishes():
+    # The live checkout sat a day on a branch with no upstream, and the corner
+    # said nothing was waiting to go up while 106 commits were.
+    _origin, clone = _clone_with_upstream()
+    _run(clone, "checkout", "-qb", "fix/local")
+    _commit(clone, "two\n", "feat: two")
+    _commit(clone, "three\n", "feat: three")
+    selfupdate.REPO = clone
+    st = selfupdate.check(fetch=False)
+    assert st["ahead"] == 2, st
+    assert [c["subject"] for c in st["outgoing"]] == ["feat: three", "feat: two"]
+    _run(clone, "remote", "remove", "origin")           # nowhere to push to
+    st = selfupdate.check(fetch=False)
+    assert st["ahead"] == 0 and st["outgoing"] == [], st
+
+
 def test_check_names_the_checkout_the_way_sessions_name_projects():
     """FIX WITH CLAUDE starts a session in the bridge's own checkout, so check()
     names it as a project rel — or "" outside BASE_PATH, where none can run."""
