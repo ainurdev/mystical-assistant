@@ -17,18 +17,20 @@ export function flowChanged(session: string, flow: Flow) {
   window.dispatchEvent(new CustomEvent(FLOW_EVENT, { detail: { session, flow } }));
 }
 
-/** `edge` changes on a turn's start and end (any string that does). */
-export function useFlow(sessionId: string | undefined, on: boolean, edge: string, running: boolean) {
+/** `edge` changes on a turn's start and end (any string that does); null while the transcript loads. */
+export function useFlow(sessionId: string | undefined, on: boolean, edge: string | null, running: boolean) {
   const key = main.flow({ session: sessionId ?? "" });
   const live = !!sessionId && on;
   const moving = (set?: FlowSet | null) => running || set?.status === "building" || set?.status === "merging";
   const got = useQuery({ ...key, enabled: live, refetchInterval: (q) => (moving(q.state.data?.set) ? main.flow.poll!.ms : false) }).data;
   const cur: { flow: Flow | null; set: FlowSet | null } | null = live && got ? { flow: got.flow, set: got.set ?? null } : null;
   // A turn's start and end: read again at once (the poll covers the rest).
-  const was = useRef(edge);
+  // null while the session's transcript loads: its landing is no turn edge, the open read covers it.
+  const was = useRef<string | null>(null);
   useEffect(() => {
-    if (was.current === edge) return;
+    const prev = was.current;
     was.current = edge;
+    if (edge === null || prev === null || prev === edge) return;
     if (live) void reread(key.queryKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edge]);

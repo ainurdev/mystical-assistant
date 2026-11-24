@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type NextItem } from "../api";
-import { queryClient, rail } from "../lib/queries";
+import { queryClient, main } from "../lib/queries";
 
 const EFFORT: Record<NextItem["effort"], string> = {
   small: "·",
@@ -23,14 +23,14 @@ function when(ts: number | null): string {
  *  whose git state has moved since last time. */
 export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
   // Scouts run in the background; watch until the server says it's done.
-  const board = useQuery({ ...rail.next(), refetchInterval: (q) => (q.state.data?.refreshing ? 3000 : false) }).data ?? null;
+  const board = useQuery({ ...main.next(), refetchInterval: (q) => (q.state.data?.refreshing ? main.next.poll?.ms : false) }).data ?? null;
   const [asking, setAsking] = useState(false);
   const busy = asking || !!board?.refreshing;
 
   async function refresh() {
     setAsking(true);
     const r = await api.refreshNext().catch(() => null);
-    if (r) queryClient.setQueryData(rail.next().queryKey, r);   // the board it answers with says it's refreshing
+    if (r) queryClient.setQueryData(main.next().queryKey, r);   // the board it answers with says it's refreshing
     setAsking(false);
   }
 

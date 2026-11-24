@@ -59,7 +59,6 @@ import {
   type StartupState,
   type UpdateInfo,
   type VideoTools,
-  MOVE_EVENT,
   type MoveFile,
   type MoveItem,
   type MoveJob,
@@ -2574,7 +2573,7 @@ function AgentsSection({ profileRows, onChanged, signIn }: {
    *  editor keeps its own copy of this list and must re-read it. */
   onChanged?: (info: AcpAgentsInfo) => void;
 }) {
-  const key = setq.acpAgents();
+  const key = main.acpAgents();
   const agentsQ = useQuery(key);
   const info = agentsQ.data ?? null;
   const gone = agentsQ.error?.message === "not found"; // a bridge older than agents (404)
@@ -3553,7 +3552,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   const [pErr, setPErr] = useState<string | null>(null);
   const [loginsErr, setLoginsErr] = useState<string | null>(null);
   // The same read as the AGENTS list's, so the page asks once.
-  const acpKey = setq.acpAgents();
+  const acpKey = main.acpAgents();
   const acp = useQuery(acpKey).data ?? null;
   const loadAcp = () => reread(acpKey.queryKey);
   useEffect(() => {
@@ -4099,7 +4098,6 @@ function BigBtn({ children, onClick, disabled }: { children: ReactNode; onClick:
   );
 }
 
-const moved = () => window.dispatchEvent(new Event(MOVE_EVENT));
 const isStale = (e: Error) => e.message === "not found";
 const STALE_MSG = "The bridge is running older code than this dashboard, so it has no MOVE yet. Restart it (SYSTEM ▸ PLATFORM) and this page fills in.";
 
@@ -4120,7 +4118,7 @@ function MoveExport({ busy }: { busy: boolean }) {
   };
   const start = () => {
     setStartErr("");
-    api.moveExport(out, sk).then(moved, (e: Error) => setStartErr(e.message));
+    api.moveExport(out, sk).catch((e: Error) => setStartErr(e.message));
   };
   return (
     <>
@@ -4221,7 +4219,7 @@ function MoveImported({ job }: { job: MoveJob }) {
       </Section>
       <div style={{ display: "flex", marginTop: 18 }}>
         <span style={{ flex: 1 }} />
-        <MiniBtn onClick={() => void api.moveDismiss(job.id).then(moved)}>IMPORT ANOTHER FILE</MiniBtn>
+        <MiniBtn onClick={() => void api.moveDismiss(job.id)}>IMPORT ANOTHER FILE</MiniBtn>
       </div>
     </>
   );
@@ -4247,7 +4245,7 @@ function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
   }, [ended]);
   const running = jobs.find((j) => j.status === "running");
   const last = [...jobs].reverse().find((j) => j.kind === "import");
-  const go = (p: Promise<unknown>) => { setStartErr(""); p.then(moved, (e: Error) => setStartErr(e.message)); };
+  const go = (p: Promise<unknown>) => { setStartErr(""); p.catch((e: Error) => setStartErr(e.message)); };
 
   if (err) return <Placeholder icon={TriangleAlert}>{err}</Placeholder>;
   if (running && running.kind !== "export")
@@ -4342,7 +4340,7 @@ function MovePanel() {
   });
   // Each start is a POST under /local/move/, which invalidates the jobs (lib/queries CHANGES).
   const jobs = useQuery({ ...setq.moveJobs(), refetchInterval: (q) =>
-    q.state.data?.jobs.some((j) => j.status === "running") ? 1000 : q.state.error ? 10000 : setq.moveJobs.poll!.ms,
+    q.state.data?.jobs.some((j) => j.status === "running") ? 1000 : q.state.error ? 10000 : 5000,
   }).data?.jobs ?? NO_JOBS;
   const running = jobs.find((j) => j.status === "running");
   if (sub === "home") return <MoveHome jobs={jobs} running={running} onGo={setSub} />;

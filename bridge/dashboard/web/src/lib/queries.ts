@@ -23,12 +23,12 @@
 // the batches after the router (tickets 12-15) each add to their own part.
 import { QueryClient, hashKey, queryOptions, type FetchQueryOptions } from "@tanstack/react-query";
 import type {
-  AccountsInfo, AcpAgentsInfo, AcpLogin, AgentActivity, AgentsInfo, AiFeature, CompareFile, CouncilSettings, DashState,
-  EnrichedSession, EnvSetting, FileContent, FlowSettings, GitBadge, GitCommit, GitLedger, GitStatus, GraphInstall, GraphState,
-  GrepHit, HostStats, Integration, Lesson, McpInfo, MoveFile, MoveJob, MovePlan, MoveRead, NextBoard, Notice, NoticePrefs,
-  Place, PluginsInfo, PrStatus, ProjectSettings, ProjectsListing, QueueSnapshot, RepoImages, RivendellInstance, RunningInfo,
-  Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState, StorageScan, TermInfo, Transcript, UpdateInfo, UsageInfo,
-  VideoTools, Worktree, WorkspaceSet,
+  AccountsInfo, AcpAgentsInfo, AcpLogin, AgentActivity, AgentsInfo, AiFeature, CompareFile, CouncilSettings,
+  DashState, EnrichedSession, EnvSetting, FileContent, FlowSettings, GitBadge, GitCommit, GitLedger, GitStatus,
+  GraphInstall, GraphState, GrepHit, HostStats, Integration, Lesson, McpInfo, MoveFile, MoveJob, MovePlan, MoveRead,
+  NextBoard, Notice, NoticePrefs, Place, PluginsInfo, PrStatus, ProjectSettings, ProjectsListing, QueueSnapshot,
+  RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState,
+  StorageScan, TermInfo, Transcript, UpdateInfo, UsageInfo, VideoTools, WorkspaceSet, Worktree,
 } from "../api.ts";
 import type { AgentDetail, Team } from "./agentteam.ts";
 import type { BranchPr, BranchStatus } from "./branchrows.ts";
@@ -37,12 +37,10 @@ import type { AgentRow, ChannelView, HelperConfig } from "./multi.ts";
 import type { HandoffPreview, SkillShareRow } from "./multistore.ts";
 import type { ProfilesInfo } from "./profiles.ts";
 import type { DesignBoard, DesignComment } from "./designframe.ts";
-import type { LiveInfo } from "../api.ts"; // rail B
 import type {
-  RivendellDevice, RivendellQueueItem, RivendellTaskDetail, RivendellTasks, RivendellTodolist, TaskState, TeamOverview,
-} from "../api.ts"; // rail A
-import type { InspectorState, StyleCandidates, StyleRun, WeeklyReport } from "../api.ts"; // rail D
-import type { CouncilBrief, Meter, TodayWins, Weather } from "../api.ts"; // rail C
+  CouncilBrief, InspectorState, LiveInfo, Meter, RivendellDevice, RivendellQueueItem, RivendellTaskDetail, RivendellTasks,
+  RivendellTodolist, StyleCandidates, StyleRun, TaskState, TeamOverview, TodayWins, Weather, WeeklyReport,
+} from "../api.ts";
 
 export type Params = Record<string, string | number | boolean | null | undefined>;
 export type Key = readonly [string, Params];
@@ -70,9 +68,9 @@ const BY_POST = new Set<string>();
 /** One read: call it with its parameters for the query's options. `extra` rides in the URL
  *  but not the key (what changes every call and must not split the cache). */
 function read<T, P extends Params = Params>(route: string, poll: Poll | null = null, extra?: () => Params) {
-  // Two parts can list one route: the fastest poll sets the half-interval skip (readWith).
-  const was = POLLS.get(route);
-  if (!was || (poll && poll.ms < was.ms)) POLLS.set(route, poll);
+  // One poll per route: the half-interval skip reads it by route, so a second rate would bend the first.
+  if (POLLS.has(route) && JSON.stringify(POLLS.get(route)) !== JSON.stringify(poll)) throw new Error(`${route} is listed with two polls`);
+  POLLS.set(route, poll);
   return Object.assign((params?: P) => queryOptions<T, Error, T, Key>({
     queryKey: keyOf(route, params),
     refetchInterval: poll?.ms ?? false,
@@ -101,7 +99,7 @@ export type FlowAnswer = { flow: Flow | null; past?: PastFlow[]; set: FlowSet | 
 
 /** The main column: the session list, the open session, its prompt box and what rides beside it. */
 export const main = {
-  state: read<DashState>("/local/state", { ms: 3000 }),
+  state: read<DashState>("/local/state", { ms: 5000 }),
   projects: read<ProjectsListing, { dir?: string }>("/local/projects", { ms: 10000 }),
   sessions: read<{ sessions: SessionBrief[] }, { project?: string }>("/local/sessions", { ms: 5000 }),
   // The open session's transcript. The live read is keyed by the session alone: its cursor (and
@@ -143,7 +141,7 @@ export const main = {
   // Multi-agent chats (lib/multistore): the switch, every wanted chat's agents in one read
   // (only while the switch is on), a chat's channel, and a helper's brief by id.
   experimental: read<{ enabled: boolean; defaults: HelperConfig }>("/local/experimental", { ms: 60000 }),
-  tree: read<{ trees: Record<string, AgentRow[]> }, { ids: string }>("/local/tree", { ms: 3000 }),
+  tree: read<{ trees: Record<string, AgentRow[]> }, { ids: string }>("/local/tree", { ms: 5000 }),
   channel: read<ChannelView, { session: string }>("/local/channel", { ms: 2000 }),
   brief: read<{ session: SessionBrief }, { session: string }>("/local/session/brief", { ms: 3000 }),
   // What a PROFILE switch would carry over, and the shared skills an agent's / list offers.
@@ -172,7 +170,6 @@ export const settings = {
   rivendell: read<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell", { ms: 4000 }),
   // Polled only while an MCP sign-in waits for the CLI's own callback.
   mcp: read<McpInfo>("/local/mcp", { ms: 2500 }),
-  acpAgents: read<AcpAgentsInfo>("/local/acp/agents"),
   // A POST (`action: status`), polled only while that sign-in runs (AgentRow passes its queryFn).
   acpLogin: read<AcpLogin, { agent: string; account: string }>("/local/acp/login", { ms: 2000 }),
   savers: read<{ savers: Saver[] }>("/local/savers"),
@@ -180,8 +177,8 @@ export const settings = {
   movePlan: read<MovePlan>("/local/move/plan"),
   moveFiles: read<{ files: MoveFile[] }>("/local/move/files"),
   moveRead: read<{ read: MoveRead | null }>("/local/move/read"),
-  // Every 5 s while MOVE is open, every second while a move runs.
-  moveJobs: read<{ jobs: MoveJob[] }>("/local/move/jobs", { ms: 5000 }),
+  // Listed at its fastest: every second while a move runs. MOVE asks every 5 s at rest, the dock not at all.
+  moveJobs: read<{ jobs: MoveJob[] }>("/local/move/jobs", { ms: 1000 }),
   weatherSearch: read<{ results?: Place[]; error?: string }, { q: string }>("/local/weather/search"),
   workspaces: read<WorkspaceSet>("/local/workspaces"),
   skills: read<SkillsInfo, { project?: string }>("/local/skills"),
@@ -190,7 +187,8 @@ export const settings = {
   projectSettings: read<ProjectSettings, { project: string }>("/local/project/settings"),
   plugins: read<PluginsInfo>("/local/plugins"),
   repoImages: read<RepoImages, { project: string }>("/local/project-mark/repo"),
-  lessons: read<{ lessons: Lesson[]; repo_enabled: boolean }, { project: string }>("/local/learn"),
+  // SYSTEM ▸ Send images: another surface can change it, so the 60 s.
+  chatImages: read<{ mode?: string; shown?: string }>("/local/chat-images", { ms: 60_000 }),
 };
 
 type Tree = { project: string; branch?: string };
@@ -207,13 +205,13 @@ export const code = {
   graphState: read<GraphState, { project: string }>("/local/graph/state"),
   // The sidebar's NEW WORKTREE and relocate.
   branches: read<{ branches: string[]; current: string; default: string }, { project: string }>("/local/git/branches"),
+  worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
   ledger: read<GitLedger, Heads>("/local/git/ledger"),
   incoming: read<{ commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null }, Heads>("/local/git/incoming"),
   log: read<{ commits: GitCommit[] }, Tree & { limit: number }>("/local/git/log", { ms: 15000 }),
   // One commit's files, or with `path` one file's diff in it: a sha never changes, so never polled.
   show: read<{ ok?: boolean; files?: CompareFile[]; add?: number; del?: number; diff?: string }, { project: string; sha: string; path?: string }>("/local/git/show"),
   pr: read<PrStatus, { project: string; branch: string }>("/local/github/pr/status", { ms: 60000 }, () => prHints),
-  worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
   tree: read<{ files: string[]; ignored?: string[]; root?: string }, Tree>("/local/files/tree"),
   file: read<FileContent, Tree & { path: string }>("/local/files/read"),
   head: read<{ ok: boolean; exists?: boolean; content?: string; error?: string }, Tree & { path: string }>("/local/files/head"),
@@ -224,11 +222,9 @@ export const code = {
 /** The rest of the rail and the caps: the bell, HOME's vitals, UPDATE and the changelog. */
 export const rail = {
   notices: read<NoticesAnswer>("/local/notices", { ms: 4000, hidden: true }),
-  sysinfo: read<HostStats>("/local/sysinfo", { ms: 2000 }),
+  sysinfo: read<HostStats>("/local/sysinfo", { ms: 5000 }),
   update: read<UpdateInfo>("/local/update", { ms: 5 * 60_000 }),
   // -- rail A: Rivendell, TEAM, device runs
-  // Polled while Settings is closed and Rivendell is installed (App).
-  rivendell: read<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell", { ms: 10000 }),
   // 1 s only while a share is coming in, else 30 s (App).
   team: read<TeamOverview>("/local/rivendell/team", { ms: 1000 }),
   queue: read<{ queue: RivendellQueueItem[] }>("/local/rivendell/queue", { ms: 4000 }),
@@ -257,17 +253,11 @@ export const rail = {
   lesson: read<{ file: string; body: string }, { project: string; file: string }>("/local/learn", { ms: 60_000 }),
   // -- end rail C
   // -- rail D: Analyze, the inspector, USAGE, MAP, style runs, WORK, DOCS, AUTO, NEXT
-  // The file window's branch menu, worktrees and terminal count: read when it opens.
-  branches: read<{ branches: string[]; current: string; default: string }, { project: string }>("/local/git/branches"),
-  worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
-  terminals: read<{ terminals: TermInfo[] }, { project: string }>("/local/terminals"),
   inspector: read<InspectorState>("/local/inspector", { ms: 2000 }),
   report: read<WeeklyReport, { back?: 1 }>("/local/report", { ms: 60_000 }),
   // Polled only while a style run runs (lib/stylerun follows it).
   styleRun: read<StyleRun>("/local/project-mark/style", { ms: 500 }),
   styleCandidates: read<StyleCandidates>("/local/project-mark/style/candidates"),
-  // Polled only while a REFRESH's scouts run.
-  next: read<NextBoard>("/local/next", { ms: 3000 }),
   // A POST the bridge answers with the listing (readapi's queryFn); the agent writes pages as you watch.
   docs: read<unknown, { session: string }>("/local/chat/docs", { ms: 6000 }),
   automations: read<unknown>("/local/automations", { ms: 5000 }),
@@ -307,8 +297,8 @@ export const CHANGES: Record<string, string[]> = {
   "/local/envsettings": [settings.env.route],
   "/local/rivendell": [settings.rivendell.route, settings.integrations.route],
   "/local/mcp": [settings.mcp.route],
-  "/local/acp/accounts": [settings.acpAgents.route],
-  "/local/acp/test": [settings.acpAgents.route],
+  "/local/acp/accounts": [main.acpAgents.route],
+  "/local/acp/test": [main.acpAgents.route],
   "/local/policy/default": [main.accounts.route],
   "/local/savers": [settings.savers.route],
   "/local/council/settings": [settings.council.route],
@@ -322,7 +312,7 @@ export const CHANGES: Record<string, string[]> = {
   "/local/plugins/*": [settings.plugins.route],
   "/local/storage/clear": [settings.storage.route],
   "/local/usage-sharing": [settings.usageSharing.route],
-  "/local/learn/toggle": [settings.lessons.route],
+  "/local/learn/toggle": [rail.lessons.route],
   "/local/project-mark/pick": [main.projects.route],
   "/local/roots/remove": [main.projects.route],
   "/local/worklist/*": [main.worklist.route],
@@ -345,7 +335,7 @@ export const CHANGES: Record<string, string[]> = {
   "/local/update": [rail.update.route],
   "/local/project/settings": [main.projects.route, main.projectSettings.route, code.graphState.route, settings.projectSettings.route],
   // -- rail A
-  "/local/rivendell/test": [rail.rivendell.route, rail.rivendellTasks.route],
+  "/local/rivendell/test": [settings.rivendell.route, rail.rivendellTasks.route],
   "/local/rivendell/queue": [rail.queue.route, rail.notices.route, rail.rivendellTasks.route],
   "/local/rivendell/implement": [rail.rivendellTasks.route],
   "/local/rivendell/again": [rail.rivendellTasks.route],

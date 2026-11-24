@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, GitBranch, Search, SquareTerminal } from "lucide-react";
 import type { GitBadge, SessionBrief, SessionStatus } from "../../api";
-import { code, rail } from "../../lib/queries";
+import { code } from "../../lib/queries";
 import { useAiFeatures } from "../../lib/ai";
 import { isMacApp } from "../../lib/mac";
 import { projectName } from "../../lib/surfaces";
@@ -67,11 +67,11 @@ export function AnalyzeModal(props: Props) {
   const mapOn = aiFeatures.graph && !!mapQ.data && mapQ.data.repo_on !== false;
   // Read once when the window opens (the GIT tab polls the same status key while it shows).
   const git = useQuery({ ...code.git({ project }), refetchInterval: false }).data ?? null;
-  const br = useQuery(rail.branches({ project })).data;
+  const br = useQuery(code.branches({ project })).data;
   const branches = br?.branches ?? NONE;
   const defaultBranch = br?.default || "main";
-  const worktrees = useQuery(rail.worktrees({ project })).data?.worktrees ?? NONE;
-  const termsQ = useQuery(rail.terminals({ project }));
+  const worktrees = useQuery(code.worktrees({ project })).data?.worktrees ?? NONE;
+  const termsQ = useQuery(code.terminals({ project }));
   const [termCount, setTermCount] = useState(0);
   useEffect(() => { if (termsQ.data) setTermCount(termsQ.data.terminals.length); }, [termsQ.data]);
   // The drawer mounts on its first show and only hides after: its PTYs and

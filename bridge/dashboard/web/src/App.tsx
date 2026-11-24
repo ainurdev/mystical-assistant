@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { lazyRouteComponent, useRouter, useRouterState } from "@tanstack/react-router";
 import { pathOf, placeOf, type Place } from "./lib/routes";
 import { closePopup, extrasNow, hashSearch, openPopup, setExtras } from "./lib/nav";
-import { code, main, queryClient, rail, reread, runningHints } from "./lib/queries";
+import { code, main, queryClient, rail, reread, runningHints, settings as setq } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
 } from "lucide-react";
@@ -679,7 +679,7 @@ export function App() {
   const running = active !== null;
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
   const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
-    `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
+    loadingSession ? null : `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
   // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
   const flowCfg = useFlowSettings();
   const boxChip = useMemo(() => {
@@ -2697,7 +2697,7 @@ export function App() {
   // bell follow each connection's break (bridge/rivendell.py, alert_at — set
   // once per break, cleared when the link proves itself). Not polled at all
   // while Rivendell isn't installed: its route answers 404.
-  const rivendell = useQuery({ ...rail.rivendell(), enabled: !settingsOpen && !!plugins.rivendell }).data?.instances;
+  const rivendell = useQuery({ ...setq.rivendell(), refetchInterval: 10000, enabled: !settingsOpen && !!plugins.rivendell }).data?.instances;
   // What the tab, the castle's dot and the bell read, so REMOVE clears all three
   // at once instead of leaving the last poll's connections on screen.
   const links = useMemo((): RivendellInstance[] => (plugins.rivendell ? rivendell ?? [] : []), [plugins.rivendell, rivendell]);

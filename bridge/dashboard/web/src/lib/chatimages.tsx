@@ -1,5 +1,7 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { req } from "../api";
+import { queryClient, settings } from "./queries";
 import type { ImageScope } from "./embeds";
 
 /* Images in the chat, the client's half of bridge/chat_images.py: the SYSTEM ▸ Send
@@ -22,53 +24,29 @@ export type ChatImagesState = {
 
 const isGone = (e: unknown) => e instanceof Error && /^(not found|HTTP 404)$/i.test(e.message);
 
-let state: ChatImagesState = { loaded: false, mode: "attachment", shown: "chat", stale: false };
 type Got = { mode?: string; shown?: string };
 const read = (d: Got): ChatImagesState =>
   ({ loaded: true, mode: d.mode === "inline" ? "inline" : "attachment", shown: d.shown === "gallery" ? "gallery" : "chat", stale: false });
-let started = false;
-const subs = new Set<() => void>();
-
-function publish(next: ChatImagesState) {
-  state = next;
-  subs.forEach((fn) => fn());
-}
-
-async function refresh(): Promise<void> {
-  try {
-    publish(read(await req<Got>("/local/chat-images")));
-  } catch (e) {
-    if (isGone(e)) publish({ loaded: true, mode: "attachment", shown: "chat", stale: true });
-    else if (!state.loaded) publish({ ...state, loaded: true });
-    /* any other failure keeps the last answer: a blip shouldn't change how a paste lands */
-  }
-}
-
-function subscribe(fn: () => void): () => void {
-  subs.add(fn);
-  if (!started) {
-    started = true;
-    void refresh();
-    // Another surface can change it; the 60 s and the return to the tab catch that.
-    window.setInterval(() => { if (!document.hidden) void refresh(); }, 60_000);
-    window.addEventListener("focus", () => void refresh());
-  }
-  return () => { subs.delete(fn); };
-}
+const NOT_YET: ChatImagesState = { loaded: false, mode: "attachment", shown: "chat", stale: false };
 
 export function useChatImages(): ChatImagesState {
-  return useSyncExternalStore(subscribe, () => state);
+  const q = useQuery(settings.chatImages());
+  const d = useMemo(() => q.data && read(q.data), [q.data]);
+  // Any other failure keeps the last answer: a blip shouldn't change how a paste lands.
+  if (d) return d;
+  if (isGone(q.error)) return { loaded: true, mode: "attachment", shown: "chat", stale: true };
+  return q.error ? { ...NOT_YET, loaded: true } : NOT_YET;
 }
 
 /** Read at the moment of a paste, so the handler never closes over an old answer. */
-export const chatImagesInline = () => state.mode === "inline";
+export const chatImagesInline = () => queryClient.getQueryData(settings.chatImages().queryKey)?.mode === "inline";
 
 /** POST chat-images, either choice. Throws so the row can say why. */
 export async function setChatImages(body: { mode: ChatImagesMode } | { shown: ShownPictures }): Promise<void> {
   const d = await req<Got>("/local/chat-images", { method: "POST", body });
   // A bridge from before Pictures it shows you answers without it, and the pick would vanish.
   if ("shown" in body && d.shown === undefined) throw new Error("The bridge is running older code. Restart it to use this.");
-  publish(read(d));
+  queryClient.setQueryData(settings.chatImages().queryKey, d);
 }
 
 /** POST chat-images/upload. The bridge's sentence comes back as the Error's message. */

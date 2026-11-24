@@ -13,7 +13,7 @@ const EMPTY_WX: Weather = {
   available: false, temp: null, cond: "—", hi: null, lo: null, wind: "—", hum: "—", unit: "C", loc: "—",
 };
 
-/** Host vitals (psutil), polled every 2s while the page shows (lib/queries); a failed read keeps the last. */
+/** Host vitals (psutil), polled every 5 s while the page shows (lib/queries); a failed read keeps the last. */
 export function useHostVitals(): HostStats {
   return useQuery(rail.sysinfo()).data ?? EMPTY_HOST;
 }
