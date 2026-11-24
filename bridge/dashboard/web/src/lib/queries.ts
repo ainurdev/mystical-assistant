@@ -23,14 +23,15 @@
 // the batches after the router (tickets 12-15) each add to their own part.
 import { QueryClient, hashKey, queryOptions, type FetchQueryOptions } from "@tanstack/react-query";
 import type {
-  AccountsInfo, AcpAgentsInfo, AcpLogin, AgentActivity, AgentsInfo, AiFeature, CouncilSettings, DashState, EnrichedSession,
-  EnvSetting, FlowSettings, GitBadge, GitStatus, GraphInstall, GraphState, HostStats, Integration, Lesson, McpInfo,
-  MoveFile, MoveJob, MovePlan, MoveRead, NextBoard, Notice, NoticePrefs, Place, PluginsInfo, ProjectSettings, ProjectsListing,
-  QueueSnapshot, RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState,
-  StorageScan, Transcript, UpdateInfo, UsageInfo, VideoTools, Worktree, WorkspaceSet,
+  AccountsInfo, AcpAgentsInfo, AcpLogin, AgentActivity, AgentsInfo, AiFeature, CompareFile, CouncilSettings, DashState,
+  EnrichedSession, EnvSetting, FileContent, FlowSettings, GitBadge, GitCommit, GitLedger, GitStatus, GraphInstall, GraphState,
+  GrepHit, HostStats, Integration, Lesson, McpInfo, MoveFile, MoveJob, MovePlan, MoveRead, NextBoard, Notice, NoticePrefs,
+  Place, PluginsInfo, PrStatus, ProjectSettings, ProjectsListing, QueueSnapshot, RepoImages, RivendellInstance, RunningInfo,
+  Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState, StorageScan, TermInfo, Transcript, UpdateInfo, UsageInfo,
+  VideoTools, Worktree, WorkspaceSet,
 } from "../api.ts";
 import type { AgentDetail, Team } from "./agentteam.ts";
-import type { BranchStatus } from "./branchrows.ts";
+import type { BranchPr, BranchStatus } from "./branchrows.ts";
 import type { Flow, FlowSet, PastFlow } from "./flowview.ts";
 import type { AgentRow, ChannelView, HelperConfig } from "./multi.ts";
 import type { HandoffPreview, SkillShareRow } from "./multistore.ts";
@@ -80,6 +81,10 @@ function readByPost<T, P extends Params = Params>(route: string, poll: Poll | nu
 /** What the running poll tells the bridge about this page, read at each fetch (App sets them):
  *  it raises its own OS alerts (the tray companion stays quiet), and its last input (Telegram's "away"). */
 export const runningHints: { alerts?: 1; seen?: number } = {};
+
+/** Which session the PR chip is on: rides with every PR read for the Telegram ping's button
+ *  (bridge prstatus), but not in the key, so GIT and the chip share one read (PrChip sets it). */
+export const prHints: { session?: string } = {};
 
 export type NoticesAnswer = { notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean };
 export type DesignRead = DesignBoard & { comments: DesignComment[]; page?: string; url?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean };
@@ -179,15 +184,32 @@ export const settings = {
   lessons: read<{ lessons: Lesson[]; repo_enabled: boolean }, { project: string }>("/local/learn"),
 };
 
-/** The rail's code tabs: GIT, FILES, BRANCHES, MAP, the editor. */
+type Tree = { project: string; branch?: string };
+/** `at`: the heads it was asked about (ahead|behind|upstream), so a move asks again. */
+type Heads = Tree & { at: string };
+
+/** The rail's code tabs: GIT, FILES, BRANCHES, MAP, the editor and its terminal drawer. */
 export const code = {
-  git: read<GitStatus, { project: string; branch?: string }>("/local/git", { ms: 10000 }),
+  git: read<GitStatus, Tree>("/local/git", { ms: 10000 }),
   gitAll: read<{ repos: Record<string, GitBadge> }>("/local/git/all", { ms: 10000 }),
-  branchStatus: read<BranchStatus, { project: string }>("/local/git/branchstatus"),
+  // BRANCHES polls every 30 s while it's open, else every minute (useBranches).
+  branchStatus: read<BranchStatus, { project: string }>("/local/git/branchstatus", { ms: 30000 }),
+  branchPrs: read<{ prs: Record<string, BranchPr> }, { project: string }>("/local/github/prs", { ms: 30000 }),
   graphState: read<GraphState, { project: string }>("/local/graph/state"),
   // The sidebar's NEW WORKTREE and relocate.
   branches: read<{ branches: string[]; current: string; default: string }, { project: string }>("/local/git/branches"),
+  ledger: read<GitLedger, Heads>("/local/git/ledger"),
+  incoming: read<{ commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null }, Heads>("/local/git/incoming"),
+  log: read<{ commits: GitCommit[] }, Tree & { limit: number }>("/local/git/log", { ms: 15000 }),
+  // One commit's files, or with `path` one file's diff in it: a sha never changes, so never polled.
+  show: read<{ ok?: boolean; files?: CompareFile[]; add?: number; del?: number; diff?: string }, { project: string; sha: string; path?: string }>("/local/git/show"),
+  pr: read<PrStatus, { project: string; branch: string }>("/local/github/pr/status", { ms: 60000 }, () => prHints),
   worktrees: read<{ worktrees: Worktree[]; merged: string[] }, { project: string }>("/local/git/worktrees"),
+  tree: read<{ files: string[]; ignored?: string[]; root?: string }, Tree>("/local/files/tree"),
+  file: read<FileContent, Tree & { path: string }>("/local/files/read"),
+  head: read<{ ok: boolean; exists?: boolean; content?: string; error?: string }, Tree & { path: string }>("/local/files/head"),
+  grep: read<{ hits: GrepHit[] }, Tree & { q: string; mode?: "word" | "def" }>("/local/files/grep"),
+  terminals: read<{ terminals: TermInfo[] }, { project: string }>("/local/terminals"),
 };
 
 /** The rest of the rail and the caps: the bell, HOME's vitals, UPDATE and the changelog. */
@@ -197,8 +219,11 @@ export const rail = {
   update: read<UpdateInfo>("/local/update", { ms: 5 * 60_000 }),
 };
 
-const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route, code.branches.route, code.worktrees.route];
+const GIT = [code.git.route, code.gitAll.route, code.branchStatus.route, code.branches.route, code.ledger.route,
+  code.incoming.route, code.log.route, code.worktrees.route];
 const LISTS = [main.sessions.route, main.running.route, main.history.route];
+/** What a working tree's files read: a save, a file op, and every git move that rewrites files or HEAD. */
+const FILES = [code.tree.route, code.file.route, code.head.route, code.git.route, code.gitAll.route, code.branchStatus.route];
 /** A POST's route (as `req` is called with it, `:x` for one segment, a trailing `*` for the
  *  rest) and the reads it changes. */
 export const CHANGES: Record<string, string[]> = {
@@ -248,6 +273,20 @@ export const CHANGES: Record<string, string[]> = {
   "/local/worklist/*": [main.worklist.route],
   "/local/graph/*": [code.graphState.route, settings.graphInstall.route],
   "/local/git/*": GIT,
+  "/local/git/checkout": FILES,
+  "/local/git/commit": FILES,
+  "/local/git/op": FILES,
+  "/local/git/pull": FILES,
+  "/local/git/merge": FILES,
+  "/local/git/merge-upstream": FILES,
+  "/local/git/update-base": FILES,
+  "/local/git/undo-commit": FILES,
+  "/local/files/write": FILES,
+  "/local/files/op": FILES,
+  "/local/github/pr": [code.pr.route, code.branchPrs.route],
+  "/local/terminals": [code.terminals.route],
+  "/local/terminals/:id/close": [code.terminals.route],
+  "/local/server": [main.state.route],
   "/local/update": [rail.update.route],
   "/local/project/settings": [main.projects.route, main.projectSettings.route, code.graphState.route, settings.projectSettings.route],
 };

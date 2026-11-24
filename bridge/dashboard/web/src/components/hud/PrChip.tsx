@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { api, PUSHED_EVENT, type PrStatus } from "../../api";
+import { useQuery } from "@tanstack/react-query";
+import { api, PUSHED_EVENT } from "../../api";
+import { code, prHints, queryClient } from "../../lib/queries";
 import { TONE, chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, popPlace, reviewItems, stateLine } from "../../lib/prchip";
 import { initials } from "../../lib/rivendelltasks";
 import { hairline } from "../../lib/shell";
@@ -11,15 +13,15 @@ import { notify } from "./Notifications";
 /** The branch's PR in the chat header's caption row, and its popover
  *  (review loop B/C, docs/superpowers/specs/review-loop.md).
  *
- *  It polls GET /local/github/pr/status every 60s while this tab is visible,
- *  on focus, and a few seconds after any dashboard push (api.ts fires
- *  PUSHED_EVENT). Every failure is silent. A bridge still on pre-restart code
+ *  It reads GET /local/github/pr/status on the key the GIT tab shares
+ *  (lib/queries: every 60s while the page is visible), and forced a few
+ *  seconds after any dashboard push (api.ts fires PUSHED_EVENT): the bridge
+ *  caches it, and only `force` reads past that. Every failure is silent. A bridge still on pre-restart code
  *  404s the route, and gh may be missing or signed out. Neither draws a chip
  *  or raises a toast. A red check or a review asking for changes is the
  *  bridge's news: it writes the bell's row where it pings Telegram
  *  (bridge/prstatus.py, bridge/notices.py). */
 
-const POLL_MS = 60_000;
 const AFTER_PUSH_MS = 8_000;   // GitHub needs a moment to see the new head and queue its checks
 /** "just now", "3m ago": `ago` speaks epoch seconds, gh speaks ISO. */
 const since = (sec: number) => { const a = ago(sec); return !a || a === "now" ? "just now" : `${a} ago`; };
@@ -39,7 +41,10 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   /** RESOLVE IN A NEW SESSION: a fresh session in this session's checkout, `text` as its first prompt. */
   onStartHere: (text: string) => void;
 }) {
-  const [snap, setSnap] = useState<PrStatus | null>(null);
+  prHints.session = sessionId;   // set before the read below starts, not in an effect after it
+  const key = code.pr({ project, branch });
+  // No chip on a failure: a pre-restart bridge (404) or offline. Never a toast.
+  const snap = useQuery(key).data ?? null;
   const [open, setOpen] = useState(false);
   const [hov, setHov] = useState("");
   const chipRef = useRef<HTMLButtonElement>(null);
@@ -47,36 +52,19 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   useEffect(() => {
-    setSnap(null);
     setOpen(false);
-    let live = true;
     let later = 0;
-    const load = (force = false) => {
-      if (document.visibilityState !== "visible") return;
-      api.prStatus(project, branch, sessionId, force)
-        .then((s) => { if (live) setSnap(s); })
-        .catch(() => { /* no chip: a pre-restart bridge (404) or offline. Never a toast. */ });
-    };
-    const onVisible = () => { if (document.visibilityState === "visible") load(true); };
     const onPushed = (e: Event) => {
       const d = (e as CustomEvent<{ project: string; branch: string }>).detail;
       if (d.project !== project || (d.branch && d.branch !== branch)) return;
       window.clearTimeout(later);
-      later = window.setTimeout(() => load(true), AFTER_PUSH_MS);
+      // The forced read lands in the shared key, so GIT's card moves with the chip.
+      later = window.setTimeout(() => void api.prStatus(project, branch, sessionId, true)
+        .then((s) => queryClient.setQueryData(key.queryKey, s), () => {}), AFTER_PUSH_MS);
     };
-    load();
-    const id = window.setInterval(() => load(), POLL_MS);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
     window.addEventListener(PUSHED_EVENT, onPushed);
-    return () => {
-      live = false;
-      window.clearInterval(id);
-      window.clearTimeout(later);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener(PUSHED_EVENT, onPushed);
-    };
+    return () => { window.clearTimeout(later); window.removeEventListener(PUSHED_EVENT, onPushed); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, branch, sessionId]);
 
   // Closes on a click outside or on Esc. The Esc listener bubbles on document,
@@ -106,7 +94,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   }
 
   async function removeWorktree() {
-    const wts = await api.worktrees(project).catch(() => null);
+    const wts = await queryClient.fetchQuery(code.worktrees({ project })).catch(() => null);
     const w = wts?.worktrees.find((x) => x.branch === branch && !x.is_main);
     if (!w) { notify("info", `No linked worktree holds ${branch}.`); return; }
     if (!(await askConfirm(`Remove the worktree at ${w.path}? Uncommitted changes in it are deleted. The branch stays.`, { ok: "Remove", danger: true }))) return;
