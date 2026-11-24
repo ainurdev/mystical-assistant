@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   model             TEXT,
   profile_id        TEXT,
   effort            TEXT,
+  style             TEXT,
   agent_session_id  TEXT,
   job               TEXT,
   device            TEXT,
@@ -246,6 +247,10 @@ def init() -> None:
         for col in ("profile_id", "effort", "agent_session_id"):
             if col not in scols:
                 c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        # Its hand-set Output style (bridge/outputstyles.py), like effort: NULL =
+        # follow the profile, and with none, pass no style at all.
+        if "style" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN style TEXT")
         # A plugin run's handle on the job that started it — "<instance id>:<request
         # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
         # queue-mode batch already tags its turns with. NULL = not a plugin run. It
@@ -505,7 +510,7 @@ def set_run_settings(session_id: str, model: "str | None" = None,
                   (model, permission_mode, session_id))
 
 
-_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id", "agent_session_id",
+_SESSION_FIELDS = {"model", "permission_mode", "effort", "style", "profile_id", "agent_session_id",
                    "chat_config", "handoff"}
 
 
@@ -586,7 +591,7 @@ def profile_has_agent_session(pid: str) -> bool:
 
 
 def unbind_profile(pid: str, model: "str | None", mode: "str | None",
-                   effort: "str | None", tools_json: "str | None",
+                   effort: "str | None", style: "str | None", tools_json: "str | None",
                    clear: bool = False) -> None:
     """A deleted profile's sessions keep running what it gave them: each knob
     they never set by hand takes the profile's value, then the binding goes.
@@ -600,9 +605,9 @@ def unbind_profile(pid: str, model: "str | None", mode: "str | None",
             return
         c.execute("UPDATE sessions SET model=COALESCE(model, ?), "
                   "permission_mode=COALESCE(permission_mode, ?), "
-                  "effort=COALESCE(effort, ?), "
+                  "effort=COALESCE(effort, ?), style=COALESCE(style, ?), "
                   "disabled_tools=COALESCE(disabled_tools, ?), profile_id=NULL "
-                  "WHERE profile_id=?", (model, mode, effort, tools_json, pid))
+                  "WHERE profile_id=?", (model, mode, effort, style, tools_json, pid))
 
 
 def set_fallback_policy(session_id: str, policy: str | None) -> None:
@@ -1203,10 +1208,10 @@ def duplicate(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
-                  "fallback_policy=?, model=?, effort=?, updated=? WHERE id=?",
+                  "fallback_policy=?, model=?, effort=?, style=?, updated=? WHERE id=?",
                   (title, "manual", src.get("claude_session_id"),
                    src.get("fallback_policy"), src.get("model"), src.get("effort"),
-                   now, copy["id"]))
+                   src.get("style"), now, copy["id"]))
         # New turn ids so the two sessions' turns never collide; events follow
         # their turn through the same map.
         idmap = {}
@@ -1315,7 +1320,7 @@ def history(chat_id: int, include_archived: bool = False,
     brief does: a session opened from here — archived, or past the session
     list's age — is seeded from that row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, s.model, s.permission_mode, s.effort, s.profile_id, s.disabled_tools, "
+         "s.lifecycle, s.model, s.permission_mode, s.effort, s.style, s.profile_id, s.disabled_tools, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -1484,30 +1489,27 @@ _EDITS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 def first_turn_metrics(session_id: str) -> "dict | None":
     """A session's first turn as a Savers trial scores it (bridge/savers.py):
-    whether it errored, its tokens, the words of its last answer, and the tool
-    calls it made before its first edit (None when it never edited). None until
-    that turn has finished."""
+    whether it errored, its tokens, and the tool calls it made before its first
+    edit (None when it never edited). None until that turn has finished."""
     with closing(_connect()) as c:
         t = c.execute("SELECT id, status, tok_in, tok_out, tok_cache_w, tok_cache_r FROM turns "
                       "WHERE session_id=? ORDER BY seq LIMIT 1", (session_id,)).fetchone()
         if t is None or t["status"] == "running":
             return None
-        rows = c.execute("SELECT type, payload FROM events WHERE session_id=? AND turn_id=? "
-                         "AND type IN ('tool','result') ORDER BY seq",
+        rows = c.execute("SELECT payload FROM events WHERE session_id=? AND turn_id=? "
+                         "AND type='tool' ORDER BY seq",
                          (session_id, t["id"])).fetchall()
-    before, edited, words = 0, False, 0
+    before, edited = 0, False
     for r in rows:
         try:
             p = json.loads(r["payload"])
         except (TypeError, ValueError):
             continue
-        if r["type"] == "tool" and not edited:
+        if not edited:
             edited = p.get("name") in _EDITS
             before += 0 if edited else 1
-        elif r["type"] == "result":
-            words = len(str(p.get("result") or "").split())
     toks = [t[k] for k in ("tok_in", "tok_out", "tok_cache_w", "tok_cache_r")]
-    return {"error": t["status"] == "error", "words": words,
+    return {"error": t["status"] == "error",
             "tokens": sum(x or 0 for x in toks) if any(x is not None for x in toks) else None,
             "tools_before_edit": before if edited else None}
 

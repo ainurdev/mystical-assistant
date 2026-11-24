@@ -60,6 +60,7 @@ class QueueItem:
     flow_by: "str | None" = None    # "you" | "guess"
     sent_by: "str | None" = None    # who sent it when you didn't type it (store.start_turn)
     sent_why: "str | None" = None
+    style: "str | None" = None      # a lit flow's Output style, else the session's when it runs
     # A Rivendell queue-mode batch's turns: what the row says, where it links,
     # and the "<instance id>:<request id>" its worker finds them by (also after
     # a restart — these persist with the item).
@@ -73,7 +74,7 @@ class QueueItem:
         return {
             "id": self.id, "status": self.status, "text": self.text,
             "sel": self.sel, "width": self.width, "surface": self.surface,
-            "model": self.model, "effort": self.effort,
+            "model": self.model, "effort": self.effort, "style": self.style,
             "permission_mode": self.permission_mode, "job_id": self.job_id,
             "result": self.result, "error": self.error, "cost": self.cost,
             "elapsed": self.elapsed, "created": self.created, "started": self.started,
@@ -158,7 +159,7 @@ class PreviewQueue:
     def enqueue(self, sid: str, *, text, prompt, images, model, effort,
                 permission_mode, width, sel, surface, chat_id, project,
                 run_job_id=None, agent=None, label=None, link=None, ref=None,
-                flow=None, flow_by=None, sent_by=None, sent_why=None) -> str:
+                flow=None, flow_by=None, sent_by=None, sent_why=None, style=None) -> str:
         with self._lock:
             b = self._bucket(sid)
             item = QueueItem(
@@ -167,7 +168,7 @@ class PreviewQueue:
                 effort=effort, permission_mode=permission_mode, width=width,
                 sel=list(sel or []), surface=surface, run_job_id=run_job_id,
                 agent=agent, label=label, link=link, ref=ref, created=time.time(),
-                flow=flow, flow_by=flow_by, sent_by=sent_by, sent_why=sent_why)
+                flow=flow, flow_by=flow_by, sent_by=sent_by, sent_why=sent_why, style=style)
             b["items"].append(item)
             self._advance(sid, b)
             self._touch(sid, b)
@@ -465,7 +466,7 @@ def _default_run_fn(item: QueueItem):
         effort=item.effort, permission_mode=item.permission_mode,
         session_id=item.session_id, origin="preview-queue",
         account_slot=slot, runtime=runtime, flow=item.flow, flow_by=item.flow_by,
-        sent_by=item.sent_by, sent_why=item.sent_why)
+        sent_by=item.sent_by, sent_why=item.sent_why, style=item.style)
     return job.id if job else None
 
 

@@ -44,6 +44,18 @@ _Avoid_: auto mode, auto, auto fallback
 An **Account** whose own Auto-switch switch is off: **Auto-switch** never moves a **Session** onto it without asking you, though you can still pick it yourself. Unlike a disabled Account, which nothing runs on.
 _Avoid_: manual only, reserved, excluded
 
+**Profile**:
+A named bundle of which agent and **Account** run a **Session**, and with what settings: model, mode, effort, **Output style**, tools. A session follows its profile except for what you set by hand in that session.
+_Avoid_: preset, run bundle
+
+**Output style**:
+Claude Code's own setting for how a **Session** answers you, its voice, length and what it explains: Default, Proactive, Concise, Explanatory, Learning, or a custom one. It is not how the dashboard draws a reply.
+_Avoid_: reply style, voice, persona, transcript style
+
+**Insight**:
+A short teaching note that the Explanatory and Learning **Output styles** add to a reply, drawn in the chat as a labelled box.
+_Avoid_: tip, note, callout
+
 **Feature branch**:
 The branch a **Flow** builds on, in a worktree of its own. It is named for what is being built, as `type/short-name`, by the agent that hands over to the build **Step**; when a task covers the work, the task's key leads the name. The session's title names it only when the agent gave no name.
 _Avoid_: flow branch, session branch

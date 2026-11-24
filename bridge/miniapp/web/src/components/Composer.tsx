@@ -5,7 +5,7 @@ import { readAsDataUrl, useChat } from "../lib/chat";
 import { primeChatImage } from "../lib/chatimg";
 import { insertAt } from "../lib/embeds";
 import { loginSlot, loginWindows, useAccounts } from "../lib/accounts";
-import { api, type EffortLevel, type HandoffPreview, type ModelId, type Profile, type SlashCommand, type SwitchScope } from "../lib/api";
+import { api, type EffortLevel, type HandoffPreview, type ModelId, type OutputStyle, type Profile, type SlashCommand, type SwitchScope } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { atQuery, insertName, isWholeName, rankNames } from "../lib/mention";
 import { providerName, useChannel } from "../lib/multi";
@@ -135,8 +135,22 @@ function dotSelected<T extends { id: string; label: string; title?: string }>(
 // describe() (hand-kept copy — the two web apps don't share source).
 function describeProfile(p: Profile): string {
   const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
-    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.style, p.tools && `${p.tools.length} off`];
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
+}
+
+// The OUTPUT STYLE row. Mirrors the dashboard's lib/styles.ts (hand-kept: the two web apps
+// don't share source), except that a chip label leaves Not set out ("").
+const styleName = (id: string) => (!id ? "" : id === "default" ? "Default" : id);
+
+/** Not set first, saying what decides then (the folder's own setting, or the profile's style
+ *  when it has one), then Claude's, yours and the folder's styles, each with its description
+ *  as a line under it: a phone shows no hover. A pick the list lacks (still loading) stays. */
+function styleOptions(list: OutputStyle[] | undefined, value: string, profileStyle?: string) {
+  const rows = [{ id: "", label: "Not set", note: profileStyle ? `follows its profile: ${styleName(profileStyle)}`
+                                                              : "the folder's own Claude setting decides" },
+    ...(list ?? []).map((s) => ({ id: s.id, label: s.label, note: s.description || undefined }))];
+  return value && !rows.some((r) => r.id === value) ? [...rows, { id: value, label: styleName(value), note: undefined }] : rows;
 }
 
 const chipClass =
@@ -159,6 +173,8 @@ export function Composer() {
     models,
     effort,
     setEffort,
+    style,
+    setStyle,
     perm,
     setPerm,
     profiles,
@@ -227,6 +243,12 @@ export function Composer() {
   // With the switch on, a provider change moves the chat's history, so it's asked
   // about first (handoff.preview), and it can't happen during a turn.
   const [menuOpen, setMenuOpen] = useState(false);
+  // The session folder's styles, read as the menu opens, so a style file added since shows.
+  const stylesQ = useQuery({
+    queryKey: ["styles", sessionId],
+    queryFn: () => api.styles(sessionId!),
+    enabled: menuOpen && !!sessionId && !!openBrief?.takes_style,
+  });
   const [askSwitch, setAskSwitch] = useState<{ pid: string; preview: HandoffPreview } | null>(null);
   const [switching, setSwitching] = useState(false);
   const [switchErr, setSwitchErr] = useState<string | null>(null);
@@ -434,6 +456,7 @@ export function Composer() {
   const settingsLabel = onAgent ? `◇ ${sessionAgent.toUpperCase()}` : [
     modelLabel,
     effort && EFFORTS.find((e) => e.id === effort)?.label,
+    openBrief?.takes_style && styleName(style),
     perm && PERMS.find((p) => p.id === perm)?.label,
   ]
     .filter(Boolean)
@@ -657,6 +680,17 @@ export function Composer() {
               onPick={(v) => setEffort(v as EffortLevel | "")}
             />
             <DropdownMenuSeparator />
+            {/* Only a chat you drive takes a style (bridge/outputstyles.py): a Part's never would. */}
+            {openBrief?.takes_style && <>
+            <OptionRow
+              label="OUTPUT STYLE"
+              value={style}
+              options={dotSelected(styleOptions(stylesQ.data?.styles, style,
+                profiles?.find((p) => p.id === profileId)?.style), style, overrides.includes("style"))}
+              onPick={setStyle}
+            />
+            <DropdownMenuSeparator />
+            </>}
             <OptionRow
               label="OPERATING MODE"
               value={perm}

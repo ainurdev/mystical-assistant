@@ -221,6 +221,9 @@ export interface ChatContextValue {
   models: { id: ModelId; label: string }[];
   effort: EffortLevel | "";
   setEffort: (e: EffortLevel | "") => void;
+  // The open session's Output style ("" = Not set) and its pick (bridge/outputstyles.py).
+  style: string;
+  setStyle: (s: string) => void;
   perm: string;
   setPerm: (p: string) => void;
   // Server-side profiles (bridge/profiles.py). undefined = still loading, or a
@@ -315,6 +318,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [defEffort, setDefEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
   const [effort, setEffortState] = useState<EffortLevel | "">(defEffort);
   const [defPerm, setDefPerm] = usePersistentState<string>("miniapp:perm:v1", "");
+  // The Output style is the session's alone: no phone default, so a new session starts Not
+  // set and a folder's own style (communication's Comms) holds until you pick.
+  const [style, setStyleState] = useState("");
   const [perm, setPermState] = useState<string>(defPerm);
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
@@ -430,6 +436,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const setModel = (m: ModelId) => pickRun(m, perm, effort, "model");
   const setPerm = (p: string) => pickRun(model, p, effort, "permission_mode");
   const setEffort = (e: EffortLevel | "") => pickRun(model, perm, e, "effort");
+  // A style pick is saved alone, and applies from the session's next turn.
+  function setStyle(st: string) {
+    if (sessionAgent !== "claude" || !sessionId) return;
+    setStyleState(st);
+    const sid = sessionId;
+    void api.setRunSettings(sid, { style: st, pick: "style" })
+      // Not set on a session whose profile has a style follows the profile's: show what will run.
+      .then((r) => { if (r.style !== undefined && sessionIdRef.current === sid) setStyleState(r.style ?? ""); })
+      .catch(() => {});
+  }
 
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
@@ -625,7 +641,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setModelState(r.model);
     setPermState(r.perm);
     setEffortState(r.effort as EffortLevel | "");
-  }, [sessionId, brief?.model, brief?.permission_mode, brief?.effort, brief?.profile_id,
+    setStyleState(brief.style ?? "");
+  }, [sessionId, brief?.model, brief?.permission_mode, brief?.effort, brief?.style, brief?.profile_id,
       brief?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
 
   // Remember it for a cold start: the brief's repo, not the active one, which lags a
@@ -905,6 +922,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     models,
     effort,
     setEffort,
+    style,
+    setStyle,
     perm,
     setPerm,
     profiles: profilesQ.data?.profiles,

@@ -6,7 +6,7 @@ import { Check, Copy, Play } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
-import { ADMONITION_RE, stripMarker } from "../lib/admonition";
+import { ADMONITION_RE, insightCallouts, stripMarker } from "../lib/admonition";
 import { isFactList, LEAD_RE } from "../lib/facts";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
@@ -157,6 +157,8 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
   important: { label: "For you", color: "var(--ask, var(--warn))" },
   warning: { label: "Warning", color: "var(--warn)" },
   caution: { label: "Caution", color: "var(--err)" },
+  // An Explanatory or Learning Output style's teaching note (lib/admonition insightCallouts).
+  insight: { label: "★ Insight", color: "var(--info)" },
 };
 
 /** Opening a file from prose: the path, the line it named, and where on screen
@@ -359,7 +361,7 @@ export const Markdown = memo(function Markdown({
         remarkPlugins={[remarkGfm, ...(breaks ? [remarkBreaks] : []), remarkEmbedAddress, ...(multiOn && !typed ? [remarkFileRefs] : [])]}
         components={components}
       >
-        {typed ? children : stripViews(children)}
+        {typed ? children : insightCallouts(stripViews(children))}
       </ReactMarkdown>
       {multiOn && !typed ? <RefImages text={children} /> : null}
       </MdTyped.Provider>

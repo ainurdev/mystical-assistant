@@ -38,7 +38,8 @@ from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
                     device_ask, device_setup, device_share, device_side, device_view,
                     devserver, fmt, git,
                     github, graphmap, httpgz, integrations, logostyle,
-                    meter, models, native, notices, preview_detect, profiles, project_config, projectmarks,
+                    meter, models, native, notices, outputstyles, preview_detect, profiles, project_config,
+                    projectmarks,
                     prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, rivendell_video, runner, selfupdate,
@@ -48,7 +49,7 @@ from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort,
-                                   save_run_settings,
+                                   save_run_settings, styles_for,
                                    transcript_for)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -682,6 +683,12 @@ class Handler(BaseHTTPRequestHandler):
                 "pending_login": accounts.pending_login()})
         if path == "/local/profiles":
             return self._json(profiles.api_list())
+        if path == "/local/styles":
+            sid = (qs.get("session", [""])[0] or "").strip()
+            s = store.get_session(sid) if sid else None
+            if sid and (not s or s["chat_id"] != chat):
+                return self._json({"error": "not found"}, 404)
+            return self._json(styles_for(s))
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
@@ -2619,6 +2626,11 @@ class Handler(BaseHTTPRequestHandler):
             body.get("model"), body.get("permission_mode"), body.get("effort"), agent)
         if err:
             return self._json({"error": err}, 400)
+        try:
+            # A lit flow's Output style, for this prompt only: the session's own is its STYLE pick.
+            style = outputstyles.clean(body.get("style"))
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         try:
             from bridge import ladder
@@ -2655,7 +2667,7 @@ class Handler(BaseHTTPRequestHandler):
                                          origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
                                          runtime=runtime, flow=flow,
-                                         flow_by=body.get("by") if flow else None)
+                                         flow_by=body.get("by") if flow else None, style=style)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -2741,6 +2753,10 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("model"), body.get("permission_mode"), None)
                 if err:
                     return self._json({"error": err}, 400)
+            try:
+                style = outputstyles.clean(body.get("style"))     # a kind prompt's, like its model
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
             from bridge import paths as flows   # `paths` below is the image paths
             flow = body.get("flow") or None
             if flow and (why := flows.flow_refusal(
@@ -2769,7 +2785,7 @@ class Handler(BaseHTTPRequestHandler):
                 effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
-                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None)
+                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None, style=style)
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)

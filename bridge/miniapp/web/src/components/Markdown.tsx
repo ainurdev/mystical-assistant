@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { addressFromSrc, addressKind } from "../lib/embeds";
 import { selectionMd } from "../lib/selmd";
-import { ADMONITION_RE, stripMarker } from "../lib/admonition";
+import { ADMONITION_RE, insightCallouts, stripMarker } from "../lib/admonition";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import { mermaidFlow } from "../lib/mermaid";
 import type { ToolStyle } from "../lib/toolwidget";
@@ -76,6 +76,8 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
   important: { label: "IMPORTANT", color: "var(--purple)" },
   warning: { label: "WARNING", color: "var(--warn)" },
   caution: { label: "CAUTION", color: "var(--err)" },
+  // An Explanatory or Learning Output style's teaching note (lib/admonition insightCallouts).
+  insight: { label: "★ INSIGHT", color: "var(--info)" },
 };
 
 /** A bold that is really a label: short, one line, ending in a colon. Mirrors
@@ -237,7 +239,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
         urlTransform={multiOn ? keepImageAddress : undefined}
         components={components}
       >
-        {stripViews(children)}
+        {insightCallouts(stripViews(children))}
       </ReactMarkdown>
       {multiOn ? <RefImages text={children} /> : null}
     </div>

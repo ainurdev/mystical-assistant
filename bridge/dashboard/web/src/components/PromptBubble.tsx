@@ -67,7 +67,7 @@ function parseNudge(text: string): { n?: string; max?: string; title?: string; o
  *  C · SPINE) and a bubble: one header line — who (You, Steer, Goal,
  *  Council, a teammate's name), where you sent it from (via Telegram), the /command it ran, the account or agent when it
  *  wasn't the default (lib/agents runtimeBadge), the model · effort · permission
- *  the turn ran with, and when; a Savers trial's saver says so ("Concise · trial").
+ *  the turn ran with, and when; a Savers trial's saver says so ("Trim tests · trial").
  *  A value that moved since the turn before is lit; a turn from before turns
  *  recorded effort and mode shows only its model — nothing is borrowed from the
  *  session's current picks. Then your words. Geometry and colour live in

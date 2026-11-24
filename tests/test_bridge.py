@@ -520,7 +520,7 @@ def test_session_brief_shape(monkeypatch):
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
                       "worktree", "model", "permission_mode",
-                      "profile_id", "agent", "account", "effort", "overrides", "slot"}
+                      "profile_id", "agent", "account", "effort", "style", "takes_style", "overrides", "slot"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert b["slot"] == 1                 # no profile, no turn: the default login
     assert b["ctx_tokens"] is None        # nothing measured until a turn runs
