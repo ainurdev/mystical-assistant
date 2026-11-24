@@ -339,7 +339,10 @@ body {
   overflow-x: hidden;
 }
 /* A panel's boundary: the transcript's scroller, the sidebar's list and the
-   rail's body. A row landing in one doesn't lay out or restyle the other two.
+   rail's body. Layout and paint stay inside the box. Restyle does not: which
+   elements a selector re-matches is up to the selectors, and a row landing in
+   the transcript still restyles the page through the :has() rules (measured
+   37 ms with them, 1 ms without; speed-and-sentry ticket 18).
    Layout containment makes the box the containing block of every fixed and
    absolute child, so a popup in here is portalled out (ContextMenu, Tip,
    FileRef …) or it stays inside. Paint only on a scroller: it clips there
