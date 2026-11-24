@@ -747,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
                                         if (store.get_session(x.get("parent_session") or "") or {}).get("chat_id") == chat]})
         if path == "/local/usage":
             from bridge import usage
-            return self._json(usage.get_usage())
+            return self._json(usage.shown() or usage.get_usage())
         if path == "/local/today":
             # Local midnight, not "24h ago" — the header chip reads "TODAY".
             import datetime

@@ -273,24 +273,33 @@ def _save() -> None:
 
 
 _boot = _load_saved()   # what the file had at start; a login uses it until its first read
-_behind: set = set()    # logins being read behind a saved meter
+_behind: set = set()    # logins being read behind the meter on screen
 
 
 def shown(creds_path: str | None = None) -> "dict | None":
-    """For a screen only, never for picking an Account: a login this process hasn't
-    read yet answers with the last run's reading, keeping the time it was read, while
-    it is read behind. None once it has been read, or with nothing saved."""
+    """For a screen only, never for picking an Account: a reading past CACHE_TTL
+    answers at once, keeping the time it was read, while a fresh one is read behind;
+    so does the last run's, for a login this process hasn't read yet. None while the
+    reading is fresh, a failed read waits for its retry, or there is nothing to
+    show: get_usage() answers those."""
     path = creds_path or CREDENTIALS_FILE
+    now = time.time()
     with _lock:
         e, hit = _entry(path), _boot.get(path)
-        if hit is None or e["data"] is not None or e["next_try"]:
+        if e["data"] is not None:
+            if now - e["ts"] < CACHE_TTL or now < e["next_try"]:
+                return None
+            view = _view(e)
+        elif hit is None or e["next_try"]:
             return None
+        else:
+            view = _view({"ts": hit["ts"], "data": hit["data"]})
         start = path not in _behind
         _behind.add(path)
     if start:
         threading.Thread(target=_read_behind, args=(path,), daemon=True,
                          name="meter-behind").start()
-    return _view({"ts": hit["ts"], "data": hit["data"]})
+    return view
 
 
 def _read_behind(path: str) -> None:

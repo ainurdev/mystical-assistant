@@ -159,12 +159,19 @@ def meters(monkeypatch):
         os.remove(usage._saved_file())
     except OSError:
         pass
-    return now, spawns
+    yield now, spawns
+    assert _until(lambda: not usage._behind)   # no read outlives its fakes
 
 
 def _restart_meters(monkeypatch):
     monkeypatch.setattr(usage, "_cache", {})
     monkeypatch.setattr(usage, "_boot", usage._load_saved())
+
+
+def _age(secs):
+    """Every reading this process made, as if made `secs` earlier."""
+    for e in usage._cache.values():
+        e["ts"] -= secs
 
 
 def test_saved_meters_answer_the_first_accounts_ask_at_once(meters, monkeypatch):
@@ -183,6 +190,52 @@ def test_saved_meters_answer_the_first_accounts_ask_at_once(meters, monkeypatch)
     assert got[2]["five_hour"]["percent"] == 5
     assert _until(lambda: _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 60)
     assert sorted(spawns) == [1, 2]
+
+
+def test_an_expired_meter_answers_at_once_and_reads_behind(meters):
+    # Sentry MYSTICAL-B: every 5 minutes the poll that found the meters expired
+    # waited ~2 s on a `claude -p` per login.
+    now, spawns = meters
+    _get("/local/accounts")
+    _age(usage.CACHE_TTL + 1)
+    now[1] = _reading(60)
+    spawns.clear()
+
+    t0 = time.time()
+    got = {a["slot"]: a for a in _get("/local/accounts")["accounts"]}
+    assert time.time() - t0 < 0.1
+    assert got[1]["five_hour"]["percent"] == 20 and got[1]["left"] == 80   # the reading it had
+    assert _until(lambda: _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 60)
+    assert sorted(spawns) == [1, 2]                         # each login read once, behind
+
+
+def test_the_usage_meter_answers_at_once_after_a_restart_and_once_expired(meters, monkeypatch):
+    # Sentry MYSTICAL-A: /local/usage waited on the spawn at every start and every 5 minutes.
+    now, spawns = meters
+    assert usage.CREDENTIALS_FILE == accounts.credentials_path(1)   # /local/usage is login 1's meter
+    assert _get("/local/usage")["five_hour"]["percent"] == 20
+    _restart_meters(monkeypatch)
+    now[1] = _reading(40)
+
+    t0 = time.time()
+    assert _get("/local/usage")["five_hour"]["percent"] == 20       # the last run's
+    assert time.time() - t0 < 0.1
+    assert _until(lambda: _get("/local/usage")["five_hour"]["percent"] == 40)
+
+    _age(usage.CACHE_TTL + 1)
+    now[1] = _reading(70)
+    t0 = time.time()
+    assert _get("/local/usage")["five_hour"]["percent"] == 40       # the one it had
+    assert time.time() - t0 < 0.1
+    assert _until(lambda: _get("/local/usage")["five_hour"]["percent"] == 70)
+
+
+def test_picking_an_account_reads_an_expired_meter_anew(meters):
+    now, spawns = meters
+    _get("/local/accounts")                                 # login 1 has room
+    _age(usage.CACHE_TTL + 1)
+    now[1] = _reading(100, 100)                             # it ran out since
+    assert accounts.pick(auto_switch=True) == 2
 
 
 def test_picking_an_account_never_uses_a_saved_meter(meters, monkeypatch):
