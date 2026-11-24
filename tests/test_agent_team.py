@@ -130,6 +130,9 @@ class Job:
     def add(self, ev):
         self.events.append(ev)
 
+    def talking(self):
+        self.boot = None
+
 
 def test_a_sub_agents_steps_stay_out_of_the_chat(monkeypatch):
     job = Job()

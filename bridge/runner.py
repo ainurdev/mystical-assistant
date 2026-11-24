@@ -890,6 +890,7 @@ class Job:
         # child starts talking. Deliberately NOT an event: it is a live status,
         # and an event would persist "starting Claude" into every transcript.
         self.boot: str | None = None
+        self.boot_t0: float | None = None    # monotonic, when _run_streaming took the turn
         self.result: str | None = None
         self.cost: float | None = None
         self.session_id: str | None = None
@@ -1004,6 +1005,14 @@ class Job:
     def add_pending(self, entry: dict):
         with self._lock:
             self.pending.append(entry)
+
+    def talking(self):
+        """The child's first line: nothing is loading any more. A start past
+        its limit is a report on a team install, naming self.boot."""
+        if self.boot_t0 is not None:
+            reports.turn_start(self, time.monotonic() - self.boot_t0)
+            self.boot_t0 = None
+        self.boot = None
 
     def clear_pending(self):
         with self._lock:
@@ -2712,7 +2721,7 @@ def _handle_event(job: Job, d: dict):
     t = d.get("type")
     if job.resume_state == "waiting":
         _note_resume(job, d)
-    job.boot = None          # the child is talking; nothing is loading any more
+    job.talking()
     sid = d.get("session_id")
     if sid and sid != job.session_id:
         job.session_id = sid
@@ -3325,6 +3334,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
     proc = None
     mcp_dir = None
     job.cwd = cwd
+    job.boot_t0 = time.monotonic()   # the turn starts here, after any wait for the session's last
     try:
         if job.refusal:
             job.error_msg = job.refusal

@@ -340,7 +340,8 @@ class Turn:
         if method != "session/update" or self.replaying:
             return
         u = params.get("update") or {}
-        self.job.boot, self.job.last_at = None, time.time()
+        self.job.talking()
+        self.job.last_at = time.time()
         with self._lock:
             self._update(u.get("sessionUpdate"), u)
 
