@@ -72,7 +72,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 9px",
                     borderBottom: "1px solid color-mix(in srgb, var(--purple) 16%, transparent)" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--purple)", flex: "none",
-                       animation: "mpulse 2.4s infinite" }} />
+                       animation: "mpulse 2.4s steps(19) infinite" }} />
         <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--purple-h)" }}>QUEUE</span>
         <span style={{ fontSize: "var(--t9)", color: "var(--txl)" }}>{items.length} waiting</span>
       </div>

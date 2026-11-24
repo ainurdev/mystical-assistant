@@ -79,8 +79,8 @@ function Eye({ v }: { v: EyeV }) {
   if (v === "line")
     return <span style={{ width: 12, height: 3, borderRadius: 3, background: FACE_TEAL, boxShadow: EYE_GLOW }} />;
   if (v === "round")
-    return <span style={{ width: 12, height: 12, borderRadius: "50%", background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
-  return <span style={{ width: 9, height: 13, borderRadius: 3, background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
+    return <span className="still-scene" style={{ width: 12, height: 12, borderRadius: "50%", background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
+  return <span className="still-scene" style={{ width: 9, height: 13, borderRadius: 3, background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
 }
 function Mouth({ v }: { v: MouthV }) {
   if (v === "o")
@@ -133,10 +133,10 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
                ...(leaving && { position: "absolute", top: ISLE_EDGE + 12, left: 0, right: 0, height: "auto", pointerEvents: "none", animation: "freshleave .2s cubic-bezier(.2,.8,.2,1) both" }) }}>
       <div style={{ position: "relative", width: 112, height: 112, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <svg viewBox="0 0 100 100" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", opacity: 0.5 }}>
-          <circle cx="50" cy="50" r="46" fill="none" stroke="var(--acc)" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
-          <circle cx="50" cy="50" r="38" fill="none" stroke="color-mix(in srgb, var(--purple) 40%, transparent)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
+          <circle className="still-scene" cx="50" cy="50" r="46" fill="none" stroke="var(--acc)" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
+          <circle className="still-scene" cx="50" cy="50" r="38" fill="none" stroke="color-mix(in srgb, var(--purple) 40%, transparent)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
         </svg>
-        <div style={{ position: "relative", width: 72, height: 72, borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--acc) 50%, transparent)", background: "radial-gradient(circle at 50% 36%,color-mix(in srgb, var(--acc) 16%, transparent),color-mix(in srgb, var(--panel2) 60%, transparent))", boxShadow: "0 0 28px color-mix(in srgb, var(--acc) 18%, transparent),inset 0 0 22px color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
+        <div className="still-scene" style={{ position: "relative", width: 72, height: 72, borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--acc) 50%, transparent)", background: "radial-gradient(circle at 50% 36%,color-mix(in srgb, var(--acc) 16%, transparent),color-mix(in srgb, var(--panel2) 60%, transparent))", boxShadow: "0 0 28px color-mix(in srgb, var(--acc) 18%, transparent),inset 0 0 22px color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
           {/* Expressions are stacked and crossfaded so the face dissolves
               between moods on the 10s interval rather than popping. */}
           <div style={{ position: "relative", width: 60, height: 42 }}>
@@ -154,24 +154,26 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
             ))}
           </div>
         </div>
-        <span style={{ position: "absolute", top: 4, right: 8, color: "var(--purple)", fontSize: "var(--t13)", animation: "twinkle 3s infinite" }}>✦</span>
-        <span style={{ position: "absolute", bottom: 10, left: 4, color: "var(--acc)", fontSize: "var(--t10)", animation: "twinkle 4s infinite .5s" }}>✦</span>
-        <span style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: "var(--t9)", animation: "twinkle 3.5s infinite 1s" }}>+</span>
+        <span className="still-scene" style={{ position: "absolute", top: 4, right: 8, color: "var(--purple)", fontSize: "var(--t13)", animation: "twinkle 3s infinite" }}>✦</span>
+        <span className="still-scene" style={{ position: "absolute", bottom: 10, left: 4, color: "var(--acc)", fontSize: "var(--t10)", animation: "twinkle 4s infinite .5s" }}>✦</span>
+        <span className="still-scene" style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: "var(--t9)", animation: "twinkle 3.5s infinite 1s" }}>+</span>
       </div>
       <div style={{ maxWidth: 450 }}>
         <div className="caps" style={{ fontSize: "var(--t95)", letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
           {basename(project) || "workspace"} · fresh session
         </div>
         <div className="fresh-quote" style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
-          <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both, quoteglow 7.2s ease-in-out infinite" }}>
-            “{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”
+          {/* the glow is a scene and pauses when the page is still; the entrance must not, or a quote
+              that rotates in then would stay invisible */}
+          <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both" }}>
+            <span className="still-scene" style={{ animation: "quoteglow 7.2s ease-in-out infinite" }}>“{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”</span>
           </span>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}>
         <span className="fresh-pfx" style={{ color: "var(--purple)" }}>~ ❯</span>
-        <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>{step || "awaiting your command"}</span>
-        <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
+        <span className="still-scene" style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>{step || "awaiting your command"}</span>
+        <span className="still-scene" style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>
       {project && (
         <FreshPanel project={project} branch={branch} run={run}
@@ -191,8 +193,8 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
 function ChannelTuning({ step }: { step?: string | null }) {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease both" }}>
-      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
-      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
+      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s steps(9) infinite" }} />
+      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s steps(19) infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
     </div>
   );
 }
@@ -217,7 +219,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
         appearance: "none", background: "transparent", cursor: onClick ? "pointer" : "default",
         color: hov ? "var(--txb)" : c,
       }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "caretbreath 2s ease-in-out infinite" : "none" }} />
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "caretbreath 2s steps(16) infinite" : "none" }} />
       {live ? (run.port ? `:${run.port}` : "RUNNING") : "EXITED"}
     </button>
   );

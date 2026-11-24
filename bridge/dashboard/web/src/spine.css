@@ -492,7 +492,7 @@
   background: conic-gradient(from var(--pb-a), color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
     var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
   box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
-  animation: pb-orbit 3.2s linear infinite;
+  animation: pb-orbit 3.2s steps(26) infinite;
 }
 [data-style="dossier"] .live-card {
   display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
@@ -507,7 +507,7 @@
   content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2px;
   background: conic-gradient(from var(--pb-a), transparent 0 55%, var(--acc) 85%, transparent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: pb-orbit 1.4s linear infinite;
+  animation: pb-orbit 1.4s steps(11) infinite;
 }
 [data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
 /* the zone's NowLine, as the card's line */

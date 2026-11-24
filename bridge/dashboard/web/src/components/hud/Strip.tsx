@@ -91,6 +91,7 @@ export function Brand({ folded = false, onFold, workspace }: { folded?: boolean;
           stroke="var(--acc)"
           strokeWidth="3"
           strokeDasharray="7 11"
+          className="still-scene"
           style={{ transformOrigin: "50px 50px", animation: "introspin 14s linear infinite" }}
         />
         <rect
