@@ -177,6 +177,7 @@ import { flowChip, flowGlobals, flowView, runningFlow } from "./lib/flowview";
 import { useFlowSettings } from "./lib/flowsettings";
 import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
+import { markStartup } from "./lib/reports";
 import { Spinner } from "./components/ui";
 
 
@@ -386,7 +387,11 @@ export function App() {
   const [bootSteps, setBootSteps] = useState(initialBootSteps);
   const markBoot = useCallback((key: BootKey, phase: "ok" | "fail", detail: string) => {
     setBootSteps((prev) => markStep(prev, key, phase, detail));
+    if (key === "sessions") markStartup("sidebar rows painted");   // start-up: page (lib/slow.ts); the first one counts
   }, []);
+  useEffect(() => { if (showDashboard) markStartup("shell painted"); }, [showDashboard]);
+  const introRan = useRef(!skipBoot).current;
+  useEffect(() => { if (introRan) markStartup("intro ran", false); }, [introRan]);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Manage-projects bookkeeping (see MANAGE_KEY).
@@ -1066,6 +1071,7 @@ export function App() {
         // Nothing to reopen (or the list never landed) — say so, or the intro
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
+        if (!was) markStartup("first turn painted");   // no chat to open: none is coming
       }
     }
   // The list's own answers don't re-run it: only the first, a session closing, or the project moving.
@@ -1164,6 +1170,7 @@ export function App() {
             ? { has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false }
             : { has: false, seq: null, from: null, loading: false });
         markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
+        markStartup("first turn painted");
       } catch {
         // Never landed: drop the previous session's turns rather than pass them
         // off as this one's.
@@ -1173,6 +1180,7 @@ export function App() {
           putOlder({ has: false, seq: null, from: null, loading: false });
         }
         markBoot("chat", "fail", "NO TRANSCRIPT");
+        markStartup("first turn painted");
       }
       finally { if (live) setLoadingSession(false); }
     };

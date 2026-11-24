@@ -28,6 +28,9 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { watchStill } from "./lib/still";
 import { queryClient } from "./lib/queries";
+import { markStartup } from "./lib/reports";
+
+markStartup("script loaded", false);   // every static import above has run
 
 watchStill();
 

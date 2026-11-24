@@ -12,7 +12,8 @@ import type { Breadcrumb, BreadcrumbHint, BrowserOptions, ErrorEvent, EventHint 
  * every default integration is off and only the ones below are named.
  * Breadcrumbs are navigations (the hash route), bridge calls (path only) and
  * clicks (the control's role and data-ctx-type, never its text); anything else
- * is dropped.
+ * is dropped. Slow spots (lib/slow.ts) go out as warnings, capped here with
+ * the crashes: the same one by name once in 10 minutes, 100 reports an hour.
  *
  * The scrubber is bridge/reports.py's rules again, on every report before it
  * leaves: the token this page holds, known token shapes, every URL's query,
@@ -23,6 +24,8 @@ import type { Breadcrumb, BreadcrumbHint, BrowserOptions, ErrorEvent, EventHint 
 
 const FILTERED = "[Filtered]";
 const SAME_EVERY = 60_000; // the same crash at most once a minute
+const SLOW_EVERY = 600_000; // the same slow spot, by name, at most once in 10 minutes
+const HOUR_CAP = 100;       // reports an hour from the page
 const CAP = 1000;          // every string, a message included
 const PROMPT_CAP = 120;    // a prompt keeps its first line, this long at most
 const SHAPES: [RegExp, string][] = [
@@ -116,19 +119,31 @@ export function scrubReport(event: ErrorEvent, hint: EventHint | undefined, held
 }
 const KEPT = new Set(["navigation", "fetch", "xhr", "ui.click"]);
 
+/** A mark for `start-up: page` (lib/slow.ts), once per name: when the page
+ *  next paints, or now. Left on every install; only a team install reads them. */
+export function markStartup(name: string, painted = true): void {
+  const m = "startup:" + name;
+  const put = () => { if (!performance.getEntriesByName(m, "mark").length) performance.mark(m); };
+  if (painted) requestAnimationFrame(() => setTimeout(put)); else put();
+}
+
 export interface ReportsStatus { on: boolean; dsn?: string; user?: string; os?: string }
 
 /** The options @sentry/browser starts with; integrations are added by startReports. */
 export function options(s: ReportsStatus, token: string, ua: string, origin: string): BrowserOptions {
   const held = token.length >= 8 ? [token] : [];
   const last = new Map<string, number>();
-  const fresh = (e: ErrorEvent) => {   // the same crash: its type, message and where it was thrown
+  const sent: number[] = [];
+  const fresh = (e: ErrorEvent) => {   // the same crash: its type, message and where it was thrown; a slow spot: its name
     const x = e.exception?.values?.at(-1);
     const top = x?.stacktrace?.frames?.at(-1);
     const key = x ? `${x.type}: ${x.value}@${top?.filename}:${top?.lineno}:${top?.colno}` : String(e.message);
+    const every = e.tags?.kind === "slow spot" ? SLOW_EVERY : SAME_EVERY;
     const now = Date.now();
-    if (now - (last.get(key) ?? -SAME_EVERY) < SAME_EVERY) return false;
+    while (sent.length && now - sent[0] >= 3_600_000) sent.shift();
+    if (sent.length >= HOUR_CAP || now - (last.get(key) ?? -every) < every) return false;
     last.set(key, now);
+    sent.push(now);
     return true;
   };
   return {
@@ -165,6 +180,13 @@ export async function startReports(settle: (sink: ((err: unknown) => void) | nul
       ],
     });
     settle((err) => { Sentry.captureException(err); });
+    // slow spots shaped as the bridge's are (bridge/reports.py _slow), so both sides group alike;
+    // a chunk gone after a newer build just means none this load
+    import("./slow").then(({ watchSlowSpots }) => watchSlowSpots((s) => Sentry.captureMessage(s.name, {
+      level: "warning", fingerprint: [s.name],
+      tags: { surface: s.surface, kind: "slow spot" },
+      contexts: { slow: { ms: s.ms, ...s.context } },
+    })), () => {});
   } catch {
     settle(null);   // a page older than the build can't load the chunk: the next load starts it
   }
