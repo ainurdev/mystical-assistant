@@ -164,10 +164,6 @@ tr[data-open] > .at-name { box-shadow: inset 2px 0 0 var(--acc); }
 /* ---- rules ---- */
 .at-rules { display: flex; flex-direction: column; gap: 18px; }
 .at-rulegroup h3, .at-hookagent h3 { margin: 0 0 8px; font-size: var(--t95); font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--txd); }
-.at-rule { padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); background: color-mix(in srgb, var(--panel) 55%, transparent); }
-.at-rule[data-on] { border-color: color-mix(in srgb, var(--ok) 28%, transparent); }
-.at-rulehead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.at-rulehead b { font-weight: 500; font-size: var(--t11); color: var(--txb); }
 .at-ruleabout { margin: 5px 0 0; font-size: var(--t10); line-height: 1.6; color: var(--txd); }
 .at-rulewho { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; font-size: var(--t10); color: var(--txl); }
 .at-rulewho b { font-weight: 400; color: var(--txm); }
@@ -231,8 +227,6 @@ tr[data-open] > .at-name { box-shadow: inset 2px 0 0 var(--acc); }
 .at-own > div { display: flex; flex-wrap: wrap; gap: 3px 9px; align-items: baseline; }
 .at-own b { font-weight: 500; color: var(--txm); }
 .at-own p { margin: 3px 0 0; line-height: 1.55; color: var(--txd); }
-.at-hookagent { margin-top: 12px; }
-.at-hookagent h3 small { margin-left: 8px; font-size: var(--t9); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--txl); }
 .at-hook { padding: 8px 11px; margin-bottom: 6px; border: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
 .at-hookhead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; }
 .at-hookhead b { font-weight: 500; font-size: var(--t10); color: var(--txb); }
