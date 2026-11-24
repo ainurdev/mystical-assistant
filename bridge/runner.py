@@ -455,7 +455,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _mcp_config(claude_session_id: str, extra: "dict | None" = None,
-                gateway: "dict | None" = None) -> str:
+                gateway: "dict | None" = None, computer: "str | None" = None) -> str:
     """Path to the --mcp-config file for the bridge's own tool servers, plus any
     external servers this session left switched on. PYTHONPATH pins the repo root
     so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
@@ -489,6 +489,10 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None,
                 "mystical-ux": {"command": sys.executable,
                                 "args": ["-m", "bridge.ux_mcp"], "env": env},
                 **({"mystical": gateway} if gateway else {}),    # bridge/gateway.py
+                # bridge/computer.py, for a chat that switched it on. Its session is the
+                # store's id: the claude id above is the source's on a duplicated chat's first turn.
+                **({"computer": {"command": sys.executable, "args": ["-m", "bridge.computer_mcp"],
+                                 "env": {**env, "MYSTICAL_COMPUTER_SESSION": computer}}} if computer else {}),
             }}, f)
     except BaseException:
         shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
@@ -615,6 +619,13 @@ def _with_mode(args: list[str], mode: "str | None") -> list[str]:
     return out + ["--permission-mode", mode]
 
 
+def _computer_session(job: "Job") -> "str | None":
+    """The session a turn's computer-use server acts for, or None: off unless this
+    chat switched it on (Tools modal), and Mac only (bridge/computer.py)."""
+    from bridge import computer
+    return job.store_session_id if computer.enabled(job.store_session_id) else None
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -622,7 +633,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
               autocompact: str | None = None, gateway: "dict | None" = None,
-              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None) -> list[str]:
+              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None,
+              computer: "str | None" = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -671,7 +683,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
             # below (an interactive one too: start_streaming_job's skip_pack)
             # still take MCP off entirely.
             extra, strict = _external_mcp(disabled_tools, cwd)
-            cmd += ["--mcp-config", _mcp_config(claude_session_id, extra, gateway)]
+            cmd += ["--mcp-config", _mcp_config(claude_session_id, extra, gateway, computer)]
             if chrome:
                 cmd.append("--chrome")
             if strict:
@@ -3400,7 +3412,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None,
                         skip_pack=job.skip_pack, gateway=gateway_def, rule_hooks=rule_hooks,
-                        policy_denied=policy_denied)
+                        policy_denied=policy_denied, computer=_computer_session(job))
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])

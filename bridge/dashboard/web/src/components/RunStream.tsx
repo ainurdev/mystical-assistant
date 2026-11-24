@@ -3112,7 +3112,8 @@ export const RunStream = memo(function RunStream({
         const live = !!onRespond && pendingIds.has(event.request_id);
         if (live && askDocked) return (
           <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
-            <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
+            <AskMarker kind="question" topic={event.questions[0]?.computer ? "Computer · apps on your Mac"
+              : event.questions.length > 1 ? `${event.questions.length} questions`
               : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
           </div>
         );
@@ -3178,6 +3179,10 @@ export const RunStream = memo(function RunStream({
       case "permission_resolved":
       case "question_answered":
         return null; // shown inside the relevant card
+      case "computer_state":   // driving: the pill over the prompt box (ComputerPill)
+        return event.state === "stopped"
+          ? <DividerRow key={i} text={`Computer use stopped${event.by === "esc" ? " with Esc" : event.by === "menu" ? " from the menu bar" : ""} · ${event.actions ?? 0} action${event.actions === 1 ? "" : "s"} · its apps dropped`} />
+          : null;
     }
   };
 

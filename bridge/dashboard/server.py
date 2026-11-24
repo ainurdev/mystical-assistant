@@ -733,6 +733,14 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(attribution.breakdown(sid))
+        # Computer use's Tools row (bridge/computer.py).
+        if path.startswith("/local/sessions/") and path.endswith("/computer"):
+            from bridge import computer
+            sid = path[len("/local/sessions/"):-len("/computer")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(computer.status(sid))
         # The SESSION tab's window, time and spend, from the CLI's own transcript.
         if path.startswith("/local/sessions/") and path.endswith("/meter"):
             sid = path[len("/local/sessions/"):-len("/meter")]
@@ -1641,6 +1649,28 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_setting(store.DEFAULT_TOOLS_KEY, json.dumps(rules))
             return self._json({"ok": True, "default": rules})
+        if path == "/local/computer/call":
+            # computer_mcp's relay: the session is the store id the bridge gave it.
+            from bridge import computer
+            return self._json(computer.call(str(body.get("session_id") or ""),
+                                            str(body.get("name") or ""), body.get("arguments") or {}))
+        if path == "/local/computer/app":
+            # Mystical.app's pull: results and permissions in, the next orders out.
+            from bridge import computer
+            return self._json(computer.app_exchange(body))
+        if path.startswith("/local/sessions/") and path.endswith("/computer"):
+            from bridge import computer
+            sid = path[len("/local/sessions/"):-len("/computer")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if body.get("stop"):
+                computer.stop(sid, "you")
+            elif isinstance(body.get("on"), bool):
+                if body["on"] and not computer.available():
+                    return self._json({"error": "computer use is Mac only"}, 409)
+                computer.set_enabled(sid, body["on"])
+            return self._json(computer.status(sid))
         if path.startswith("/local/sessions/") and path.endswith("/tools"):
             from bridge import toolsets
             sid = path[len("/local/sessions/"):-len("/tools")]

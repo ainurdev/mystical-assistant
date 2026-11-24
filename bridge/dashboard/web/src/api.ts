@@ -238,6 +238,8 @@ export interface Question {
   header: string;
   options: QuestionOption[];
   multiSelect?: boolean;
+  /** Computer use's access ask (bridge/computer.py): drawn as its own dock. */
+  computer?: { apps: { name: string; tier: "full" | "look" }[]; why: string };
 }
 export interface AnswerSelection {
   header: string;
@@ -367,6 +369,7 @@ export type RunEvent =
   // the helpers card). The pick goes back as an answer headed `scope`.
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string; scopes?: AllowScope[] }
   | { type: "question"; request_id: string; questions: Question[] }
+  | { type: "computer_state"; state: "driving" | "stopped"; apps?: string[]; by?: string; actions?: number }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
   // The CLI retrying a request (system/api_retry), one per try. `error` is its
@@ -1422,6 +1425,17 @@ export interface InspectorState {
 }
 /** Everything a session can switch off. `rule` is the string handed to
  *  `claude --disallowedTools`, and the key we store. */
+/** Computer use for one chat (bridge/computer.py status()). */
+export interface ComputerStatus {
+  available: boolean;
+  on: boolean;
+  app: { online: boolean; screen?: boolean; accessibility?: boolean; signed?: string };
+  driving: boolean;
+  busy_with: string | null;
+  actions: number;
+  apps: string[];
+}
+
 export interface Toolsets {
   builtins: { rule: string; label: string; hint: string }[];
   servers: McpServer[];
@@ -2134,6 +2148,9 @@ export const api = {
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
   toolsets: () => req<Toolsets>("/local/toolsets"),
+  computer: (id: string) => req<ComputerStatus>(`/local/sessions/${encodeURIComponent(id)}/computer`),
+  setComputer: (id: string, body: { on: boolean } | { stop: true }) =>
+    req<ComputerStatus>(`/local/sessions/${encodeURIComponent(id)}/computer`, { method: "POST", body }),
   setToolsetDefault: (disabled_tools: string[]) =>
     req<{ ok: boolean; default: string[] }>("/local/toolsets/default", {
       method: "POST",
