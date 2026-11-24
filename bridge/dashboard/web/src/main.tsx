@@ -22,7 +22,8 @@ import "./spine.css";
 // the listener has to be installed here rather than in the SETTINGS component.
 import "./lib/installprompt";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { App } from "./App";
+import { RouterProvider } from "@tanstack/react-router";
+import { router } from "./router";
 import { watchStill } from "./lib/still";
 import { queryClient } from "./lib/queries";
 
@@ -31,7 +32,7 @@ watchStill();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );

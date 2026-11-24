@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { lazyRouteComponent, useRouter, useRouterState } from "@tanstack/react-router";
+import { pathOf, placeOf, type Place } from "./lib/routes";
 import { code, main, queryClient, reread, runningHints } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
@@ -52,7 +54,7 @@ import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
 import { ago, fmtReset, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
-import { offerUsageSharing } from "./components/hud/UsageSharing";
+import { offerUsageSharing } from "./components/hud/UsageOffer";
 import {
   autoBaseFont,
   fontStack,
@@ -153,14 +155,14 @@ import { isTeam, readOnly as isReadOnly, seen, SHARED_NAME, SHARED_REL } from ".
 import { RivendellIcon } from "./lib/rivendellicon";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
-import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
+import type { Tab as SettingsTab } from "./components/hud/SettingsModal";
 import { AskDialog, askConfirm, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
 import { RestartIntro, restartBridge } from "./lib/restart";
 import { sessionEdits } from "./lib/sessionedits";
 import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
-import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
+import type { Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
 import { MysticalHost } from "./components/hud/MysticalPanel";
 import { openMysticalPanel } from "./lib/mysticaldir";
@@ -288,6 +290,13 @@ interface HeldPrompt {
   typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
 
+// Loaded the first time they open (ADR 0006). The router's guard reloads the page
+// once when a newer build deleted the piece; a second miss is the root route's
+// error screen. Each render sits in its own <Suspense>, or loading one would
+// suspend the whole app.
+const SettingsModal = lazyRouteComponent(() => import("./components/hud/SettingsModal"), "SettingsModal");
+const AnalyzeModal = lazyRouteComponent(() => import("./components/hud/AnalyzeModal"), "AnalyzeModal");
+
 /** The WORK panel with the Needs you list, so a task whose part asks shows the question. */
 function WorkTab(props: Omit<Parameters<typeof WorkPanel>[0], "asking">) {
   const needs = useNeeds();
@@ -391,10 +400,40 @@ export function App() {
 
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Which tab the next open lands on, when something asked for one by name
-  // (lib/opensettings) — cleared on close, so the menus keep their default.
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
+  // Where you are is the URL (lib/routes). The functions below read the router at
+  // call time, not this render: listeners set up once call them.
+  const router = useRouter();
+  const path = useRouterState({ select: (r) => r.location.pathname });
+  const place = placeOf(path);
+  const go = (p: Place, replace: boolean) => {
+    const to = pathOf(p);
+    if (router.state.location.pathname === to) return;
+    if (replace) router.history.replace(to); else router.history.push(to);
+  };
+  const placeNow = () => placeOf(router.state.location.pathname);
+  // SETTINGS is open while the URL says so; its page is the URL's (a name an
+  // older caller used included: the modal maps it and reports the page back).
+  const settingsOpen = place.kind === "settings";
+  const settingsTab = place.kind === "settings" ? place.page as SettingsTab | undefined : undefined;
+  // The session SETTINGS was opened over by a push of ours, so closing can step
+  // back instead of stacking a second entry for the same session.
+  const settingsOver = useRef<string | null | undefined>(undefined);
+  // Opening adds a history entry; moving between its pages replaces it, so back leaves in one step.
+  const showSettings = (page?: string) => {
+    if (placeNow().kind === "settings") return go({ kind: "settings", page }, true);
+    settingsOver.current = sessionIdRef.current;
+    go({ kind: "settings", page }, false);
+  };
+  // `next`: the session to land on, when closing is part of opening another.
+  const closeSettings = (next?: string) => {
+    if (placeNow().kind !== "settings") return;
+    const over = settingsOver.current;
+    settingsOver.current = undefined;
+    if (next === undefined && over !== undefined && over === sessionIdRef.current) return router.history.back();
+    const id = next ?? sessionIdRef.current;
+    go(id ? { kind: "session", id } : { kind: "home" }, true);
+  };
+  const setSettingsOpen = (open: boolean) => open ? showSettings() : closeSettings();
   // The kind presets this browser kept itself go to the bridge once, where every flow's run
   // default now lives (lib/flowruns), and leave the browser once it has answered.
   useEffect(() => {
@@ -984,6 +1023,7 @@ export function App() {
   const projectRel = state?.project?.rel ?? null;
   // Opening the chat you had open, once the first list has answered (or failed).
   const listed = sessionsQ.status !== "pending";
+  const askedAtLoad = useRef(place.kind === "session" ? place.id : null);
   useEffect(() => {
     if (!listed) return;
     const ss = queryClient.getQueryData(main.sessions().queryKey)?.sessions ?? [];
@@ -995,19 +1035,17 @@ export function App() {
         // takes — every panel reads the *session's* repo, and a run carries it
         // in the request — so a page load leaves the bridge's own selection
         // (which Telegram shares) alone.
-        // ?s=<id> — a link that names a session (Rivendell's dashboardUrl)
-        // wins over the one you had open.
-        const asked = new URLSearchParams(location.search).get("s");
-        if (asked) {
-          // Used once: a reload or a bookmark of this tab mustn't keep reopening it.
-          const u = new URL(location.href);
-          u.searchParams.delete("s");
-          history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-        }
+        // A URL that names a session (a reload, Rivendell's dashboardUrl, a
+        // notification) wins over the one you had open.
+        // #/s/<id> (an old ?s= link arrives as one, router.tsx) — used once: a
+        // session closing later falls through to the rest, as before.
+        const asked = askedAtLoad.current;
+        // Kept while the list is empty (a failed first answer): the next run still opens it.
+        if (ss.length) askedAtLoad.current = null;
         const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         // Reopening what you had open keeps the workspace you picked last; a
-        // link that names a session (?s=) brings that session's workspace.
+        // URL that names a session brings that session's workspace.
         if (was) {
           openSession(was.id, false, false);
           if (asked && was.id === asked) revealWorkspace(was);
@@ -1024,6 +1062,33 @@ export function App() {
   // The list's own answers don't re-run it: only the first, a session closing, or the project moving.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listed, projectRel, sessionId, markBoot]);
+
+  // The open session is the URL: opening one adds a history entry. One that
+  // follows no session (the load, the fresh screen, an archived chat's successor)
+  // replaces it, so back never lands on a session that isn't there. Under
+  // SETTINGS the URL stays SETTINGS; closing it names the session.
+  const prevSid = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prevSid.current;
+    prevSid.current = sessionId;
+    if (!sessionId) return;
+    const now = placeNow();
+    if (now.kind === "settings" || (now.kind === "session" && now.id === sessionId)) return;
+    go({ kind: "session", id: sessionId }, was === null || now.kind === "home");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- go and placeNow read the router
+  }, [sessionId]);
+  // And back: back, forward or an edited URL opens the session it names. The
+  // load's own URL is the restore effect's (it waits for the list).
+  const lastPath = useRef(path);
+  useEffect(() => {
+    if (path === lastPath.current) return;
+    lastPath.current = path;
+    if (place.kind !== "settings") settingsOver.current = undefined;
+    if (place.kind !== "session" || place.id === sessionIdRef.current) return;
+    const s = sessions.find((x) => x.id === place.id);
+    if (s) selectSession(s); else openSession(place.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new path opens anything
+  }, [path]);
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
@@ -1661,8 +1726,7 @@ export function App() {
     const open = (e: Event) => {
       // One of the tabs AI MANAGEMENT replaced may still be named (lib/opensettings
       // callers, an older bridge's bot button); the modal maps it to its fold.
-      setSettingsTab((e as CustomEvent<SettingsTab>).detail);
-      setSettingsOpen(true);
+      showSettings((e as CustomEvent<SettingsTab>).detail);
     };
     window.addEventListener("hud:settings", open);
     return () => window.removeEventListener("hud:settings", open);
@@ -1691,15 +1755,16 @@ export function App() {
   // selectSession).
   useEffect(() => {
     const open = (e: Event) => {
-      setSettingsOpen(false);
-      openSession((e as CustomEvent<string>).detail);
+      const id = (e as CustomEvent<string>).detail;
+      closeSettings(id);
+      openSession(id);
       toChat();
     };
     // A Claude subagent's sidebar row: its session, then AGENTS on it (AgentsPill
     // waits for that session's roster).
     const openSub = (e: Event) => {
       const { session, agent } = (e as CustomEvent<OpenSubagent>).detail;
-      setSettingsOpen(false);
+      closeSettings(session);
       const same = sessionIdRef.current === session;
       openSession(session);
       toChat();
@@ -2045,6 +2110,7 @@ export function App() {
   // a worktree is waiting on), and the real session takes it over as it is.
   function openBlank(project?: string) {
     skipRestore.current = true;
+    go({ kind: "home" }, false);   // its own entry: back returns to the session left
     setSessionId(null);
     setTurns([]);
     setBoot(null);             // the session left's; its fresh screen would say it
@@ -3520,7 +3586,7 @@ export function App() {
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" hidden={inDesign} style={{ display: inDesign ? "none" : undefined, borderRight: "1px solid var(--border)" }}>
                 <Brand folded={!settings.leftOpen} onFold={toggleLeft}
-                  workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
+                  workspace={<WorkspaceButton news={wsNews} onManage={() => showSettings("workspaces")} />} />
                 <SessionsPanel
                   folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
                   sessions={sidebarSessions} ticketKids={ticketKids} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
@@ -3764,6 +3830,7 @@ export function App() {
             </div>
 
             {analyzeProject && (
+              <Suspense fallback={null}>
               <AnalyzeModal
                 // The file is part of the key so a second deep-link (same
                 // project, different file) remounts on that file.
@@ -3786,6 +3853,7 @@ export function App() {
                 }}
                 onOpenGit={() => { setAnalyzeProject(null); patchSettings({ rightTab: "git", rightOpen: true }); }}
               />
+              </Suspense>
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
             <ShortcutSheet open={sheetOpen} sendKey={settings.sendKey} onClose={() => setSheetOpen(false)} />
@@ -3803,6 +3871,7 @@ export function App() {
             <PillHost />
             {experimental.enabled && <MysticalHost projects={mysticalProjects} />}
             {settingsOpen && (
+              <Suspense fallback={null}>
               <SettingsModal cwd={selected?.cwd} sessionId={selected?.id ?? null}
                 chatInfo={(id) => sessions.find((s) => s.id === id)}
                 host={host.host} port={location.port || "8790"} startTab={settingsTab}
@@ -3824,11 +3893,13 @@ export function App() {
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
                   onDesign: plugins.design
-                    ? (texts, rel) => { setSettingsOpen(false); setSettingsTab(undefined); feed(texts, rel); }
+                    ? (texts, rel) => { setSettingsOpen(false); feed(texts, rel); }
                     : undefined,
                 }}
                 weather={weather} onSetUnit={setUnit} onSetPlace={setPlace}
-                onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
+                onTab={showSettings}
+                onClose={() => setSettingsOpen(false)} />
+              </Suspense>
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx}
               width={ctxMenu.type === "railtab" ? 288 : undefined} />}

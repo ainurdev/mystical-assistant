@@ -109,6 +109,7 @@ import { testText } from "../../lib/rivendelltasks";
 import { PromptBubble } from "../PromptBubble";
 import { FinalResult } from "../RunStream";
 import { Keys } from "../ui/Keys";
+import type { SettingsPage } from "../../lib/routes";
 
 export interface SettingsModalProps {
   /** The open session's folder: which project's servers and skills EXPERIMENTAL lists. */
@@ -118,6 +119,8 @@ export interface SettingsModalProps {
   /** Which tab to land on, when the opener asked for one by name (a dead-login
    *  badge sends you to ACCOUNTS). Read once: the modal mounts per open. */
   startTab?: Tab;
+  /** The page on show, each time it changes: the URL follows it (lib/routes). */
+  onTab?: (tab: Tab) => void;
   settings: HudSettings;
   onTheme: (t: ThemeKey) => void;
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
@@ -161,10 +164,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-export type Tab = "appearance" | "transcript" | "notifications"
-  | "projects" | "workspaces" | "aimgmt" | "skills" | "agenttools"
-  | "integrations" | "system" | "move"
-  | "mac";
+export type Tab = SettingsPage;
 
 /** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
  *  that still names one (a bookmark, an older bridge's bot button) opens the
@@ -4714,6 +4714,7 @@ export function SettingsModal(props: SettingsModalProps) {
     projects,
     project,
     startTab,
+    onTab,
     weather,
     onSetUnit,
     onSetPlace,
@@ -4726,6 +4727,13 @@ export function SettingsModal(props: SettingsModalProps) {
   const [start] = useState(() => normalizeTab(startTab));
   const startSec = start.sec;
   const [tab, setTab] = useState<Tab>(start.tab ?? "appearance");
+  // The URL names the page: report each change, and follow a new name (back,
+  // openSettings while open). The first report puts a legacy name's page in the URL.
+  useEffect(() => { onTab?.(tab); }, [tab]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const t = normalizeTab(startTab).tab;
+    if (t) setTab(t);
+  }, [startTab]);
   const [sysTab, setSysTab] = useState<SysTab>(() => sysTabOf(start.sec));
   // SETTINGS ▸ Skills' repo: Projects ▸ a project ▸ Skills ▸ Open… picks it; else the session's.
   const [skillsFor, setSkillsFor] = useState<string | null>(null);

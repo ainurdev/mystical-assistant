@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { code, reread } from "../../lib/queries";
 import { AtSign, ChevronRight, Copy, Diff, Folder, FolderOpen, FoldVertical, RotateCw, Sparkle, UnfoldVertical } from "lucide-react";
 import { api, type GitFile } from "../../api";
-import { buildRows, dirsOf } from "./EditorTab";
+import { buildRows, dirsOf } from "../../lib/filetree";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { askConfirm } from "../ui/Ask";
 import { FileIcon } from "../../lib/fileicon";

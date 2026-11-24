@@ -3245,6 +3245,10 @@ class Handler(BaseHTTPRequestHandler):
         if fp != WEB_DIR and not fp.startswith(WEB_DIR + os.sep):
             return self._send(b"forbidden", 403, "text/plain")
         cache = "no-cache"
+        if not os.path.isfile(fp) and path.startswith("/assets/"):
+            # A piece an in-place build deleted: the page as script would fail as
+            # a MIME error, which the router's reload-once guard doesn't know.
+            return self._send(b"not found", 404, "text/plain")
         if not os.path.isfile(fp):
             fp = os.path.join(WEB_DIR, "index.html")
             if not os.path.isfile(fp):
