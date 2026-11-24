@@ -3,6 +3,7 @@ import { api } from "../api";
 import { ImageLightbox, MediaThumb, ZoomButton, type Shown } from "./ImageLightbox";
 import type { ProofItem } from "../lib/pictures";
 import { useChatImages } from "../lib/chatimages";
+import { usePic } from "../lib/nav";
 
 /* What the agent is showing you (lib/pictures): drawn large with the answer, outside
    the WORK zone, each with its caption. A running turn draws one in place as it lands;
@@ -32,7 +33,6 @@ export function ProofBlock({ items, all, turn }: {
   all?: ProofItem[];
   turn?: string;
 }) {
-  const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const galleryOnly = useChatImages().shown === "gallery";
   const markGone = (p: string) => setGone((g) => new Set(g).add(p));
@@ -44,6 +44,7 @@ export function ProofBlock({ items, all, turn }: {
     tool: it.tool,
     turn,
   })));
+  const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
   if (!items.length) return null;
   if (galleryOnly) {
     const first = items.flatMap((it) => it.images).find((p) => !gone.has(p));

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownToLine, ArrowUpFromLine, ChevronRight, FileDiff, GitBranch, Monitor, Server, Sparkles, TriangleAlert } from "lucide-react";
-import { api, type Transcript, type UpdateInfo } from "../../api";
+import { useQuery } from "@tanstack/react-query";
+import { api, type UpdateInfo } from "../../api";
+import { main, rail, reread } from "../../lib/queries";
 import { notify } from "./Notifications";
 import { Bullets, Meta } from "./ChangelogButton";
 import { Flow, type FlowNode } from "./LiveReader";
@@ -18,9 +20,7 @@ import { wall } from "../../lib/surfaces";
 // SHIP rows (the right rail's one button, ChangelogButton); UpdateButton is the
 // labelled chip SETTINGS shows, with its own popover. Before an update is taken, it
 // leads with what it brings (bridge/whatsnew.py preview: a headline and bullets).
-// ponytail: the chip polls on its own (like NotificationCenter), so SETTINGS stays dumb;
-// the rail's hub polls for its rows.
-export const UPDATE_POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
+// Both looks read the one rail.update key (lib/queries, every 5 min), so SETTINGS stays dumb.
 
 export type Feed = (texts: string[], project?: string, fresh?: boolean, onSession?: (id: string) => void) => void;
 
@@ -139,33 +139,20 @@ function useUpdateActions(info: UpdateInfo | null, reload: () => Promise<void>, 
   return { phase, busy: phase !== "", err, failed, session, fix, apply, ship, fixWithClaude, openFix, retry, recheck };
 }
 
-// The fixing session, live: /running every few seconds says what it does now; once it
+// The fixing session, live: the shared /running poll says what it does now; once it
 // goes quiet, one tailed transcript says how its last turn ended (lib/fixsession). The
-// transcript is fetched again only after the session was live again. Polling stops
-// once the fix ends; reopening the reader looks again.
+// transcript is read again while its last turn hasn't ended, and after the session was
+// live again.
 const FIX_POLL_MS = 4000;
 function useFixSession(id: string): FixView | null {
-  const [view, setView] = useState<FixView | null>(null);
-  useEffect(() => {
-    setView(null);
-    if (!id) return;
-    let on = true, t: Transcript | null = null, wasLive = true;
-    const tick = async () => {
-      try {
-        const run = await api.running();
-        const live = isLive(id, run);
-        if (!live && (wasLive || !finished(t))) t = await api.transcript(id, 0, { tail: 1 });
-        wasLive = live;
-        const v = fixView(id, run, t);
-        if (on) setView(v);
-        if (v.phase === "done" || v.phase === "failed") clearInterval(h);   // ended: nothing left to follow
-      } catch { /* next tick */ }
-    };
-    const h = setInterval(tick, FIX_POLL_MS);
-    void tick();
-    return () => { on = false; clearInterval(h); };
-  }, [id]);
-  return view;
+  const run = useQuery({ ...main.running(), enabled: !!id }).data;
+  const live = !!run && isLive(id, run);
+  const tail = main.session({ id, cursor: 0, tail: 1 });
+  const t = useQuery({ ...tail, enabled: !!id && !!run && !live,
+    refetchInterval: (q) => (finished(q.state.data ?? null) ? false : FIX_POLL_MS) }).data ?? null;
+  const wasLive = useRef(false);
+  useEffect(() => { if (wasLive.current && !live) void reread(tail.queryKey); wasLive.current = live; }, [live]);
+  return id && run ? fixView(id, run, t) : null;
 }
 
 const FIX_TOP: Record<FixView["phase"], string> = {
@@ -334,22 +321,14 @@ export function UpdateReader({ info, side, reload, onFeed, onBusy, onClose, onSh
 
 /** The labelled chip SETTINGS shows when an update is waiting, with its own popover. */
 export function UpdateButton({ onFeed }: { onFeed: Feed }) {
-  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const info: UpdateInfo | null = useQuery(rail.update()).data ?? null;
   const [open, setOpen] = useState(false);
   const [hov, setHov] = useState("");
   const [commitsOpen, setCommitsOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
-  async function load() {
-    try { setInfo(await api.update()); } catch { /* ignore */ }
-  }
+  const load = () => reread(rail.update().queryKey);
   const { phase, busy, err, failed, session, fix, apply, ship, fixWithClaude, openFix, retry, recheck } = useUpdateActions(info, load, onFeed, () => setOpen(false));
-
-  useEffect(() => {
-    void load();
-    const id = setInterval(load, UPDATE_POLL_MS);
-    return () => clearInterval(id);
-  }, []);
 
   useReadComing(info, open);
 
@@ -443,7 +422,7 @@ export function UpdateButton({ onFeed }: { onFeed: Feed }) {
           ancestor, and so it stacks over SETTINGS. */}
       {open && pop && (incoming > 0 || local > 0 || err !== "" || busy) && createPortal(
         <div ref={popRef} className="mscroll"
-          style={{ position: "fixed", ...pop, width: 420, maxWidth: "92vw", overflowY: "auto", zIndex: 96, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
+          style={{ position: "fixed", ...pop, width: 420, maxWidth: "92vw", overflowY: "auto", zIndex: 96, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease backwards" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
             <span style={{ fontSize: "var(--t13)", color: "var(--txb)", letterSpacing: ".5px" }}>
               {incoming && local ? "Sync platform" : incoming ? "Update ready" : "Ship your changes"}

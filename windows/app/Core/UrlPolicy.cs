@@ -35,7 +35,7 @@ public static class UrlPolicy
     }
 
     /// The dashboard opened on one session: `?s=` is the dashboard's own deep
-    /// link (App.tsx), `skipboot` skips the intro a reload would replay.
+    /// link (router.tsx turns it into `#/s/<id>`), `skipboot` skips the intro a reload would replay.
     public static Uri Session(Uri dashboard, string sessionId)
     {
         var items = Items(dashboard).Where(kv => !LinkItems.Contains(kv.Key)).ToList();

@@ -25,6 +25,9 @@
     "@fontsource/share-tech-mono": "^5.2.7",
     "@lezer/highlight": "^1.2.3",
     "@replit/codemirror-vim": "^6.4.0",
+    "@sentry/browser": "^11.16.0",
+    "@tanstack/react-query": "^5.108.4",
+    "@tanstack/react-router": "^1.170.46",
     "@tanstack/react-virtual": "^3.14.5",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
@@ -41,6 +44,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@sentry/vite-plugin": "^11.16.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^26.0.0",
     "@types/react": "^19.0.0",

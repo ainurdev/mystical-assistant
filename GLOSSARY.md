@@ -183,3 +183,25 @@ _Avoid_: insight, issue, suggestion, recommendation, RED
 **Click log**:
 The dashboard's own record of the controls you press and where, kept on this machine. Usage sharing is the other source: masked clicks and replays sent to PostHog.
 _Avoid_: telemetry, analytics, tracking
+
+## Reports
+
+**Install**:
+One bridge and every window that drives it: Mystical.app, a browser tab, a phone on the Mini App.
+_Avoid_: installation, device, machine
+
+**Team install**:
+An install whose bridge has an enabled connection to the team's Rivendell. Only team installs send **Reports**.
+_Avoid_: internal install, trusted install
+
+**Report**:
+One **Crash** or **Slow spot** that a team install sends to Sentry.
+_Avoid_: issue, event, telemetry
+
+**Crash**:
+An error the bridge or the dashboard page did not handle, or a turn that ended CRASHED.
+_Avoid_: issue, exception, failure
+
+**Slow spot**:
+A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start.
+_Avoid_: performance issue, lag, jank

@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
-import { api, type WeeklyReport } from "../../api";
+import { rail } from "../../lib/queries";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
 import { notify } from "./Notifications";
@@ -21,7 +22,6 @@ import { daysOf, dur, fmtTokens, pct, timesheet } from "../../lib/week";
  *  Time and tokens, never dollars (9f612a4). "Agent time" because turn wall
  *  time adds up across parallel sessions, so a day can hold 48h of it. */
 
-const POLL_MS = 60_000;
 const TOP = 5;   // projects named in the legend before "N more"
 
 
@@ -43,25 +43,14 @@ function Fold({ title, em, acts, closed, onToggle, children }: {
 
 export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => void }) {
   const [back, setBack] = useState(0);
-  const [rep, setRep] = useState<WeeklyReport | null>(null);
+  const repQ = useQuery(rail.report({ back: back ? 1 : undefined }));   // polled every minute (lib/queries)
+  const rep = repQ.data ?? null;
   // A bridge still running pre-restart code has no /local/report route: say
   // "restart" instead of spinning forever.
-  const [stale, setStale] = useState(false);
+  const stale = repQ.isError;
   const [more, setMore] = useState(false);   // "N more" opens the legend in place
   const [stClosed, setStClosed] = useStickyFlag("usage-stopped-closed");
   const [tkClosed, setTkClosed] = useStickyFlag("usage-tokens-closed");
-
-  useEffect(() => {
-    let live = true;
-    setRep(null);
-
-    const load = () => api.report(back)
-      .then((r) => { if (live) { setRep(r); setStale(false); } })
-      .catch(() => { if (live) setStale(true); });
-    void load();
-    const id = setInterval(load, POLL_MS);
-    return () => { live = false; clearInterval(id); };
-  }, [back]);
 
   const days = rep ? daysOf(rep) : [];
   const today = new Date().toLocaleDateString("sv-SE");

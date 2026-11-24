@@ -4,6 +4,7 @@ import { Image as ImageIcon, Search, Shapes, Type, X } from "lucide-react";
 import { DynamicIcon, iconNames } from "lucide-react/dynamic";
 import { api, projectLogoUrl, type ProjectMark, type RepoImages } from "../../api";
 import { inkCss, liftInk } from "../../lib/ink";
+import { queryClient, settings as setq } from "../../lib/queries";
 import { readLogo, shrinkLogo, useLogoInfo, type LogoInfo } from "../../lib/logoinfo";
 import { hashTint, projectInitials, projectMark, projectName, putProjectMark } from "../../lib/surfaces";
 
@@ -75,7 +76,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const aurora = document.documentElement.dataset.fam === "aurora";   // AURORA draws logos as phosphor, never plated
 
   // From this repo: the pictures it tracks. A bridge older than the route 404s.
-  useEffect(() => { api.repoImages(project).then((r) => setMine(r.images ?? [])).catch(() => setMine([])); }, [project]);
+  useEffect(() => { queryClient.fetchQuery(setq.repoImages({ project })).then((r) => setMine(r.images ?? [])).catch(() => setMine([])); }, [project]);
 
   // Esc, a click outside, or scrolling what's under it closes it. The tile
   // counts as inside, so its own click can toggle it shut. Esc listens in the

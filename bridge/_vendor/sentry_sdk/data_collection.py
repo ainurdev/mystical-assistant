@@ -1,0 +1,266 @@
+"""
+Data Collection configuration.
+
+Implements the ``data_collection`` client option described in the Sentry SDK
+"Data Collection" spec
+(https://develop.sentry.dev/sdk/foundations/client/data-collection/).
+
+``data_collection`` lets users enable or restrict automatically
+collected data by category (user identity, cookies, HTTP headers, URL query params,
+HTTP bodies, generative AI inputs/outputs, stack frame variables, source
+context).
+"""
+
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Union, cast
+from urllib.parse import parse_qs, urlencode
+
+from sentry_sdk._types import SENSITIVE_DATA_SUBSTITUTE
+
+if TYPE_CHECKING:
+    from sentry_sdk._types import (
+        DataCollection,
+        GenAICollectionBehaviour,
+        GraphQLCollectionBehaviour,
+        HttpHeadersCollectionBehaviour,
+        KeyValueCollectionBehaviour,
+        MCPCollectionBehaviour,
+    )
+
+# ``http_bodies`` defaults to this (collect everything the
+# platform supports); an empty list is the explicit opt-out.
+# ``incoming_response`` is not included here because we don't
+# currently capture incoming response bodies.
+_ALL_HTTP_BODY_TYPES = [
+    "incoming_request",
+    "outgoing_request",
+    "outgoing_response",
+]
+
+# Default number of source lines captured above and below a stack frame.
+_DEFAULT_FRAME_CONTEXT_LINES = 5
+
+# Collection modes for key-value data (cookies, headers, URL query params).
+# snake_case (Python-only deviation from the spec's camelCase); never
+# serialized to Sentry.
+_VALID_KEY_VALUE_COLLECTION_BEHAVIOUR_MODES = ("off", "denylist", "allowlist")
+
+# Values of keys that contain any of
+# these terms (partial, case-insensitive) are always replaced with
+# ``"[Filtered]"`` regardless of the configured collection mode.
+_SENSITIVE_DENYLIST = [
+    "auth",
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "pwd",
+    "key",
+    "jwt",
+    "bearer",
+    "sso",
+    "saml",
+    "csrf",
+    "xsrf",
+    "credentials",
+    "session",
+    "sid",
+    "identity",
+]
+
+
+def _is_sensitive_key(key: str, extra_terms: "Optional[List[str]]" = None) -> bool:
+    """
+    Return whether ``key`` matches the sensitive denylist using a partial,
+    case-insensitive substring match.
+
+    :param extra_terms: additional deny terms (e.g. user-provided) to consider
+        alongside the built-in `_SENSITIVE_DENYLIST`.
+    """
+    lowered = key.lower()
+    for term in _SENSITIVE_DENYLIST:
+        if term in lowered:
+            return True
+    if extra_terms:
+        for term in extra_terms:
+            if term and term.lower() in lowered:
+                return True
+    return False
+
+
+def _apply_data_collection_filtering_to_query_string(
+    query_string: str,
+    behaviour: "KeyValueCollectionBehaviour",
+) -> "Union[str, None]":
+    parsed_qs = parse_qs(query_string, keep_blank_values=True)
+    filtered_qs = _apply_key_value_collection_filtering(
+        items=parsed_qs, behaviour=behaviour
+    )
+
+    if filtered_qs:
+        return urlencode(filtered_qs, doseq=True)
+
+    return None
+
+
+def _apply_key_value_collection_filtering(
+    items: "Mapping[str, Any]",
+    behaviour: "KeyValueCollectionBehaviour",
+    substitute: "Any" = SENSITIVE_DATA_SUBSTITUTE,
+) -> "Dict[str, Any]":
+
+    if behaviour["mode"] == "off":
+        return {}
+
+    result: "Dict[str, Any]" = {}
+
+    if behaviour["mode"] == "allowlist":
+        for key, value in items.items():
+            is_allowed = False
+            if isinstance(key, str):
+                lowered = key.lower()
+                is_allowed = any(
+                    term and term.lower() in lowered
+                    for term in behaviour.get("terms", [])
+                )
+            if is_allowed and not _is_sensitive_key(key):
+                result[key] = value
+            else:
+                result[key] = substitute
+        return result
+
+    # denylist behaviour
+    for key, value in items.items():
+        if isinstance(key, str) and _is_sensitive_key(
+            key=key, extra_terms=behaviour.get("terms", [])
+        ):
+            result[key] = substitute
+        else:
+            result[key] = value
+    return result
+
+
+def _resolve(
+    d: "dict[str, Any]",
+) -> "DataCollection":
+    """
+    Build a fully-resolved ``DataCollection`` from a user-supplied
+    ``data_collection`` dict, filling in spec defaults for any omitted or
+    partially-specified field.
+    """
+    frame_context_lines = d.get("frame_context_lines")
+    if frame_context_lines is None:
+        frame_context_lines = _DEFAULT_FRAME_CONTEXT_LINES
+    elif isinstance(frame_context_lines, bool):
+        frame_context_lines = _DEFAULT_FRAME_CONTEXT_LINES if frame_context_lines else 0
+    else:
+        if not isinstance(frame_context_lines, int) or frame_context_lines < 0:
+            raise ValueError(
+                "Invalid `frame_context_lines` value: Must be 0 or greater."
+            )
+
+    raw_stack_frame_variables = d.get("stack_frame_variables", True)
+    stack_frame_variables: "Union[bool, KeyValueCollectionBehaviour]"
+
+    stack_frame_variables = (
+        _kvcb_from_value(raw_stack_frame_variables)
+        if isinstance(raw_stack_frame_variables, dict)
+        else bool(raw_stack_frame_variables)
+    )
+
+    # http_bodies: omitted means "all valid types"; [] is the explicit opt-out.
+    http_bodies = d.get("http_bodies")
+    http_bodies = (
+        list(http_bodies) if http_bodies is not None else list(_ALL_HTTP_BODY_TYPES)
+    )
+
+    return {
+        "user_info": d.get("user_info", True),
+        "cookies": _kvcb_from_value(d.get("cookies") or {}),
+        "http_headers": _http_headers_from_value(d.get("http_headers") or {}),
+        "http_bodies": http_bodies,
+        "url_query_params": _kvcb_from_value(d.get("url_query_params") or {}),
+        "graphql": _graphql_from_value(d.get("graphql") or {}),
+        "gen_ai": _gen_ai_from_value(d.get("gen_ai") or {}),
+        "mcp": _mcp_from_value(d.get("mcp") or {}),
+        "database_query_data": d.get("database_query_data", True),
+        "queues": d.get("queues", True),
+        "stack_frame_variables": stack_frame_variables,
+        "frame_context_lines": frame_context_lines,
+    }
+
+
+def _kvcb_from_value(
+    val: "dict[str, Any]",
+) -> "KeyValueCollectionBehaviour":
+    mode = val.get("mode", "denylist")
+    terms = val.get("terms", None)
+
+    if mode not in _VALID_KEY_VALUE_COLLECTION_BEHAVIOUR_MODES:
+        raise ValueError(
+            "Invalid collection mode {!r}. Must be one of {}.".format(
+                mode, _VALID_KEY_VALUE_COLLECTION_BEHAVIOUR_MODES
+            )
+        )
+
+    behaviour: "dict[str, Any]" = {"mode": mode}
+    if terms is not None:
+        behaviour["terms"] = list(terms)
+    return cast("KeyValueCollectionBehaviour", behaviour)
+
+
+def _http_headers_from_value(
+    val: "dict[str, Any]",
+) -> "HttpHeadersCollectionBehaviour":
+    return {
+        "request": (
+            _kvcb_from_value(val["request"])
+            if "request" in val
+            else _kvcb_from_value({"mode": "denylist"})
+        ),
+    }
+
+
+def _gen_ai_from_value(val: "dict[str, Any]") -> "GenAICollectionBehaviour":
+    return {
+        "inputs": val.get("inputs", True),
+        "outputs": val.get("outputs", True),
+    }
+
+
+def _mcp_from_value(val: "dict[str, Any]") -> "MCPCollectionBehaviour":
+    return {
+        "inputs": val.get("inputs", True),
+        "outputs": val.get("outputs", True),
+    }
+
+
+def _graphql_from_value(
+    val: "dict[str, Any]",
+) -> "GraphQLCollectionBehaviour":
+    return {
+        "document": val.get("document", True),
+        "variables": val.get("variables", True),
+    }
+
+
+def _resolve_data_collection(options: "Dict[str, Any]") -> "DataCollection":
+    """
+    Resolve the effective ``DataCollection`` dict from client ``options``.
+
+    Reads ``data_collection`` and returns a fully-resolved dict with concrete values for every field.
+
+    ``data_collection`` must be a plain ``dict``.
+
+    Must be called exactly once per options dict, before ``client._get_options``
+    overwrites ``options["data_collection"]`` with the resolved result.
+    """
+    user_dc = options.get("data_collection")
+
+    if not isinstance(user_dc, dict):
+        raise TypeError(
+            "`data_collection` must be a dict, got {!r}.".format(type(user_dc).__name__)
+        )
+
+    return _resolve(
+        user_dc,
+    )

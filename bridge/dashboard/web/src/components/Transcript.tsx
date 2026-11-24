@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main } from "../lib/queries";
 import { flushSync } from "react-dom";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SessionStatus, type SlashCommand, type TurnOutcome } from "../api";
@@ -24,6 +26,7 @@ import { limitNudge } from "../lib/limit";
 import { dropNoPath, parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
+import { PicTurn, usePic } from "../lib/nav";
 
 /** The virtualizer's window plus the last row: a running turn's WORK zone feeds the live row
  *  (LiveRow), which has to keep going while you read an older turn. Module scope: the
@@ -34,36 +37,22 @@ const keepLast = (range: Range) => {
 };
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
-// leadCommand), checked against the project's command list: read once per
-// project and page, and shared by every plate.
-// shortcut: a skill installed after the page loaded stays words on its plates
-// until a reload; refresh this from the composer's re-read if that ever bites.
-const cmdLists = new Map<string, Promise<SlashCommand[]>>();
+// leadCommand), checked against the project's command list: one read per project,
+// shared by every plate and the prompt box (lib/queries). A plate never asks again
+// on its own; the prompt box's re-read reaches it.
+const NO_CMDS: SlashCommand[] = [];
 function useCommands(project?: string | null): SlashCommand[] {
-  const [cmds, setCmds] = useState<SlashCommand[]>([]);
-  useEffect(() => {
-    const key = project ?? "";
-    let list = cmdLists.get(key);
-    if (!list) {
-      // A failed read isn't kept, so the next switch here tries again.
-      list = api.commands(project).then((r) => r.commands, () => { cmdLists.delete(key); return []; });
-      cmdLists.set(key, list);
-    }
-    let live = true;
-    void list.then((c) => { if (live) setCmds(c); });
-    return () => { live = false; };
-  }, [project]);
-  return cmds;
+  return useQuery({ ...main.commands({ project: project || undefined }), staleTime: Infinity }).data?.commands ?? NO_CMDS;
 }
 
 function Attachments({ items }: { items: string[] }) {
-  const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   // A just-sent turn carries data: URLs; a rehydrated one carries server paths the
   // dashboard serves back from the upload dir. Those files are cleaned up when the
   // run ends, so an image that 404s collapses into the chip it used to be.
   const srcs = items.map((a) =>
     a.startsWith("data:") || a.startsWith("http") ? a : api.attachmentUrl(a));
+  const [zoom, setZoom] = usePic(srcs);
   const missing = srcs.filter((s) => gone.has(s)).length;
   return (
     // Yours, so they hang off the right edge under your bubble.
@@ -319,13 +308,15 @@ function TurnBlock({
     // that turn rather than the terminal pane wrapping it.
     // `dturn` / `dprompt` / `dreply` are inert outside DOSSIER (display:contents
     // on the wrapper), where they make a turn one card: prompt, work, answer.
+    // PicTurn: a picture viewer opened in this turn names it in the URL (lib/nav usePic).
+    <PicTurn.Provider value={turn.id}>
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam ? "" : undefined}
       data-cut={carriedOn ? "" : undefined}
       data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
-        style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
+        style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}>
         {turn.prompt && !nudge && !seam && (
           <div data-prompt-idx={promptIdx}>
             {note ? <MysticalNote note={note} text={dropNoPath(turn.prompt)} at={turn.started} />
@@ -385,6 +376,7 @@ function TurnBlock({
         : turn.outcome && !carriedOn && <OutcomeBadge outcome={turn.outcome} />}
       {unfinishedBy && <UnfinishedPlate who={unfinishedBy} />}
     </div>
+    </PicTurn.Provider>
   );
 }
 

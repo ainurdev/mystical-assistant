@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, Maximize2, Minimize2 } from "lucide-react";
-import { api, logStream, type DevServerInfo, type TermInfo, type Worktree } from "../../api";
+import { useQuery } from "@tanstack/react-query";
+import { api, logStream, type TermInfo, type Worktree } from "../../api";
+import { code, main, queryClient } from "../../lib/queries";
 import { useAiFeatures } from "../../lib/ai";
 import { XtermPane } from "./XtermPane";
 
@@ -59,7 +61,7 @@ export function TermDrawer({ project, worktrees, branch, onCount, initialCommand
   const autoOpened = useRef("");
   useEffect(() => {
     let live = true;
-    void api.terminals(project).then((d) => {
+    void queryClient.fetchQuery({ ...code.terminals({ project }), staleTime: 0 }).then((d) => {
       if (!live) return;
       setTerms(d.terminals);
       setActiveId((cur) => (cur && d.terminals.some((t) => t.id === cur)) ? cur : (d.terminals[0]?.id ?? null));
@@ -75,21 +77,12 @@ export function TermDrawer({ project, worktrees, branch, onCount, initialCommand
   useEffect(() => { onCount(terms.length); }, [terms, onCount]);
 
   /* The dev server this project runs — the same one the chat header's chip
-     points at. Its log comes off the SSE stream every surface publishes to; the
-     poll alone would drop everything between ticks. */
-  const [srv, setSrv] = useState<DevServerInfo | null>(null);
+     points at, out of the state poll's servers. Its log comes off the SSE stream
+     every surface publishes to; the poll alone would drop everything between ticks. */
+  const srv = useQuery({ ...main.state(), select: (s) => s.servers?.find((x) => x.dir === project || x.project === project) ?? null }).data ?? null;
   const [lines, setLines] = useState<string[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
   const seeded = useRef<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    const tick = () => void api.servers()
-      .then((d) => { if (live) setSrv(d.servers.find((x) => x.dir === project || x.project === project) ?? null); })
-      .catch(() => { /* the bridge will be back */ });
-    tick();
-    const id = setInterval(tick, 3000);
-    return () => { live = false; clearInterval(id); };
-  }, [project]);
   const dir = srv?.dir ?? null;
   useEffect(() => {   // a different (or restarted) server starts its log over
     if (dir && seeded.current !== dir) { seeded.current = dir; setLines(srv?.tail ?? []); }

@@ -22,10 +22,10 @@ export function ProjectPick({ title, text, projects, open, onDone }: {
   const shown = list.filter((rel) => !q || `${projectName(rel)} ${rel}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
   return (
     <div onClick={() => onDone(null)}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: "backdropIn .2s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: "backdropIn .2s ease backwards" }}>
       <div role="dialog" aria-modal aria-labelledby="pick-title" onClick={(e) => e.stopPropagation()} className="panel ask"
         onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onDone(null); } }}
-        style={{ width: 480, maxWidth: "94vw", border: `1px solid ${mix("var(--acc)", 40)}`, background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
+        style={{ width: 480, maxWidth: "94vw", border: `1px solid ${mix("var(--acc)", 40)}`, background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease backwards" }}>
         <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <div id="pick-title" style={{ fontSize: "var(--t13)", fontWeight: 600, color: "var(--txh)", lineHeight: 1.45 }}>{title}</div>

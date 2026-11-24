@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { lazyRouteComponent, useRouter, useRouterState } from "@tanstack/react-router";
+import { pathOf, placeOf, type Place } from "./lib/routes";
+import { closePopup, extrasNow, hashSearch, openPopup, setExtras } from "./lib/nav";
+import { code, main, queryClient, rail, reread, runningHints, settings as setq } from "./lib/queries";
 import { ListChecks, BookOpen, Timer, Palette, Bookmark,
   Activity, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, Scale, Users,
 } from "lucide-react";
@@ -19,9 +24,7 @@ import {
   type RunPick,
   type SessionBrief,
   type SessionStatus,
-  type UsageInfo,
   type AccountInfo,
-  type AcpAgentsInfo,
   type RivendellInstance,
   type Received,
   type ShareKind,
@@ -30,6 +33,7 @@ import {
   type Need,
   type NewProjectBody,
   type NewProjectNote,
+  type Transcript,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot, chipWindow, loginWindows } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -50,7 +54,7 @@ import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
 import { ago, fmtReset, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
-import { offerUsageSharing } from "./components/hud/UsageSharing";
+import { offerUsageSharing } from "./components/hud/UsageOffer";
 import {
   autoBaseFont,
   fontStack,
@@ -133,11 +137,10 @@ import { SavedViews } from "./components/SavedViews";
 import { DesignBoards, DesignPane } from "./components/DesignPane";
 import { AutomationsPanel } from "./components/AutomationsPanel";
 import { WorkPanel } from "./components/WorkPanel";
-import { workGet } from "./lib/readapi";
 import { codeWords } from "./lib/completewords";
 import { DocsPanel } from "./components/DocsPanel";
 import { GitPanel } from "./components/hud/GitPanel";
-import { CouncilPanel } from "./components/hud/CouncilPanel";
+import { CouncilPanel, councilRead } from "./components/hud/CouncilPanel";
 import { hero as councilHero, railTile, tileKey } from "./lib/council";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -152,14 +155,14 @@ import { isTeam, readOnly as isReadOnly, seen, SHARED_NAME, SHARED_REL } from ".
 import { RivendellIcon } from "./lib/rivendellicon";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
-import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
+import type { Tab as SettingsTab } from "./components/hud/SettingsModal";
 import { AskDialog, askConfirm, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
 import { RestartIntro, restartBridge } from "./lib/restart";
 import { sessionEdits } from "./lib/sessionedits";
 import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
-import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
+import type { Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
 import { MysticalHost } from "./components/hud/MysticalPanel";
 import { openMysticalPanel } from "./lib/mysticaldir";
@@ -174,6 +177,7 @@ import { flowChip, flowGlobals, flowView, runningFlow } from "./lib/flowview";
 import { useFlowSettings } from "./lib/flowsettings";
 import { useFlow } from "./lib/useFlow";
 import { lastCheckOf } from "./lib/kinds";
+import { markStartup } from "./lib/reports";
 import { Spinner } from "./components/ui";
 
 
@@ -181,6 +185,7 @@ import { Spinner } from "./components/ui";
 // these read as grey smudges on the scanlined panel; 18px with a heavier
 // stroke is the smallest that stays a recognisable glyph.
 const RAIL = { size: 18, strokeWidth: 1.8 } as const;
+const NO_GIT: GitStatus = { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] };
 
 // A rail badge is ~20px wide. Three digits (200 unread lessons) spill over the
 // icon next to it, and past ~99 the exact number stopped being the point.
@@ -237,15 +242,15 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         position: "relative", overflow: "hidden", margin: "0 16px 9px", padding: "10px 12px",
         border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 13%, transparent)",
         boxShadow: "0 0 18px color-mix(in srgb, var(--purple) 22%, transparent)",
-        animation: "mpop .18s ease both",
+        animation: "mpop .18s ease backwards",
       }}
     >
-      <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s linear infinite" }} />
+      <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s steps(11) infinite" }} />
       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
         <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
           <Spinner className="h-[11px] w-[11px] border" />
         </span>
-        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
+        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s steps(10) infinite" }}>
           CHECKING CONTEXT…
         </span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: "var(--txd)" }}>
@@ -286,6 +291,13 @@ interface HeldPrompt {
   kind?: { picks: { model: string; perm: string; effort: string }; ponytail?: string; style?: string; flow?: SendFlow };
   typed?: string;   // what the user typed, before a kind's command went in front: Dismiss gives that back
 }
+
+// Loaded the first time they open (ADR 0006). The router's guard reloads the page
+// once when a newer build deleted the piece; a second miss is the root route's
+// error screen. Each render sits in its own <Suspense>, or loading one would
+// suspend the whole app.
+const SettingsModal = lazyRouteComponent(() => import("./components/hud/SettingsModal"), "SettingsModal");
+const AnalyzeModal = lazyRouteComponent(() => import("./components/hud/AnalyzeModal"), "AnalyzeModal");
 
 /** The WORK panel with the Needs you list, so a task whose part asks shows the question. */
 function WorkTab(props: Omit<Parameters<typeof WorkPanel>[0], "asking">) {
@@ -335,21 +347,18 @@ export function App() {
   // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
   // two copies of the read set would drift apart (same reason as pins).
   const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
-  const [lessonKeys, setLessonKeys] = useState<string[]>([]);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
-  // Each session's own working tree (its worktree when it has one), which
-  // gitBadges can't answer — those are keyed by project, one badge per repo.
-  // Keyed by tree, so going back to a session shows its last status at once.
-  const [gitByTree, setGitByTree] = useState<Map<string, GitStatus>>(new Map());
   // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
-  const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const usage = useQuery(main.usage()).data ?? null;
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   // Non-Claude agents: their labels and the options each last advertised,
   // which an agent session's pickers offer. null = not loaded, or a bridge
   // older than them (404) — an agent session then shows no pickers.
-  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
+  // ponytail: options a TEST or a turn just cached reach the composer on its 60s poll, not at once.
+  const acp = useQuery(main.acpAgents()).data ?? null;
+  useEffect(() => { if (acp) setAgentLabels(acp.presets); }, [acp]);
   // Server-side profiles and each project's default (bridge/profiles.py). null
   // until the first load; profilesAvailable false = a bridge older than them;
   // profilesError = why the last load failed otherwise (null once one lands).
@@ -379,7 +388,11 @@ export function App() {
   const [bootSteps, setBootSteps] = useState(initialBootSteps);
   const markBoot = useCallback((key: BootKey, phase: "ok" | "fail", detail: string) => {
     setBootSteps((prev) => markStep(prev, key, phase, detail));
+    if (key === "sessions") markStartup("sidebar rows painted");   // start-up: page (lib/slow.ts); the first one counts
   }, []);
+  useEffect(() => { if (showDashboard) markStartup("shell painted"); }, [showDashboard]);
+  const introRan = useRef(!skipBoot).current;
+  useEffect(() => { if (introRan) markStartup("intro ran", false); }, [introRan]);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Manage-projects bookkeeping (see MANAGE_KEY).
@@ -393,11 +406,49 @@ export function App() {
   const [projectRemotes, setProjectRemotes] = useState<Record<string, string>>({});
 
   // HUD chrome state.
-  const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Which tab the next open lands on, when something asked for one by name
-  // (lib/opensettings) — cleared on close, so the menus keep their default.
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
+  // Where you are is the URL (lib/routes). The functions below read the router at
+  // call time, not this render: listeners set up once call them.
+  const router = useRouter();
+  // The rail's tab a loaded URL names wins over the one this browser kept.
+  const [settings, setSettings] = useState<HudSettings>(() => {
+    const s = loadSettings();
+    const rail = extrasNow(router).rail as RightTab | undefined;
+    return rail ? { ...s, rightTab: rail } : s;
+  });
+  const path = useRouterState({ select: (r) => r.location.pathname });
+  const search = useRouterState({ select: (r) => r.location.searchStr });
+  const place = placeOf(path);
+  // The search (the rail's tab, a pop-up) rides along to the new path.
+  const go = (p: Place, replace: boolean) => {
+    const to = pathOf(p);
+    if (router.state.location.pathname === to) return;
+    const q = hashSearch(router);
+    if (replace) router.history.replace(to + q); else router.history.push(to + q);
+  };
+  const placeNow = () => placeOf(router.state.location.pathname);
+  // SETTINGS is open while the URL says so; its page is the URL's (a name an
+  // older caller used included: the modal maps it and reports the page back).
+  const settingsOpen = place.kind === "settings";
+  const settingsTab = place.kind === "settings" ? place.page as SettingsTab | undefined : undefined;
+  // The session SETTINGS was opened over by a push of ours, so closing can step
+  // back instead of stacking a second entry for the same session.
+  const settingsOver = useRef<string | null | undefined>(undefined);
+  // Opening adds a history entry; moving between its pages replaces it, so back leaves in one step.
+  const showSettings = (page?: string) => {
+    if (placeNow().kind === "settings") return go({ kind: "settings", page }, true);
+    settingsOver.current = sessionIdRef.current;
+    go({ kind: "settings", page }, false);
+  };
+  // `next`: the session to land on, when closing is part of opening another.
+  const closeSettings = (next?: string) => {
+    if (placeNow().kind !== "settings") return;
+    const over = settingsOver.current;
+    settingsOver.current = undefined;
+    if (next === undefined && over !== undefined && over === sessionIdRef.current) return router.history.back();
+    const id = next ?? sessionIdRef.current;
+    go(id ? { kind: "session", id } : { kind: "home" }, true);
+  };
+  const setSettingsOpen = (open: boolean) => open ? showSettings() : closeSettings();
   // The kind presets this browser kept itself go to the bridge once, where every flow's run
   // default now lives (lib/flowruns), and leave the browser once it has answered.
   useEffect(() => {
@@ -642,7 +693,7 @@ export function App() {
   const running = active !== null;
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
   const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
-    `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
+    loadingSession ? null : `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
   // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
   const flowCfg = useFlowSettings();
   const boxChip = useMemo(() => {
@@ -853,7 +904,8 @@ export function App() {
   // let the real response (and the 3s state poll) reconcile.
   function selectProjectBg(rel: string) {
     setState((st) => st ? { ...st, project: { rel, name: projectName(rel) } } : st);
-    void api.select(rel).then(() => api.state()).then(setState).catch(() => { /* ignore */ });
+    // The POST rereads the state (lib/queries CHANGES); a failed one puts the last answer back.
+    void api.select(rel).catch(() => { const s = queryClient.getQueryData(main.state().queryKey); if (s) setState(s); });
   }
 
   function selectSession(s: SessionBrief) {
@@ -921,20 +973,13 @@ export function App() {
     return () => { window.removeEventListener("mousedown", down); window.removeEventListener("dblclick", dbl); };
   }, []);
 
-  // --- polls (unchanged data flow) ---
+  // --- polls (lib/queries: one request per answer, paused while hidden) ---
+  const stateQ = useQuery(main.state());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const s = await api.state();
-        if (live) setState(s);
-        markBoot("bridge", "ok", "LINKED");
-      } catch { markBoot("bridge", "fail", "OFFLINE"); }
-    };
-    void tick();
-    const id = setInterval(tick, 3000);
-    return () => { live = false; clearInterval(id); };
-  }, [markBoot]);
+    if (stateQ.data) setState(stateQ.data);
+    if (stateQ.status === "success") markBoot("bridge", "ok", "LINKED");
+    else if (stateQ.status === "error") markBoot("bridge", "fail", "OFFLINE");
+  }, [stateQ.data, stateQ.status, markBoot]);
 
   useEffect(() => {
     try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects })); }
@@ -947,9 +992,13 @@ export function App() {
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
   const marksMoved = useRef(false);
-  const refreshProjects = useCallback(async () => {
-    try {
-      const p = await api.projects();
+  const projectsQ = useQuery(main.projects());
+  const refreshProjects = useCallback(() => reread(main.projects().queryKey), []);
+  useEffect(() => {
+    const p = projectsQ.data;
+    if (projectsQ.status === "error") { markBoot("projects", "fail", "NO SCAN"); return; } /* old backend without discovery — panel stays session-derived */
+    if (!p) return;
+    {
       setDiscovered(p.projects ?? []);
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
@@ -972,38 +1021,41 @@ export function App() {
       }
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
-    } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
-  }, [markBoot]);
-  useEffect(() => {
-    void refreshProjects();
-    const id = setInterval(refreshProjects, 10000);
-    return () => clearInterval(id);
-  }, [refreshProjects]);
+    }
+  }, [projectsQ.data, projectsQ.status, markBoot]);
 
+  const sessionsQ = useQuery(main.sessions());
+  useEffect(() => {
+    const list = sessionsQ.data?.sessions;
+    if (sessionsQ.status === "pending") return;
+    setBooted(true);
+    if (!list) { markBoot("sessions", "fail", "UNREADABLE"); return; }
+    // A poll already in flight when a session is created comes back without
+    // it and would drop the chat you just opened (startIn/newSession add it
+    // optimistically) out of the lists — keep the open one until a poll
+    // carries it.
+    setSessions((prev) => {
+      const sid = sessionIdRef.current;
+      const open = sid && !list.some((s) => s.id === sid)
+        ? prev.find((s) => s.id === sid) : undefined;
+      return open ? [open, ...list] : list;
+    });
+    markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
+  }, [sessionsQ.data, sessionsQ.status, markBoot]);
+  /** Read the list again now (after a change), and answer with it. */
   const loadSessions = useCallback(async () => {
-    try {
-      const { sessions: list } = await api.sessions();
-      // A poll already in flight when a session is created comes back without
-      // it and would drop the chat you just opened (startIn/newSession add it
-      // optimistically) out of the lists — keep the open one until a poll
-      // carries it.
-      setSessions((prev) => {
-        const sid = sessionIdRef.current;
-        const open = sid && !list.some((s) => s.id === sid)
-          ? prev.find((s) => s.id === sid) : undefined;
-        return open ? [open, ...list] : list;
-      });
-      markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
-      return list;
-    } catch { markBoot("sessions", "fail", "UNREADABLE"); return [] as SessionBrief[]; }
-    finally { setBooted(true); }
-  }, [markBoot]);
+    await reread(main.sessions().queryKey);
+    return queryClient.getQueryData(main.sessions().queryKey)?.sessions ?? [];
+  }, []);
 
   const projectRel = state?.project?.rel ?? null;
+  // Opening the chat you had open, once the first list has answered (or failed).
+  const listed = sessionsQ.status !== "pending";
+  const askedAtLoad = useRef(place.kind === "session" ? place.id : null);
   useEffect(() => {
-    let live = true;
-    void loadSessions().then((ss) => {
-      if (!live) return;
+    if (!listed) return;
+    const ss = queryClient.getQueryData(main.sessions().queryKey)?.sessions ?? [];
+    {
       if (!sessionId) {
         if (skipRestore.current) { skipRestore.current = false; return; }
         // Back to the chat you had open, wherever it lives; one that's gone
@@ -1011,19 +1063,17 @@ export function App() {
         // takes — every panel reads the *session's* repo, and a run carries it
         // in the request — so a page load leaves the bridge's own selection
         // (which Telegram shares) alone.
-        // ?s=<id> — a link that names a session (Rivendell's dashboardUrl)
-        // wins over the one you had open.
-        const asked = new URLSearchParams(location.search).get("s");
-        if (asked) {
-          // Used once: a reload or a bookmark of this tab mustn't keep reopening it.
-          const u = new URL(location.href);
-          u.searchParams.delete("s");
-          history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-        }
+        // A URL that names a session (a reload, Rivendell's dashboardUrl, a
+        // notification) wins over the one you had open.
+        // #/s/<id> (an old ?s= link arrives as one, router.tsx) — used once: a
+        // session closing later falls through to the rest, as before.
+        const asked = askedAtLoad.current;
+        // Kept while the list is empty (a failed first answer): the next run still opens it.
+        if (ss.length) askedAtLoad.current = null;
         const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         // Reopening what you had open keeps the workspace you picked last; a
-        // link that names a session (?s=) brings that session's workspace.
+        // URL that names a session brings that session's workspace.
         if (was) {
           openSession(was.id, false, false);
           if (asked && was.id === asked) revealWorkspace(was);
@@ -1035,11 +1085,74 @@ export function App() {
         // Nothing to reopen (or the list never landed) — say so, or the intro
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
+        if (!was) markStartup("first turn painted");   // no chat to open: none is coming
       }
-    });
-    const id = setInterval(loadSessions, 5000);
-    return () => { live = false; clearInterval(id); };
-  }, [loadSessions, projectRel, sessionId, markBoot]);
+    }
+  // The list's own answers don't re-run it: only the first, a session closing, or the project moving.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listed, projectRel, sessionId, markBoot]);
+
+  // The open session is the URL: opening one adds a history entry. One that
+  // follows no session (the load, the fresh screen, an archived chat's successor)
+  // replaces it, so back never lands on a session that isn't there. Under
+  // SETTINGS the URL stays SETTINGS; closing it names the session.
+  const prevSid = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prevSid.current;
+    prevSid.current = sessionId;
+    if (!sessionId) return;
+    const now = placeNow();
+    if (now.kind === "settings" || (now.kind === "session" && now.id === sessionId)) return;
+    go({ kind: "session", id: sessionId }, was === null || now.kind === "home");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- go and placeNow read the router
+  }, [sessionId]);
+  // And back: back, forward or an edited URL opens the session it names. The
+  // load's own URL is the restore effect's (it waits for the list).
+  const lastPath = useRef(path);
+  useEffect(() => {
+    if (path === lastPath.current) return;
+    lastPath.current = path;
+    if (place.kind !== "settings") settingsOver.current = undefined;
+    if (place.kind !== "session" || place.id === sessionIdRef.current) return;
+    const s = sessions.find((x) => x.id === place.id);
+    if (s) selectSession(s); else openSession(place.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new path opens anything
+  }, [path]);
+
+  // The rail's tab is the URL's `rail`, kept by replacing: moving between tabs
+  // adds no history. An entry back or forward lands on gets today's tab written
+  // over its old one, rather than the tab moving under you.
+  useEffect(() => {
+    setExtras(router, { rail: settings.rightTab }, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- router is stable
+  }, [settings.rightTab, search]);
+
+  // The project window is the URL's `analyze`, or `edit` on the file its editor
+  // has open (onFile, below). Opening pushes an entry, so back closes it; closing
+  // steps back off it. Only a change acts: on the load, the URL opens it (below).
+  const analyzeWas = useRef({ project: analyzeProject, file: analyzeFile });
+  useEffect(() => {
+    const was = analyzeWas.current;
+    analyzeWas.current = { project: analyzeProject, file: analyzeFile };
+    if (was.project === analyzeProject && was.file === analyzeFile) return;
+    const p = extrasNow(router).popup;
+    const shown = p?.kind === "analyze" || p?.kind === "edit";
+    if (!analyzeProject) { if (shown) closePopup(router); return; }
+    const want = analyzeFile ? { kind: "edit" as const, project: analyzeProject, path: analyzeFile.path }
+      : { kind: "analyze" as const, project: analyzeProject };
+    if (shown) setExtras(router, { popup: want }, true); else openPopup(router, want);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- router is stable
+  }, [analyzeProject, analyzeFile]);
+  // And back: a reload or forward opens it on the URL's file, back closes it.
+  // shortcut: a reload opens the file in the checked-out branch, not a worktree's
+  // the FILES deep-link named; carry the branch in `edit` if that bites.
+  useEffect(() => {
+    const p = extrasNow(router).popup;
+    if ((p?.kind === "analyze" || p?.kind === "edit") && !analyzeProject) {
+      openAnalyze(p.project, p.kind === "edit" ? { path: p.path } : undefined);
+    } else if (p?.kind !== "analyze" && p?.kind !== "edit" && analyzeProject) setAnalyzeProject(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new URL opens or closes it
+  }, [search]);
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
@@ -1047,14 +1160,24 @@ export function App() {
     if (sessionId) rememberOpen(selected?.parent_session ?? sessionId);
   }, [sessionId, selected?.parent_session]);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    const fetchOnce = async () => {
-      try {
-        const first = seqRef.current === 0;
-        const t = await api.transcript(sessionId, seqRef.current, first ? { tail: TAIL_TURNS } : undefined);
-        if (!live) return;
+  // The open session's transcript (lib/queries main.session): read on open, then every 1.5 s
+  // while the session is producing output, paused while the page is hidden. Its cursor rides in
+  // meta.extra and each delta merges once, in order, in meta.take (mergeDelta dedups by seq, so a
+  // read that lands twice is harmless). A turn starting or ending reads at once (the effect
+  // below), which also catches the final delta the moment a turn completes.
+  const firstAsk = useRef(false);
+  const liveRead = main.session({ id: sessionId ?? "" });
+  const liveQ = useQuery({
+    ...liveRead, enabled: !!sessionId, staleTime: 0, gcTime: 0,
+    refetchInterval: running || openWorking ? liveRead.refetchInterval : false,
+    meta: {
+      extra: () => {
+        firstAsk.current = seqRef.current === 0;
+        return { cursor: seqRef.current, ...(firstAsk.current ? { tail: TAIL_TURNS } : {}) };
+      },
+      take: (t: Transcript) => {
+        if (sessionIdRef.current !== sessionId) return;   // an answer for the session just left
+        const first = firstAsk.current;
         const held = staleTurns.current;
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
@@ -1069,28 +1192,30 @@ export function App() {
             ? { has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false }
             : { has: false, seq: null, from: null, loading: false });
         markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
-      } catch {
-        // Never landed: drop the previous session's turns rather than pass them
-        // off as this one's.
-        if (live && staleTurns.current) {
-          staleTurns.current = false;
-          setTurns([]);
-          putOlder({ has: false, seq: null, from: null, loading: false });
-        }
-        markBoot("chat", "fail", "NO TRANSCRIPT");
-      }
-      finally { if (live) setLoadingSession(false); }
-    };
-    refetchTurns.current = fetchOnce;
-    void fetchOnce();                                   // always load once on open
-    // Then poll only while the session is actually producing output; an idle
-    // session doesn't change, so re-effect on the running/working transitions
-    // (this also captures the final delta the moment a turn completes).
-    const id = setInterval(() => {
-      if (running || openWorking) void fetchOnce();
-    }, 1500);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, running, openWorking, markBoot]);
+        markStartup("first turn painted");
+        setLoadingSession(false);
+      },
+    },
+  });
+  refetchTurns.current = async () => { await queryClient.refetchQueries({ queryKey: liveRead.queryKey, exact: true }); };
+  useEffect(() => {
+    if (sessionId) void reread(liveRead.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the session's
+  }, [sessionId, running, openWorking]);
+  useEffect(() => {
+    if (!liveQ.errorUpdatedAt) return;
+    // Never landed: drop the previous session's turns rather than pass them
+    // off as this one's.
+    if (staleTurns.current) {
+      staleTurns.current = false;
+      setTurns([]);
+      putOlder({ has: false, seq: null, from: null, loading: false });
+    }
+    markBoot("chat", "fail", "NO TRANSCRIPT");
+    markStartup("first turn painted");
+    setLoadingSession(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once per failed read
+  }, [liveQ.errorUpdatedAt]);
 
   // Fetch the page of turns before the oldest loaded one and prepend it.
   // mergeDelta does the prepending for free: older turns already exist in the
@@ -1341,23 +1466,23 @@ export function App() {
   // Tells the bridge this page alerts by itself, so the tray companion
   // (windows/, linux/) stays quiet rather than alerting twice. A ref: the poll
   // below is set up once, and the toggle can change under it.
-  const alertsOn = useRef(false);
-  useEffect(() => { alertsOn.current = settings.push && pushGranted(); }, [settings.push]);
+  useEffect(() => { runningHints.alerts = settings.push && pushGranted() ? 1 : undefined; }, [settings.push]);
   // Your last click or keypress here rides the same poll: Telegram's "away" is
   // nobody touching any dashboard for a while (bridge/notices.py).
-  const lastInput = useRef(Math.floor(Date.now() / 1000));
   useEffect(() => {
-    const on = () => { lastInput.current = Math.floor(Date.now() / 1000); };
+    runningHints.seen = Math.floor(Date.now() / 1000);
+    const on = () => { runningHints.seen = Math.floor(Date.now() / 1000); };
     window.addEventListener("pointerdown", on, true);
     window.addEventListener("keydown", on, true);
     return () => { window.removeEventListener("pointerdown", on, true); window.removeEventListener("keydown", on, true); };
   }, []);
+  // Polls while hidden too: the bell, the Dock badge and OS banners hang on it.
+  const runningQ = useQuery(main.running());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const r = await api.running(alertsOn.current, lastInput.current);
-        if (!live) return;
+    const r = runningQ.data;
+    if (!r) return;
+    {
+      {
         // A working row says how long its turn has run: the bridge's job holds the
         // start, so it rides along as the state's `since` (waiting already has one).
         const started = new Map((r.jobs ?? []).map((j) => [j.session_id, j.started]));
@@ -1368,12 +1493,9 @@ export function App() {
         setNeeds(r.needs);
         needsRef.current = r.needs ?? [];
         noteStyling(r.styling);
-      } catch { /* ignore */ }
-    };
-    void tick();
-    const id = setInterval(tick, 4000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
+      }
+    }
+  }, [runningQ.data]);
 
   // working → not-working (and not awaiting, which the list already flags) on a
   // session you don't have open = it finished without you = DONE.
@@ -1447,53 +1569,35 @@ export function App() {
     try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch { /* ignore */ }
   }, [drafts]);
 
+  const gitAllQ = useQuery(code.gitAll());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const { repos } = await api.gitAll();
-        if (live) setGitBadges(new Map(Object.entries(repos)));
-        const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
-        markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
-          : bootCount(Object.keys(repos).length, "REPO"));
-      } catch { markBoot("git", "fail", "NO STATUS"); }
-    };
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => { live = false; clearInterval(id); };
-  }, [markBoot]);
+    if (gitAllQ.status === "error") { markBoot("git", "fail", "NO STATUS"); return; }
+    const repos = gitAllQ.data?.repos;
+    if (!repos) return;
+    setGitBadges(new Map(Object.entries(repos)));
+    const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
+    markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
+      : bootCount(Object.keys(repos).length, "REPO"));
+  }, [gitAllQ.data, gitAllQ.status, markBoot]);
 
   // Every login with its meter (bridge accounts.with_meters). The footer and the
   // MODEL menu read the one the open session spends, and the PROFILE menu reads
   // what each profile's login has left. Polled on the usage tick below, and
   // reloaded at once after SETTINGS ▸ ACCOUNTS changes one. `fresh`: the PROFILE
   // menu has the bridge re-read, through the CLI, any meter older than that (s).
-  const loadAccounts = useCallback((fresh?: number) => api.accounts(fresh)
-    .then((a) => {
-      setAccounts(a.accounts);
-      markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
-    })
-    .catch(() => markBoot("auth", "fail", "NO LOGIN")), [markBoot]);
-
+  const accountsQ = useQuery(main.accounts());
   useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
-      // Same 60s tick: every login's meter, then which agents you can pick from.
-      await loadAccounts();
-      if (!live) return;
-      // ponytail: options a TEST or a turn just cached reach the composer on this 60s tick, not at once.
-      try {
-        const g = await api.acpAgents();
-        if (!live) return;
-        setAgentLabels(g.presets);
-        setAcp(g);
-      } catch { /* a bridge older than agents: none to show */ }
-    };
-    void tick();
-    const id = setInterval(tick, 60000);
-    return () => { live = false; clearInterval(id); };
-  }, [loadAccounts]);
+    if (accountsQ.data) {
+      setAccounts(accountsQ.data.accounts);
+      markBoot("auth", "ok", bootCount(accountsQ.data.accounts.length, "ACCOUNT"));
+    } else if (accountsQ.status === "error") markBoot("auth", "fail", "NO LOGIN");
+  }, [accountsQ.data, accountsQ.status, markBoot]);
+  // A `fresh` read (re-read through the CLI) is its own request, and its answer is the list's.
+  const loadAccounts = useCallback(async (fresh?: number) => {
+    if (fresh === undefined) { await reread(main.accounts().queryKey); return; }
+    try { queryClient.setQueryData(main.accounts().queryKey, await queryClient.fetchQuery({ ...main.accounts({ fresh }), staleTime: 0, gcTime: 0 })); }
+    catch { /* the list's next poll */ }
+  }, []);
 
   // Profiles change only when someone edits them — here (SETTINGS) or on
   // another dashboard — or when a login is added, which gets one of its own
@@ -1681,8 +1785,7 @@ export function App() {
     const open = (e: Event) => {
       // One of the tabs AI MANAGEMENT replaced may still be named (lib/opensettings
       // callers, an older bridge's bot button); the modal maps it to its fold.
-      setSettingsTab((e as CustomEvent<SettingsTab>).detail);
-      setSettingsOpen(true);
+      showSettings((e as CustomEvent<SettingsTab>).detail);
     };
     window.addEventListener("hud:settings", open);
     return () => window.removeEventListener("hud:settings", open);
@@ -1711,15 +1814,16 @@ export function App() {
   // selectSession).
   useEffect(() => {
     const open = (e: Event) => {
-      setSettingsOpen(false);
-      openSession((e as CustomEvent<string>).detail);
+      const id = (e as CustomEvent<string>).detail;
+      closeSettings(id);
+      openSession(id);
       toChat();
     };
     // A Claude subagent's sidebar row: its session, then AGENTS on it (AgentsPill
     // waits for that session's roster).
     const openSub = (e: Event) => {
       const { session, agent } = (e as CustomEvent<OpenSubagent>).detail;
-      setSettingsOpen(false);
+      closeSettings(session);
       const same = sessionIdRef.current === session;
       openSession(session);
       toChat();
@@ -2067,6 +2171,7 @@ export function App() {
   // a worktree is waiting on), and the real session takes it over as it is.
   function openBlank(project?: string) {
     skipRestore.current = true;
+    go({ kind: "home" }, false);   // its own entry: back returns to the session left
     setSessionId(null);
     setTurns([]);
     setBoot(null);             // the session left's; its fresh screen would say it
@@ -2482,7 +2587,7 @@ export function App() {
     [turns, selected?.work_cwd, selected?.cwd]);
   // BRANCHES (lib/branchrows): one read of the open repo's branches feeds the tab,
   // the rail tile's LAND n and auto clean-up (the tab header's broom).
-  const branchData = useBranches(sessionProject, gitNonce, settings.rightOpen && settings.rightTab === "branches");
+  const branchData = useBranches(sessionProject, settings.rightOpen && settings.rightTab === "branches");
   const branchView = useMemo<BranchView | null>(() => {
     if (!branchData.data) return null;
     const who = branchActivity(sessions, statusMap, sessionProject);
@@ -2502,7 +2607,7 @@ export function App() {
   useEffect(() => {
     if (!ai.graph || !sessionProject || settingsOpen) { if (!ai.graph || !sessionProject) setMapOn(false); return; }
     let live = true;
-    void api.graphState(sessionProject).then((g) => { if (live) setMapOn(g.repo_on !== false); })
+    void queryClient.fetchQuery(code.graphState({ project: sessionProject })).then((g) => { if (live) setMapOn(g.repo_on !== false); })
       .catch(() => { if (live) setMapOn(false); });
     return () => { live = false; };
   }, [ai.graph, sessionProject, settingsOpen]);
@@ -2545,59 +2650,37 @@ export function App() {
   // branch, and a tree opened before answers from its last status while this
   // read is on the way: the GIT tab keeps its shape instead of blanking and
   // filling back in.
-  const treeKey = `${sessionProject ?? ""}@${sessionBranch ?? ""}`;
-  const sessionGit = gitByTree.get(treeKey) ?? null;
-  useEffect(() => {
-    if (!sessionProject) return;
-    let live = true;
-    const tick = async () => {
-      try {
-        const g = await api.git(sessionProject, sessionBranch || undefined);
-        if (live) setGitByTree((m) => new Map(m).set(treeKey, g));
-      } catch {
-        // Not a repo / fetch failed — resolve to "no git" so the GIT tab's
-        // READING… clears instead of holding forever.
-        if (live) setGitByTree((m) => m.has(treeKey) ? m
-          : new Map(m).set(treeKey, { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] }));
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionProject, sessionBranch, gitNonce]);
+  // The code tabs wait until the session list names the open session's branch: the project
+  // fallback before it would ask every GIT and FILES read once more, on a key nobody keeps.
+  const treeKnown = !sessionId || !!selected || !sessionsQ.isPending;
+  const gitQ = useQuery({ ...code.git({ project: sessionProject ?? "", branch: sessionBranch || undefined }),
+    enabled: !!sessionProject && treeKnown });
+  // Not a repo / fetch failed — resolve to "no git" so the GIT tab's READING… clears instead of holding forever.
+  const sessionGit = gitQ.data ?? (gitQ.isError ? NO_GIT : null);
+  useEffect(() => { if (gitNonce) void reread([code.git.route]); }, [gitNonce]);
 
   // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
   // status above: the session's newest check, and whether its project is linked to Claude
-  // Design, held per project and read again on each visit (null until the first answer).
+  // Design, read by project (null until the first answer).
   const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
-  const [designLinks, setDesignLinks] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    if (sessionProject) api.projectSettings({ project: sessionProject })
-      .then((s) => setDesignLinks((m) => ({ ...m, [sessionProject]: !!s.design_project })), () => {});
-  }, [sessionProject]);
+  const projectSettingsQ = useQuery({ ...main.projectSettings({ project: sessionProject ?? undefined }), enabled: !!sessionProject });
+  const designLinked = projectSettingsQ.data ? !!projectSettingsQ.data.design_project : null;
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
   // Held by session, so a switch never shows the last one's. While the tab is
-  // open its panel reads the run and hands each read up (onBrief), so this poll
-  // rests: one poller, not two. A read that changes nothing on the rail
-  // (lib/council tileKey) keeps the brief held, so it doesn't re-render App.
-  const [councilOf, setCouncilOf] = useState<{ sid: string; c: CouncilBrief } | null>(null);
-  const council = councilOf && councilOf.sid === sessionId ? councilOf.c : null;
-  const councilLive = council?.status === "reviewing" || council?.status === "fixing";
+  // open this reads the panel's key (CouncilPanel councilRead): one poller, not
+  // two. A read that changes nothing on the rail (lib/council tileKey) keeps the
+  // brief held, so it doesn't re-render App. A bridge from before the council: the tile stays calm.
+  const councilHeld = useRef<{ sid: string; c: CouncilBrief } | null>(null);
+  const heldCouncil = councilHeld.current?.sid === sessionId ? councilHeld.current.c : null;
+  const councilLive = heldCouncil?.status === "reviewing" || heldCouncil?.status === "fixing";
   const councilOpen = settings.rightOpen && settings.rightTab === "council";
-  const keepCouncil = (sid: string, c: CouncilBrief) =>
-    setCouncilOf((p) => (p && p.sid === sid && tileKey(p.c) === tileKey(c) ? p : { sid, c }));
-  useEffect(() => {
-    if (!sessionId || councilOpen) return;
-    let live = true;
-    const tick = () => api.council(sessionId)
-      .then((c) => { if (live) keepCouncil(sessionId, c); })
-      .catch(() => { /* a bridge from before the council: the tile stays calm */ });
-    void tick();
-    const id = setInterval(tick, councilLive ? 3000 : 15000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, councilLive, councilOpen]);
+  const council = useQuery({ ...councilRead(sessionId ?? "", councilOpen && !councilLive), select: (c: CouncilBrief) => {
+    const p = councilHeld.current;
+    if (!p || p.sid !== sessionId || tileKey(p.c) !== tileKey(c)) councilHeld.current = { sid: sessionId ?? "", c };
+    return councilHeld.current!.c;
+  } }).data ?? heldCouncil;
   const councilTile = railTile(council);
 
   // Auto-fetch (/design-first auto-fetch): behind is only as true as the last
@@ -2628,57 +2711,31 @@ export function App() {
   // Unread lessons, for the LEARN tab's badge — the whole reason to open a tab
   // you are not already looking at. Every repo's, because the panel reads that
   // way too. One listdir per repo, so a slow tick is plenty.
-  useEffect(() => {
-    if (!ai.learn) return;
-    let live = true;
-    const tick = () => api.lessons("*")
-      .then((r) => { if (live) setLessonKeys(r.lessons.map((l) => `${l.project ?? ""}::${l.file}`)); })
-      .catch(() => { /* ignore */ });
-    void tick();
-    const id = setInterval(tick, 60000);
-    return () => { live = false; clearInterval(id); };
-  }, [ai.learn]);
-  const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
+  const lessons = useQuery({ ...rail.lessons({ project: "*" }), enabled: ai.learn }).data?.lessons ?? [];
+  const unreadLessons = lessons.filter((l) => !lessonsRead.has(`${l.project ?? ""}::${l.file}`)).length;
   // The RIVENDELL tab exists only with a Rivendell connection to ask. Polled,
   // not only re-read when SETTINGS closes (where one is added or removed): a
   // link breaks with no dashboard event to say so, and the castle's dot and the
   // bell follow each connection's break (bridge/rivendell.py, alert_at — set
   // once per break, cleared when the link proves itself). Not polled at all
   // while Rivendell isn't installed: its route answers 404.
-  const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
-  useEffect(() => {
-    if (settingsOpen || !plugins.rivendell) return;
-    const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
-    void tick();
-    const id = setInterval(tick, 10000);
-    return () => clearInterval(id);
-  }, [settingsOpen, plugins.rivendell]);
+  const rivendell = useQuery({ ...setq.rivendell(), refetchInterval: 10000, enabled: !settingsOpen && !!plugins.rivendell }).data?.instances;
   // What the tab, the castle's dot and the bell read, so REMOVE clears all three
   // at once instead of leaving the last poll's connections on screen.
-  const links = useMemo(() => (plugins.rivendell ? rivendell : []), [plugins.rivendell, rivendell]);
+  const links = useMemo((): RivendellInstance[] => (plugins.rivendell ? rivendell ?? [] : []), [plugins.rivendell, rivendell]);
   const rivendellOn = links.length > 0;
   const rivendellDown = links.some((i) => i.enable && !!i.status?.alert_at);
   // TEAM (bridge/team.py, components/hud/TeamPanel): the roster, what teammates
   // sent here and what you sent. Polled while Rivendell is linked, since the rail
   // badge, the session menu's Send to teammate and the lightbox read it too.
-  const [team, setTeam] = useState<TeamOverview | null>(null);
-  const [teamFail, setTeamFail] = useState<string | null>(null);
   const [sendWhat, setSendWhat] = useState<{ what: SendWhat; to?: string } | null>(null);
-  const loadTeam = useCallback(() => api.team().then((t) => { setTeam(t); setTeamFail(null); },
-    (e: Error) => setTeamFail(e.message)), []);
-  useEffect(() => {
-    if (!rivendellOn) { setTeam(null); return; }
-    void loadTeam();
-    const id = setInterval(() => void loadTeam(), 30000);
-    return () => clearInterval(id);
-  }, [rivendellOn, loadTeam]);
   // A share coming in has a bar (TeamPanel): each second until it's in, the 30 s look otherwise.
+  const teamQ = useQuery({ ...rail.team(), enabled: rivendellOn,
+    refetchInterval: (q) => (q.state.data?.receiving?.length ? 1000 : 30000) });
+  const team: TeamOverview | null = rivendellOn ? teamQ.data ?? null : null;
+  const teamFail = rivendellOn ? teamQ.error?.message ?? null : null;
+  const loadTeam = useCallback(() => reread(rail.team().queryKey), []);
   const coming = team?.receiving?.length ?? 0;
-  useEffect(() => {
-    if (!coming) return;
-    const id = setInterval(() => void loadTeam(), 1000);
-    return () => clearInterval(id);
-  }, [coming, loadTeam]);
   const teammates = team && !team.error ? team.roster : [];
   const teamNew = (team?.inbox.filter((r) => !seen(r)).length ?? 0) + coming;     // what SENT TO YOU shows, and what is coming
   // The lightbox's SEND, and a bell row for a picture or a file, reach here.
@@ -2744,20 +2801,12 @@ export function App() {
   // A run starting in this chat, from anywhere, opens the work list once, so you can watch it.
   // Its open items are the rail's badge.
   const [workOpen, setWorkOpen] = useState(0);
+  // The rail tile counts the tasks being built (bridge/worklist.py groups them).
+  const workQ = useQuery({ ...main.worklist({ session: sessionId ?? "", project: "" }), refetchInterval: 4000, enabled: multiOn && !!sessionId });
+  const workItems = (workQ.data as { items?: { group: string }[] } | undefined)?.items;
   useEffect(() => {
-    if (!multiOn || !sessionId) { setWorkOpen(0); return; }
-    let gone = false;
-    // The rail tile counts the tasks being built (bridge/worklist.py groups them).
-    const look = () => {
-      workGet<{ items: { group: string }[] }>(sessionId, null).then((r) => {
-        if (!gone) setWorkOpen(r.items.filter((i) => i.group === "building" || i.group === "needs").length);
-      }, () => { if (!gone) setWorkOpen(0); });
-    };
-    look();
-    const t = window.setInterval(look, 4000);
-    return () => { gone = true; window.clearInterval(t); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [multiOn, sessionId]);
+    setWorkOpen(multiOn && sessionId && !workQ.isError ? (workItems ?? []).filter((i) => i.group === "building" || i.group === "needs").length : 0);
+  }, [multiOn, sessionId, workItems, workQ.isError]);
 
   // The chat's code-like words, for the composer to complete. Only on a new turn or a finished one:
   // a streamed chunk doesn't change what's worth offering.
@@ -2802,7 +2851,7 @@ export function App() {
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
       render: () => (
         <FilesPanel
-          project={sessionProject} branch={sessionBranch}
+          project={treeKnown ? sessionProject : null} branch={sessionBranch}
           onOpenFile={openFileFromPanel}
           onSendFile={teammates.length && sessionProject
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
@@ -2847,7 +2896,6 @@ export function App() {
         // The session's own project, never activeProject: its push must not land in another repo.
         <CouncilPanel key={sessionId ?? ""} sid={sessionId} project={selected?.project ?? null} branch={sessionBranch}
           busy={running || openWorking} initial={council}
-          onBrief={(c) => { if (sessionId) keepCouncil(sessionId, c); }}
           onOpenChat={() => { toChat(); jumpToBottom(); }}
           onSend={(text) => void send(text, [], { force: true })}
           onPushed={() => setGitNonce((n) => n + 1)} />
@@ -3380,8 +3428,7 @@ export function App() {
   async function regenerateTitle(id: string) {
     try {
       await api.retitle(id);
-      notify("info", "Renaming — the new title lands in a moment.");
-      setTimeout(() => void loadSessions(), 4000);
+      notify("info", "Renaming — the new title lands in a moment.");   // on the list's next poll
     } catch (e) {
       notify("error", (e as Error).message);
     }
@@ -3561,13 +3608,14 @@ export function App() {
             <div
               className="hudgrid grid min-h-0 flex-1"
               data-rbare={rightShown ? undefined : ""}
+              data-rnone={rightShown && !inDesign ? undefined : ""}
               style={{ gridTemplateColumns: inDesign ? `0 ${designChat}px 7px minmax(0,1fr)` : shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0,
                        ...(settings.rightW ? { "--rbody": rbody(settings.rightW) } : {}) } as CSSProperties}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" hidden={inDesign} style={{ display: inDesign ? "none" : undefined, borderRight: "1px solid var(--border)" }}>
                 <Brand folded={!settings.leftOpen} onFold={toggleLeft}
-                  workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
+                  workspace={<WorkspaceButton news={wsNews} onManage={() => showSettings("workspaces")} />} />
                 <SessionsPanel
                   folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
                   sessions={sidebarSessions} ticketKids={ticketKids} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
@@ -3738,7 +3786,7 @@ export function App() {
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, style: run.style, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
-                      designLinked={sessionProject ? designLinks[sessionProject] ?? null : null}
+                      designLinked={sessionProject ? designLinked : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental): SEND queues instead.
                       onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
@@ -3814,6 +3862,7 @@ export function App() {
             </div>
 
             {analyzeProject && (
+              <Suspense fallback={null}>
               <AnalyzeModal
                 // The file is part of the key so a second deep-link (same
                 // project, different file) remounts on that file.
@@ -3825,6 +3874,12 @@ export function App() {
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 edited={analyzeProject === sessionProject ? filesEdits.edited : undefined}
                 onClose={() => setAnalyzeProject(null)}
+                onFile={(path) => {
+                  const p = extrasNow(router).popup;
+                  if (p?.kind !== "analyze" && p?.kind !== "edit") return;   // closing
+                  setExtras(router, { popup: path ? { kind: "edit", project: analyzeProject, path }
+                    : { kind: "analyze", project: analyzeProject } }, true);
+                }}
                 // ✦ Ask Claude / REVIEW: into the prompt, after whatever you were
                 // writing; the window goes unless it holds unsaved edits.
                 onAsk={(text, close) => {
@@ -3836,6 +3891,7 @@ export function App() {
                 }}
                 onOpenGit={() => { setAnalyzeProject(null); patchSettings({ rightTab: "git", rightOpen: true }); }}
               />
+              </Suspense>
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
             <ShortcutSheet open={sheetOpen} sendKey={settings.sendKey} onClose={() => setSheetOpen(false)} />
@@ -3853,6 +3909,7 @@ export function App() {
             <PillHost />
             {experimental.enabled && <MysticalHost projects={mysticalProjects} />}
             {settingsOpen && (
+              <Suspense fallback={null}>
               <SettingsModal cwd={selected?.cwd} sessionId={selected?.id ?? null}
                 chatInfo={(id) => sessions.find((s) => s.id === id)}
                 host={host.host} port={location.port || "8790"} startTab={settingsTab}
@@ -3874,11 +3931,13 @@ export function App() {
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
                   onDesign: plugins.design
-                    ? (texts, rel) => { setSettingsOpen(false); setSettingsTab(undefined); feed(texts, rel); }
+                    ? (texts, rel) => { setSettingsOpen(false); feed(texts, rel); }
                     : undefined,
                 }}
                 weather={weather} onSetUnit={setUnit} onSetPlace={setPlace}
-                onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
+                onTab={showSettings}
+                onClose={() => setSettingsOpen(false)} />
+              </Suspense>
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx}
               width={ctxMenu.type === "railtab" ? 288 : undefined} />}

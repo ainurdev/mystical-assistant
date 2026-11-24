@@ -42,7 +42,9 @@ var origin = new Uri("http://127.0.0.1:8790");
 NavigationTarget Decide(string? u, bool mainFrame = true, bool newWindow = false) =>
     UrlPolicy.Decide(u == null ? null : new Uri(u), origin, mainFrame, newWindow);
 Check(Decide("http://127.0.0.1:8790/?token=x") == NavigationTarget.InView
-      && Decide("http://localhost:8790/local/graph/html") == NavigationTarget.InView,
+      && Decide("http://localhost:8790/local/graph/html") == NavigationTarget.InView
+      && Decide("http://127.0.0.1:8790/?skipboot#/s/abc") == NavigationTarget.InView
+      && Decide("http://127.0.0.1:8790/#/settings/system") == NavigationTarget.InView,
       "url: dashboard navigation stays in the window");
 Check(Decide("https://github.com/a/b/pull/1") == NavigationTarget.Browser
       && Decide("http://127.0.0.1:5173/") == NavigationTarget.Browser

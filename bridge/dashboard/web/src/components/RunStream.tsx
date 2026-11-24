@@ -10,6 +10,7 @@ import type { PendingRequest } from "../chat";
 import { Markdown, type OpenFile } from "./Markdown";
 import { LiveHostCtx, LiveRow, type LiveHost } from "./LiveRow";
 import { selectionMd } from "../lib/selmd";
+import { usePic } from "../lib/nav";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
@@ -351,7 +352,7 @@ function TerminalGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) backwards", clipPath: "inset(0)" } : {}),
       }}
     >
       <ActionRow tier="reach" mark="command" accent={accent} tag="BASH" running={running} animate={false}
@@ -505,7 +506,7 @@ function EditGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) backwards", clipPath: "inset(0)" } : {}),
       }}
     >
       {/* The last figure is the one the head exists for: what this whole run
@@ -676,7 +677,7 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
       data-open={open ? "" : undefined}
       data-run={stat.running ? "" : undefined}
       data-err={stat.failed ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <div className="thk text-muted-2">
         <button
@@ -956,6 +957,13 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // top is far above you. A click mid-glide starts from where the box is.
   const fold = useRef<HTMLDivElement>(null);
   const [motion, setMotion] = useState(false);
+  // Mid-glide the scroller sits anchoring out (index.css .mscroll[data-moving]); counted, as two zones can glide at once.
+  useLayoutEffect(() => {
+    const sc = motion ? fold.current?.closest<HTMLElement>(".mscroll") : null;
+    if (!sc) return;
+    sc.dataset.moving = String(+(sc.dataset.moving ?? 0) + 1);
+    return () => { const n = +(sc.dataset.moving ?? 1) - 1; if (n > 0) sc.dataset.moving = String(n); else delete sc.dataset.moving; };
+  }, [motion]);
   // How many of the zone's rows are mounted. Opening, only those the glide can
   // show (a row is 28px or more, so this many fill the scroller under the
   // header), the rest once it has played out. Built whole in the click, a zone
@@ -1042,7 +1050,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   };
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
   const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
   // survives the zone remounting; the live line shows them.
@@ -1073,7 +1081,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   ) : null;
   // In with the stream, and a card that starts empty (the turn just sent) a
   // beat behind your prompt. Fixed at mount: a delay changed mid-play jumps it.
-  const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms both` : undefined));
+  const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms backwards` : undefined));
   const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
   const tools = kindsOf(cats, notes);
@@ -1514,7 +1522,7 @@ function ShotRow({ pics, shut, label, onOpen }: {
     );
   };
   return (
-    <div className="dwork-row">
+    <div className="dwork-row" data-ml={edge.l ? "" : undefined} data-mr={edge.r ? "" : undefined}>
       <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label} data-drag={grabbing ? "" : undefined}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onLostPointerCapture={onUp}
         onClickCapture={(e) => { if (dragged.current) { e.stopPropagation(); e.preventDefault(); } }}
@@ -1557,7 +1565,7 @@ function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle, tail }: {
     <div
       className="zrow thought"
       data-pause={pause ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <i className="ax-bar" aria-hidden />
       <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
@@ -1596,7 +1604,7 @@ function LogRow({ src, label, text, error, animate }:
       data-quiet={quiet && !open ? "" : undefined}
       title={quiet && !open ? `${label ? `${label} · ` : ""}${lines[0]}`
         : more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <i className="ax-bar" aria-hidden><MarkIcon mark={error ? "fail" : src === "hook" ? "hook" : "log"} /></i>
       <span className="ax-tagcell"><span className="ax-tag">{src.toUpperCase()}</span></span>
@@ -1719,7 +1727,7 @@ function ActionRow({
         data-run={running ? "" : undefined}
         style={{
           ...({ "--h": accent } as React.CSSProperties),
-          ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+          ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : {}),
         }}
         role={toggle ? "button" : undefined}
         tabIndex={toggle ? 0 : undefined}
@@ -2043,7 +2051,7 @@ function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
       className="agb"
       data-plate={brief ? "" : undefined}
       data-open={open ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <ActionRow tier="reach" mark={skill ? "skill" : "agent"} accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
         running={running} error={error} animate={false} stat={<AgentStat run={run}>{agentNums(run, animate)}</AgentStat>}>
@@ -2073,7 +2081,7 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
   return (
     <div
       className="ax-window"
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <ActionRow tier="reach" mark="agent" accent="var(--acc)" tag="AGENTS" running={!!live} animate={false}
         stat={live
@@ -2107,7 +2115,7 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
  *  (lib/seenshots) and wears the accent until you have. Your own steer's
  *  pictures pass none — you sent them. */
 function ToolImages({ paths, all, at }: { paths: string[]; all: Shown[]; at?: number }) {
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = usePic(paths.map(api.attachmentUrl));
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
@@ -2165,7 +2173,7 @@ function CallGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : {}),
       }}
     >
       <ActionRow tier="reach" mark={kindMark(name)} accent={accent} tag={tag} animate={false}
@@ -2776,7 +2784,7 @@ export const RunStream = memo(function RunStream({
             key={i}
             className="group/msg relative flex items-start pl-[var(--rail)]"
             data-pause={pause ? "" : undefined}
-            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
           >
             <RailNode />
             {/* The agent talking. Bare prose between boxed, labelled cards was
@@ -3070,7 +3078,7 @@ export const RunStream = memo(function RunStream({
             // Coloured by .ev-err off --err, not a Tailwind red: a fixed red-300
             // is unreadable on every light ground and gets hue-rotated on AURORA.
             className="ev-err ml-[var(--rail)] flex items-start gap-1.5 px-2 py-1 text-sm"
-            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
           >
             <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
             <span>{event.message}</span>
@@ -3764,10 +3772,10 @@ export function FinalResult({
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
     // of rules, a level bar, a margin note, a floating surface) — and nothing
     // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
-    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined}
+    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined} data-said={drawn == null && body ? "" : undefined}
       style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
-      <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
+      <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined} data-bare={drawn == null && body ? undefined : ""}>
         <div className="res-head">
           <span className="res-lab caps">{update ? "Update" : label ?? (dossier ? (bad ? "Answer · error" : "Answer") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {/* how long the turn took sits by the label; the right side says done and when */}

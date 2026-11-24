@@ -1,8 +1,9 @@
 import type { DataEv } from "./lib/dataview";
-import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+import type { Profile, ProfileWrite } from "./lib/profiles";
 import type { Flow, FlowOption, FlowSet, PastFlow } from "./lib/flowview";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
+import { code, fetchFresh, main, posted, queryClient, readWith } from "./lib/queries";
 
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
@@ -1723,7 +1724,7 @@ export type PluginAction =
 
 export async function req<T>(
   path: string,
-  opts: { method?: string; body?: unknown } = {},
+  opts: { method?: string; body?: unknown; read?: true } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) {
@@ -1745,8 +1746,12 @@ export async function req<T>(
     }
     throw new Error(msg);
   }
-  return (await res.json()) as T;
+  const out = (await res.json()) as T;
+  // `read`: a read the bridge answers on POST (lib/queries) changes nothing.
+  if (opts.method !== undefined && opts.method !== "GET" && !opts.read) posted(path);
+  return out;
 }
+readWith((url, body) => req(url, body ? { method: "POST", body, read: true } : {}));
 
 /** Fired on window after a successful push from any dashboard button (the GIT
  *  tab, the git popover, FILES, OPEN PR). The PR chip re-reads on it rather
@@ -1960,7 +1965,6 @@ export interface MoveJob {
 }
 /** Fired on window when the MOVE tab starts, ends or dismisses a job, so the
  *  dock polls now rather than on its next idle beat. */
-export const MOVE_EVENT = "hud:move";
 
 export interface CouncilFinding {
   id: string;
@@ -2027,32 +2031,18 @@ export interface CouncilAccount { key: string; agent: string; label: string; sta
 
 export const api = {
   state: () => req<DashState>("/local/state"),
-  update: () => req<UpdateInfo>("/local/update"),
   applyUpdate: () =>
     req<{ ok: boolean; output: string; pulled?: boolean }>("/local/update", { method: "POST", body: {} }),
   publishUpdate: () =>
     req<{ ok: boolean; output: string; message: string }>(
       "/local/update/publish", { method: "POST", body: {} }),
   restart: () => req<{ ok: boolean }>("/local/restart", { method: "POST", body: {} }),
-  live: () => req<LiveInfo>("/local/live"),
   liveBuild: (ui: string) =>
     req<{ ok: boolean; output: string; seconds: number }>("/local/live/build", { method: "POST", body: { ui } }),
   liveAfter: (cancel = false) => req<{ ok: boolean }>("/local/live/after", { method: "POST", body: { cancel } }),
   updateClaude: () => req<{ ok: boolean }>("/local/claude/update", { method: "POST", body: {} }),
-  projects: (dir?: string) =>
-    req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
-  sessions: (project?: string) =>
-    req<{ sessions: SessionBrief[] }>(
-      `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
-    ),
-  /** Each session's tool pictures handed back since `since` (epoch s), as
-   *  [path, at] pairs: the sidebar's unseen-picture tag (lib/seenshots). */
-  shots: (since: number) =>
-    req<Record<string, [string, number][]>>(`/local/shots?since=${Math.floor(since)}`),
   transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
-    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
-      (opts?.tail ? `&tail=${opts.tail}` : "") +
-      (opts?.before ? `&before=${opts.before}` : "")),
+    queryClient.fetchQuery({ ...main.session({ id, cursor, tail: opts?.tail || undefined, before: opts?.before || undefined }), staleTime: 0, gcTime: 0 }),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
@@ -2129,7 +2119,7 @@ export const api = {
   styles: (sessionId?: string) =>
     req<{ styles: OutputStyle[] }>(`/local/styles${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ""}`),
   // A bridge older than profiles answers these with its catch-all 404 "not found".
-  profiles: () => req<ProfilesInfo>("/local/profiles"),
+  profiles: () => fetchFresh(main.profiles()),
   /** create · update · delete. A refused field comes back as the bridge's message. */
   profileWrite: (body: ProfileWrite) =>
     req<{ ok: boolean; profile?: Profile }>("/local/profiles", { method: "POST", body }),
@@ -2165,7 +2155,6 @@ export const api = {
   mcpAction: (action: string, name?: string, extra?: Record<string, unknown>) =>
     req<{ ok: boolean; error?: string | null; servers?: McpServer[]; url?: string }>(
       "/local/mcp", { method: "POST", body: { action, name, ...extra } }),
-  inspector: () => req<InspectorState>("/local/inspector"),
   inspectorAction: (action: "on" | "off" | "clear") =>
     req<{ ok: boolean; on: boolean }>("/local/inspector", {
       method: "POST",
@@ -2177,10 +2166,7 @@ export const api = {
         method: "POST",
         body: { disabled_tools: rules },
       }),
-  // The FLOW tab: the session's skill path, and the switch that holds or releases its auto-start.
-  getFlow: (id: string) => req<{ flow: Flow | null; past?: PastFlow[]; set: FlowSet | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
-  // The SESSION tab's window, time and spend (bridge/meter.py); {} when there's no transcript yet.
-  getMeter: (id: string) => req<Meter | Record<string, never>>(`/local/sessions/${encodeURIComponent(id)}/meter`),
+  // The FLOW tab: the switch that holds or releases the session's auto-start.
   setFlowAuto: (id: string, on: boolean) =>
     req<{ ok: boolean }>("/local/flow/auto", { method: "POST", body: { session: id, on } }),
   // The prompt box's FLOW chip: a switch set for this session (null follows SETTINGS
@@ -2208,10 +2194,6 @@ export const api = {
         method: "POST",
         body: { objective },
       }),
-  // fresh=N: the bridge first re-reads, through the CLI, any login whose meter is
-  // older than N s (0 = every one, now). A bridge older than that ignores it.
-  accounts: (fresh?: number) =>
-    req<AccountsInfo>(`/local/accounts${fresh === undefined ? "" : `?fresh=${fresh}`}`),
   /** `on` goes with auto_switch: keep the login in Auto-switch, or out of it. */
   accountAction: (action: "add" | "remove" | "disable" | "enable" | "auto_switch", slot?: number, on?: boolean) =>
     req<{ ok: boolean; slot?: number }>("/local/accounts", {
@@ -2239,8 +2221,6 @@ export const api = {
       method: "POST",
       body: { action: "login_cancel", slot },
     }),
-  // Non-Claude agents (bridge/acp_agents.py). A bridge older than them 404s.
-  acpAgents: () => req<AcpAgentsInfo>("/local/acp/agents"),
   /** create → the account, masked; a home login also gets the command to run
    *  once in a terminal. The key travels in this body only, never a URL. */
   acpAccount: (body: { action: "create"; agent: string; label: string; kind: "key" | "home"; key?: string }
@@ -2256,35 +2236,24 @@ export const api = {
    *  running one). account "" is the machine login. */
   acpLogin: (action: "start" | "status" | "cancel", agent: string, account: string) =>
     req<AcpLogin>("/local/acp/login", { method: "POST", body: { action, agent, account } }),
-  /** The AI-powered extras and whether each is switched on. All ship off. */
-  aiFeatures: () => req<{ features: AiFeature[] }>("/local/aifeatures"),
   setAiFeature: (key: string, enabled: boolean) =>
     req<{ ok: boolean; features: AiFeature[] }>("/local/aifeatures", {
       method: "POST",
       body: { key, enabled },
     }),
-  /** The FLOWS sheet's settings, kept on the bridge (bridge/flowsettings.py). */
-  flows: () => req<FlowSettings>("/local/flows"),
   /** One change, `{reset: flow}` or `{presets}`; answers with every setting. */
   setFlows: (body: FlowChange) => req<FlowSettings>("/local/flows", { method: "POST", body }),
-  /** The Savers and their trials. A bridge older than them answers 404 "not found". */
-  savers: () => req<{ savers: Saver[] }>("/local/savers"),
   setSaver: (key: string, mode: Saver["mode"]) =>
     req<{ ok: boolean; savers: Saver[] }>("/local/savers", {
       method: "POST",
       body: { key, mode },
     }),
-  /** The bundled integrations and whether each is installed. A bridge older than
-   *  this answers 404 "not found" (see lib/integrations.ts). */
-  integrations: () => req<{ plugins: Integration[] }>("/local/integrations"),
   /** Removing Rivendell mid-run is a 409 whose message says so. */
   setIntegration: (id: string, action: "install" | "remove") =>
     req<{ ok: boolean; plugins: Integration[] }>("/local/integrations", {
       method: "POST",
       body: { id, action },
     }),
-  /** Everything else that used to be reachable only by editing .env. */
-  envSettings: () => req<{ settings: EnvSetting[] }>("/local/envsettings"),
   /** `value: null` clears the override, falling back to what .env said. */
   setEnvSetting: (key: string, value: string | number | boolean | null) =>
     req<{ ok: boolean; settings: EnvSetting[] }>("/local/envsettings", {
@@ -2295,8 +2264,6 @@ export const api = {
   usageSharing: () => req<{ share: boolean | null }>("/local/usage-sharing"),
   setUsageSharing: (share: boolean) =>
     req<{ share: boolean }>("/local/usage-sharing", { method: "POST", body: { share } }),
-  /** Does the bridge come up at login, and the window with it? */
-  startup: () => req<StartupState>("/local/startup"),
   /** Send the whole desired state each time — the server rewrites both files.
    *  `profile` pins the browser profile the window opens in; null = auto. */
   setStartup: (login: boolean, window: boolean, profile?: string | null) =>
@@ -2304,16 +2271,6 @@ export const api = {
       method: "POST",
       body: { login, window, profile: profile ?? null },
     }),
-  /** Cached board — never spawns anything. */
-  nextBoard: (opts?: { project?: string; kind?: NextKind }) => {
-    // `kind` rides along with or without a project — refreshNext already sends
-    // it either way. With neither, the bare path the WORK tab has always used.
-    const q = new URLSearchParams();
-    if (opts?.project) q.set("project", opts.project);
-    if (opts?.kind) q.set("kind", opts.kind);
-    const qs = q.toString();
-    return req<NextBoard>(`/local/next${qs ? `?${qs}` : ""}`);
-  },
   /** Recompute in the background; poll nextBoard() until `refreshing` clears. */
   refreshNext: (opts?: { project?: string; kind?: NextKind }) =>
     req<NextBoard & { ok: boolean }>("/local/next", {
@@ -2337,13 +2294,8 @@ export const api = {
     window.dispatchEvent(new CustomEvent("hud:answered", { detail: body.request_id }));
     return r;
   }),
-  // Search within one chat (bridge/chat_search.in_chat): prompts and the agent's words.
-  chatSearch: (session: string, q: string) =>
-    req<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(
-      `/local/chat-search?session=${encodeURIComponent(session)}&q=${encodeURIComponent(q)}`),
   // A report a show_report card points at.
-  chatReport: (session: string, path: string) =>
-    req<{ text: string }>(`/local/chat-report?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}`),
+  chatReport: (session: string, path: string) => fetchFresh(main.chatReport({ session, path })),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
   // A live job without its events (the cursor is past them all): the pending
@@ -2353,7 +2305,6 @@ export const api = {
   server: (action: "start" | "stop", opts: { cmd?: string } & RunCtx = {}) =>
     req<{ message: string; server: DevServerInfo; servers: DevServerInfo[] }>(
       "/local/server", { method: "POST", body: { action, ...opts } }),
-  servers: () => req<{ servers: DevServerInfo[] }>("/local/servers"),
   // Path is historical — this only works out a project's run command now.
   detectRunCommand: (ctx: RunCtx) =>
     req<{ command: string; source: string; explanation: string }>(
@@ -2363,8 +2314,6 @@ export const api = {
     req<{ ok: boolean; error?: string }>("/local/shell", { method: "POST", body: { command } }),
   shellKill: () => req<{ ok: boolean; error?: string }>("/local/shell/kill", { method: "POST", body: {} }),
   // --- interactive PTY terminals (multi-instance xterm.js) ---
-  terminals: (project: string) =>
-    req<{ terminals: TermInfo[] }>(`/local/terminals?project=${encodeURIComponent(project)}`),
   createTerminal: (project: string, cwdRel: string, cols: number, rows: number) =>
     req<{ id?: string; cwd_rel?: string; project?: string; venv?: string; error?: string }>("/local/terminals", {
       method: "POST",
@@ -2380,13 +2329,6 @@ export const api = {
     `?id=${encodeURIComponent(id)}&token=${encodeURIComponent(TOKEN)}`,
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
-  // alerts: this page raises its own OS alerts, so the tray companion stays quiet.
-  // seen: this page's last click or keypress — Telegram's "away" (bridge/notices.py).
-  running: (alerts = false, seen = 0) =>
-    req<RunningInfo>(`/local/running?${alerts ? "alerts=1&" : ""}${seen ? `seen=${seen}` : ""}`),
-  notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean }>("/local/notices"),
-  /** The rail's changelog: Mystical's updates and notes, newest first, however old. */
-  changelog: () => req<{ notices: Notice[]; project?: string }>("/local/changelog"),
   noticesRead: (ids: number[] | "all") =>
     req<{ ok: boolean; n: number }>("/local/notices", {
       method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),
@@ -2398,31 +2340,11 @@ export const api = {
     req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "unpark", session } }),
   noticePrefs: (patch: NoticePrefsPatch) =>
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
-  usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
-  wins: () => req<TodayWins>("/local/wins"),
-  report: (back = 0) =>
-    req<WeeklyReport>(`/local/report${back ? "?back=1" : ""}`),
-  history: (archived = false) =>
-    req<{ sessions: EnrichedSession[] }>(
-      `/local/history${archived ? "?archived=1" : ""}`,
-    ),
   // branch → operate on that branch's worktree (else the project checkout)
-  git: (project: string, branch?: string) =>
-    req<GitStatus>(
-      `/local/git?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
-  gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
   gitLog: (project: string, limit = 200, branch?: string) =>
     req<{ commits: GitCommit[] }>(
       `/local/git/log?project=${encodeURIComponent(project)}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
-  // one commit from the graph: its changed files, or (with path) one file's diff
-  gitShow: (project: string, sha: string, path?: string) =>
-    req<{ ok?: boolean; files?: CompareFile[]; add?: number; del?: number; diff?: string }>(
-      `/local/git/show?project=${encodeURIComponent(project)}&sha=${encodeURIComponent(sha)}${
-        path ? `&path=${encodeURIComponent(path)}` : ""
-      }`,
     ),
   logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
   gitDiff: (project: string, path: string, base?: string, head?: string, branch?: string) =>
@@ -2449,11 +2371,8 @@ export const api = {
       method: "POST",
       body: { project, op, paths, ...(branch ? { branch } : {}) },
     }),
-  council: (sid: string, full = false) =>
-    req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}${full ? "?full=1" : ""}`),
   councilAct: (sid: string, action: string, key?: string) =>
     req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}`, { method: "POST", body: { action, key } }),
-  councilSettings: () => req<CouncilSettings>("/local/council/settings"),
   saveCouncilSettings: (patch: Partial<CouncilSettings>) =>
     req<CouncilSettings>("/local/council/settings", { method: "POST", body: patch }),
   gitPush: (project: string, branch?: string) =>
@@ -2478,8 +2397,6 @@ export const api = {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
     }),
-  gitLedger: (project: string, branch?: string) =>
-    req<GitLedger>(`/local/git/ledger?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`),
   // Update: the base merged into this branch (a clash changes nothing and names its files).
   gitUpdateBase: (project: string, base: string, branch?: string) =>
     req<{ ok: boolean; output: string; clash: string[] }>("/local/git/update-base", {
@@ -2490,35 +2407,12 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/undo-commit", {
       method: "POST", body: { project, ...(branch ? { branch } : {}) },
     }),
-  // COMING IN: origin's commits HEAD lacks. Diverged, the merge's dry run too:
-  // [] merges cleanly, files = they'd clash, null = couldn't tell.
-  gitIncoming: (project: string, branch?: string) =>
-    req<{ commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null }>(
-      `/local/git/incoming?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
-  /** A chat's Claude sub-agents as a team, and one up close (bridge/agent_team.py). */
-  agentTeam: (sessionId: string) => req<import("./lib/agentteam").Team>(`/local/team?session=${encodeURIComponent(sessionId)}`),
-  agentTeamOne: (sessionId: string, agentId: string) =>
-    req<import("./lib/agentteam").AgentDetail>(`/local/team/agent?session=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agentId)}`),
   /** What the composer completes from disk (bridge/complete.py). */
   completePaths: (project: string | null, prefix: string) =>
-    req<{ paths: { text: string; name: string; dir: boolean }[] }>(`/local/complete/paths?project=${encodeURIComponent(project ?? "")}&prefix=${encodeURIComponent(prefix)}`),
-  completeSymbols: (project: string) =>
-    req<{ symbols: { name: string; file: string }[] }>(`/local/complete/symbols?project=${encodeURIComponent(project)}`),
-  filesTree: (project: string, branch?: string) =>
-    req<{ files: string[]; ignored?: string[]; root?: string }>(
-      `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
-  fileRead: (project: string, path: string, branch?: string) =>
-    req<FileContent>(
-      `/local/files/read?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
-  /** The file as committed at HEAD — the base the EDITOR's inline diff compares with. */
-  fileHead: (project: string, path: string, branch?: string) =>
-    req<{ ok: boolean; exists?: boolean; content?: string; error?: string }>(
-      `/local/files/head?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
-    ),
+    fetchFresh(main.paths({ project: project ?? "", prefix })),
+  completeSymbols: (project: string) => fetchFresh(main.symbols({ project })),
+  filesTree: (project: string, branch?: string) => fetchFresh(main.filesTree({ project, branch: branch || undefined })),
   fileWrite: (project: string, path: string, content: string, branch?: string) =>
     req<{ ok: boolean; error?: string }>("/local/files/write", {
       method: "POST",
@@ -2533,7 +2427,7 @@ export const api = {
   revealFile: (path: string) =>
     req<{ ok: boolean }>("/local/files/reveal", { method: "POST", body: { path } }),
   /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
-  promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
+  promptHistory: () => fetchFresh(main.prompts()),
   /** Mint a read-only link to one session, or revoke every link it has. The
    *  page is served by the bridge itself — which binds loopback, so a link only
    *  opens elsewhere if you deliberately expose the port. */
@@ -2548,18 +2442,13 @@ export const api = {
       `/local/sessions/${encodeURIComponent(sessionId)}/retitle`,
       { method: "POST", body: title ? { title } : {} },
     ),
-  /** mode: "" search-in-files · "word" references (whole word, case-sensitive) · "def" definitions. */
-  filesGrep: (project: string, q: string, branch?: string, mode?: "word" | "def") =>
-    req<{ hits: GrepHit[] }>(
-      `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}${mode ? `&mode=${mode}` : ""}`,
-    ),
   fileOp: (project: string, op: FileOp, path: string, to?: string, branch?: string) =>
     req<{ ok: boolean; path?: string; error?: string }>("/local/files/op", {
       method: "POST",
       body: { project, op, path, ...(to ? { to } : {}), ...(branch ? { branch } : {}) },
     }),
   projectSettings: (ctx: RunCtx) =>
-    req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
+    fetchFresh(main.projectSettings({ cwd: ctx.cwd || undefined, cwd_rel: ctx.cwd_rel || undefined, project: ctx.project || undefined, branch: ctx.branch || undefined })),
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
@@ -2578,7 +2467,6 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
-  workspaces: () => req<WorkspaceSet>("/local/workspaces"),
   workspacePrefs: (body: { last?: string; display?: WorkspaceDisplay }) =>
     req<WorkspaceSet>("/local/workspaces/prefs", { method: "POST", body }),
   /** The whole set at once. `images`: {workspace id: base64} for pictures picked in this edit. */
@@ -2586,16 +2474,12 @@ export const api = {
     req<WorkspaceSet>("/local/workspaces", { method: "POST", body }),
   pickLogos: (action: "pick" | "undo") =>
     req<PickResult & { undone?: number }>("/local/project-mark/pick", { method: "POST", body: { action } }),
-  styleCandidates: () => req<StyleCandidates>("/local/project-mark/style/candidates"),
-  styleRun: () => req<StyleRun>("/local/project-mark/style"),
   /** `account`: the login's slot; left out, the bridge's default login. */
   styleStart: (sheet: string, sig: string, hashes: Record<string, string>, account?: number) =>
     req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "start", sheet, sig, hashes, account } }),
   styleStop: () => req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "stop" } }),
   styleUndo: (project?: string) =>
     req<{ undone: number }>("/local/project-mark/style", { method: "POST", body: { action: "undo", ...(project ? { project } : {}) } }),
-  repoImages: (project: string) =>
-    req<RepoImages>(`/local/project-mark/repo?project=${encodeURIComponent(project)}`),
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
       `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
@@ -2605,14 +2489,9 @@ export const api = {
     req<PrStatus>(
       `/local/github/pr/status?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}${
         session ? `&session=${encodeURIComponent(session)}` : ""}${force ? "&force=1" : ""}`),
-  /** null draws nothing: not on a board, the switch off, or nothing to push. */
-  taskState: (project: string, branch: string) =>
-    req<{ task: TaskState | null }>(
-      `/local/rivendell/taskstate?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}`),
   taskSkip: (project: string, branch: string) =>
     req<{ task: TaskState | null }>("/local/rivendell/taskstate", { method: "POST", body: { project, branch, state: "skip" } }),
   // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
-  rivendell: () => req<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell"),
   addRivendell: (body: RivendellInput) =>
     req<{ ok: boolean; instance: RivendellInstance }>("/local/rivendell", {
       method: "POST", body: { op: "add", ...body },
@@ -2623,15 +2502,11 @@ export const api = {
     }),
   removeRivendell: (id: string) =>
     req<{ ok: boolean }>("/local/rivendell", { method: "POST", body: { op: "remove", id } }),
-  // The PENDING request queue behind the accept/reject gate (bridge/rivendell.py).
-  rivendellQueue: () => req<{ queue: RivendellQueueItem[] }>("/local/rivendell/queue"),
   acceptRivendell: (instance_id: string, key: string) =>
     req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "accept", instance_id, key } }),
   rejectRivendell: (instance_id: string, key: string) =>
     req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "reject", instance_id, key } }),
-  // The RIVENDELL tab: a repo's open tasks, and IMPLEMENT on one.
-  rivendellTasks: (project: string) =>
-    req<RivendellTasks>(`/local/rivendell/tasks?project=${encodeURIComponent(project)}`),
+  // The RIVENDELL tab: IMPLEMENT on a repo's open task.
   rivendellImplement: (instance_id: string, task_id: string, note = "") =>
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
       method: "POST", body: { instance_id, task_id, note },
@@ -2640,19 +2515,12 @@ export const api = {
    *  before the route 404s, which the bar reads as "restart the bridge". */
   rivendellAgain: (session_id: string) =>
     req<{ ok: boolean; request: { id?: string } }>("/local/rivendell/again", { method: "POST", body: { session_id } }),
-  rivendellTask: (instance_id: string, task_id: string) =>
-    req<RivendellTaskDetail>(`/local/rivendell/task?instance_id=${encodeURIComponent(instance_id)}` +
-      `&task_id=${encodeURIComponent(task_id)}`),
-  rivendellTodolist: (instance_id: string, project_id: string) =>
-    req<{ todolist: RivendellTodolist | null }>(`/local/rivendell/todolist?instance_id=${encodeURIComponent(instance_id)}` +
-      `&project_id=${encodeURIComponent(project_id)}`),
   // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
   // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
   rivendellTest: (instance_id: string, job = false) =>
     req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id, job } }),
   // DEVICE RUNS: Share this device, Set up / Remove (one Mac password prompt, up
   // to 15 minutes before it answers), and the Claude account for device runs.
-  rivendellDevices: () => req<{ instances: RivendellDevice[] }>("/local/rivendell/devices"),
   updateRivendellDevice: (body: RivendellDeviceInput) =>
     req<{ ok: boolean; instances: RivendellDevice[] }>("/local/rivendell/devices", { method: "POST", body }),
   rivendellDeviceSetup: (action: "setup" | "remove") =>
@@ -2661,7 +2529,6 @@ export const api = {
     }),
   // TEAM (bridge/team.py): the roster, what teammates sent here, what you sent. An
   // older bridge answers 404 "not found": the TEAM tab says to restart it.
-  team: () => req<TeamOverview>("/local/rivendell/team"),
   teamPreview: (session: string) =>
     req<TeamPreview>(`/local/rivendell/team/preview?session=${encodeURIComponent(session)}`),
   teamSend: (body: TeamSend) =>
@@ -2689,10 +2556,6 @@ export const api = {
   stopDeviceRun: (session: string) =>
     req<{ ok: boolean }>("/local/device-runs/stop", { method: "POST", body: { session } }),
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
-  sysinfo: () => req<HostStats>("/local/sysinfo"),
-  weather: () => req<Weather>("/local/weather"),
-  weatherSearch: (q: string) =>
-    req<{ results?: Place[]; error?: string }>(`/local/weather/search?q=${encodeURIComponent(q)}`),
   setWeatherPlace: (p: Place) =>
     req<Weather & { error?: string }>("/local/weather/place", { method: "POST", body: p }),
   setWeatherUnit: (unit: string) =>
@@ -2701,22 +2564,8 @@ export const api = {
       body: { unit },
     }),
   // --- branches, worktrees, PRs (unified projects view + Analyze modal) ---
-  branches: (project: string) =>
-    req<{ branches: string[]; current: string; default: string }>(
-      `/local/git/branches?project=${encodeURIComponent(project)}`,
-    ),
-  // `merged`: branch names already contained in the default branch — the WORKTREES
-  // tab marks them, worktree or not, so a finished branch is visible as finished.
-  // The BRANCHES rail tab: every branch and checkout with its status (lib/branchrows).
-  branchStatus: (project: string) =>
-    req<BranchStatus>(`/local/git/branchstatus?project=${encodeURIComponent(project)}`),
-  // Its PR chips, a beat later: gh is slower than git (bridge prstatus.branch_prs).
-  branchPrs: (project: string) =>
-    req<{ prs: Record<string, BranchPr> }>(`/local/github/prs?project=${encodeURIComponent(project)}`),
-  worktrees: (project: string) =>
-    req<{ worktrees: Worktree[]; merged: string[] }>(
-      `/local/git/worktrees?project=${encodeURIComponent(project)}`,
-    ),
+  branches: (project: string) => fetchFresh(code.branches({ project })),
+  worktrees: (project: string) => fetchFresh(code.worktrees({ project })),
   compare: (project: string, base: string, head: string, dots?: 2 | 3) =>
     req<CompareInfo>(
       `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}${
@@ -2771,8 +2620,7 @@ export const api = {
   /** Stop allowing a folder outside the projects folder. Nothing on disk changes. */
   removeRoot: (project: string) => req<{ ok: boolean; roots: string[] }>("/local/roots/remove", { method: "POST", body: { project } }),
   // --- prompt queue (per session) ---
-  queue: (sessionId: string) =>
-    req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
+  queue: (sessionId: string) => fetchFresh(main.queue({ session: sessionId })),
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
@@ -2785,23 +2633,11 @@ export const api = {
   // A waiting session (bridge/waits.py): wake it now, or drop the wait.
   waitAction: (sessionId: string, action: "resume" | "cancel") =>
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(sessionId)}/wait`, { method: "POST", body: { action } }),
-  agents: (sessionId: string) =>
-    req<AgentsInfo>(`/local/agents?session=${encodeURIComponent(sessionId)}`),
-  agentActivity: (sessionId: string, agentId: string, cursor: number, workflowId?: string) =>
-    req<AgentActivity>(
-      `/local/agents/activity?session=${encodeURIComponent(sessionId)}` +
-        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
-        (workflowId ? `&workflow=${encodeURIComponent(workflowId)}` : ""),
-    ),
   // --- slash commands: what `/` offers in the composer (lib/slash.ts) ---
-  commands: (project?: string | null) =>
-    req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
   route: (body: { project: string; cwd?: string; session?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean }) =>
     req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
-  skills: (project?: string | null) =>
-    req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   installSkill: (id: string, scope: SkillScope, project?: string | null) =>
     req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
       "/local/skills/install", { method: "POST", body: { id, scope, project } }),
@@ -2813,14 +2649,11 @@ export const api = {
     req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
       "/local/skills/remove", { method: "POST", body: { id, scope, project } }),
   // --- plugins (marketplaces, via Claude Code's own `claude plugin`) ---
-  plugins: () => req<PluginsInfo>("/local/plugins"),
   // Every mutation answers with the fresh listing, so callers never refetch.
   pluginAct: (action: PluginAction, id: string, extra?: { scope?: string; enabled?: boolean }) =>
     req<{ ok: boolean; error: string | null } & PluginsInfo>(
       `/local/plugins/${action}`, { method: "POST", body: { id, ...extra } }),
   // --- MAP tab: graphify knowledge graph (graph.html) ---
-  graphState: (project: string) =>
-    req<GraphState>(`/local/graph/state?project=${encodeURIComponent(project)}`),
   graphExplain: (project: string, q: string) =>
     req<{ text: string }>(
       `/local/graph/explain?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}`,
@@ -2829,24 +2662,11 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
-  graphInstall: () => req<GraphInstall>("/local/graph/install"),
   installGraphify: () => req<GraphInstall>("/local/graph/install", { method: "POST", body: {} }),
   // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
-  lessons: (project: string) =>
-    req<{ lessons: Lesson[]; repo_enabled: boolean }>(
-      `/local/learn?project=${encodeURIComponent(project)}`,
-    ),
-  lesson: (project: string, file: string) =>
-    req<{ file: string; body: string }>(
-      `/local/learn?project=${encodeURIComponent(project)}&file=${encodeURIComponent(file)}`,
-    ),
   setLessonsForRepo: (project: string, on: boolean) =>
     req<{ repo_enabled: boolean }>("/local/learn/toggle", { method: "POST", body: { project, on } }),
   // --- MOVE ---
-  movePlan: () => req<MovePlan>("/local/move/plan"),
-  moveFiles: () => req<{ files: MoveFile[] }>("/local/move/files"),
-  moveJobs: () => req<{ jobs: MoveJob[] }>("/local/move/jobs"),
-  moveRead: () => req<{ read: MoveRead | null }>("/local/move/read"),
   moveExport: (out: string, skip: string[]) =>
     req<MoveJob>("/local/move/export", { method: "POST", body: { out, skip } }),
   moveStartRead: (path: string) => req<MoveJob>("/local/move/read", { method: "POST", body: { path } }),
@@ -2857,7 +2677,6 @@ export const api = {
   moveDelete: (path: string) => req<{ ok: boolean }>("/local/move/delete", { method: "POST", body: { path } }),
 
   // --- SETTINGS ▸ System ▸ Storage (bridge/storage.py) ---
-  storage: () => req<StorageScan>("/local/storage"),
   /** Ticket sets, newest first (bridge/tickets.py summaries). */
   tickets: () => req<{ sets: TicketSet[] }>("/local/tickets"),
   retryTicket: (folder: string, n: string) =>

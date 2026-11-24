@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
   KeyRound, Minimize2, MonitorCog, Plug, SquareTerminal, X,
@@ -340,6 +340,14 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   const tabs = pics.reduce((m, x) => (x.pv.shots.length > m.length ? x.pv.shots : m), pics[0]?.pv.shots ?? []);
   const [tab, setTab] = useState(0);
   const [big, setBig] = useState(false);
+  // the stage grows the dock (index.css .askdock[data-stage])
+  const stage = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const dock = stage.current?.closest<HTMLElement>(".askdock");
+    if (!dock) return;
+    dock.dataset.stage = "";
+    return () => { delete dock.dataset.stage; };
+  }, [solo, big]);
   const at = pics.findIndex((x) => chosen.includes(x.o.label));
   const [shown, setShown] = useState(at >= 0 ? at : 0);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -394,7 +402,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
       </div>
       {solo || big ? (
         <>
-          <div className="ad-stage" style={frame}>
+          <div ref={stage} className="ad-stage" style={frame}>
             {!solo && (
               <div className="ad-sh">
                 <Key k={cur.key} on={chosen.includes(cur.o.label)} />
@@ -749,7 +757,7 @@ function ProseDock({ d, onAnswer, bind }: {
         <div className="ad-replies">
           <span ref={mark} data-ask-keys hidden />
           {opts.map((x, i) => (
-            <button key={x.o} type="button" className="ad-reply" disabled={sent !== null} aria-pressed={sent === x.o}
+            <button key={x.o} type="button" className="ad-reply" data-key={x.key ? "" : undefined} disabled={sent !== null} aria-pressed={sent === x.o}
               title={x.o === "No" ? "Drop the question — nothing runs" : `Reply "${x.o}"`} onClick={() => reply(x.o)}>
               {x.key && <Key k={x.key} />}{x.name}
               {i < 9 && <Keys k={`Ctrl+${i + 1}`} hover />}

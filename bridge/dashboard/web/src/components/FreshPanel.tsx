@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { code, queryClient } from "../lib/queries";
 import { api, type DevServerInfo, type GitCommit, type GitStatus,
          type SessionBrief, type SessionStatus } from "../api";
 import { localRows, mergeable, mergeClause } from "../lib/freshlocal";
@@ -61,7 +62,7 @@ export function FreshPanel({ project, branch, run, onOpenRun, local }: {
       drawn.current = project;
       setGit(null); setCommit(null); setRunCmd(undefined); setTree(null);
     }
-    api.git(project, branch || undefined).then((g) => live && setGit(g)).catch(() => {});
+    queryClient.fetchQuery(code.git({ project, branch: branch || undefined })).then((g) => live && setGit(g)).catch(() => {});
     api.gitLog(project, 1, branch || undefined)
       .then((r) => live && setCommit(r.commits[0] ?? null)).catch(() => {});
     api.projectSettings({ project })

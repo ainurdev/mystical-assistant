@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { rail, reread } from "../../lib/queries";
 import { createPortal } from "react-dom";
 import {
   ArrowDownToLine, ArrowRight, ArrowUpFromLine, ArrowUpRight, ChevronLeft, ChevronRight, Clapperboard, Clock, Copy, Download, Eye, Flame, Gauge, GitBranch, History,
@@ -8,7 +10,7 @@ import {
 import { api, type LiveInfo, type Notice, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { DONE, LiveReader } from "./LiveReader";
-import { UPDATE_POLL_MS, UpdateReader, type Feed } from "./UpdateButton";
+import { UpdateReader, type Feed } from "./UpdateButton";
 import { watchRestart } from "../../lib/restart";
 import { popFor } from "../../lib/golive";
 import { popPlace } from "../../lib/prchip";
@@ -35,8 +37,7 @@ import { ImageLightbox } from "../ImageLightbox";
 // update pops the same way (hud:update-pop; hud:update opens its row), and so does a commit
 // that isn't live yet. A dot while any change is unread; closing marks what it showed read.
 // Self-contained (polls, owns its popover), so the rail stays a dumb list.
-const POLL_MS = 60_000; // rows land at a boot; a fresh one comes by event, not by this
-const LIVE_MS = 30_000;  // git only, no network: a merge lights GO LIVE within the half minute
+const LIVE_MS = 30_000;  // /local/live at rest (lib/queries): git only, no network: a merge lights GO LIVE within the half minute
 const QUEUED_MS = 4_000; // while a wait is on, so its restart is met by the boot screen
 const SEEN = "golive-seen"; // the newest not-live commit time it has popped for or seen
 type Sys = "live" | "update" | "ship";
@@ -169,8 +170,10 @@ function Stage({ c, playing, onEnded, onZoom }: { c: Change; playing: boolean; o
 }
 
 export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
-  const [rows, setRows] = useState<Notice[] | null>(null);
-  const [project, setProject] = useState("");                                 // where Ask Claude starts ("" = it can't)
+  // A bridge older than this page has no /local/changelog: no rows, so no button.
+  const clg = useQuery(rail.changelog()).data;
+  const rows: Notice[] | null = clg?.notices ?? null;
+  const project = clg?.project ?? "";                                         // where Ask Claude starts ("" = it can't)
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState<string | null>(null);                     // the reader's change; null = the first
   const [q, setQ] = useState<string | null>(null);                           // find: null = the field shut
@@ -180,8 +183,10 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
   const [hov, setHov] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);                     // a picture full size (ImageLightbox)
   const [playing, setPlaying] = useState(false);                             // ▶ NEW walking the new changes
-  const [live, setLive] = useState<LiveInfo | null>(null);                   // GO LIVE: what's on disk but not running
-  const [upd, setUpd] = useState<UpdateInfo | null>(null);                   // UPDATE / SHIP: this checkout vs its upstream
+  // GO LIVE: what's on disk but not running
+  const liveQ = useQuery({ ...rail.live(), refetchInterval: (q) => (q.state.data?.queued ? QUEUED_MS : LIVE_MS) });
+  const live: LiveInfo | null = liveQ.data ?? null;
+  const upd: UpdateInfo | null = useQuery(rail.update()).data ?? null;     // UPDATE / SHIP: this checkout vs its upstream (polled, lib/queries)
   const [busy, setBusy] = useState(false);                                   // a reader's job is mid-flight: no closing, no switching
   const [livePop, setLivePop] = useState<{ subject: string; fresh: number; restart: boolean; total: number } | null>(null);
   const [updFresh, setUpdFresh] = useState<Notice | null>(null);             // a waiting update, popped out of the icon
@@ -192,20 +197,14 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
   const nextRef = useRef<() => void>(() => {});
   const holdRef = useRef(STEP_MS);
 
-  // A bridge older than this page has no /local/changelog: no rows, so no button.
-  const load = () => api.changelog().then((r) => { setRows(r.notices); setProject(r.project ?? ""); }, () => { /* next poll */ });
+  const load = () => reread(rail.changelog().queryKey);
   const queuedRef = useRef(false);
-  async function loadLive() {
-    try {
-      setLive(await api.live());
-    } catch {
-      // A wait's restart is underway: meet it with the boot screen, which reloads into the new build.
-      if (queuedRef.current) { queuedRef.current = false; void watchRestart("GO LIVE"); }
-    }
-  }
-  async function loadUpd() {
-    try { setUpd(await api.update()); } catch { /* next poll */ }
-  }
+  const loadLive = () => reread(rail.live().queryKey);
+  useEffect(() => {
+    // A wait's restart is underway: meet it with the boot screen, which reloads into the new build.
+    if (liveQ.isError && queuedRef.current) { queuedRef.current = false; void watchRestart("GO LIVE"); }
+  }, [liveQ.errorUpdatedAt]);
+  const loadUpd = () => reread(rail.update().queryKey);
   // An id is a row's (an OS banner's, the popup's): open on that row's first change; a Sys key, on that row.
   const openOn = (id: number | Sys | null) => {
     setFresh(null); setLivePop(null); setUpdFresh(null);
@@ -213,9 +212,6 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
     setOpen(true); void load(); void loadLive(); void loadUpd();
   };
   useEffect(() => {
-    void load(); void loadUpd();
-    const id = setInterval(load, POLL_MS);
-    const uid = setInterval(loadUpd, UPDATE_POLL_MS);
     const show = (e: Event) => { const id = (e as CustomEvent<unknown>).detail; openOn(typeof id === "number" ? id : null); };
     const landed = (e: Event) => { setFresh((e as CustomEvent<Notice>).detail); setPicGone(false); void load(); };
     const updShow = () => openOn("update");
@@ -228,7 +224,6 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
     const done = sessionStorage.getItem(DONE);
     if (done) { sessionStorage.removeItem(DONE); notify("info", done); }
     return () => {
-      clearInterval(id); clearInterval(uid);
       window.removeEventListener("hud:changelog", show);
       window.removeEventListener("hud:changelog-pop", landed);
       window.removeEventListener("hud:update", updShow);
@@ -239,12 +234,10 @@ export function ChangelogButton({ onFeed }: { onFeed: Feed }) {
   const queued = !!live?.queued;
   useEffect(() => { queuedRef.current = queued; }, [queued]);
   useEffect(() => {
-    void loadLive();
-    const id = setInterval(loadLive, queued ? QUEUED_MS : LIVE_MS);
     const focus = () => void loadLive();
     window.addEventListener("focus", focus);
-    return () => { clearInterval(id); window.removeEventListener("focus", focus); };
-  }, [queued]);
+    return () => window.removeEventListener("focus", focus);
+  }, []);
 
   // A commit that isn't live and is newer than any it has seen pops out of the icon, once.
   // The first look only takes note: what was behind already isn't news.

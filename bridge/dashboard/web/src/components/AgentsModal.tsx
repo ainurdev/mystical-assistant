@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type AgentInfo, type BgTask, type StoreEvent, type StoreTurn, type WorkflowInfo } from "../api";
+import { useQuery } from "@tanstack/react-query";
+import type { AgentActivity, AgentInfo, BgTask, StoreEvent, StoreTurn, WorkflowInfo } from "../api";
+import { main } from "../lib/queries";
 import type { HudSettings } from "../lib/theme";
 import { hhmm } from "../lib/surfaces";
 import { agentMeta, fmtClock, fmtSpan, modelName, rosterSections, type Sub } from "../lib/subagents";
@@ -53,23 +55,24 @@ function Run({ sessionId, agentId, run, hud }: {
   const feedRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);           // following the tail until you scroll up
 
-  useEffect(() => {
-    let live = true, cursor = 0;
-    const poll = async () => {
-      try {
-        const a = await api.agentActivity(sessionId, agentId, cursor, run);
-        if (!live) return;
-        cursor = a.next_cursor;
+  // Read by cursor (lib/queries meta.extra), each answer's events appended once (meta.take),
+  // every second while it runs.
+  const cursor = useRef(0);
+  const o = main.agentActivity({ session: sessionId, agent: agentId, workflow: run });
+  useQuery({
+    ...o, staleTime: 0, gcTime: 0,
+    refetchInterval: running ? o.refetchInterval : false,
+    meta: {
+      extra: () => ({ cursor: cursor.current }),
+      take: (a: AgentActivity) => {
+        cursor.current = a.next_cursor;
         // `?? []`: a bundle copied live ahead of a restart meets the old backend's shape.
         setTurns(a.turns ?? []);
         if (a.events.length) setEvents((prev) => [...prev, ...a.events]);
         setRunning(a.status === "running");
-        if (a.status === "running") setTimeout(poll, 1000);
-      } catch { /* ignore */ }
-    };
-    void poll();
-    return () => { live = false; };
-  }, [sessionId, agentId, run]);
+      },
+    },
+  });
 
   useEffect(() => {
     // A frame later: RunStream settles its zones in a commit after this one.

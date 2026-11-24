@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type GraphState } from "../../api";
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../../api";
+import { code, reread } from "../../lib/queries";
 import { ago } from "../../lib/surfaces";
 import { useGraphify } from "../../lib/ai";
 
@@ -11,38 +13,35 @@ const mono: React.CSSProperties = {
 };
 
 export function MapTab({ project }: { project: string }) {
-  const [st, setSt] = useState<GraphState | null>(null);
-  const [err, setErr] = useState(false);
+  const key = code.graphState({ project });
+  // Re-read every 1.5 s while a build runs.
+  const q = useQuery({ ...key, refetchInterval: (qq) => (qq.state.data?.building ? 1500 : false) });
+  const err = q.isError;
+  const st = err ? null : q.data ?? null;
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
   const [gen, setGen] = useState(0); // bump to reload the iframe after a rebuild
-  const timer = useRef<number | null>(null);
   const pendingBuild = useRef(false);
+  const wasBuilding = useRef(false);
   const gfy = useGraphify();
+  const load = () => void reread(key.queryKey);
 
-  const load = useCallback(() => {
-    if (timer.current) window.clearTimeout(timer.current);
-    api.graphState(project).then((s) => {
-      setErr(false);
-      setSt((prev) => {
-        if (prev?.building && !s.building) setGen((g) => g + 1);
-        return s;
-      });
-      if (!s.building && pendingBuild.current) {
-        pendingBuild.current = false;
-        setGen((g) => g + 1);
-      }
-      if (s.building) timer.current = window.setTimeout(load, 1500);
-    }).catch(() => { setErr(true); setSt(null); });
-  }, [project]);
-
+  // Each answer (dataUpdatedAt, since an unchanged answer keeps its object): a build that finished reloads the iframe.
   useEffect(() => {
-    load();
-    return () => { if (timer.current) window.clearTimeout(timer.current); };
-  }, [load, gfy.installed]);   // an install landing turns "not installed" into the map
+    const s = q.data;
+    if (!s) return;
+    if ((wasBuilding.current || pendingBuild.current) && !s.building) {
+      pendingBuild.current = false;
+      setGen((g) => g + 1);
+    }
+    wasBuilding.current = !!s.building;
+  }, [q.dataUpdatedAt]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const build = () => { pendingBuild.current = true; api.graphUpdate(project).then(() => load()); };
+  // an install landing turns "not installed" into the map
+  useEffect(load, [gfy.installed]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const build = () => { pendingBuild.current = true; void api.graphUpdate(project); };   // its POST re-reads the state (lib/queries CHANGES)
   const ask = () => {
     const q = query.trim();
     if (!q || asking) return;

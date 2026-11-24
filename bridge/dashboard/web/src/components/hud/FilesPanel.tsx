@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { code, reread } from "../../lib/queries";
 import { AtSign, ChevronRight, Copy, Diff, Folder, FolderOpen, FoldVertical, RotateCw, Sparkle, UnfoldVertical } from "lucide-react";
 import { api, type GitFile } from "../../api";
-import { buildRows, dirsOf } from "./EditorTab";
+import { buildRows, dirsOf } from "../../lib/filetree";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { askConfirm } from "../ui/Ask";
 import { FileIcon } from "../../lib/fileicon";
@@ -32,6 +34,9 @@ import { revealItems } from "../../lib/revealfile";
 // ⌘P asks for the find field from anywhere, sometimes before this panel has
 // mounted (the rail was on another tab): the request waits here until it has.
 let findWanted = false;
+const NO_FILES: GitFile[] = [];
+const NO_PATHS: string[] = [];
+
 export function requestFileFind(): void {
   findWanted = true;
   window.dispatchEvent(new Event("files:find"));
@@ -88,18 +93,21 @@ function countAbove(paths: Iterable<string>): Map<string, number> {
 }
 
 export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt, turns, cwd, onOpenMystical }: Props) {
-  const [paths, setPaths] = useState<string[]>([]);
+  // The working tree's files, the editor's read too (lib/queries): a save or a file op anywhere re-reads it.
+  const treeKey = code.tree({ project: project ?? "", branch: branch || undefined });
+  const treeQ = useQuery({ ...treeKey, enabled: !!project });
+  const tree = project && !treeQ.isError ? treeQ.data : undefined;
+  const paths = tree?.files ?? NO_PATHS;
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
-  const [ignored, setIgnored] = useState<string[]>([]);
-  const [root, setRoot] = useState("");   // the tree's absolute dir, for Show in Finder
-  const [files, setFiles] = useState<GitFile[]>([]);
+  const ignored = tree?.ignored ?? NO_PATHS;
+  const root = tree?.root ?? "";   // the tree's absolute dir, for Show in Finder
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Has the tree read come back yet? An empty list before the first answer
   // means "not read yet", not "nothing here" — the tree read is ~1s on a big
   // repo, and the panel used to spend it claiming the project was not a git
   // repo, because [] renders the same either way.
-  const [treeReady, setTreeReady] = useState(false);
+  const treeReady = !!project && !treeQ.isPending;
   const [note, setNote] = useState("");
   const [ctx, setCtx] = useState<{ x: number; y: number; path: string; dir: boolean } | null>(null);
   // A long tree scrolls the top out of reach — hence the back-to-top button.
@@ -116,37 +124,21 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
     return () => window.removeEventListener("files:find", focus);
   }, []);
 
-  const loadTree = useCallback(async () => {
-    if (!project) { setPaths([]); return; }
-    try {
-      const r = await api.filesTree(project, branch || undefined);
-      setPaths(r.files);
-      setIgnored(r.ignored ?? []);
-      setRoot(r.root ?? "");
-      setCollapsed(new Set(dirsOf(r.files)));
-    } catch { setPaths([]); setIgnored([]); }
-    finally { setTreeReady(true); }
-  }, [project, branch]);
+  const loadTree = () => reread(treeKey.queryKey);
+  // Folders start closed once per tree; a re-read keeps the ones you opened. Set while
+  // rendering, not in an effect: one frame of a whole repo expanded is thousands of rows.
+  const [shutFor, setShutFor] = useState("");
+  const treeId = `${project}\n${branch ?? ""}`;
+  if (tree && shutFor !== treeId) { setShutFor(treeId); setCollapsed(new Set(dirsOf(tree.files))); }
 
-  useEffect(() => { void loadTree(); }, [loadTree]);
-
-  const loadGit = useCallback(async () => {
-    if (!project) { setFiles([]); return; }
-    try {
-      const g = await api.git(project, branch || undefined);
-      setFiles(g.files);
-    } catch { setFiles([]); }
-  }, [project, branch]);
+  // Working-tree status, the GIT tab's read too (lib/queries), on the same cadence as the git badges.
+  const gitKey = code.git({ project: project ?? "", branch: branch || undefined });
+  const gitQ = useQuery({ ...gitKey, enabled: !!project });
+  const files: GitFile[] = (project && !gitQ.isError && gitQ.data?.files) || NO_FILES;
+  const loadGit = () => reread(gitKey.queryKey);
 
   const changed = useMemo(
     () => new Map(files.map((f) => [f.path, f.status])), [files]);
-
-  // Working-tree status, refreshed on the same cadence as the git badges.
-  useEffect(() => {
-    void loadGit();
-    const id = setInterval(() => void loadGit(), 10000);
-    return () => clearInterval(id);
-  }, [loadGit]);
 
   const rows: Row[] = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
@@ -187,7 +179,6 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
       setNote(r.ok ? "" : r.error || "Delete failed.");
     } catch (e) { setNote((e as Error).message); }
     void loadGit();
-    void loadTree();
   }
 
   const copyPath = (p: string) => {

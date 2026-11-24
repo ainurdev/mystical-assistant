@@ -26,6 +26,7 @@ class FakeJob:
     def add(self, ev): self.events.append(ev); self.last_at = time.time()
     def add_pending(self, e): self.pending.append(e)
     def clear_pending(self): self.pending = []
+    def talking(self): self.boot = None
     def awaiting(self, kind): self.awaited.append(kind)
     def types(self): return [e["type"] for e in self.events]
 

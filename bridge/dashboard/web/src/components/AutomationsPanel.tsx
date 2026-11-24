@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { autoCall, autoGet } from "../lib/readapi";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { autoCall, autoRead } from "../lib/readapi";
 import { Dialog } from "./DesignSystem";
 
 // Your automations (bridge/automations.py): all of them, switchable, with a form for new ones.
@@ -192,20 +193,17 @@ function Form({ start, projects, onDone, onClose, onOpen }: { start: Draft; proj
 }
 
 export function AutomationsPanel({ project, onOpen }: { project?: string | null; onOpen?: (sessionId: string) => void }) {
-  const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirm, setConfirm] = useState("");
-  const load = useCallback(() => {
-    autoGet<Listing>().then((r) => { setData(r); setError(""); }, (e) => setError(errorOf(e)));
-  }, []);
-  useEffect(() => {
-    load();
-    const t = window.setInterval(load, 5000);
-    return () => window.clearInterval(t);
-  }, [load]);
+  const read = autoRead<Listing>();
+  const q = useQuery({ ...read, refetchInterval: 5000 });
+  const data = q.data ?? null;
+  const qc = useQueryClient();
+  const load = () => void qc.invalidateQueries({ queryKey: read.queryKey }, { cancelRefetch: false });
+  useEffect(() => setError(""), [q.dataUpdatedAt]);   // a read that lands clears a press's failure, as before
   const act = (path: string, body: Record<string, unknown>) => {
-    autoCall<Listing>(path, body).then((r) => { if (r.automations) setData(r); else load(); }, (e) => setError(errorOf(e)));
+    autoCall<Listing>(path, body).then((r) => { if (r.automations) qc.setQueryData(read.queryKey, r); else load(); }, (e) => setError(errorOf(e)));
   };
   return (
     <div className="ds au">
@@ -213,7 +211,7 @@ export function AutomationsPanel({ project, onOpen }: { project?: string | null;
         <h4 className="ds-h">Automations</h4>
         <button type="button" className="dg-send" disabled={!data} onClick={() => setDraft(blank(project ?? ""))}>New</button>
       </div>
-      {error ? <p className="ds-err" role="alert">{error}</p> : null}
+      {error || q.error ? <p className="ds-err" role="alert">{error || errorOf(q.error)}</p> : null}
       {data && !data.automations.length ? <p className="dg-empty">Nothing yet. An automation runs a prompt on a timer, some times a day, once at a set time, when a file changes, or when you send the bot a command.</p> : null}
       <ul className="au-list">
         {(data?.automations ?? []).map((a) => {

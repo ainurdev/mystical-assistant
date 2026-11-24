@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { api, type NextBoard, type NextItem } from "../api";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, type NextItem } from "../api";
+import { queryClient, main } from "../lib/queries";
 
 const EFFORT: Record<NextItem["effort"], string> = {
   small: "·",
@@ -20,40 +22,16 @@ function when(ts: number | null): string {
  *  instantly; REFRESH is the only thing that spends anything, and only on repos
  *  whose git state has moved since last time. */
 export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
-  const [board, setBoard] = useState<NextBoard | null>(null);
-  const [busy, setBusy] = useState(false);
-  const poll = useRef<number | null>(null);
-
-  const load = async () => {
-    try {
-      const b = await api.nextBoard();
-      setBoard(b);
-      return b;
-    } catch {
-      return null;
-    }
-  };
-
-  useEffect(() => {
-    void load();
-    return () => {
-      if (poll.current) window.clearInterval(poll.current);
-    };
-  }, []);
+  // Scouts run in the background; watch until the server says it's done.
+  const board = useQuery({ ...main.next(), refetchInterval: (q) => (q.state.data?.refreshing ? main.next.poll?.ms : false) }).data ?? null;
+  const [asking, setAsking] = useState(false);
+  const busy = asking || !!board?.refreshing;
 
   async function refresh() {
-    setBusy(true);
-    await api.refreshNext().catch(() => null);
-    // Scouts run in the background; watch until the server says it's done.
-    if (poll.current) window.clearInterval(poll.current);
-    poll.current = window.setInterval(async () => {
-      const b = await load();
-      if (b && !b.refreshing) {
-        if (poll.current) window.clearInterval(poll.current);
-        poll.current = null;
-        setBusy(false);
-      }
-    }, 3000);
+    setAsking(true);
+    const r = await api.refreshNext().catch(() => null);
+    if (r) queryClient.setQueryData(main.next().queryKey, r);   // the board it answers with says it's refreshing
+    setAsking(false);
   }
 
   const items = board?.items ?? [];
@@ -68,7 +46,7 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
         <span style={{ flex: 1 }} />
         <button
           onClick={() => void refresh()}
-          disabled={busy}
+          disabled={!!busy}
           title="Re-scouts each repo you worked in this week whose git state moved (up to 6), then ranks them — a free provider first, then haiku. Nothing moved, nothing spent."
           style={{
             appearance: "none",

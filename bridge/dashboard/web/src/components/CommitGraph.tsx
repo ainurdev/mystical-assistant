@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Cloud, Copy, GitBranch, Tag } from "lucide-react";
-import { api, type CompareFile, type GitCommit } from "../api";
+import type { CompareFile } from "../api";
+import { code, queryClient } from "../lib/queries";
 import { diffColor } from "../lib/resultfields";
 import { FileIcon } from "../lib/fileicon";
 import { DOT_Y, ROW_H, laneColor, layout, unpushed, type Seg } from "../lib/gitgraph";
@@ -43,59 +45,26 @@ const SEG: Record<Seg, (h: number) => [number, number]> = {
   in: () => [0, DOT_Y], thru: (h) => [0, h], out: (h) => [DOT_Y, h],
 };
 
-// The last log each (repo, filter, length) read. The GIT tab rebuilds this
-// graph on every switch to another worktree; from here it draws at once and
-// re-reads in place, instead of starting from a skeleton every time.
-const LOGS = new Map<string, GitCommit[]>();
-
-export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, nonce = 0 }: {
+export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0 }: {
   project: string;
   branch?: string;
   /** the open worktree's upstream and its distance — the HEAD chip's count and the hollow dots */
   upstream?: string;
   ahead?: number;
   behind?: number;
-  /** bump to re-read the log now */
-  nonce?: number;
 }) {
   const [limit, setLimit] = useState(200);
-  const logKey = `${project}\n${branch ?? ""}\n${limit}`;
-  const [commits, setCommits] = useState<GitCommit[] | null>(() => LOGS.get(logKey) ?? null);
-  const [err, setErr] = useState<string | null>(null);
+  // The GIT tab rebuilds this graph on every switch to another worktree: the cached log
+  // draws at once and re-reads in place, and SHOW MORE keeps the shorter one up meanwhile.
+  const logQ = useQuery({ ...code.log({ project, branch, limit }), placeholderData: keepPreviousData });
+  // A bridge started before this endpoint existed 404s here: say so rather than spinning a skeleton forever.
+  const err = logQ.isError ? logQ.error.message : null;
+  const commits = logQ.data?.commits ?? (err ? [] : null);
   // Click a row → its changed files; click a file → that file's diff in the commit.
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [files, setFiles] = useState<CompareFile[] | null>(null);
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    const had = LOGS.get(logKey);
-    if (had) setCommits(had);
-    const load = async () => {
-      try {
-        const r = await api.gitLog(project, limit, branch);
-        LOGS.set(logKey, r.commits);
-        if (live) {
-          setCommits(r.commits);
-          setErr(null);
-        }
-      } catch (e) {
-        // A bridge started before this endpoint existed 404s here — say so
-        // rather than spinning a skeleton forever.
-        if (live) {
-          setCommits([]);
-          setErr((e as Error).message);
-        }
-      }
-    };
-    void load();
-    const id = setInterval(() => void load(), 15000);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, [project, branch, limit, logKey, nonce]);
 
   function pickCommit(sha: string) {
     setOpenFile(null);
@@ -103,7 +72,7 @@ export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, 
     if (sha === openSha) return setOpenSha(null);
     setOpenSha(sha);
     setFiles(null);
-    void api.gitShow(project, sha)
+    void queryClient.fetchQuery(code.show({ project, sha }))
       .then((r) => setFiles(r.files ?? []))
       .catch(() => setFiles([]));
   }
@@ -112,7 +81,7 @@ export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, 
     if (name === openFile) return setOpenFile(null);
     setOpenFile(name);
     setDiff(null);
-    void api.gitShow(project, sha, name)
+    void queryClient.fetchQuery(code.show({ project, sha, path: name }))
       .then((r) => setDiff(r.diff ?? ""))
       .catch(() => setDiff(""));
   }

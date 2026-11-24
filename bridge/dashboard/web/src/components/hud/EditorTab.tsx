@@ -12,12 +12,14 @@ import { highlightSelectionMatches } from "@codemirror/search";
 import { getChunks, goToNextChunk, goToPreviousChunk, unifiedMergeView } from "@codemirror/merge";
 import { tags as t } from "@lezer/highlight";
 import { Vim, vim } from "@replit/codemirror-vim";
+import { useQuery } from "@tanstack/react-query";
 import { api, type FileContent, type GitFile, type GrepHit } from "../../api";
+import { code, queryClient, reread } from "../../lib/queries";
 import { Markdown } from "../Markdown";
 import { ImageLightbox } from "../ImageLightbox";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { chord } from "../../lib/chord";
-import { cmpTreePath } from "../../lib/pathsort";
+import { buildRows, dirsOf, type TreeRow } from "../../lib/filetree";
 import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
 import { FileIcon } from "../../lib/fileicon";
@@ -74,6 +76,8 @@ interface Props {
   onAsk?: (text: string, close: boolean) => void;
   /** COMMIT IN GIT ›: the rail's GIT tab commits and pushes. */
   onOpenGit?: () => void;
+  /** The file it has open, each time that changes (null: none) — the URL's `edit`. */
+  onFile?: (path: string | null) => void;
   /** The project map, shown in place of the code while its activity icon is on. */
   mapView?: ReactNode;
   /** The terminal drawer (TermDrawer), under the code. */
@@ -124,52 +128,6 @@ interface Cmd {
   run: () => void;
   off?: boolean;  // hidden from the palette when it can't run
   show?: string;  // a binding the key handler matches itself, shown like `key`
-}
-
-export interface TreeRow {
-  key: string;
-  dir: boolean;
-  depth: number;
-  name: string;
-  path: string;
-}
-
-/* Flatten a sorted path list into a collapsible directory tree (dirs before
-   their files, honoring the collapsed set). */
-export function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
-  const sorted = [...paths].sort(cmpTreePath);
-  const rows: TreeRow[] = [];
-  const seen = new Set<string>();
-  for (const path of sorted) {
-    const parts = path.split("/");
-    let prefix = "";
-    let hidden = false;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const p = prefix ? `${prefix}/${parts[i]}` : parts[i];
-      if (!hidden && !seen.has(p)) {
-        seen.add(p);
-        rows.push({ key: `d:${p}`, dir: true, depth: i, name: parts[i], path: p });
-      }
-      if (collapsed.has(p)) hidden = true;
-      prefix = p;
-    }
-    if (!hidden) rows.push({ key: `f:${path}`, dir: false, depth: parts.length - 1, name: parts[parts.length - 1] ?? path, path });
-  }
-  return rows;
-}
-
-/* Every directory that appears in the path list — the expand/collapse-all set. */
-export function dirsOf(paths: string[]): string[] {
-  const out = new Set<string>();
-  for (const p of paths) {
-    const parts = p.split("/");
-    let prefix = "";
-    for (let i = 0; i < parts.length - 1; i++) {
-      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i];
-      out.add(prefix);
-    }
-  }
-  return [...out];
 }
 
 /* Subsequence match, VS Code Ctrl-P style: every query char in order, gaps
@@ -393,24 +351,28 @@ const crtTheme = EditorView.theme({
   "&.cm-diff-gutter .cm-changedLine": { backgroundColor: "transparent" },
 }, { dark: true });
 
-/* The modal unmounts this tab on every switch, and walking a repo again costs
-   ~130ms of empty explorer. The last tree per project+branch paints straight
-   away; the fresh walk still runs and replaces it.
-   ponytail: unbounded — one file list per project+branch opened this session. */
-const treeCache = new Map<string, { files: string[]; ignored: string[]; root?: string }>();
-const treeKey = (project: string, branch: string) => `${project}\n${branch}`;
+const NO_PATHS: string[] = [];
+const NO_GIT_FILES: GitFile[] = [];
 
-export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, mapView, drawer, onToggleTerm }: Props) {
+export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, onFile, mapView, drawer, onToggleTerm }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [paths, setPaths] = useState<string[]>([]);
+  // The working tree's files, FILES' read too (lib/queries). The modal unmounts this tab on
+  // every switch; the cached tree paints straight away while the fresh walk runs.
+  const treeArgs = { project, branch: branch || undefined };
+  const treeQ = useQuery(code.tree(treeArgs));
+  const tree = treeQ.isError ? undefined : treeQ.data;
+  const paths = tree?.files ?? NO_PATHS;
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
-  const [ignored, setIgnored] = useState<string[]>([]);
+  const ignored = tree?.ignored ?? NO_PATHS;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
   const [peek, setPeek] = useState<string | null>(null);      // the preview tab, if any (see peekTab)
   const [open, setOpen] = useState<string | null>(null);      // path being edited
+  const fileTold = useRef(onFile);
+  fileTold.current = onFile;
+  useEffect(() => { fileTold.current?.(open); }, [open]);
   const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -446,8 +408,6 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const [mapOpen, setMapOpen] = useState(initialMode === "map");
   // CHANGES: the branch's uncommitted files, each one's text at HEAD (null:
   // couldn't read it) and how its diff shows.
-  const [gitFiles, setGitFiles] = useState<GitFile[]>([]);
-  const [gitBusy, setGitBusy] = useState(false);
   const [heads, setHeads] = useState<Record<string, string | null>>({});
   const [diffs, setDiffs] = useState<Record<string, "inline" | "gutter">>(
     initialMode === "changes" && initialFile ? { [initialFile]: "inline" } : {});
@@ -497,17 +457,11 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   }
   useEffect(() => () => { if (noteT.current) clearTimeout(noteT.current); }, []);
 
-  const loadTree = () =>
-    api.filesTree(project, branch || undefined)
-      .then((r) => {
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
-        setPaths(r.files); setIgnored(r.ignored ?? []);
-      })
-      .catch(() => { setPaths([]); setIgnored([]); });
+  const loadTree = () => reread(code.tree(treeArgs).queryKey);
 
   // A row's absolute path, for Show in Finder: the tree's dir comes with its file list.
   const abs = (p: string) => {
-    const root = treeCache.get(treeKey(project, branch))?.root;
+    const root = tree?.root;
     return root && (p ? `${root}/${p}` : root);
   };
 
@@ -516,30 +470,22 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   // exception to folders-start-closed, so its row renders and the
   // scroll-into-view below reveals it.
   useEffect(() => {
-    let live = true;
     // A different project/branch is a different working tree — the old buffers
     // no longer describe anything on disk, so they go.
     bufs.current.clear();
     setTabs(initialFile ? [initialFile] : []); setPeek(null);
     setOpen(initialFile ?? null); setMeta(null);
     jumpRef.current = initialLine ?? 0;
-    // Closed by default — a repo tree fully expanded is thousands of rows to
-    // scroll past before reaching anything.
-    const shut = (files: string[]) =>
-      new Set(dirsOf(files).filter((d) => !initialFile || !underPath(d, initialFile)));
-    const seed = treeCache.get(treeKey(project, branch));
-    if (seed) { setPaths(seed.files); setIgnored(seed.ignored); setCollapsed(shut(seed.files)); }
-    void api.filesTree(project, branch || undefined)
-      .then((r) => {
-        if (!live) return;
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
-        setPaths(r.files);
-        setIgnored(r.ignored ?? []);
-        if (!seed) setCollapsed(shut(r.files));   // a seeded tree keeps folders you opened
-      })
-      .catch(() => { if (live) { setPaths([]); setIgnored([]); } });
-    return () => { live = false; };
   }, [project, branch, initialFile, initialLine]);
+  // Closed by default — a repo tree fully expanded is thousands of rows to
+  // scroll past before reaching anything. Once per opening: a re-read keeps folders you opened.
+  // Set while rendering, not in an effect: one frame of a whole repo expanded is thousands of rows.
+  const [shutFor, setShutFor] = useState("");
+  const openingId = `${project}\n${branch}\n${initialFile ?? ""}\n${initialLine ?? ""}`;
+  if (tree && shutFor !== openingId) {
+    setShutFor(openingId);
+    setCollapsed(new Set(dirsOf(tree.files).filter((d) => !initialFile || !underPath(d, initialFile))));
+  }
 
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const labels = useMemo(() => tabLabels(tabs), [tabs]);
@@ -562,7 +508,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     }
     let live = true;
     setMeta(null); setDirty(false); setPreview(null);
-    void api.fileRead(project, open, branch || undefined)
+    void queryClient.fetchQuery({ ...code.file({ ...treeArgs, path: open }), staleTime: 0 })
       .then((r) => {
         if (!live) return;
         const text = r.content ?? "";
@@ -792,7 +738,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const textOf = (p: string) => {
     let t = cache.current.text.get(p);
     if (!t) {
-      t = api.fileRead(project, p, branch || undefined)
+      t = queryClient.fetchQuery(code.file({ ...treeArgs, path: p }))
         .then((r) => (r.ok && !r.binary && !r.too_large ? r.content ?? "" : null)).catch(() => null);
       cache.current.text.set(p, t);
     }
@@ -802,7 +748,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     let h = cache.current[mode].get(w);
     if (!h) {
       // Prose mentions (a plan's code fence, a README) aren't definitions or uses.
-      h = api.filesGrep(project, w, branch || undefined, mode)
+      h = queryClient.fetchQuery(code.grep({ ...treeArgs, q: w, mode }))
         .then((r) => r.hits.filter((x) => !/\.(md|mdx|markdown|txt|rst)$/i.test(x.path))).catch(() => [] as Hit[]);
       cache.current[mode].set(w, h);
     }
@@ -956,17 +902,15 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
 
   /* ---- CHANGES: the branch's uncommitted files, each one's diff vs HEAD ---- */
 
-  const loadGit = () => {
-    setGitBusy(true);
-    void api.git(project, branch || undefined)
-      // A branch with no worktree reads as the project checkout's status — show
-      // nothing rather than another branch's changes (the old GIT tab's rule).
-      .then((g) => setGitFiles(g.is_repo && (!branch || g.branch === branch) ? g.files : []))
-      .catch(() => setGitFiles([]))
-      .finally(() => setGitBusy(false));
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadGit(); setHeads({}); }, [project, branch]);
+  // The GIT tab's status read (lib/queries): a save or a commit anywhere re-reads it.
+  const gitQ = useQuery(code.git(treeArgs));
+  const g = gitQ.isError ? undefined : gitQ.data;
+  // A branch with no worktree reads as the project checkout's status — show
+  // nothing rather than another branch's changes (the old GIT tab's rule).
+  const gitFiles = g?.is_repo && (!branch || g.branch === branch) ? g.files : NO_GIT_FILES;
+  const gitBusy = gitQ.isPending;   // not isFetching: a poll would blink CHANGES to "…"
+  const loadGit = () => void reread(code.git(treeArgs).queryKey);
+  useEffect(() => { setHeads({}); }, [project, branch]);
   const changed = useMemo(() => new Set(gitFiles.map((f) => f.path)), [gitFiles]);
   // A changed file shows its changes in the gutter; CHANGES opens them inline.
   useEffect(() => {
@@ -978,7 +922,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   useEffect(() => {
     if (!open || !diffMode || head !== undefined) return;
     let live = true;
-    void api.fileHead(project, open, branch || undefined)
+    void queryClient.fetchQuery({ ...code.head({ ...treeArgs, path: open }), staleTime: 0 })
       .then((r) => { if (live) setHeads((h) => ({ ...h, [open]: r.ok ? r.content ?? "" : null })); })
       .catch(() => { if (live) setHeads((h) => ({ ...h, [open]: null })); });
     return () => { live = false; };
@@ -1156,7 +1100,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     let live = true;
     setGrepBusy(true);
     const t = setTimeout(() => {
-      void api.filesGrep(project, q, branch || undefined)
+      void queryClient.fetchQuery({ ...code.grep({ ...treeArgs, q }), staleTime: 0 })
         .then((r) => { if (live) setHits(r.hits); })
         .catch(() => { if (live) setHits([]); })
         .finally(() => { if (live) setGrepBusy(false); });
@@ -1666,7 +1610,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
         {palQ !== null && (
           <>
             <div onClick={() => setPalQ(null)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }} />
-            <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
+            <div style={{ position: "absolute", top: 14, left: 0, right: 0, margin: "0 auto", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease backwards" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
                 <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", flex: "none" }}>
                   {palMode === "@" ? "@" : palMode === ">" ? ">" : "⌕"}

@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { main } from "../../lib/queries";
 import { ChevronDown, ChevronUp, Hand, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
-import { api, type SessionStatus, type TicketSet, type TimedEvent } from "../../api";
+import { api, type SessionStatus, type TicketSet } from "../../api";
 import { derivePending } from "../../chat";
 import { dagLayout, graphWidth, kindOf, waveLabel, type Kind } from "../../lib/ticketdag";
 import { changeFlows, useFlowSettings } from "../../lib/flowsettings";
@@ -135,33 +137,20 @@ function urgent(set: TicketSet, ns: string[], kinds: Record<string, Kind>): stri
 /** The flow session's ticket set, polled while its chat is open: quick while the set
  *  builds or merges, lazy when it rests, nothing while the window is hidden. Ticket turns
  *  end on the bridge with no dashboard event to announce them. */
-function useTicketSet(sessionId: string): [TicketSet | null, () => void] {
-  const [set, setSet] = useState<TicketSet | null>(null);
-  const [gen, setGen] = useState(0);
-  useEffect(() => {
-    let live = true, t = 0;
-    const next = (fast: boolean) => { t = window.setTimeout(tick, fast ? 4000 : 15000); };
-    const tick = () => {
-      if (document.hidden) return next(false);
-      // GET /local/flow's `set` is tickets.summary_for: the whole set.json plus its folder.
-      api.getFlow(sessionId).then((r) => {
-        if (!live) return;
-        const s = (r.set as unknown as TicketSet | null) ?? null;
-        setSet(s);
-        next(!!s && (s.status === "building" || s.status === "merging"));
-      }).catch(() => { if (live) next(false); });
-    };
-    tick();
-    return () => { live = false; window.clearTimeout(t); };
-  }, [sessionId, gen]);
-  return [set, () => setGen((g) => g + 1)];
+function useTicketSet(sessionId: string): TicketSet | null {
+  // GET /local/flow's `set` is tickets.summary_for: the whole set.json plus its folder. The
+  // prompt box and the SESSION tab read the same key (lib/queries), so they share it.
+  const key = main.flow({ session: sessionId });
+  const q = useQuery({ ...key, refetchInterval: (qq) => {
+    const s = qq.state.data?.set as unknown as TicketSet | null | undefined;
+    return s && (s.status === "building" || s.status === "merging") ? 4000 : 15000;
+  } });
+  return (q.data?.set as unknown as TicketSet | null | undefined) ?? null;
 }
 
 /** AUTO-START beside Approve & build while a set waits: every flow that builds as tickets at once
  *  (the FLOWS sheet sets one), for later sets only; the set waiting now still waits for the tap. */
-function AutoStart({ onErr }: { onErr: (text: string) => void }) {
-  const flows = useFlowSettings()?.flows.filter((f) => f.tickets !== undefined) ?? [];
-  if (!flows.length) return null;
+function AutoStart({ flows, onErr }: { flows: AutoFlows; onErr: (text: string) => void }) {
   const on = flows.every((f) => !f.approve);
   // One at a time: each answer is the whole settings, so the last one back must be the last one sent.
   const flip = async () => { for (const f of flows) await changeFlows({ flow: f.id, key: "approve", value: on }); };
@@ -172,7 +161,10 @@ function AutoStart({ onErr }: { onErr: (text: string) => void }) {
 }
 
 /** What a set says in a few words, and the buttons that act on it: the strip and TICKETS share these. */
-function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, reload: () => void, onOpenSession: (id: string) => void) {
+type AutoFlows = NonNullable<ReturnType<typeof useFlowSettings>>["flows"];
+
+function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, onOpenSession: (id: string) => void) {
+  const flows = useFlowSettings()?.flows.filter((f) => f.tickets !== undefined) ?? [];
   const [note, setNoteNow] = useState("");
   const noteT = useRef(0);
   useEffect(() => () => window.clearTimeout(noteT.current), []);
@@ -183,7 +175,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     window.clearTimeout(noteT.current);
     if (text) noteT.current = window.setTimeout(() => setNoteNow(""), 8000);
   };
-  const act = (p: Promise<{ text: string }>, fail: string) => { p.then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : fail)).then(reload); };
+  const act = (p: Promise<{ text: string }>, fail: string) => { p.then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : fail)); };   // a move rereads the set (lib/queries CHANGES)
   const ns = Object.keys(set.tickets).sort();
   const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id)?.state)])) as Record<string, Kind>;
   const name = set.slug.replace(/-/g, " ");
@@ -223,8 +215,10 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
     : t ? <span className="tm-call warn"><b>#{first}</b> stopped</span>
     : first === "merge" ? <span className={`tm-call ${set.status === "fix" ? "err" : "warn"}`}>the merge {set.status === "fix" ? "needs a fix" : "stopped"}</span>
     : null;
+  // AUTO-START shown: the strip and the bar drop their facts for it (index.css [data-auto])
+  const auto = !note && set.status === "approve" && flows.length > 0;
   const action = note ? null
-    : set.status === "approve" ? <><AutoStart onErr={setNote} /><button className="tm-btn ghost" onClick={ops.decline}>Not now</button>
+    : set.status === "approve" ? <>{auto && <AutoStart flows={flows} onErr={setNote} />}<button className="tm-btn ghost" onClick={ops.decline}>Not now</button>
       <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
     : set.status === "stopped" ? <button className="tm-btn" onClick={ops.build}>Build</button>
     : t && kinds[first] === "ask" ? <button className="tm-btn warn" onClick={() => onOpenSession(t.session_id)}>Answer</button>
@@ -243,7 +237,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, r
       ))}
     </span>
   );
-  return { set, ns, kinds, name, facts, ops, call, action, dots, first };
+  return { set, ns, kinds, name, facts, ops, call, action, dots, first, auto };
 }
 
 /** Switch the open super session's view (Terminal listens): the strip's Sessions button. */
@@ -254,10 +248,19 @@ export const showTicketsLive = (on: boolean) => window.dispatchEvent(new CustomE
 export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   sessionId: string; status: Map<string, SessionStatus>; onOpenSession: (id: string) => void; except?: string;
 }) {
-  const [set, reload] = useTicketSet(sessionId);
+  const set = useTicketSet(sessionId);
   const [wide, setWide] = useState(false);
   useEffect(() => { setWide(!!set && localStorage.getItem(openKey(set.folder)) === "1"); }, [set?.folder]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const v = useSetView(set, status, reload, onOpenSession);
+  const v = useSetView(set, status, onOpenSession);
+  // In the chat column the card marks it, so the transcript keeps its room (index.css [data-tmcard])
+  const card = useRef<HTMLDivElement>(null);
+  const shown = !!v && !except;
+  useLayoutEffect(() => {
+    const col = card.current?.parentElement;
+    if (!shown || !col?.matches('[data-ctx-type="terminal"]')) return;
+    col.dataset.tmcard = "";
+    return () => { delete col.dataset.tmcard; };
+  }, [shown]);
   if (!v) return null;
   const { ns, kinds, name, facts, call, action, dots } = v;
   if (except) return <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} except={except} />;
@@ -269,8 +272,8 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   return (
     <>
     <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} />
-    <div className="tm-card" role="region" aria-label={`Parts: ${name}`}>
-      <div className="tm-row">
+    <div ref={card} className="tm-card" role="region" aria-label={`Parts: ${name}`}>
+      <div className="tm-row" data-call={v.call ? "" : undefined} data-auto={v.auto ? "" : undefined}>
         <Ticket size={15} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span><span className="tm-nm">{name}</span>
         <span className="tm-div" />
         {dots}
@@ -313,8 +316,8 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   /** Where the list starts: below the chat's header island, which floats over the column. */
   top?: number;
 }) {
-  const [set, reload] = useTicketSet(sessionId);
-  const v = useSetView(set, status, reload, onOpenSession);
+  const set = useTicketSet(sessionId);
+  const v = useSetView(set, status, onOpenSession);
   if (!v) return <div className="tl-live" style={{ paddingTop: top }}><div className="tl-empty">No parts in this session.</div></div>;
   const { ns, kinds, name, facts, ops, call, action, dots } = v;
   const tk = v.set.tickets;
@@ -330,10 +333,15 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   };
   const order = [...ns].sort((a, b) => RANK[kinds[a]] - RANK[kinds[b]] || a.localeCompare(b));
   const mergeSid = v.set.merge_session;
+  // A row lights while its open button is hovered, not its Retry or Go (index.css .tl-row[data-hot])
+  const hot = {
+    onPointerEnter: (e: React.PointerEvent<HTMLButtonElement>) => { if (!e.currentTarget.disabled) e.currentTarget.parentElement!.dataset.hot = ""; },
+    onPointerLeave: (e: React.PointerEvent<HTMLButtonElement>) => { delete e.currentTarget.parentElement!.dataset.hot; },
+  };
   const into = v.set.feature_branch || "the feature branch";
   return (
     <div className="tl-live" role="region" aria-label={`Parts: ${name}`} style={{ paddingTop: top }}>
-      <div className="tl-bar">
+      <div className="tl-bar" data-auto={v.auto ? "" : undefined}>
         <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span>
         {dots}<span className="tm-c">{facts}</span>
         {call && <><span className="tm-div" />{call}</>}
@@ -346,7 +354,7 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
       <div className="tl-list">
         {mergeSid && (
           <div className={`tl-row${v.set.status === "fix" ? " k-fix" : ""}`}>
-            <button className="tl-open" onClick={() => onOpenSession(mergeSid)} title={`Open the merge into ${into}`}>
+            <button className="tl-open" {...hot} onClick={() => onOpenSession(mergeSid)} title={`Open the merge into ${into}`}>
               <span className="tl-dot" style={{ background: v.set.status === "fix" ? COLOR.fix : v.set.status === "merged" ? COLOR.done : COLOR.run }} />
               <span className="tl-no">⇢</span>
               <span className="tl-lt"><b>merge into {into}</b>
@@ -359,7 +367,7 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
           const t = tk[n], k = kinds[n], sid = t.session_id;
           return (
             <div key={n} className={`tl-row k-${k}`}>
-              <button className="tl-open" disabled={!sid} onClick={() => sid && onOpenSession(sid)}
+              <button className="tl-open" {...hot} disabled={!sid} onClick={() => sid && onOpenSession(sid)}
                       title={sid ? `Open #${n} ${t.title}` : `#${n} has no session yet`}>
                 <span className="tl-dot" style={k === "q" ? undefined : { background: COLOR[k], boxShadow: busy(k) ? `0 0 6px ${COLOR[k]}` : undefined }} />
                 <span className="tl-no">#{n}</span>
@@ -388,7 +396,7 @@ function partOf(set: TicketSet, sessionId: string) {
 /** The ticket crumb's count (prompt box B · ISLAND): which part this is, of how many; "merge" on the merge pass. */
 export function TicketPart({ superId, sessionId }: { superId: string; sessionId: string }) {
   // shortcut: polls the set a second time beside TicketBrief's poll, lift the hook into Terminal if a third reader appears.
-  const [set] = useTicketSet(superId);
+  const set = useTicketSet(superId);
   if (!set?.tickets) return null;
   const { ns, n, merge } = partOf(set, sessionId);
   if (!n && !merge) return null;
@@ -398,7 +406,7 @@ export function TicketPart({ superId, sessionId }: { superId: string; sessionId:
 /** What a ticket session is, pinned at the top of its transcript: its number of the set, the
  *  super session it came from, what it waits on, its branch and where it merges. */
 export function TicketBrief({ superId, sessionId, superTitle }: { superId: string; sessionId: string; superTitle?: string }) {
-  const [set] = useTicketSet(superId);
+  const set = useTicketSet(superId);
   if (!set?.tickets) return null;
   const { ns, n, merge } = partOf(set, sessionId);
   if (!n && !merge) return null;
@@ -418,26 +426,14 @@ export function TicketBrief({ superId, sessionId, superTitle }: { superId: strin
   );
 }
 /** A session's last turn, polled: quick while it runs, lazy at rest, nothing while hidden.
- *  `gen` bumps it after an answer, so the card it answered goes at once. */
+ *  An answer rereads it (lib/queries CHANGES), so the card it answered goes at once. */
 function useTail(sid: string) {
-  const [turn, setTurn] = useState<{ id: string; status: string; events: TimedEvent[] } | null>(null);
-  const [gen, setGen] = useState(0);
-  useEffect(() => {
-    let live = true, t = 0;
-    const tick = () => {
-      if (document.hidden) { t = window.setTimeout(tick, 5000); return; }
-      api.transcript(sid, 0, { tail: 1 }).then((r) => {
-        if (!live) return;
-        const last = r.turns[r.turns.length - 1];
-        setTurn(last ? { id: last.id, status: last.status, events: r.events.filter((e) => e.turn_id === last.id) } : null);
-        t = window.setTimeout(tick, last?.status === "running" ? 2500 : 8000);
-      }).catch(() => { if (live) t = window.setTimeout(tick, 8000); });
-    };
-    tick();
-    return () => { live = false; window.clearTimeout(t); };
-  }, [sid, gen]);
+  const r = useQuery({ ...main.session({ id: sid, cursor: 0, tail: 1 }),
+    refetchInterval: (q) => (q.state.data?.turns.at(-1)?.status === "running" ? 2500 : 8000) }).data;
+  const last = r?.turns[r.turns.length - 1];
+  const turn = r && last ? { id: last.id, status: last.status, events: r.events.filter((e) => e.turn_id === last.id) } : null;
   const pending = turn?.status === "running" ? derivePending(turn.events) : [];
-  return { turn, q: pending[0], refresh: () => setGen((g) => g + 1) };
+  return { turn, q: pending[0] };
 }
 
 /** NEEDS YOU: every ticket session that waits on you, one full-width row each, stacked like
@@ -460,10 +456,10 @@ function TicketAsks({ set, kinds, status, onOpenSession, except }: {
 }
 
 function AskRow({ n, title, sid, st, onOpen }: { n: string; title: string; sid: string; st?: SessionStatus; onOpen: () => void }) {
-  const { turn, q, refresh } = useTail(sid);
+  const { turn, q } = useTail(sid);
   const one = q?.kind === "question" && q.questions?.length === 1 && !q.questions[0].multiSelect ? q.questions[0] : null;
   const ask = q?.kind === "question" ? q.questions?.[0]?.question : q?.kind === "permission" ? `${q.tool_name}: ${q.summary ?? ""}` : st?.label;
-  const answer = (body: Parameters<typeof api.respond>[1]) => { if (turn) void api.respond(turn.id, body).then(refresh); };
+  const answer = (body: Parameters<typeof api.respond>[1]) => { if (turn) void api.respond(turn.id, body); };
   return (
     <div className="tk-ask">
       <span className="no">#{n}</span>

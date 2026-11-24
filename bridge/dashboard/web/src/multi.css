@@ -213,14 +213,7 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-helpers-pop .ma-helpers { border-top: 0; }
 
 /* ---- settings ---- */
-.ma-set-row { padding-top: 11px; margin-top: 11px; border-top: 1px solid color-mix(in srgb, var(--acc) 10%, transparent); }
-.ma-set-row[data-first] { padding-top: 0; margin-top: 0; border-top: 0; }
 .ma-set-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; }
-.ma-set-name { font-size: var(--t11); color: var(--txb); overflow-wrap: anywhere; }
-.ma-set-meta { font-size: var(--t95); color: var(--txd); }
-.ma-set-word { margin-top: 4px; font-size: var(--t95); line-height: 1.6; color: var(--txd); }
-.ma-set-agents { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; }
-.ma-set-agent { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t10); letter-spacing: .5px; color: var(--txm); }
 .ma-set-note { margin-top: 6px; font-size: var(--t95); line-height: 1.6; color: var(--txd); overflow-wrap: anywhere; }
 .ma-set-err { margin-top: 6px; font-size: var(--t95); line-height: 1.6; color: var(--err); }
 .ma-set-warn { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 6px; font-size: var(--t95); line-height: 1.5; color: var(--warn); }
@@ -228,7 +221,6 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-set-tools { margin-top: 9px; padding: 8px 10px; border-left: 2px solid color-mix(in srgb, var(--acc) 22%, transparent); }
 .ma-set-tool { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .ma-set-tool code { font-family: var(--mono); font-size: var(--t10); color: var(--tx); overflow-wrap: anywhere; }
-.ma-set-all { margin-top: 10px; }
 
 /* ---- what the agent shows you (components/Proof) ---- */
 .ma-proof { margin: 6px 0 2px var(--rail, 0); display: flex; flex-direction: column; gap: 12px; }
@@ -322,7 +314,7 @@ button.zrow.ma-checks { appearance: none; width: 100%; border: 0; background: no
 [data-style="dossier"] .dwork [data-m="p-git"] { --m: var(--purple); }
 [data-style="dossier"] .dwork [data-m="p-install"] { --m: var(--purple); }
 [data-style="dossier"] .dwork [data-m="p-run"] { --m: var(--acc); }
-[data-style="dossier"] .dwork :is([data-m="p-search"], [data-m="p-read"]) { --m: var(--info); }
+[data-style="dossier"] .dwork [data-m="p-search"], [data-style="dossier"] .dwork [data-m="p-read"] { --m: var(--info); }
 [data-style="dossier"] .dwork [data-m="p-other"] { --m: var(--txl); }
 .ma-purp { margin-right: 7px; font-family: var(--mono); font-size: var(--t9); letter-spacing: 1px; text-transform: uppercase; color: var(--txl); }
 .ma-recovered { color: var(--txl); }

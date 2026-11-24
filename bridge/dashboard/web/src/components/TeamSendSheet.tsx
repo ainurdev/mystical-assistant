@@ -143,11 +143,11 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 97,
-      display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "13vh", animation: "backdropIn .2s ease both",
+      display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "13vh", animation: "backdropIn .2s ease backwards",
     }}>
       <div role="dialog" aria-modal aria-label={`Send ${what.kind}`} className="panel" onClick={(e) => e.stopPropagation()} style={{
         width: 490, maxWidth: "94vw", border: `1px solid ${mix("var(--acc)", 40)}`,
-        background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both",
+        background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease backwards",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", borderBottom: `1px solid ${mix("var(--acc)", 16)}` }}>
           <span style={{ color: "var(--acc)", display: "flex" }}><Send size={13} strokeWidth={2} /></span>

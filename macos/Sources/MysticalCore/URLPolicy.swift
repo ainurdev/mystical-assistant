@@ -37,7 +37,7 @@ public enum URLPolicy {
     }
 
     /// The dashboard opened on one session: `?s=` is the dashboard's own deep
-    /// link (App.tsx), `skipboot` skips the intro a reload would replay.
+    /// link (router.tsx turns it into `#/s/<id>`), `skipboot` skips the intro a reload would replay.
     public static func session(_ base: URL, _ sessionId: String) -> URL {
         var c = URLComponents(url: base, resolvingAgainstBaseURL: false)!
         var q = (c.queryItems ?? []).filter { !linkItems.contains($0.name) }

@@ -1,0 +1,100 @@
+// Run: node bridge/dashboard/web/src/lib/queries.check.ts
+import { hashKey } from "@tanstack/react-query";
+import { CHANGES, changedBy, code, main, prHints, queryClient, rail, readWith, reads, settings, urlOf } from "./queries.ts";
+
+const eq = (a: unknown, b: unknown, what: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${what}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
+
+// --- the same route and parameters give equal keys ---------------------------
+console.assert(hashKey(code.git({ project: "a", branch: "b" }).queryKey) === hashKey(code.git({ branch: "b", project: "a" }).queryKey),
+  "parameter order doesn't split a key");
+console.assert(hashKey(main.sessions().queryKey) === hashKey(main.sessions({}).queryKey), "no parameters = empty parameters");
+console.assert(hashKey(code.git({ project: "a" }).queryKey) === hashKey(code.git({ project: "a", branch: undefined }).queryKey),
+  "an undefined parameter is no parameter");
+console.assert(hashKey(code.git({ project: "a" }).queryKey) !== hashKey(code.git({ project: "b" }).queryKey), "other parameters, other key");
+console.assert(hashKey(main.agents({ session: "x" }).queryKey) !== hashKey(main.flow({ session: "x" }).queryKey), "other route, other key");
+
+// --- a key reads the URL the old calls built -----------------------------------
+eq(urlOf("/local/git", { project: "my app", branch: undefined }), "/local/git?project=my+app", "query, undefined left out");
+eq(urlOf("/local/sessions/:id", { id: "ab/c", cursor: 0, tail: 40 }), "/local/sessions/ab%2Fc?cursor=0&tail=40", "path segment filled");
+eq(urlOf("/local/state"), "/local/state", "bare route");
+
+// --- only notices and running poll while the page is hidden -------------------
+const hidden = [...reads()].filter(([, p]) => p?.hidden).map(([r]) => r).sort();
+eq(hidden, ["/local/notices", "/local/running"], "polls while hidden");
+console.assert(rail.notices().refetchIntervalInBackground === true && main.state().refetchIntervalInBackground === false,
+  "the options carry the hidden rule");
+console.assert(main.commands().refetchInterval === false && rail.sysinfo().refetchInterval === 5000, "the options carry the interval");
+
+// --- every key that a change invalidates exists -------------------------------
+for (const [post, routes] of Object.entries(CHANGES))
+  for (const r of routes) console.assert(reads().has(r), `${post} invalidates ${r}, which no read lists`);
+const LISTS = ["/local/sessions", "/local/running", "/local/history"];
+eq(changedBy("/local/sessions/abc/archive"), LISTS, "an archive changes the lists");
+eq(changedBy("/local/sessions/abc/retitle"), LISTS, "a rename");
+eq(changedBy("/local/run/j1/interrupt"), LISTS, "a stop");
+eq(changedBy("/local/run"), LISTS, "a send");
+eq(changedBy("/local/channel/send"), ["/local/channel", "/local/tree"], "a helper message changes its channel and the tree");
+eq(changedBy("/local/git/fetch?x=1"), ["/local/git", "/local/git/all", "/local/git/branchstatus", "/local/git/branches",
+  "/local/git/ledger", "/local/git/incoming", "/local/git/log", "/local/git/worktrees"], "a fetch, query ignored");
+eq(changedBy("/local/restart"), [], "nothing listed, nothing invalidated");
+// Settings: a switch shows at once wherever it's read (the prompt box, the rail, the sidebar).
+eq(changedBy("/local/aifeatures"), ["/local/aifeatures"], "an AI switch");
+eq(changedBy("/local/flows"), ["/local/flows", "/local/aifeatures"], "a flow setting, which can be an AI switch");
+eq(changedBy("/local/integrations"), ["/local/integrations"], "an install or remove");
+eq(changedBy("/local/rivendell"), ["/local/rivendell", "/local/integrations"], "an instance saved: the integration's count");
+eq(changedBy("/local/move/dismiss"), ["/local/move/files", "/local/move/read", "/local/move/jobs"], "a move dismissed: no plan scan");
+eq(changedBy("/local/move/import"), ["/local/move/files", "/local/move/read", "/local/move/jobs", "/local/move/plan"], "an import changes the plan");
+eq(changedBy("/local/acp/login"), [], "a sign-in's status poll changes nothing");
+eq(changedBy("/local/skills/check"), [], "a skills update check changes nothing");
+console.assert(hashKey(settings.skills({ project: "/r" }).queryKey) === hashKey(settings.skills({ project: "/r" }).queryKey)
+  && hashKey(settings.skills({ project: undefined }).queryKey) === hashKey(settings.skills().queryKey), "Settings ▸ Skills and the rail's count share a key");
+eq(urlOf(settings.projectSettings.route, { project: "/a b" }), "/local/project/settings?project=%2Fa+b", "a project's settings");
+// The code tabs: what a commit, a checkout, a save and a file op change reaches every panel showing it.
+const filesRead = ["/local/files/tree", "/local/files/read", "/local/files/head", "/local/git"];
+for (const post of ["/local/git/commit", "/local/git/checkout", "/local/files/write", "/local/files/op"])
+  for (const r of filesRead) console.assert(changedBy(post).includes(r), `${post} changes ${r}`);
+console.assert(changedBy("/local/git/commit").includes("/local/git/log") && changedBy("/local/git/commit").includes("/local/git/ledger"),
+  "a commit moves the graph and the ledger");
+console.assert(!changedBy("/local/git/commit-message").includes("/local/files/tree"), "writing a message touches no file");
+eq(changedBy("/local/terminals/t1/close"), ["/local/terminals"], "closing a terminal");
+eq(changedBy("/local/server"), ["/local/state"], "a dev server start: the state poll carries the servers");
+// GIT's card and the chat header's chip share one PR read; the session rides in the URL, not the key.
+console.assert(hashKey(code.pr({ project: "p", branch: "b" }).queryKey) === hashKey(code.pr({ branch: "b", project: "p" }).queryKey), "one PR key");
+// the rest of the rail: what a press there changes shows at once wherever it appears
+eq(changedBy("/local/notices"), ["/local/notices", "/local/running", "/local/changelog"], "a dismiss, a read, a limit hand-off");
+eq(changedBy("/local/run/j1/respond"), ["/local/running", "/local/notices", "/local/sessions/:id"], "an answer from WAITING ON YOU");
+eq(changedBy("/local/rivendell/queue"), ["/local/rivendell/queue", "/local/notices", "/local/rivendell/tasks"], "an accept or reject");
+eq(changedBy("/local/live/build"), ["/local/live"], "GO LIVE");
+eq(changedBy("/local/council/s1"), ["/local/council/:sid"], "a council move");
+eq(changedBy("/local/tickets/approve"), ["/local/flow"], "a ticket move");
+eq(urlOf(rail.council.route, { sid: "s/1", full: 1 }), "/local/council/s%2F1?full=1", "the council's full read");
+eq(urlOf(rail.lessons.route, { project: "*" }), "/local/learn?project=*", "every repo's lessons");
+
+// --- a shared poll runs at its listed rate --------------------------------------
+const asked: string[] = [];
+readWith(async (url) => { asked.push(url); return { n: asked.length }; });
+const o = rail.sysinfo();
+await queryClient.fetchQuery({ ...o, staleTime: 0 });
+await queryClient.fetchQuery({ ...o, staleTime: 0 });          // a second panel's tick, right after
+eq(asked, ["/local/sysinfo"], "a second tick within half the interval is answered from the cache");
+await queryClient.invalidateQueries({ queryKey: o.queryKey }); // a POST changed it: that one fetches
+await queryClient.fetchQuery({ ...o, staleTime: 0 });
+eq(asked.length, 2, "an invalidated key fetches at once");
+await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
+await queryClient.fetchQuery({ ...main.commands({ project: "p" }), staleTime: 0 });
+eq(asked.slice(2), ["/local/commands?project=p", "/local/commands?project=p"], "an unpolled read isn't held back");
+
+// --- a cursor read asks from the last answer each time, and hands each answer over once -----
+asked.length = 0;
+let cursor = 0;
+const took: number[] = [];
+const live = { ...main.session({ id: "s1" }), staleTime: 0, meta: { extra: () => ({ cursor }), take: (d: unknown) => { took.push((d as { n: number }).n); cursor = 7; } } };
+await queryClient.fetchQuery(live);
+await queryClient.fetchQuery(live);                             // right after: a delta poll is never held back
+eq(asked, ["/local/sessions/s1?cursor=0", "/local/sessions/s1?cursor=7"], "each delta read carries the cursor the last one left");
+eq(took.length, 2, "each answer is handed over once");
+
+prHints.session = "s1";
+await queryClient.fetchQuery(code.pr({ project: "p", branch: "b" }));
+eq(asked.at(-1), "/local/github/pr/status?project=p&branch=b&session=s1", "the PR read carries the chip's session");
+queryClient.clear();

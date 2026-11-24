@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AgentTree } from "./AgentTree";
+import { main } from "../../lib/queries";
 import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, Hand, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NewProjectBody, NewProjectNote, SessionBrief, SessionStatus } from "../../api";
-import { api } from "../../api";
 import { NewProjectForm } from "./NewProjectForm";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import type { ProjectTint } from "../../lib/surfaces";
@@ -86,6 +87,7 @@ type Detail = { proj: boolean; branch: boolean; wt: boolean; agents: boolean; ti
 // from that while) is no order any more and loads as this one.
 // No project expanded. Shared, never mutated: every update copies.
 const NONE: Set<string> = new Set();
+const NO_PICS: Record<string, [string, number][]> = {};
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const ORDER_LABEL: Record<OrderMode, string> = {
@@ -398,7 +400,7 @@ function SessionRow({
         // Rows cascade in when the list they sit in is rebuilt — a tab switch, a
         // project opening. Virtualised rows pass no `i`: they mount on scroll,
         // and a cascade every time you scroll is noise, not motion.
-        animation: i === undefined ? undefined : "mfadeup .4s ease both",
+        animation: i === undefined ? undefined : "mfadeup .4s ease backwards",
         animationDelay: i === undefined ? undefined : `${Math.min(i, 10) * 35}ms`,
         ["--openbar" as string]: tint.dim,
       }}
@@ -481,7 +483,7 @@ function SessionRow({
             style={{ fontSize: "var(--t9)",
                      color: s.goal.state === "blocked" ? "var(--warn)"
                           : s.goal.state === "active" ? "var(--acc)" : "var(--txf)",
-                     animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
+                     animation: s.goal.state === "active" ? "mpulse 2.4s steps(19) infinite" : "none" }}
           >◎</span>
         )}
         {JobIcon && <span title={jobLabel(s.job).toLowerCase()} style={{ display: "inline-flex", color: "var(--purple)" }}><JobIcon size={12} strokeWidth={2.1} aria-hidden /></span>}
@@ -593,7 +595,7 @@ function ShowMenu({ show, onShow, counts, pluginsTab }: {
     <div role="menu" aria-label="Show in sidebar"
          style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, width: 226,
                   border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                  boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                  boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
       <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>SHOW IN SIDEBAR</div>
       <div style={{ display: "flex", gap: 2, margin: "2px 5px 5px", padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
         {preset("all", "Everything", sameShow(show, SHOW_ALL), SHOW_ALL, "Every session, jobs and shares included")}
@@ -763,14 +765,7 @@ export function SessionsPanel(props: Props) {
   // Each session's pictures from the last day, counted against what you have
   // had on screen: the WORK plate's own rule, so the tag and the plate agree.
   // A bridge older than GET /local/shots answers 404, and no tag shows.
-  const [pics, setPics] = useState<Record<string, [string, number][]>>({});
-  useEffect(() => {
-    let live = true;
-    const load = () => api.shots(Date.now() / 1000 - 86400).then((r) => { if (live) setPics(r); }, () => {});
-    void load();
-    const t = setInterval(load, 15000);
-    return () => { live = false; clearInterval(t); };
-  }, []);
+  const pics = useQuery(main.shots()).data ?? NO_PICS;
   // Opening a chat clears its tag, and so does leaving it: what landed while you
   // were in it was yours to see. Layout, so the chat you leave never paints a
   // tag for a frame before its stamp lands.
@@ -1216,7 +1211,7 @@ export function SessionsPanel(props: Props) {
     );
   }
   return (
-    <div className="panel" onPointerEnter={hold} onPointerLeave={() => setHeld(null)} style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" onPointerEnter={hold} onPointerLeave={() => setHeld(null)} style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) backwards .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
         <div style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
           {/* One pill travels to the tab you picked. Three backgrounds fading in
@@ -1318,7 +1313,7 @@ export function SessionsPanel(props: Props) {
                 <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
                 <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 140,
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>PROJECT ORDER</div>
                   {ORDERS.map((m) => (
                     <button
@@ -1353,7 +1348,7 @@ export function SessionsPanel(props: Props) {
                 <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
                 <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
                   {fieldsFor(mode, multiOn).map((f) => {
                     const on = detail[f.k];
@@ -1397,7 +1392,7 @@ export function SessionsPanel(props: Props) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
+      <div ref={scrollRef} className="mscroll bound" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
         {npOpen && mode !== "plugins" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}

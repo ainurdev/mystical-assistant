@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { code, main, queryClient, reread } from "../lib/queries";
 import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
@@ -229,7 +231,7 @@ function Drop<T extends string>({
   };
   return (
     <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
+      <button className="drop-btn" data-meter={!face && meter ? "" : undefined} onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {face ?? <>
           {code && <span className="ctrl-fld">{code}</span>}
           <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
@@ -494,6 +496,22 @@ function FlowRunRows({ f, change, models, open, onOpen, flat }: { f: FlowSetting
   );
 }
 
+/** Each pill renders itself or nothing, so the ledger counts the ones that landed (a pill strip's
+ *  pills, and anything else in the ledger): data-n is 1 or 2 for "two or more", none when empty
+ *  (index.css .pb-ledger). An observer, not a :has(), so a pill arriving restyles only the ledger. */
+function countPills(el: HTMLDivElement | null) {
+  if (!el) return;
+  const count = () => {
+    const n = [...el.children].reduce((n, c) => n + (c.classList.contains("pillstrip") ? c.childElementCount : 1), 0);
+    const v = n ? (n > 1 ? "2" : "1") : undefined;
+    if (el.dataset.n !== v) { if (v) el.dataset.n = v; else delete el.dataset.n; }
+  };
+  const mo = new MutationObserver(count);
+  mo.observe(el, { childList: true, subtree: true });
+  count();
+  return () => mo.disconnect();
+}
+
 /** The sheet's two-way choices: one segment, its options [value, label, title?]. */
 function FlowSeg<T extends string | boolean>({ label, value, opts, set }: { label: string; value: T;
   /** [value, label, a plain title or a Tip's content] */
@@ -532,6 +550,9 @@ const flowName = (id: string) => KINDS[id as KindId]?.name ?? id.toUpperCase();
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 /** One flows editor's state: the bridge's settings, the picked flow (or "general"), the last refusal. */
+/** The project's command list, through the shared read (lib/queries): the plates read it too. */
+const readCommands = (project?: string | null) => queryClient.fetchQuery(main.commands({ project: project || undefined }));
+
 function useFlowsEdit(initial: string) {
   const cfg = useFlowSettings();
   const [sel, setSel] = useState(initial);
@@ -920,22 +941,19 @@ export function Composer({
   // and when a turn ends — that's when the bridge rebuilds the graph — then
   // follow the build so the age lands on the new map, not the one it replaced.
   // Nothing to poll for when the cluster is switched off.
-  const [graph, setGraph] = useState<GraphState | null>(null);
+  // Shared with the rest of the page (lib/queries): the first look takes a fresh answer it
+  // already has; a turn's edge asks the bridge again, and a build is followed every 3 s.
   const mapOn = !!onOpenMap;
+  const graphRead = code.graphState({ project: project ?? "" });
+  const graphQ = useQuery({ ...graphRead, enabled: !!project && mapOn, refetchInterval: (q) => (q.state.data?.building ? 3000 : false) });
+  const graph: GraphState | null = project && mapOn && !graphQ.isError ? graphQ.data ?? null : null;
+  const graphRun = useRef(running);
   useEffect(() => {
-    if (!project || !mapOn) { setGraph(null); return; }
-    let live = true;
-    let t = 0;
-    const poll = () => api.graphState(project)
-      .then((s) => {
-        if (!live) return;
-        setGraph(s);
-        if (s.building) t = window.setTimeout(poll, 3000);
-      })
-      .catch(() => { if (live) setGraph(null); });
-    void poll();
-    return () => { live = false; if (t) window.clearTimeout(t); };
-  }, [project, running, mapOn]);
+    if (graphRun.current === running) return;
+    graphRun.current = running;
+    if (project && mapOn) void reread(graphRead.queryKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a turn's edge
+  }, [running]);
 
   // --- @-mentions ----------------------------------------------------------
   // The project's file list, fetched once per project and kept for the session.
@@ -1048,14 +1066,14 @@ export function Composer({
     if (noList || (!slashOn && !leadsSlash)) return;
     let live = true;
     void (skillPrefix
-      ? Promise.all([api.commands(project), multiApi.skillShare(cwd)]).then(([c, s]) => {
+      ? Promise.all([readCommands(project), multiApi.skillShare(cwd)]).then(([c, s]) => {
           const about = new Map(c.commands.map((x) => [x.name, x.description]));
           const out: SlashCommand[] = s.skills.filter((x) => x.on && !x.conflict).map((x) => ({
             name: x.name, description: about.get(x.name) ?? "", scope: x.scope === "project" ? "project" : "user",
           }));
           return goals ? [...out, { name: "goal", description: "Set what this chat is for; the loop works toward it", scope: "builtin" as const }] : out;
         })
-      : api.commands(project).then((r) => r.commands))
+      : readCommands(project).then((r) => r.commands))
       .then((list) => { if (live) { setCmds(list); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
@@ -1064,7 +1082,7 @@ export function Composer({
   useEffect(() => {
     if ((!routing && !shelled) || onAgent) return;
     let live = true;
-    void api.commands(project)
+    void readCommands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
@@ -1828,7 +1846,7 @@ export function Composer({
   // runs off the column wherever the tab sits.
   const nq = queued?.length ?? 0;
   const workTab = (running || paused || nq > 0) && (
-    <div className="pb-work" data-paused={paused ? "" : undefined}
+    <div className="pb-work" data-paused={paused ? "" : undefined} data-q={nq > 0 ? "" : undefined}
       title={paused ? (running ? "this turn finishes; nothing starts after it" : "nothing starts on its own") : undefined}>
       {/* .pb-ww: the words a narrow box drops (index.css), the glyphs and the count stay */}
       {paused ? <><Pause size={9} strokeWidth={0} fill="currentColor" aria-hidden /><span className="pb-ww">paused</span></>
@@ -1904,9 +1922,9 @@ export function Composer({
     );
   })();
   // CSS hides an empty ledger and, past one live item, every pill's
-  // description (.pill-desc) — busy means terse.
+  // description (.pill-desc) — busy means terse. countPills marks how many landed.
   const ledger = (className: string) => (
-    <div className={`pb-ledger ${className}`}>{pills}</div>
+    <div ref={countPills} className={`pb-ledger ${className}`}>{pills}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -2263,7 +2281,7 @@ export function Composer({
         })}
         {gear}
       </div>}
-      <div className="pb-seg pb-facts"><span role="status">{facts}</span>{flowBtn}</div>
+      <div className="pb-seg pb-facts" data-flow={flowBtn ? "" : undefined}><span role="status">{facts}</span>{flowBtn}</div>
       <div className="pb-seg pb-preset" data-open={openDrop === "preset" ? "" : undefined}>{presetBtn}</div>
       {profileChip && <div className="pb-seg pb-use">{profileChip}</div>}
     </div>
@@ -2285,7 +2303,7 @@ export function Composer({
         {dock}
         {embedNote}
         {deck}
-        <div {...boxProps} className="cmdbox pb-card" data-deck={deck ? "" : undefined}>
+        <div {...boxProps} className="cmdbox pb-card pb-railed" data-deck={deck ? "" : undefined}>
           {ledger("")}
           <div className="pb-line">
             {plusBtn}{pfx}{popovers}{presetPop}{flowPop}{flowsPop}
@@ -2300,7 +2318,7 @@ export function Composer({
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
-    <div className="composer" data-pb={shelled ? "tabs" : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+    <div className="composer" data-pb={shelled ? "tabs" : undefined} data-docked={dock ? "" : undefined} data-drag={shelled && dragging ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
       {openDrop && <div onClick={() => setOpenDrop("")}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}

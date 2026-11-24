@@ -1,7 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Lock, Minus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type StorageProject, type StorageScan } from "../../api";
+import { reread, settings as setq } from "../../lib/queries";
 import { ago, projectName } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
 import { askConfirm } from "../ui/Ask";
@@ -124,13 +126,14 @@ function ClearDialog({ title, about, lines, after = [], start, stays, warn, onCl
 
 /** SETTINGS ▸ System, above Bridge. */
 export function StorageSection({ onOpenMystical }: { onOpenMystical?: () => void }) {
-  const [scan, setScan] = useState<StorageScan | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const key = setq.storage();
+  const scanQ = useQuery(key);
+  const scan: StorageScan | null = scanQ.data ?? null;
+  const err = scanQ.error?.message ?? null;
   const [more, setMore] = useState(false);
   const [dlg, setDlg] = useState<StorageProject | "all" | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const load = () => api.storage().then((r) => { setScan(r); setErr(null); }).catch((e: Error) => setErr(e.message));
-  useEffect(() => { void load(); }, []);
+  const load = () => reread(key.queryKey);   // a clear invalidates it already: this waits for the new scan
 
   const clear = async (...args: Parameters<typeof api.clearStorage>) => {
     try {

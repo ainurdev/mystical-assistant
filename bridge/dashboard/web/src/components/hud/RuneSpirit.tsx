@@ -108,7 +108,7 @@ export function RuneSpirit({ variant = "line" }: { variant?: "line" | "block" })
     return (
       <div className="flex items-start gap-3.5 py-7">
         <span
-          className="glow inline-flex h-[34px] w-[34px] flex-none items-center justify-center text-[length:var(--t26)] leading-none text-primary"
+          className="still-scene glow inline-flex h-[34px] w-[34px] flex-none items-center justify-center text-[length:var(--t26)] leading-none text-primary"
           style={{ animation: "twinkle 1.7s ease-in-out infinite" }}
         >
           {rune}
@@ -130,7 +130,7 @@ export function RuneSpirit({ variant = "line" }: { variant?: "line" | "block" })
     <div className="mt-2.5 flex items-center gap-[10px] text-muted-foreground">
       <span className="flex-none text-violet">~ ❯</span>
       <span
-        className="glow inline-flex h-[18px] w-[18px] flex-none items-center justify-center text-[length:var(--t15)] leading-none text-primary"
+        className="still-scene glow inline-flex h-[18px] w-[18px] flex-none items-center justify-center text-[length:var(--t15)] leading-none text-primary"
         style={{ animation: "twinkle 1.7s ease-in-out infinite" }}
       >
         {rune}
