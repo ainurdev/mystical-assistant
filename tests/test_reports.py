@@ -233,9 +233,10 @@ def _name(ev):
 
 def test_a_slow_route_sends_one_bridge_call_and_fast_streamed_or_long_ones_send_nothing(receiver):
     out = _start(["GET /local/slow/7f3a9c01?sleep=0.7", "GET /local/fast?sleep=0",
-                  "GET /local/stream/session/abc123def?sleep=0.7", "GET /local/graph/explain?sleep=0.7"],
+                  "GET /local/stream/session/abc123def?sleep=0.7", "GET /local/graph/explain?sleep=0.7",
+                  "GET /local/storage?sleep=0.7"],
                  receiver.dsn)
-    assert [c for c, _ in out["calls"]] == [200, 200, 200, 200]
+    assert [c for c, _ in out["calls"]] == [200, 200, 200, 200, 200]
     [ev] = _slow_spots(receiver)
     assert _name(ev) == "bridge call: GET /local/slow/:id"
     assert ev["level"] == "warning" and ev["contexts"]["slow"]["status"] == 200

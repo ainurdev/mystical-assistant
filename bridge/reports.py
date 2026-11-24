@@ -61,7 +61,8 @@ STARTED: "float | None" = None   # time.monotonic() at the main script's first l
 _phases: dict = {}         # start-up phase -> seconds since STARTED
 
 # Dashboard routes left untimed, "METHOD /route" prefixes: streams, and routes
-# that run long on purpose (a build, a pull or push, a model call, an upload).
+# that run long on purpose (a build, a pull or push, a model call, an upload, a
+# disk walk). POST /local/run leaves out only its NEW-SESSION GUARD check (_run).
 UNTIMED = (
     "GET /local/stream/", "GET /local/ws/",                                   # streams
     "POST /local/live/build", "POST /local/graph/install",
@@ -75,6 +76,7 @@ UNTIMED = (
     "GET /local/graph/explain", "POST /local/git/commit-message",             # a model call
     "POST /local/wait",                                                       # waits by design
     "POST /local/rivendell/team/send",                                        # an upload
+    "GET /local/storage",                                                     # a disk walk, on open
 )
 
 

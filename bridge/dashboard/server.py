@@ -404,6 +404,7 @@ def _device_rows() -> list:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ClaudeBridgeDashboard"
+    _t0 = None   # when this request's first line was read (parse_request)
 
     def log_message(self, *a):  # silence default logging
         pass
@@ -2775,8 +2776,11 @@ class Handler(BaseHTTPRequestHandler):
         flow = body.get("flow") or None
         if flow and (why := flows.flow_refusal(str(flow), str(body.get("by") or ""), prompt, agent)):
             return self._json({"error": why}, 400)
+        t = time.monotonic()
         held = relevance.gate(chat, project_path, session_id, prompt,
                               bool(body.get("force")))
+        if self._t0 is not None:   # the guard's model call is long by design: untimed, as reports.UNTIMED
+            self._t0 += time.monotonic() - t
         if held:
             return self._json(held)
         job_id = uuid.uuid4().hex
