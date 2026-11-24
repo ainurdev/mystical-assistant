@@ -478,7 +478,7 @@
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
   --lr-in: var(--sp-in, 42px); --lr-n: var(--sp-n, 26px); --lr-gnd: var(--sp-gnd, var(--panel2));
-  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) both;
+  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) backwards;
 }
 [data-style="dossier"] .live-row { position: relative; }
 [data-style="dossier"] .live-row[data-away] { background: var(--lr-gnd); }

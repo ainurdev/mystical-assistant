@@ -286,7 +286,7 @@ export function RightPanel({
         data-ctx-type="railtab"
         data-ctx-label="Rail"
         className="relative flex w-[48px] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
-        style={{ background: "var(--panel3)", isolation: "isolate", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
+        style={{ background: "var(--panel3)", isolation: "isolate", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) backwards .12s" }}
       >
         {railHead && <div className="mb-1 flex flex-col items-stretch border-b border-border pb-1">{railHead}</div>}
         {list.map((t, i) => {

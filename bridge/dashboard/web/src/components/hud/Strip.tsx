@@ -36,7 +36,7 @@ import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
 // level with the header's (border-box: the border is inside the height).
 export const CAP_H = 41;
 const CAP_LINE = "1px solid color-mix(in srgb, var(--acc) 14%, transparent)";
-const CAP_IN = "enterDown .55s cubic-bezier(.2,.8,.2,1) both";
+const CAP_IN = "enterDown .55s cubic-bezier(.2,.8,.2,1) backwards";
 
 export interface StripProps {
   clock: string; // "HH:MM:SS" 24h, from telemetry

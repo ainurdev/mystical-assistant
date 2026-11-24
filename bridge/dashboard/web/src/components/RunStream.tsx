@@ -351,7 +351,7 @@ function TerminalGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) backwards", clipPath: "inset(0)" } : {}),
       }}
     >
       <ActionRow tier="reach" mark="command" accent={accent} tag="BASH" running={running} animate={false}
@@ -505,7 +505,7 @@ function EditGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) backwards", clipPath: "inset(0)" } : {}),
       }}
     >
       {/* The last figure is the one the head exists for: what this whole run
@@ -676,7 +676,7 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
       data-open={open ? "" : undefined}
       data-run={stat.running ? "" : undefined}
       data-err={stat.failed ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <div className="thk text-muted-2">
         <button
@@ -1073,7 +1073,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   ) : null;
   // In with the stream, and a card that starts empty (the turn just sent) a
   // beat behind your prompt. Fixed at mount: a delay changed mid-play jumps it.
-  const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms both` : undefined));
+  const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms backwards` : undefined));
   const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
   const tools = kindsOf(cats, notes);
@@ -1557,7 +1557,7 @@ function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle, tail }: {
     <div
       className="zrow thought"
       data-pause={pause ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <i className="ax-bar" aria-hidden />
       <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
@@ -1596,7 +1596,7 @@ function LogRow({ src, label, text, error, animate }:
       data-quiet={quiet && !open ? "" : undefined}
       title={quiet && !open ? `${label ? `${label} · ` : ""}${lines[0]}`
         : more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <i className="ax-bar" aria-hidden><MarkIcon mark={error ? "fail" : src === "hook" ? "hook" : "log"} /></i>
       <span className="ax-tagcell"><span className="ax-tag">{src.toUpperCase()}</span></span>
@@ -1719,7 +1719,7 @@ function ActionRow({
         data-run={running ? "" : undefined}
         style={{
           ...({ "--h": accent } as React.CSSProperties),
-          ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+          ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : {}),
         }}
         role={toggle ? "button" : undefined}
         tabIndex={toggle ? 0 : undefined}
@@ -2043,7 +2043,7 @@ function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
       className="agb"
       data-plate={brief ? "" : undefined}
       data-open={open ? "" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <ActionRow tier="reach" mark={skill ? "skill" : "agent"} accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
         running={running} error={error} animate={false} stat={<AgentStat run={run}>{agentNums(run, animate)}</AgentStat>}>
@@ -2073,7 +2073,7 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
   return (
     <div
       className="ax-window"
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
     >
       <ActionRow tier="reach" mark="agent" accent="var(--acc)" tag="AGENTS" running={!!live} animate={false}
         stat={live
@@ -2165,7 +2165,7 @@ function CallGroup({
       data-err={failed ? "" : undefined}
       style={{
         ...({ "--h": accent } as React.CSSProperties),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : {}),
       }}
     >
       <ActionRow tier="reach" mark={kindMark(name)} accent={accent} tag={tag} animate={false}
@@ -2776,7 +2776,7 @@ export const RunStream = memo(function RunStream({
             key={i}
             className="group/msg relative flex items-start pl-[var(--rail)]"
             data-pause={pause ? "" : undefined}
-            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
           >
             <RailNode />
             {/* The agent talking. Bare prose between boxed, labelled cards was
@@ -3070,7 +3070,7 @@ export const RunStream = memo(function RunStream({
             // Coloured by .ev-err off --err, not a Tailwind red: a fixed red-300
             // is unreadable on every light ground and gets hue-rotated on AURORA.
             className="ev-err ml-[var(--rail)] flex items-start gap-1.5 px-2 py-1 text-sm"
-            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) backwards" } : undefined}
           >
             <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
             <span>{event.message}</span>

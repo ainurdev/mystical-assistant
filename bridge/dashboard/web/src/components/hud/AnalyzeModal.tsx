@@ -120,7 +120,7 @@ export function AnalyzeModal(props: Props) {
 
   return (
     <div className="fwin"
-      style={{ position: "fixed", inset: 0, zIndex: 92, display: "flex", flexDirection: "column", background: "var(--panel2)", color: "var(--tx)", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}>
+      style={{ position: "fixed", inset: 0, zIndex: 92, display: "flex", flexDirection: "column", background: "var(--panel2)", color: "var(--tx)", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease backwards" }}>
       {/* title bar — in Mystical.app its bare surface drags the window (App's
           --mac-titlebar listener), and the page's traffic lights sit at its left */}
       <div style={{ position: "relative", height: 40, flex: "none", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12, padding: `0 10px 0 ${mac ? 82 : 12}px`, borderBottom: line(14), background: "color-mix(in srgb, var(--panel3) 70%, transparent)" }}>
@@ -146,7 +146,7 @@ export function AnalyzeModal(props: Props) {
               <ChevronDown size={11} strokeWidth={1.8} style={{ color: "var(--purple-g)", flex: "none" }} />
             </button>
             {menuOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease backwards" }}>
                 <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
                 {branchOpts.map((b) => (
                   <button key={b.name} onClick={() => { setSelectedBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}

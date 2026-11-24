@@ -20,7 +20,7 @@ export function Panel({
       className={`panel border border-border bg-panel ${
         flex ? "flex min-h-0 flex-1 flex-col" : "flex-none"
       } ${className}`}
-      style={{ animation: `boot .5s ease both ${delay}` }}
+      style={{ animation: `boot .5s ease backwards ${delay}` }}
     >
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-[length:var(--t105)] tracking-[2.5px] text-muted-2">{label}</span>
@@ -30,7 +30,7 @@ export function Panel({
         className="h-px flex-none origin-left"
         style={{
           background: "linear-gradient(90deg,var(--primary),var(--muted))",
-          animation: `drawline .7s ease both ${delay}`,
+          animation: `drawline .7s ease backwards ${delay}`,
         }}
       />
       {children}

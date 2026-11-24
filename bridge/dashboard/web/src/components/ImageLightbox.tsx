@@ -331,7 +331,7 @@ function VideoLightbox({ src, name, title, strip, clip, onClose }: { src: string
       role="dialog"
       aria-modal="true"
       aria-label={name || "Attachment"}
-      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", gap: panel ? 13 : 0, flexDirection: row ? "row" : "column", padding: 24, paddingBottom: strip ? 108 : 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease both" }}
+      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", gap: panel ? 13 : 0, flexDirection: row ? "row" : "column", padding: 24, paddingBottom: strip ? 108 : 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease backwards" }}
     >
       {/* Stacked over the rail, the title would hang onto it: the margin is its room. */}
       <div style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, maxWidth: row ? "calc(92vw - 373px)" : "92vw",
@@ -657,7 +657,7 @@ function StillLightbox({ src, name, title, strip, onClose }: { src: string; name
       role="dialog"
       aria-modal="true"
       aria-label={name || "Attachment"}
-      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
+      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease backwards" }}
     >
       {/* The picture's own box, for the title to hang from; centred the way the
           picture was, so the zoom's centre has not moved. */}

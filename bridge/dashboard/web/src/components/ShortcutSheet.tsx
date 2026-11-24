@@ -25,14 +25,14 @@ export function ShortcutSheet({ open, sendKey, onClose }: { open: boolean; sendK
   return (
     <div
       onClick={onClose}
-      style={{ ...PALETTE_BOX.backdrop, animation: "backdropIn .2s ease both" }}
+      style={{ ...PALETTE_BOX.backdrop, animation: "backdropIn .2s ease backwards" }}
     >
       <div
         role="dialog"
         aria-label="Keyboard shortcuts"
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ ...PALETTE_BOX.panel, animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ ...PALETTE_BOX.panel, animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) backwards", clipPath: "inset(0)" }}
       >
         <div style={PALETTE_BOX.head}>
           <span style={{ color: "var(--acc)" }}>~ ❯</span>

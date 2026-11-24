@@ -35,8 +35,19 @@ test("stepped loops pass", () => {
   }), []);
 });
 
-test("one-shot animations are not this check's business", () => {
-  assert.deepEqual(run({ "x.css": ".a { animation: spin 1s linear both; }", "components/X.tsx": '<i style={{ animation: "spin 1s linear" }} />' }), []);
+test("a one-shot animation that fills backwards or not at all passes", () => {
+  assert.deepEqual(run({ "x.css": ".a { animation: spin 1s linear backwards .2s; }", "components/X.tsx": '<i style={{ animation: "spin 1s linear" }} />' }), []);
+});
+
+test("a one-shot animation that holds its end fails, unless it is an exit or the intro's", () => {
+  assert.match(run({ "x.css": ".a {\n  animation: spin 1s linear both;\n}" })[0], /x\.css:2 \.a: "spin 1s linear both" holds its end/);
+  assert.equal(run({ "x.css": ".a { animation-name: spin; animation-fill-mode: forwards; }" }).length, 1, "the longhand");
+  assert.equal(run({ "components/X.tsx": '<i style={{ animation: `mslide .16s ease ${d}ms forwards` }} />' }).length, 1, "inline");
+  assert.deepEqual(run({
+    "x.css": ".a { animation: modalOut .28s ease-in forwards; } .bootleaving .kd-sheet { animation: kdsheet .55s ease .3s forwards; }",
+    "components/X.tsx": '<i style={{ animation: closing ? "ctxOut .165s ease both" : "ctxIn .2s backwards" }} />',
+    "components/hud/BootIntro.tsx": '<i style={{ animation: "tickfade .5s ease both .9s" }} />',
+  }), []);
 });
 
 test("a listed scene passes only under the still rule", () => {

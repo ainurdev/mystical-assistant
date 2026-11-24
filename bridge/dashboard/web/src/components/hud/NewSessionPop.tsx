@@ -187,7 +187,7 @@ export function NewSessionPop({ groups, sessions, status, here, mine, scoped, on
       style={{ position: "absolute", zIndex: 60, top: "100%", left: 0, right: 0, marginTop: 8, padding: 6, boxSizing: "border-box",
                border: "1px solid var(--line, color-mix(in srgb, var(--acc) 28%, transparent))", background: "var(--panel)",
                boxShadow: "0 8px 22px var(--shadow-pop)", fontFamily: "var(--ui-font, inherit)", color: "var(--txb)",
-               animation: "mslide .16s ease both" }}
+               animation: "mslide .16s ease backwards" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: page ? 8 : 9, height: 36, padding: "0 10px", borderRadius: "var(--f-rad, 0px)", background: well, color: "var(--txl)" }}>
         {!page && <Search size={15} strokeWidth={2} aria-hidden style={{ flex: "none" }} />}

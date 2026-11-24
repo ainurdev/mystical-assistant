@@ -128,7 +128,7 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
   }, []);
   return (
     <div onAnimationEnd={(e) => { if (e.target === e.currentTarget && e.animationName === "freshleave") onLeft?.(); }}
-      style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", animation: "mfadeup .5s ease both",
+      style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", animation: "mfadeup .5s ease backwards",
                // out of the flow at the spot it held (the content box's top), so the turn takes its place under it
                ...(leaving && { position: "absolute", top: ISLE_EDGE + 12, left: 0, right: 0, height: "auto", pointerEvents: "none", animation: "freshleave .2s cubic-bezier(.2,.8,.2,1) both" }) }}>
       <div style={{ position: "relative", width: 112, height: 112, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -165,7 +165,7 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
         <div className="fresh-quote" style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
           {/* the glow is a scene and pauses when the page is still; the entrance must not, or a quote
               that rotates in then would stay invisible */}
-          <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both" }}>
+          <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) backwards" }}>
             <span className="still-scene" style={{ animation: "quoteglow 7.2s ease-in-out infinite" }}>“{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”</span>
           </span>
         </div>
@@ -192,7 +192,7 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
  *  row exists. Without one it stays generic. */
 function ChannelTuning({ step }: { step?: string | null }) {
   return (
-    <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease both" }}>
+    <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease backwards" }}>
       <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s steps(9) infinite" }} />
       <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s steps(19) infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
     </div>
@@ -877,7 +877,7 @@ export function Terminal({
               {held.current && (
                 // Keyed on the text so moving to another turn crossfades the
                 // line instead of swapping it under you.
-                <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
+                <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, animation: "tickfade .22s ease backwards" }}>
                   <span style={{ width: 2, height: 12, background: "var(--purple-g)", flex: "none" }} />
                   <span style={{ fontSize: "var(--t9)", letterSpacing: 1.4, color: "var(--purple-g)", flex: "none" }}>LAST</span>
                   {/* Dimmer than the transcript it points at — it's a pointer, not the text. */}
@@ -910,7 +910,7 @@ export function Terminal({
       onMouseMove={tucked ? (e) => { if (e.clientY - e.currentTarget.getBoundingClientRect().top < 64) setTucked(false); } : undefined}
       style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden",
         // The gutters are a reading measure for the transcript. The Agents view is three panes, and takes the column.
-        paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+        paddingInline: team ? 0 : chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) backwards .12s" }}
     >
       {/* COMPACT CHAT with no chrome and no crumb has nothing left to hold: no empty pill. */}
       {islandShown && island}

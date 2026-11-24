@@ -386,7 +386,7 @@ function SessionRow({
         // Rows cascade in when the list they sit in is rebuilt — a tab switch, a
         // project opening. Virtualised rows pass no `i`: they mount on scroll,
         // and a cascade every time you scroll is noise, not motion.
-        animation: i === undefined ? undefined : "mfadeup .4s ease both",
+        animation: i === undefined ? undefined : "mfadeup .4s ease backwards",
         animationDelay: i === undefined ? undefined : `${Math.min(i, 10) * 35}ms`,
         ["--openbar" as string]: tint.dim,
       }}
@@ -581,7 +581,7 @@ function ShowMenu({ show, onShow, counts, pluginsTab }: {
     <div role="menu" aria-label="Show in sidebar"
          style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, width: 226,
                   border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                  boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                  boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
       <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>SHOW IN SIDEBAR</div>
       <div style={{ display: "flex", gap: 2, margin: "2px 5px 5px", padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
         {preset("all", "Everything", sameShow(show, SHOW_ALL), SHOW_ALL, "Every session, jobs and shares included")}
@@ -1201,7 +1201,7 @@ export function SessionsPanel(props: Props) {
     );
   }
   return (
-    <div className="panel" onPointerEnter={hold} onPointerLeave={() => setHeld(null)} style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" onPointerEnter={hold} onPointerLeave={() => setHeld(null)} style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) backwards .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
         <div style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
           {/* One pill travels to the tab you picked. Three backgrounds fading in
@@ -1303,7 +1303,7 @@ export function SessionsPanel(props: Props) {
                 <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
                 <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 140,
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>PROJECT ORDER</div>
                   {ORDERS.map((m) => (
                     <button
@@ -1338,7 +1338,7 @@ export function SessionsPanel(props: Props) {
                 <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
                 <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
                               border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease backwards" }}>
                   <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
                   {fieldsFor(mode, multiOn).map((f) => {
                     const on = detail[f.k];
