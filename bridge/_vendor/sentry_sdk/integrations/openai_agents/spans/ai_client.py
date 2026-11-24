@@ -1,0 +1,293 @@
+import json
+from typing import TYPE_CHECKING
+
+import sentry_sdk
+from sentry_sdk.consts import OP, SPANDATA
+from sentry_sdk.integrations import DidNotEnable
+from sentry_sdk.traces import Span, _AgentFrameworkChatGenerationContext
+
+try:
+    from agents import (
+        CodeInterpreterTool,
+        ComputerTool,
+        FileSearchTool,
+        FunctionTool,
+        HostedMCPTool,
+        ImageGenerationTool,
+        LocalShellTool,
+        Model,
+        WebSearchTool,
+    )
+except ImportError:
+    raise DidNotEnable("OpenAI Agents not installed")
+
+try:
+    from agents import ApplyPatchTool, ShellTool
+except ImportError:
+    ShellTool = None  # type: ignore[assignment,misc]
+    ApplyPatchTool = None  # type: ignore[assignment,misc]
+
+try:
+    from agents import ToolSearchTool
+except ImportError:
+    ToolSearchTool = None  # type: ignore[assignment,misc]
+
+try:
+    from agents import CustomTool
+except ImportError:
+    CustomTool = None  # type: ignore[assignment,misc]
+
+try:
+    from agents import ProgrammaticToolCallingTool
+except ImportError:
+    ProgrammaticToolCallingTool = None  # type: ignore[assignment,misc]
+
+
+from ..consts import SPAN_ORIGIN
+from ..utils import (
+    _set_input_data,
+    _set_output_data,
+    _set_usage_data,
+)
+
+if TYPE_CHECKING:
+    from typing import Any, Optional
+
+    from agents import Agent, Tool
+
+    from sentry_sdk._types import ToolDefinition
+
+
+def _transform_tool_definitions(tools: "list[Tool]") -> "list[ToolDefinition]":
+    """
+    Transform tool definitions to the schema used by the "gen_ai.tool.definitions" attribute.
+    Includes special handling for tools where the type includes a name, description or parameters.
+
+    Note: These are generated from the same OpenAPI spec as Responses API tools.
+    """
+    if not isinstance(tools, list):
+        return []
+
+    tool_definitions: "list[ToolDefinition]" = []
+    for tool in tools:
+        if isinstance(tool, FunctionTool):
+            tool_definitions.append(
+                {
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.params_json_schema,
+                }
+            )
+            continue
+
+        if isinstance(tool, WebSearchTool):
+            tool_definitions.append(
+                {
+                    "type": "web_search",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if isinstance(tool, FileSearchTool):
+            tool_definitions.append(
+                {
+                    "type": "file_search",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if isinstance(tool, ComputerTool):
+            tool_definitions.append(
+                {
+                    "type": "computer",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if CustomTool is not None and isinstance(tool, CustomTool):
+            tool_definitions.append(
+                {
+                    "type": "custom",
+                    "name": tool.name,
+                    "description": tool.description,
+                }
+            )
+            continue
+
+        if isinstance(tool, HostedMCPTool):
+            tool_definitions.append(
+                {
+                    "type": "mcp",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if ApplyPatchTool is not None and isinstance(tool, ApplyPatchTool):
+            tool_definitions.append(
+                {
+                    "type": "apply_patch",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if ShellTool is not None and isinstance(tool, ShellTool):
+            tool_definitions.append(
+                {
+                    "type": "shell",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if isinstance(tool, ImageGenerationTool):
+            tool_definitions.append(
+                {
+                    "type": "image_generation",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if isinstance(tool, CodeInterpreterTool):
+            tool_definitions.append(
+                {
+                    "type": "code_interpreter",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if isinstance(tool, LocalShellTool):
+            tool_definitions.append(
+                {
+                    "type": "local_shell",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if ToolSearchTool is not None and isinstance(tool, ToolSearchTool):
+            tool_definitions.append(
+                {
+                    "type": "tool_search",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+        if ProgrammaticToolCallingTool is not None and isinstance(
+            tool, ProgrammaticToolCallingTool
+        ):
+            tool_definitions.append(
+                {
+                    "type": "programmatic_tool_calling",
+                    "name": tool.name,
+                }
+            )
+            continue
+
+    return tool_definitions
+
+
+def ai_client_context(
+    agent: "Agent", get_response_kwargs: "dict[str, Any]"
+) -> "_AgentFrameworkChatGenerationContext":
+    # TODO-anton: implement other types of operations. Now "chat" is hardcoded.
+    model_name = None
+    if agent.model:
+        model_name = agent.model.model if hasattr(agent.model, "model") else agent.model
+    elif hasattr(agent, "_sentry_request_model"):
+        model_name = agent._sentry_request_model
+
+    client_options = sentry_sdk.get_client().options
+
+    context = _AgentFrameworkChatGenerationContext(
+        name=f"chat {model_name}",
+        attributes={
+            "sentry.op": OP.GEN_AI_CHAT,
+            "sentry.origin": SPAN_ORIGIN,
+            SPANDATA.GEN_AI_OPERATION_NAME: "chat",
+        },
+    )
+
+    context.span.set_attribute(SPANDATA.GEN_AI_PROVIDER_NAME, "openai")
+    context.span.set_attribute(SPANDATA.GEN_AI_AGENT_NAME, agent.name)
+
+    request_model_name: "Optional[str]" = None
+    if isinstance(agent.model, Model) and hasattr(agent.model, "model"):
+        request_model_name = agent.model.model
+    elif isinstance(agent.model, str):
+        request_model_name = agent.model
+    elif hasattr(agent, "_sentry_request_model"):
+        request_model_name = agent._sentry_request_model
+
+    if request_model_name:
+        context.span.set_attribute(SPANDATA.GEN_AI_REQUEST_MODEL, request_model_name)
+
+    if agent.model_settings.max_tokens:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_REQUEST_MAX_TOKENS, agent.model_settings.max_tokens
+        )
+
+    if agent.model_settings.presence_penalty:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_REQUEST_PRESENCE_PENALTY,
+            agent.model_settings.presence_penalty,
+        )
+
+    if agent.model_settings.temperature:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_REQUEST_TEMPERATURE, agent.model_settings.temperature
+        )
+
+    if agent.model_settings.top_p:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_REQUEST_TOP_P, agent.model_settings.top_p
+        )
+
+    if agent.model_settings.frequency_penalty:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_REQUEST_FREQUENCY_PENALTY,
+            agent.model_settings.frequency_penalty,
+        )
+
+    if client_options["data_collection"]["gen_ai"]["inputs"]:
+        context.span.set_attribute(
+            SPANDATA.GEN_AI_TOOL_DEFINITIONS,
+            json.dumps(_transform_tool_definitions(agent.tools)),
+        )
+
+    _set_input_data(context.span, get_response_kwargs)
+
+    return context
+
+
+def update_ai_client_span(
+    span: "Span",
+    response: "Any",
+    response_model: "Optional[str]" = None,
+    agent: "Optional[Agent]" = None,
+) -> None:
+    """Update AI client span with response data (works for streaming and non-streaming)."""
+    if hasattr(response, "usage") and response.usage:
+        _set_usage_data(span, response.usage)
+
+    if hasattr(response, "output") and response.output:
+        _set_output_data(span, response)
+
+    if response_model is not None:
+        span.set_attribute(SPANDATA.GEN_AI_RESPONSE_MODEL, response_model)
+    elif hasattr(response, "model") and response.model:
+        span.set_attribute(SPANDATA.GEN_AI_RESPONSE_MODEL, str(response.model))
+
+    # Set conversation ID from agent if available
+    if agent:
+        conv_id = getattr(agent, "_sentry_conversation_id", None)
+        if conv_id:
+            span.set_attribute(SPANDATA.GEN_AI_CONVERSATION_ID, conv_id)
