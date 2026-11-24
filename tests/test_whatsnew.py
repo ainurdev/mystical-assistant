@@ -407,6 +407,7 @@ def test_boot_reuses_the_preview(repo, origin, monkeypatch):
 def test_update_endpoint_carries_the_waiting_row(repo, origin, monkeypatch):
     from bridge.dashboard import server as dash
     _commit(origin, "two\n", "feat: two")
+    g.fetch(repo)              # the hourly watch's fetch: the endpoint itself never fetches
     real = whatsnew.preview
     monkeypatch.setattr(whatsnew, "preview", lambda info: (t := real(info)) and t.join(10))
     h = dash.Handler.__new__(dash.Handler)

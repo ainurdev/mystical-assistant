@@ -272,9 +272,10 @@ def retry() -> None:
 
 
 def watch() -> None:
-    """The bridge's own look upstream: a dashboard's UPDATE poll does the same every
-    5 min, but an install with no dashboard open would never hear of an update. The
-    same tick asks again for any changelog row the one-shot couldn't write (`retry`)."""
+    """The bridge's only look upstream: the dashboard's UPDATE poll reads against
+    this fetch and never asks GitHub itself, so an update shows up to an hour late
+    (UPDATE's own pull still gets the newest). The same tick asks again for any
+    changelog row the one-shot couldn't write (`retry`)."""
     def loop() -> None:
         wait = 300   # soon after boot first: what waited while the bridge was down
         while True:

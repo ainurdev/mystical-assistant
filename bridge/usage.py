@@ -237,6 +237,70 @@ def cached(creds_path: str | None = None) -> dict:
         return _view(e) if fresh or e.get("live_at") else {"available": False}
 
 
+def _saved_file() -> str:
+    from bridge import config
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "meters.json")
+
+
+def _load_saved() -> dict:
+    """The last run's good readings, creds path -> {ts, data}; {} when missing or garbled."""
+    try:
+        with open(_saved_file(), encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(saved, dict):
+        return {}
+    return {p: e for p, e in saved.items() if isinstance(e, dict)
+            and isinstance(e.get("ts"), (int, float)) and isinstance(e.get("data"), dict)}
+
+
+_save_lock = threading.Lock()
+
+
+def _save() -> None:
+    """Each login's last good read, over what the file had: a temp file, then a replace."""
+    with _lock:
+        good = {p: {"ts": e["ts"], "data": e["data"]} for p, e in _cache.items()
+                if e["ts"] and e["data"] is not None}
+    with _save_lock:
+        try:
+            with open(_saved_file() + ".tmp", "w", encoding="utf-8") as f:
+                json.dump({**_load_saved(), **good}, f)
+            os.replace(_saved_file() + ".tmp", _saved_file())
+        except OSError:
+            pass   # the next start reads every login, as before
+
+
+_boot = _load_saved()   # what the file had at start; a login uses it until its first read
+_behind: set = set()    # logins being read behind a saved meter
+
+
+def shown(creds_path: str | None = None) -> "dict | None":
+    """For a screen only, never for picking an Account: a login this process hasn't
+    read yet answers with the last run's reading, keeping the time it was read, while
+    it is read behind. None once it has been read, or with nothing saved."""
+    path = creds_path or CREDENTIALS_FILE
+    with _lock:
+        e, hit = _entry(path), _boot.get(path)
+        if hit is None or e["data"] is not None or e["next_try"]:
+            return None
+        start = path not in _behind
+        _behind.add(path)
+    if start:
+        threading.Thread(target=_read_behind, args=(path,), daemon=True,
+                         name="meter-behind").start()
+    return _view({"ts": hit["ts"], "data": hit["data"]})
+
+
+def _read_behind(path: str) -> None:
+    try:
+        get_usage(path)
+    finally:
+        with _lock:
+            _behind.discard(path)
+
+
 def get_usage(creds_path: str | None = None, max_age: float = CACHE_TTL) -> dict:
     """Usage for one account. creds_path=None is the ambient ~/.claude login;
     max_age=0 reads it now (the PROFILE menu's Check now)."""
@@ -260,4 +324,7 @@ def get_usage(creds_path: str | None = None, max_age: float = CACHE_TTL) -> dict
             # empty meter is worth retrying sooner.
             e["next_try"] = now + (CACHE_TTL if e["data"] is not None else RETRY_TTL)
         fresh = e["ts"] and now - e["ts"] < STALE_MAX
-        return _view(e) if fresh or e.get("live_at") else {"available": False}
+        out = _view(e) if fresh or e.get("live_at") else {"available": False}
+    if isinstance(payload, dict):
+        _save()
+    return out
