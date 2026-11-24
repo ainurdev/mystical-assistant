@@ -3356,6 +3356,13 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
     setMenu(false);
     if (refocus) bench.current?.querySelector<HTMLElement>(".cr-add")?.focus();
   };
+  // The fold clips; open, the menu marks it to let the menu out (index.css .aim-fold[data-menu]).
+  useLayoutEffect(() => {
+    const fold = menu ? bench.current?.closest<HTMLElement>(".aim-fold") : null;
+    if (!fold) return;
+    fold.dataset.menu = "";
+    return () => { delete fold.dataset.menu; };
+  }, [menu]);
   useEffect(() => {
     if (!menu) return;
     // As the typeface menu: start on the first row and bring the list into the pane.

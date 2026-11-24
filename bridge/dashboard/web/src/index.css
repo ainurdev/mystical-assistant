@@ -946,8 +946,8 @@ body {
 .bootcontinue.bootleaving .kd-scene[data-gl] .kd-pool { animation-delay: .45s !important; }
 .boot-after { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 /* the swap flickers, one line or the other, never both */
-.bootleaving:has(.kd-scene[data-gl]) .boot-before { animation: kdtitleout .3s steps(1) .96s forwards; }
-.bootleaving:has(.kd-scene[data-gl]) .boot-after { animation: kdtitlein .3s steps(1) .96s forwards; }
+.bootleaving[data-gl] .boot-before { animation: kdtitleout .3s steps(1) .96s forwards; }
+.bootleaving[data-gl] .boot-after { animation: kdtitlein .3s steps(1) .96s forwards; }
 @keyframes kdyank {
   0%, 58% { transform: none; animation-timing-function: cubic-bezier(.5, 0, .9, .5); }
   63% { transform: rotate(-78deg); animation-timing-function: cubic-bezier(.55, 0, .85, .4); }
@@ -1145,7 +1145,7 @@ input {
 .md li { margin: 0.2em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
 /* GFM task lists: the box is a bullet, not a control — nothing here is clickable. */
-.md li:has(> input[type="checkbox"]) { list-style: none; }
+.md li.task-list-item { list-style: none; }
 .md li > input[type="checkbox"] { margin-right: 0.45em; accent-color: var(--acc); pointer-events: none; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
 /* Bold reads as a highlight, Claude-style: a translucent accent wash (never a
@@ -2968,9 +2968,9 @@ input {
 /* The ghost (an empty box's next step) and its argument keep to one line: the argument is cut
    with an ellipsis, never wrapped, so a long ticket path can't grow the box. inline-size
    containment keeps the unwrapped line from widening the editor to fit it. */
-.cmdbox .cm-line:has(> .cmdseg.ghost) { display: flex; align-items: baseline; contain: inline-size; }
-.cmdbox .cm-line:has(> .cmdseg.ghost) > .cmdseg { flex: none; }
-.cmdbox .cm-line:has(> .cmdseg.ghost) > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdbox .cm-line.cm-ghostline { display: flex; align-items: baseline; contain: inline-size; }
+.cmdbox .cm-line.cm-ghostline > .cmdseg { flex: none; }
+.cmdbox .cm-line.cm-ghostline > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
@@ -3265,12 +3265,12 @@ input {
 /* a side holding pictures out of view fades out under their count (ShotRow
    counts a tile once its middle is in the fade's faint half), which wears the
    accent while one of them is unseen; a tap pages that way */
-[data-style="dossier"] .dwork-row:has(> .dwork-more) > .dwork-row-thumbs {
+[data-style="dossier"] .dwork-row:is([data-ml], [data-mr]) > .dwork-row-thumbs {
   --fl: 0px; --fr: 0px;
   mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent);
 }
-[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="l"]) > .dwork-row-thumbs { --fl: 64px; }
-[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="r"]) > .dwork-row-thumbs { --fr: 64px; }
+[data-style="dossier"] .dwork-row[data-ml] > .dwork-row-thumbs { --fl: 64px; }
+[data-style="dossier"] .dwork-row[data-mr] > .dwork-row-thumbs { --fr: 64px; }
 /* on the tiles' midline: the row's 3px padding, the thumbs' 6px, half a 60px tile */
 [data-style="dossier"] .dwork-more {
   position: absolute; top: 39px; translate: 0 -50%; z-index: 1;
@@ -3335,7 +3335,7 @@ input {
 [data-style="dossier"] .dwork-part { display: flow-root; }
 [data-style="dossier"] .dwork-part[hidden] { display: none; }
 [data-style="dossier"] .dwork-fold[data-moving] { position: relative; overflow: clip; }
-.mscroll:has(.dwork-fold[data-moving]) { overflow-anchor: none; }
+.mscroll[data-moving] { overflow-anchor: none; }
 [data-style="dossier"] .dwork-part[data-leaving] { position: absolute; left: 0; right: 0; pointer-events: none; }
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
@@ -3585,9 +3585,9 @@ input {
 }
 /* pictures: the row above names them (the call, or "N pictures"), so the
    gallery drops its SCREENS caption and rule; names under each, legible */
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) { margin: 2px 0 8px; }
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-head { display: none; }
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-body { padding: 0; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] { margin: 2px 0 8px; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] > .tw-head { display: none; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] > .tw-body { padding: 0; }
 [data-style="dossier"] .dwork-body .zx .flc-shots { gap: 10px; }
 [data-style="dossier"] .dwork-body .zx .flc-shots :is(figure, figcaption) { max-width: 180px; }
 [data-style="dossier"] .dwork-body .zx .flc-shots figcaption { font-size: var(--t95); letter-spacing: 0; }
@@ -3681,8 +3681,8 @@ input {
 }
 /* a result with no words (they were the prose a card already showed) is a
    receipt, not an answer: it keeps the clock and drops to the ghost tier */
-[data-style="dossier"] .res:not(:has(.res-body)) { border-left-width: 2px; border-left-color: var(--d-hair); }
-[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 8px 18px; color: var(--txf); }
+[data-style="dossier"] .res[data-bare] { border-left-width: 2px; border-left-color: var(--d-hair); }
+[data-style="dossier"] .res[data-bare] .res-head { padding: 8px 18px; color: var(--txf); }
 [data-style="dossier"] .res-head {
   font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
 }
@@ -4624,7 +4624,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-fam] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
 [data-fam] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
-[data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
+[data-fam] [data-style="dossier"] .res[data-bare] .res-head { padding: 12px 2px 0; }
 [data-fam] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
 [data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 0; }
 [data-fam] [data-style="dossier"] .rstream > .dprompt { margin-top: 10px; margin-bottom: 20px; }
@@ -5104,7 +5104,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    rail (docs/superpowers/specs/prompt-kinds.md, R3 · RAIL). The rows carry the card's padding
    so the rail runs edge to edge; a device run's plate (.pb-card, no rail) keeps the card's own. */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
-.cmdbox.pb-card:has(> .pb-rail) { padding: 0 !important; gap: 0 !important; }
+.cmdbox.pb-railed { padding: 0 !important; gap: 0 !important; }
 .pb-card > .pb-ledger { margin: 12px 14px 0; }
 /* the text at 12px on the 10px base the scale is drawn at, two lines tall at least, so a
    one-line prompt and a two-line one make the same box */
@@ -5157,7 +5157,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    reading. Without one it keeps its name (an expired login says so in it), which gives way to
    the spinner while the first reading lands. The menu is the PROFILE menu, unchanged. */
 .pb-rail .drop-btn { border: 0 !important; background: transparent !important; padding: 0 !important; min-width: 0; }
-.pb-use .drop-btn:has(.ctrl-meter) .drop-val { display: none; }
+.pb-use .drop-btn[data-meter] .drop-val { display: none; }
 .pb-ring { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t10); color: var(--txl); white-space: nowrap; }
 .pb-ring > svg { flex: none; }
 .pb-ring > .pb-clock { text-transform: lowercase; }   /* "2d20h", the rail's quiet case, as its facts' "37m ago" */
@@ -5301,7 +5301,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* AS TICKETS fills its half of the segment, and its note hangs above with an arrow on it */
 .pb-sg > .fs-tipw { flex: 1 !important; display: flex !important; }
 .pb-sg > .fs-tipw > button { flex: 1; }
-.fs-tipw:has(> [role="tooltip"])::after { content: ""; position: absolute; z-index: 41; left: 50%; bottom: calc(100% + 3px); width: 7px; height: 7px; margin-left: -4px;
+.fs-tipw[data-tip]::after { content: ""; position: absolute; z-index: 41; left: 50%; bottom: calc(100% + 3px); width: 7px; height: 7px; margin-left: -4px;
   transform: rotate(45deg); background: var(--panel2); border: solid color-mix(in srgb, var(--acc) 35%, transparent); border-width: 0 1px 1px 0; }
 .fs-why { display: flex; flex-direction: column; gap: 8px; white-space: normal; }
 .fs-why > b { font-size: var(--t8); font-weight: 800; letter-spacing: 1.6px; color: var(--txh); }
@@ -5365,7 +5365,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 @container (max-width: 479px) {
   .pb-kinds { width: auto; flex: 1; }
-  .pb-facts:not(:has(.pb-flow-w)) { display: none; }   /* the FLOW chip stays; an empty cell goes */
+  .pb-facts:not([data-flow]) { display: none; }   /* the FLOW chip stays; an empty cell goes */
   .pb-kind > :not(svg), .pb-facts > [role="status"], .pb-flow-n, .pb-run > :not(svg), .pb-ring > .pb-pc { display: none; }
 }
 /* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
@@ -5394,9 +5394,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    means terse: past one live item every description goes, and the words stay
    in each chip's title and popover. */
 .pb-ledger { display: none; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
-.pb-ledger:has(> :not(.pillstrip), > .pillstrip > *) { display: flex; }
+.pb-ledger[data-n] { display: flex; }
 .pb-ledger > .pillstrip { display: contents; }
-.pb-ledger:has(> :nth-child(2), > .pillstrip > :nth-child(2)) .pill-desc { display: none; }
+.pb-ledger[data-n="2"] .pill-desc { display: none; }
 /* The login this chat spends is dry (Composer, design-drafts/limit-chat C): said
    before you send, with the login that has room one tap away. */
 .pb-dry { display: inline-flex; align-items: center; gap: 7px; height: 22px; max-width: 100%; box-sizing: border-box; padding: 0 3px 0 9px;
@@ -5443,7 +5443,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
 /* mid-turn what the turn is doing, and the circling light, are the chat's live row (LiveRow) */
-.pb-tabs[data-live] > .pb-work:not([data-paused]):not(:has(.pb-wq)) { display: none !important; }
+.pb-tabs[data-live] > .pb-work:not([data-paused]):not([data-q]) { display: none !important; }
 .pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
 @keyframes pb-orbit { to { --pb-a: 360deg; } }   /* turns the live row's ring (spine.css) */
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
@@ -5518,9 +5518,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    no ASK while running, then no accent on focus either); only a file drag
    lights it. The card reads the same variable, so the two can never drift. */
 .composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
-.composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+.composer[data-pb="tabs"][data-drag] { --pb-edge: var(--acc); }
 [data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
-[data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+[data-fam] .composer[data-pb="tabs"][data-drag] { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 /* TABS: the transcript stops above the header row, so nothing scrolls under it (prompt-pill-row).
    13 keeps the box's menus over the island (12). */
@@ -7403,8 +7403,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    chips, + Add a reviewer's menu of every account by agent, and a line per outside
    agent of the projects it may read. The fold clips (rounded corners), so it lets
    the menu out while the menu is open. */
-.aim-fold:has(.cr-menu) { overflow: visible; }
-.aim-fold:has(.cr-menu) > .aim-foldbody { border-radius: 0 0 11px 11px; }
+.aim-fold[data-menu] { overflow: visible; }
+.aim-fold[data-menu] > .aim-foldbody { border-radius: 0 0 11px 11px; }
 .aim-vfield.cr-revs { gap: 0; padding-bottom: 8px; }
 .cr-head { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; }
 .cr-bench { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 12px; position: relative; }
@@ -7746,8 +7746,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* dark: the sheet is a step darker than the forest round it (Rivendell's inset), with an edge */
 :root:not([data-light]) [data-fam="middle-earth"] [data-ctx-type="terminal"] { box-shadow: inset 1px 1px 0 var(--line), inset 0 -1px 0 var(--line); }
 /* the right panel folded to the rail: the transcript is the whole sheet */
-[data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { border-radius: var(--f-rad-l); }
-:root:not([data-light]) [data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { box-shadow: inset 0 0 0 1px var(--line); }
+[data-fam="middle-earth"] .hudgrid[data-rnone] [data-ctx-type="terminal"] { border-radius: var(--f-rad-l); }
+:root:not([data-light]) [data-fam="middle-earth"] .hudgrid[data-rnone] [data-ctx-type="terminal"] { box-shadow: inset 0 0 0 1px var(--line); }
 
 /* ── the sessions column, as Rivendell's sidebar ── */
 /* the wordmark in Rivendell's: the serif, a capital each (as specific as the families' lower-case rule it follows) */
@@ -7960,7 +7960,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 :root[data-light] .askdock { box-shadow: 0 -14px 30px -22px color-mix(in srgb, var(--txb) 18%, transparent); }
 /* Bigger: the stage takes most of the column (the transcript still shows its marker above). */
-.askdock:has(.ad-stage) { max-height: min(80vh, 900px); }
+.askdock[data-stage] { max-height: min(80vh, 900px); }
 .askdock[data-flash] { animation: adflash .9s ease; }
 @keyframes adflash { 30% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--rc) 40%, transparent); } }
 /* zero specificity: every button below sets its own size */
@@ -8161,7 +8161,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-replies { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 .ad-reply { display: inline-flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 13px 0 5px; border-radius: max(3px, var(--rc-rs));
   background: var(--panel2); border: 1px solid var(--rc-line2); font-size: var(--t13); font-weight: 750; color: var(--txh); }
-.ad-reply:not(:has(.ad-key)) { padding-left: 13px; }
+.ad-reply:not([data-key]) { padding-left: 13px; }
 .ad-reply .ad-key { grid-row: auto; width: 22px; height: 22px; }
 .ad-reply:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 50%, var(--rc-line2)); }
 .ad-reply[aria-pressed="true"] { border-color: var(--rc); }
@@ -8449,7 +8449,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
   display: flex; flex-direction: column; flex: 0 1 auto; min-height: 48px; }
 /* The chat header floats over the transcript's top 78px (Terminal's ISLE_EDGE 50 + its LAST row, PEEK_H 28): with a ticket card in
    the column the transcript keeps that much, so a short window shrinks the card's graph (it scrolls) instead of pushing the card under the header. */
-[data-ctx-type="terminal"]:has(> .tm-card) > .swapwrap { min-height: 78px !important; }   /* over its inline minHeight: 0 */
+[data-ctx-type="terminal"][data-tmcard] > .swapwrap { min-height: 78px !important; }   /* over its inline minHeight: 0 */
 .tm-row { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 8px 6px 14px; flex-wrap: nowrap; min-width: 0; flex: none; }
 .tm-ic { color: var(--acc2, var(--acc)); flex: none; }
 .tm-k { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; color: var(--acc2, var(--acc)); flex: none; }
@@ -8464,13 +8464,13 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
 .tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
 /* A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
-@container (max-width: 800px) { .tm-row:has(.tm-call) > .tm-c, .tm-row:has(.tm-call) > .tm-c + .tm-div { display: none; } }
-@container (max-width: 900px) { .tm-row:has(.tm-auto) > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
+@container (max-width: 800px) { .tm-row[data-call] > .tm-c, .tm-row[data-call] > .tm-c + .tm-div { display: none; } }
+@container (max-width: 900px) { .tm-row[data-auto] > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
 @container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
 .tm-auto { flex: none; margin-right: 6px; white-space: nowrap; text-transform: none; }   /* its .caps word carries the capitals */
 /* LIVE's bar has no container to ask: while a set waits its chips are every ticket, which its dots show. */
-.tl-bar:has(.tm-auto) > :is(.tm-c, .tl-chips) { display: none; }
+.tl-bar[data-auto] > :is(.tm-c, .tl-chips) { display: none; }
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
@@ -8522,7 +8522,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tl-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .tl-row { display: flex; align-items: center; gap: 10px; padding-right: 12px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px);
   background: color-mix(in srgb, var(--panel2) 70%, transparent); min-width: 0; flex: none; }
-.tl-row:has(.tl-open:not(:disabled):hover) { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
+.tl-row[data-hot] { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
 .tl-row.k-ask, .tl-row.k-idle, .tl-row.k-you { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 .tl-row.k-fix { border-color: color-mix(in srgb, var(--err) 50%, transparent); }
 .tl-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 2px 9px 14px; border: 0; background: none;

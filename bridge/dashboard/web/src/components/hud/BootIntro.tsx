@@ -69,6 +69,7 @@ export function BootIntro(props: {
   const { onReveal, onDone, theme, scanlines, intro, steps, hold } = props;
   const [fade, setFade] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [gl, setGl] = useState(false);
   const [origin, setOrigin] = useState("center");
   const box = useRef<HTMLDivElement>(null);
   const progress = bootProgress(steps);
@@ -140,6 +141,7 @@ export function BootIntro(props: {
     <div
       ref={box}
       className={[CONTINUED && "bootcontinue", leaving && "bootleaving"].filter(Boolean).join(" ") || undefined}
+      data-gl={scene === "bridge" && gl ? "" : undefined}
       onClick={loaded && !hold ? dismissBoot : undefined}
       style={{
         ...(ground !== theme ? (themeVars(ground) as CSSProperties) : null),
@@ -162,7 +164,7 @@ export function BootIntro(props: {
     >
       {scanlines && <div className="crt" style={{ zIndex: 4 }}></div>}
 
-      {scene === "bridge" ? <KhazadDum progress={progress} />
+      {scene === "bridge" ? <KhazadDum progress={progress} onGl={setGl} />
         : scene === "door" ? <DurinsDoor progress={progress} />
         : <Mystical />}
 

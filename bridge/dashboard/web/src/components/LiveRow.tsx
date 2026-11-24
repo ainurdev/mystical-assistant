@@ -10,7 +10,7 @@
  *  Why a portal and not a row in the turn: the transcript is virtualized, and a
  *  sticky row only sticks inside its own turn's box; the host sits outside both.
  *  Without a host (a ticket tile, the agents view) the zone keeps its line inline. */
-import { createContext, type ReactNode } from "react";
+import { createContext, useLayoutEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDown, Pause, Play, Square } from "lucide-react";
 import { turnClock } from "../lib/boxdeck";
@@ -22,11 +22,15 @@ export type LiveHost = {
   onStop?: () => void;
   paused?: boolean;
   onTogglePause?: () => void;
+  /** +1 when a row mounts in `host`, -1 when it goes: the host's owner marks the page by it (no `:has()`) */
+  onRow?: (delta: number) => void;
 };
 
 export const LiveHostCtx = createContext<LiveHost | null>(null);
 
 export function LiveRow({ live, line, turnSecs }: { live: LiveHost & { host: HTMLElement }; line: ReactNode; turnSecs: number | null }) {
+  const onRow = live.onRow;
+  useLayoutEffect(() => { onRow?.(1); return () => onRow?.(-1); }, [onRow]);
   return createPortal(
     <div className="live-row" data-away={live.atBottom ? undefined : ""}>
       <div className="live-ring">

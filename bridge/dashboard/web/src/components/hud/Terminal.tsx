@@ -578,11 +578,20 @@ export function Terminal({
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
   const [liveHost, setLiveHost] = useState<HTMLElement | null>(null);
+  const [liveRows, setLiveRows] = useState(0);
+  const [onRow] = useState(() => (d: number) => setLiveRows((n) => n + d));
   const live = useMemo<LiveHost>(() => ({ host: liveHost, atBottom, onJump: onJumpBottom,
-    onStop: theirs ? undefined : onStopTurn, paused, onTogglePause: theirs ? undefined : onTogglePause }),
-  [liveHost, atBottom, onJumpBottom, theirs, onStopTurn, paused, onTogglePause]);
+    onStop: theirs ? undefined : onStopTurn, paused, onTogglePause: theirs ? undefined : onTogglePause, onRow }),
+  [liveHost, atBottom, onJumpBottom, theirs, onStopTurn, paused, onTogglePause, onRow]);
+  // A live row on screen holds the turn's Pause/Stop, so the prompt box's own give way (spine.css .pb-hold).
+  const rowShown = liveRows > 0 && !(grid || tkLive || team);
+  useLayoutEffect(() => {
+    if (!rowShown) return;
+    document.body.dataset.liverow = "";
+    return () => { delete document.body.dataset.liverow; };
+  }, [rowShown]);
   const body = (
-    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid || tkLive || team ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div ref={swapRef} className="swapwrap" data-liverow={liveRows ? "" : undefined} style={{ position: "relative", display: grid || tkLive || team ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
       {dropping && (
         <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>

@@ -273,12 +273,12 @@
   background: var(--sp-card); font-family: var(--ui-font); font-size: var(--t11); letter-spacing: 0; text-transform: none; color: var(--txl);
 }
 /* only under an answer with words: one without is a header line, with nothing to tuck under
-   (the same :has() index.css's no-body answer rule already pays) */
-[data-fam] [data-style="dossier"][data-isle] .resblk:has(> .res > .res-body) + .ma-rc {
+   (RunStream marks it data-said) */
+[data-fam] [data-style="dossier"][data-isle] .resblk[data-said] + .ma-rc {
   position: relative; margin: -14px 0 0 var(--sp-in); padding: 14px 14px 0;
   border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px; background: var(--sp-card);
 }
-[data-fam] [data-style="dossier"][data-isle] .resblk:has(> .res > .res-body) + .ma-rc > .ma-rc-row { border-top: 0; min-height: 36px; }
+[data-fam] [data-style="dossier"][data-isle] .resblk[data-said] + .ma-rc > .ma-rc-row { border-top: 0; min-height: 36px; }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc { font-family: var(--ui-font); font-size: var(--t12); color: var(--txl); }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc * { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam] [data-style="dossier"][data-isle] .ma-rc-row { border-top-color: var(--line); }
@@ -530,13 +530,13 @@
 [data-style="dossier"] .live-jump { color: var(--txh); border-color: color-mix(in oklab, var(--acc) 45%, var(--line2)); }
 [data-style="dossier"] .live-jump > svg { color: var(--acc); }
 /* the row is the way back down while a turn runs: the corner's ↓ Latest would repeat it */
-.swapwrap:has(.live-host:not(:empty)) .jump-latest { display: none !important; }
+.swapwrap[data-liverow] .jump-latest { display: none !important; }
 [data-style="dossier"] .live-row[data-away] .live-card { cursor: pointer; }
 /* mid-turn the pill's Pause/Stop give way to the live row's while that row is on screen */
 .pb-hold { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 4px; }
 .pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
 .pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }
-body:has(.swapwrap:not([style*="display: none"]) .live-host:not(:empty)) .pb-hold { display: none; }
+body[data-liverow] .pb-hold { display: none; }
 @media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-ring, [data-style="dossier"] .live-node::before { animation: none; } }
 
 /* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the

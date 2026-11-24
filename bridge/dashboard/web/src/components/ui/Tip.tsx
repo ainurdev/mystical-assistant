@@ -41,7 +41,7 @@ export function Tip({ text, anchor = "center", pin = true, width, className, chi
   const close = () => { window.clearTimeout(timer.current); setHover(false); };
   useEffect(() => () => window.clearTimeout(timer.current), []);
   return (
-    <span className={className}
+    <span className={className} data-tip={hover || pinned ? "" : undefined}
       style={{ position: "relative", display: "inline-flex", flex: "none" }}
       onMouseEnter={open}
       onMouseLeave={close}

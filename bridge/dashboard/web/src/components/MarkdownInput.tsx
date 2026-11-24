@@ -180,7 +180,8 @@ const ghostDeco = StateField.define<DecorationSet>({
     for (const e of tr.effects) {
       if (e.is(setGhost)) {
         const g = e.value;
-        return g ? Decoration.set(Decoration.widget({ widget: new GhostWidget(g.name, g.desc), side: -1 }).range(0)) : Decoration.none;
+        // the line is marked too, so the stylesheet keeps it on one line without a :has() (index.css .cm-ghostline)
+        return g ? Decoration.set([Decoration.line({ class: "cm-ghostline" }).range(0), Decoration.widget({ widget: new GhostWidget(g.name, g.desc), side: -1 }).range(0)]) : Decoration.none;
       }
     }
     return v.map(tr.changes);
