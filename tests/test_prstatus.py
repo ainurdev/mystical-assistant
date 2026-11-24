@@ -4,6 +4,8 @@ canned JSON and log lines are in the shapes real gh 2.92 returned on
 Run: python3 -m pytest tests/test_prstatus.py -q"""
 
 import json
+import threading
+import time
 
 import pytest
 
@@ -396,7 +398,7 @@ def test_an_error_backs_off_keeps_the_last_chip_and_outlasts_force(monkeypatch):
     assert len(calls) == 2
 
 
-def test_a_new_pr_after_a_merged_one_shows_on_the_next_poll_and_on_focus(monkeypatch):
+def test_a_new_pr_after_a_merged_one_shows_on_focus_and_a_poll_later(monkeypatch):
     """A long-lived branch (sdlc → master) opens its next PR right after the
     last one merged. The merged answer was trusted for ten minutes and force
     couldn't shorten it, so the chip kept the old PR (2026-10-18, #80 → #81)."""
@@ -408,7 +410,67 @@ def test_a_new_pr_after_a_merged_one_shows_on_the_next_poll_and_on_focus(monkeyp
     now[0] += prstatus.FORCE_FLOOR
     assert prstatus.snapshot("/r", "feat/next", force=True)["pr"]["number"] == 81   # focus
     now[0] += prstatus.TTL
-    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 81                  # the 60s poll
+    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 80   # the 60s poll answers at once...
+    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 81   # ...and the next shows its read
+
+
+def _until(cond, timeout=5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _slow_gh_and_real_threads(monkeypatch):
+    """gh takes 0.3 s, and a read behind runs on a thread of its own."""
+    fake = prstatus._gh
+    monkeypatch.setattr(prstatus, "_gh", lambda *a, **k: (time.sleep(0.3), fake(*a, **k))[1])
+    monkeypatch.setattr(prstatus, "_spawn",
+                        lambda fn, *a: threading.Thread(target=fn, args=a, daemon=True).start())
+
+
+def test_an_expired_chip_answers_at_once_and_is_read_again_behind(monkeypatch):
+    """The 60 s poll waited 0.8-1 s on gh whenever the 45 s cache had run out
+    (Sentry MYSTICAL-H). It answers with the chip it had, one read goes out behind."""
+    now = _clock(monkeypatch)
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(number=80)), ""))])
+    prstatus.snapshot("/r", "feat/x")
+    calls = _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(number=81)), ""))])
+    _slow_gh_and_real_threads(monkeypatch)
+    now[0] += prstatus.TTL
+
+    t0 = time.monotonic()
+    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 80
+    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 80      # its read is still out
+    assert time.monotonic() - t0 < 0.1
+    assert _until(lambda: prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 81)
+    assert len(calls) == 1                                              # one read, not one per ask
+
+
+def test_an_expired_branch_list_answers_at_once_and_is_read_again_behind(monkeypatch):
+    """The BRANCHES tab's poll waited ~2 s on two gh calls each time the 60 s list
+    had run out (Sentry MYSTICAL-J)."""
+    prstatus._lists.clear()
+    now = _clock(monkeypatch)
+
+    def lists(n):
+        return [(("pr", "list", "-R", "acme/rivendell", "--state", "all"), (0, json.dumps(
+                    [{"number": n, "state": "OPEN", "headRefName": "feat/x", "headRefOid": "aaa"}]), "")),
+                (("pr", "list", "-R", "acme/rivendell", "--state", "open"), (0, "[]", ""))]
+    _fake_gh(monkeypatch, lists(9))
+    assert prstatus.branch_prs("/r")["feat/x"]["number"] == 9
+    calls = _fake_gh(monkeypatch, lists(10))
+    _slow_gh_and_real_threads(monkeypatch)
+    now[0] += prstatus.LIST_TTL
+
+    t0 = time.monotonic()
+    assert prstatus.branch_prs("/r")["feat/x"]["number"] == 9
+    assert prstatus.branch_prs("/r")["feat/x"]["number"] == 9
+    assert time.monotonic() - t0 < 0.1
+    assert _until(lambda: prstatus.branch_prs("/r")["feat/x"]["number"] == 10)
+    assert len(calls) == 2                                              # one read: its two gh calls
 
 
 def test_no_chip_without_a_remote_or_on_the_default_branch(monkeypatch):

@@ -12,7 +12,9 @@ review decision. Why it is shaped like this:
   call. `force` (focus, a push) only shortens that to FORCE_FLOOR. A merged or
   closed PR is cached no longer than an open one: the cache is per branch, not
   per PR, and a long-lived branch (sdlc → master) opens its next PR right
-  after the last one merged.
+  after the last one merged. A poll past TTL answers with the chip it had and
+  reads it again behind (_behind), so no poll waits on gh (0.8-2 s, Sentry
+  MYSTICAL-H and -J): a chip can be a poll older. Force still waits for its read.
   ponytail: no server-side poller. A PR that no visible tab has open is not
   watched, so its pings wait for the next look. Add a timer here if pings
   must reach Telegram while every dashboard tab is closed.
@@ -55,7 +57,7 @@ import time
 
 from bridge import browser, config, git, github, notices, store, telegram
 
-TTL = 45           # s: under the dashboard's 60s poll, so each poll reads fresh
+TTL = 45           # s: under the dashboard's 60s poll, so each poll starts a fresh read
 FORCE_FLOOR = 10   # s: focus, visibilitychange and a push can all ask at once
 ERR_TTL = 300      # s: gh broken or rate-limited, so wait five minutes
 LOG_LINES = 60
@@ -335,6 +337,20 @@ def _spawn(fn, *args) -> None:
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
+def _behind(lock, fn, *args) -> None:
+    """fn(*args) on a thread of its own, holding the key's lock, unless a read of
+    that key is out already. The ask that found its entry expired answers with it."""
+    if not lock.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            fn(*args)
+        finally:
+            lock.release()
+    _spawn(run)
+
+
 def _kb(project: str, session: str, pr: dict) -> dict:
     """The panel button, and one that copies the branch name."""
     rows = (telegram.panel_kb(config.DASH_CHAT_ID, session or None, project) or {}).get("inline_keyboard") or [[]]
@@ -440,14 +456,25 @@ def snapshot(repo_dir: str, branch: str, *, force: bool = False,
         # Not cached: a made-up branch name must not leave a lock and an entry.
         return {"pr": None, "pinged": [], "checked": time.time()}
     key = (repo_dir, branch)
-    with _locks.setdefault(key, threading.Lock()):
+    lock = _locks.setdefault(key, threading.Lock())
+    hit = _cache.get(key)
+    if hit is not None and not force:
+        if time.time() - hit["at"] >= hit["ttl"]:
+            _behind(lock, _keep, key, repo_dir, slug, branch, session)
+        return {"pr": hit["pr"], "pinged": hit["pinged"], "checked": hit["at"]}
+    with lock:
         hit = _cache.get(key)
         trust = hit["ttl"] if hit else 0
         if force and trust <= TTL:
             trust = min(trust, FORCE_FLOOR)   # a rate-limit backoff outlasts force
         if hit is None or time.time() - hit["at"] >= trust:
-            hit = _cache[key] = _read(repo_dir, slug, branch, session, hit)
+            hit = _keep(key, repo_dir, slug, branch, session)
     return {"pr": hit["pr"], "pinged": hit["pinged"], "checked": hit["at"]}
+
+
+def _keep(key, repo_dir: str, slug: str, branch: str, session: str) -> dict:
+    hit = _cache[key] = _read(repo_dir, slug, branch, session, _cache.get(key))
+    return hit
 
 
 LIST_TTL = 60      # s: the BRANCHES tab re-reads every 30s; two tabs share one gh read
@@ -466,35 +493,44 @@ def branch_prs(repo_dir: str) -> dict:
     Forks' same-named branches are skipped, as gh pr view skips them.
     {branch: {"number", "state", "status", "sha", "failed", "url", "base", "title"}}; {} when
     gh can't say. `base` is where the PR goes, which makes it the branch's target
-    (cached_bases); `title` names a branch called only "EFA-300".
+    (cached_bases); `title` names a branch called only "EFA-300". Past its TTL the
+    list answers at once and is read again behind, as snapshot's chip is.
     shortcut: the newest 100 PRs only; a branch whose PR is older shows no chip."""
     slug = github.remote_slug(repo_dir)
     if not slug:
         return {}
-    with _locks.setdefault(("list", repo_dir), threading.Lock()):
-        hit = _lists.get(repo_dir)
-        if hit and time.time() - hit["at"] < hit["ttl"]:
-            return hit["prs"]
-        prs, ttl = {}, ERR_TTL
-        rc, out, _ = _gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json",
-                         "number,state,url,headRefName,headRefOid,isCrossRepository,baseRefName,title")
-        rc2, out2, _ = _gh("pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json",
-                           "number,state,url,headRefName,headRefOid,isCrossRepository,isDraft,"
-                           "mergeable,statusCheckRollup,reviewDecision,reviewRequests,baseRefName,title")
-        if rc == 0 and rc2 == 0:
-            try:
-                live = {r["number"]: r for r in json.loads(out2)}
-                for raw in json.loads(out):          # newest first: a branch's first PR wins
-                    b = raw.get("headRefName") or ""
-                    if not b or b in prs or raw.get("isCrossRepository"):
-                        continue
-                    pr = normalize(live.get(raw["number"], raw))
-                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed", "url", "base", "title")}
-                ttl = LIST_TTL
-            except (ValueError, KeyError, TypeError):
-                prs = {}
-        _lists[repo_dir] = {"at": time.time(), "ttl": ttl, "prs": prs}
-        return prs
+    lock = _locks.setdefault(("list", repo_dir), threading.Lock())
+    hit = _lists.get(repo_dir)
+    if hit is not None:
+        if time.time() - hit["at"] >= hit["ttl"]:
+            _behind(lock, _read_list, repo_dir, slug)
+        return hit["prs"]
+    with lock:
+        hit = _lists.get(repo_dir)               # read while this ask waited
+        return hit["prs"] if hit is not None else _read_list(repo_dir, slug)
+
+
+def _read_list(repo_dir: str, slug: str) -> dict:
+    prs, ttl = {}, ERR_TTL
+    rc, out, _ = _gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json",
+                     "number,state,url,headRefName,headRefOid,isCrossRepository,baseRefName,title")
+    rc2, out2, _ = _gh("pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json",
+                       "number,state,url,headRefName,headRefOid,isCrossRepository,isDraft,"
+                       "mergeable,statusCheckRollup,reviewDecision,reviewRequests,baseRefName,title")
+    if rc == 0 and rc2 == 0:
+        try:
+            live = {r["number"]: r for r in json.loads(out2)}
+            for raw in json.loads(out):          # newest first: a branch's first PR wins
+                b = raw.get("headRefName") or ""
+                if not b or b in prs or raw.get("isCrossRepository"):
+                    continue
+                pr = normalize(live.get(raw["number"], raw))
+                prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed", "url", "base", "title")}
+            ttl = LIST_TTL
+        except (ValueError, KeyError, TypeError):
+            prs = {}
+    _lists[repo_dir] = {"at": time.time(), "ttl": ttl, "prs": prs}
+    return prs
 
 
 def cached_bases(repo_dir: str) -> dict:

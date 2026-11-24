@@ -166,6 +166,7 @@ _cloning = threading.Lock()        # one clone at a time: a second of the same r
 _queue_lock = threading.Lock()     # one drain of the send queue at a time
 _queue_thread: "threading.Thread | None" = None
 _cache: dict = {}                  # "roster" | "outbox" -> (at, rows)
+_behind: set = set()               # the keys being read again behind their expired rows
 
 
 class TeamError(Exception):
@@ -228,15 +229,37 @@ def _why(e: Exception) -> str:
 
 
 def _cached(key: str, path: str) -> list:
+    """Rivendell's rows for path, kept _TTL. Past it the rows answer at once and are
+    read again behind: the TEAM tab's poll waited 0.8 s on each expiry (Sentry
+    MYSTICAL-N). Only a first read, or one after a send or update cleared them, waits."""
     with _lock:
         hit = _cache.get(key)
-        if hit and time.time() - hit[0] < _TTL:
+        if hit and time.time() - hit[0] >= _TTL and key not in _behind:
+            _behind.add(key)
+            threading.Thread(target=_read_behind, args=(key, path, hit), daemon=True,
+                             name="team-behind").start()
+        if hit:
             return hit[1]
     rows = _client()._api(path)
     rows = rows if isinstance(rows, list) else []
     with _lock:
         _cache[key] = (time.time(), rows)
     return rows
+
+
+def _read_behind(key: str, path: str, seen: tuple) -> None:
+    try:
+        rows = _client()._api(path)
+        rows = rows if isinstance(rows, list) else []
+    except Exception:  # noqa: BLE001 - the next ask reads in the request and says why
+        rows = None
+    with _lock:
+        if _cache.get(key) is seen:    # cleared or read anew meanwhile: that answer stands
+            if rows is None:
+                _cache.pop(key)
+            else:
+                _cache[key] = (time.time(), rows)
+        _behind.discard(key)
 
 
 # --- redaction and the transcript's whitelist -----------------------------------------------------

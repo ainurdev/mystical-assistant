@@ -679,6 +679,50 @@ def test_overview_without_a_link_still_lists_what_came(monkeypatch, riv):
     assert o["error"] == team.NO_LINK and o["roster"] == [] and [r["id"] for r in o["inbox"]] == [share]
 
 
+def _until(cond, timeout=5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _expire_and_hold(monkeypatch, riv, gate):
+    """Every cached team read past its TTL, and Rivendell answering once `gate` is set."""
+    for k, (at, rows) in list(team._cache.items()):
+        team._cache[k] = (at - team._TTL, rows)
+    monkeypatch.setattr(rivendell.Worker, "_api",
+                        lambda self, path, payload=None, headers=None: (gate.wait(5), riv.api(path, payload))[1])
+
+
+def test_an_expired_roster_answers_at_once_and_is_read_again_behind(monkeypatch, riv):
+    """The TEAM tab's poll waited 0.8-0.9 s on two Rivendell reads whenever the 20 s
+    cache had run out (Sentry MYSTICAL-N). It answers with the rows it had."""
+    team.overview()
+    riv.teammates = riv.teammates + [{"id": "u-new", "name": "Newcomer"}]
+    gate = threading.Event()
+    _expire_and_hold(monkeypatch, riv, gate)
+
+    t0 = time.monotonic()
+    assert [t["id"] for t in team.overview()["roster"]] == [ERFAN]
+    assert time.monotonic() - t0 < 0.1
+    gate.set()
+    assert _until(lambda: [t["id"] for t in team.overview()["roster"]] == [ERFAN, "u-new"])
+    assert _until(lambda: not team._behind)
+
+
+def test_a_read_behind_never_brings_back_an_out_box_a_send_cleared(monkeypatch, riv):
+    team.overview()
+    gate = threading.Event()
+    _expire_and_hold(monkeypatch, riv, gate)
+    team.overview()                                   # its reads go out, held at the gate
+    team.on_update(riv.worker, {})                    # a share was delivered: read the out-box anew
+    gate.set()
+    assert _until(lambda: not team._behind)
+    assert "outbox" not in team._cache                # the rows from before it stay out
+
+
 def _code_share(riv, code: bytes) -> str:
     doc = {"v": 1, "title": "t", "turns": [{"prompt": "p", "events": []}]}
     share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc)), ("code", "code.tar.gz", code)],
