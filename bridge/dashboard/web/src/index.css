@@ -1070,14 +1070,12 @@ body {
 @keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 @keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
 @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-@keyframes mfadeup2 { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
 @keyframes modalIn { 0% { opacity: 0; clip-path: inset(49.5% 42% 49.5% 42%); filter: brightness(2.4); } 24% { opacity: 1; clip-path: inset(49% 0 49% 0); filter: brightness(2.2) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.9)); } 58% { clip-path: inset(0 0 0 0); filter: brightness(1.22) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.5)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
 @keyframes modalOut { 0% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } 45% { opacity: 1; clip-path: inset(49% 0 49% 0); filter: brightness(2.2) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.9)); } 100% { opacity: 0; clip-path: inset(49.5% 42% 49.5% 42%); filter: brightness(2.6); } }
 @keyframes ctxIn { 0% { opacity: 0; clip-path: inset(0 0 100% 0); filter: brightness(2.2); } 45% { opacity: 1; filter: brightness(1.7) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.7)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
 @keyframes ctxOut { 0% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } 100% { opacity: 0; clip-path: inset(0 0 100% 0); filter: brightness(2); } }
 @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes backdropOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes syncdot { 0% { left: -22%; } 100% { left: 100%; } }
 @keyframes introgrid { from { background-position: 0 0; } to { background-position: 0 46px; } }
 @keyframes auraspin { to { transform: rotate(360deg); } }
 @keyframes radar { 0% { transform: scale(0.28); opacity: 0.85; } 100% { transform: scale(3.4); opacity: 0; } }
@@ -1086,16 +1084,9 @@ body {
 @keyframes enterLeft { 0% { opacity: 0; transform: translateX(-48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
 @keyframes enterRight { 0% { opacity: 0; transform: translateX(48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
 @keyframes enterDown { 0% { opacity: 0; transform: translateY(-30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
-@keyframes enterUp { 0% { opacity: 0; transform: translateY(30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
 @keyframes enterZoom { 0% { opacity: 0; transform: scale(0.9); filter: brightness(2.4) saturate(0.4); } 55% { opacity: 1; filter: brightness(1.2); } 100% { opacity: 1; transform: none; filter: none; } }
-@keyframes enterClip { 0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(1.7); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
-@keyframes enterBlur { 0% { opacity: 0; transform: scale(1.05); filter: blur(8px) brightness(1.6); } 100% { opacity: 1; transform: none; filter: blur(0) brightness(1); } }
-@keyframes enterSkew { 0% { opacity: 0; transform: translateX(-34px) skewX(8deg); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
-@keyframes enterLeftUp { 0% { opacity: 0; transform: translate(-26px, 28px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
-@keyframes enterRightUp { 0% { opacity: 0; transform: translate(28px, 28px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 @keyframes eyeblink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.12); } }
-@keyframes digitflip { 0% { transform: translateY(-48%) scale(0.94); opacity: 0; filter: brightness(2.6); } 55% { opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; filter: none; } }
 @keyframes caretbreath { 0%, 100% { opacity: 0.25; box-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { opacity: 1; box-shadow: 0 0 9px rgb(var(--accent-rgb) / 0.8); } }
 @keyframes awaitsweep { to { background-position: 200% 0; } }
 @keyframes quotein { 0% { opacity: 0; transform: translateY(9px); filter: blur(7px); } 60% { opacity: 1; } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
@@ -1103,16 +1094,8 @@ body {
 /* New streamed line: phosphor write-on — rises in with a quick brightness flash. */
 @keyframes streamIn { 0% { opacity: 0; transform: translateY(7px); filter: brightness(1.75); } 100% { opacity: 1; transform: none; filter: none; } }
 /* A Bash block powers on like the terminal it draws: a slit of phosphor snaps
-   open, flares, then settles. Each command feeds in from the prompt margin, and
-   its output rolls down out of the line that printed it. */
+   open, flares, then settles. */
 @keyframes termIn { 0% { opacity: 0; clip-path: inset(48% 0 48% 0); filter: brightness(2.6); } 42% { opacity: 1; clip-path: inset(0 0 0 0); filter: brightness(1.9); } 64% { filter: brightness(0.9); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
-@keyframes termLine { 0% { opacity: 0; transform: translateX(-9px); filter: brightness(2.1); } 100% { opacity: 1; transform: none; filter: none; } }
-@keyframes termOpen { 0% { opacity: 0; clip-path: inset(0 0 100% 0); } 100% { opacity: 1; clip-path: inset(0 0 0 0); } }
-/* READ: a scanline crosses the file card once, the file being read off it. */
-@keyframes readIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
-@keyframes scanread { 0% { top: 0; opacity: 0.9; } 100% { top: 100%; opacity: 0; } }
-/* WRITE: the card is written on, left to right. */
-@keyframes writeOn { 0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(1.9); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
 /* Channel "tuning" while a session loads: an unstable bright scanline — flickers,
    jitters, pulses width — held until the transcript lands and the viewport blooms. */
 @keyframes chanline { 0% { opacity: 0.4; transform: translateY(-50%) scaleX(0.5); } 10% { opacity: 1; transform: translateY(-50%) scaleX(1); } 16% { opacity: 0.45; } 24% { opacity: 1; transform: translateY(calc(-50% + 2px)) scaleX(0.92); } 38% { opacity: 0.7; transform: translateY(-50%) scaleX(1); } 52% { opacity: 1; } 66% { opacity: 0.5; transform: translateY(calc(-50% - 2px)) scaleX(0.82); } 80% { opacity: 1; transform: translateY(-50%) scaleX(1); } 90% { opacity: 0.55; } 100% { opacity: 1; transform: translateY(-50%) scaleX(1); } }
@@ -2467,7 +2450,6 @@ input {
   background: color-mix(in srgb, var(--c) 7%, transparent); box-shadow: 0 0 0 3px var(--panel2), 0 0 0 4px color-mix(in srgb, var(--c) 35%, transparent); }
 .jv-stamp small { display: block; margin-top: 3px; font-size: var(--t85); letter-spacing: .22em; opacity: .85; }
 .jv-stamp[data-tone="warn"] { --c: var(--warn); } .jv-stamp[data-tone="err"] { --c: var(--err); }
-.jv-tally { margin: 10px 0 2px; }
 .jv-fd { display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding: 12px 0 13px; border-top: 1px solid var(--border); font-size: var(--t12); line-height: 1.55; color: var(--txd); }
 .jv-sec + .jv-fd { border-top: 0; padding-top: 2px; }
 .jv-fd-n { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-family: var(--mono); font-size: var(--t11); font-weight: 500;
@@ -3849,50 +3831,13 @@ input {
    turn's own structure surfacing in the stream, and the stream keeps one idiom
    for that. The hue says who is waiting — accent while the flow moves itself,
    amber the moment the card asks you to approve something. */
-.flc {
-  position: relative; margin-left: var(--rail); padding-left: 10px;
-  border: 1px solid var(--ac-16); background: var(--panel3);
-}
-.flc::before,
-.flc::after { border-color: color-mix(in srgb, var(--h) 55%, transparent); }
-.flc[data-await] { border-color: color-mix(in srgb, var(--h) 30%, transparent); }
-.flc-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--h); }
-.flc-rail::after {
-  content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px;
-  background: color-mix(in srgb, var(--h) 30%, transparent);
-}
-/* Only the card that is asking pulses. A settled card is furniture. */
-.flc[data-await] > .flc-rail { animation: agbpulse 1.4s steps(11) infinite; }
-
-.flc-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0 9px; }
-.flc-mark {
-  flex: none; line-height: 1; font-size: 11px; color: var(--h); font-style: normal;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--h) 55%, transparent);
-}
-.flc-stage {
-  flex: none; font-size: var(--t95); letter-spacing: 1.5px;
-  text-transform: uppercase; color: var(--h);
-}
-.flc-gate {
-  flex: none; font-size: var(--t8); letter-spacing: 1.4px; line-height: 13px;
-  padding: 0 4px; color: color-mix(in srgb, var(--h) 80%, var(--txd));
-  border: 1px solid color-mix(in srgb, var(--h) 34%, transparent);
-}
 .flc-rule {
   flex: 1; min-width: 8px; height: 1px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--h) 22%, transparent), transparent);
 }
-.flc-wait { flex: none; font-size: var(--t95); letter-spacing: 1.2px; color: var(--h); }
 
 /* The model speaking about the turn it just closed — the oracle register the
    agent block's brief wears, for the same reason. */
-.flc-sum {
-  padding: 5px 12px 0 9px;
-  font-family: var(--mono); font-size: var(--t115); line-height: 1.5;
-  font-style: italic; color: var(--txm);
-}
-
-.flc-fields { display: flex; flex-direction: column; gap: 7px; padding: 8px 12px 0 9px; }
 .flc-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .flc-f[data-inline] { flex-direction: row; align-items: baseline; gap: 8px; }
 .flc-lab {
@@ -4014,9 +3959,6 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
 .flc-pre {
   white-space: pre-wrap; font-family: var(--mono); font-size: var(--t105); color: var(--txm);
 }
-
-.flc-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px 10px 9px; }
-.flc-fields + .flc-acts { padding-top: 10px; }
 .flc-btn {
   position: relative; overflow: hidden; appearance: none; cursor: pointer;
   padding: 3px 10px; line-height: 16px;
@@ -4057,21 +3999,7 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
   border-color: transparent; background: none; color: var(--acc);
   text-decoration: underline; text-underline-offset: 3px;
 }
-.flc-fence {
-  flex: none; align-self: center; width: 1px; height: 14px; margin: 0 3px;
-  background: var(--ac-16);
-}
 .flc-btn > span { position: relative; }
-/* The one honest progress bar in the system: it is how much longer you hold. */
-.flc-fill {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 0;
-  background: color-mix(in srgb, var(--h) 28%, transparent);
-}
-/* On the filled primary the hue would be invisible against its own fill, so
-   the bar becomes the dark ink: the button charging rather than lighting up. */
-.flc-btn[data-go] > .flc-fill { background: color-mix(in srgb, var(--acc-on) 55%, transparent); }
-.flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
-
 
 /* ── THE WIDGET GRAMMAR ───────────────────────────────────────────────────
    One shape per kind of work, so a terminal is never mistaken for a read and a
@@ -4292,35 +4220,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   color: var(--txm);
 }
 .flc-opt:hover { color: var(--txb); border-color: var(--acc); background: var(--ac-06); }
-
-/* ── STAGE HINT ───────────────────────────────────────────────────────────
-   One line above the prompt box naming what this stage is waiting for. */
-.flh {
-  display: flex; align-items: center; gap: 8px; padding: 0 2px 6px;
-  font-size: var(--t95); letter-spacing: 1.2px; color: var(--txf);
-}
-.flh-mark { flex: none; font-style: normal; color: var(--acc); }
-.flh[data-gate] .flh-mark { color: var(--warn); }
-.flh-stage { flex: none; text-transform: uppercase; color: var(--txd); }
-.flh-lvl {
-  flex: none; padding: 0 5px; border: 1px solid var(--ac-22);
-  font-size: var(--t8); letter-spacing: 1.4px; color: var(--txd);
-}
-.flh[data-gate] .flh-lvl { border-color: color-mix(in srgb, var(--warn) 40%, transparent); color: var(--warn); }
-.flh-want { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flh-btn {
-  margin-left: auto; flex: none; appearance: none; cursor: pointer;
-  padding: 1px 7px; font-family: inherit; font-size: var(--t95); letter-spacing: 1.4px;
-  border: 1px solid var(--ac-16); background: transparent; color: var(--txd);
-}
-.flh-btn:hover:not(:disabled) { color: var(--txb); border-color: var(--ac-22); background: var(--ac-03); }
-.flh-btn:disabled { cursor: default; opacity: .5; }
-
-@media (prefers-reduced-motion: reduce) {
-  .flc[data-await] > .flc-rail { animation: none; }
-  .flc-hold[data-held] > .flc-fill { transition: none; }
-}
-
 
 /* === THE FOLDS =============================================================
    Between two things the agent says, its work sits under one STEPS row (what
@@ -5628,13 +5527,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-f.wide { grid-column: 1 / -1; }
 .aim-foot { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--txm); }
 .aim-foot em { font-style: normal; color: var(--txl); }
-/* the PROFILES fold's field cards */
-.aim-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-top: 10px; }
-.aim-field { border-radius: 12px; background: var(--panel); border: 1px solid var(--l); padding: 12px 14px; display: flex; align-items: center; gap: 14px; }
-.aim-field > div { min-width: 0; flex: 1; }
-.aim-field b { display: block; font: 500 13.5px var(--f); color: var(--txb); }
-.aim-field span { display: block; font-size: 12px; color: var(--txd); }
-.aim-field .aim-sel { width: auto; max-width: 46%; flex: none; }
 /* the HUD's MiniBtn, in this page's voice: Geist, no tracking, rounded */
 .aim .set-mini, .ps .set-mini, [data-fam] .set-mini { font-family: var(--f, var(--ui-font)) !important; font-size: 12px !important; letter-spacing: 0 !important; border-radius: 7px !important; padding: 5px 10px !important; }
 .aim .set-mini:not([data-primary]):not([data-danger]), [data-fam] .set-mini:not([data-primary]):not([data-danger]) { border-color: var(--l2) !important; color: var(--txm) !important; }
@@ -5747,41 +5639,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-vfield.row .aim-sel { width: auto; min-width: 120px; flex: none; }
 
 /* ── PROJECTS ── */
-.ps-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 0 4px; }
-.ps-toolbar .aim-hint { max-width: 70%; }
-.ps-toolbar .ps-btn, .ps-head .ps-btn { white-space: nowrap; flex: none; }
 .ps-btn { appearance: none; cursor: pointer; font: 500 12px var(--f); padding: 5px 10px; border-radius: 7px; border: 1px solid var(--l2); color: var(--txm); background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .ps-btn:hover { background: var(--ac-06); color: var(--txb); }
 .ps-btn.ps-sm { font-size: 11.5px; padding: 4px 9px; color: var(--txd); }
 .ps-btn.ps-sm[data-on] { color: var(--acc); border-color: color-mix(in oklab, var(--acc) 40%, var(--l2)); }
 .ps-btn.ps-i { width: 28px; height: 28px; padding: 0; color: var(--txd); }
-.ps-btn.ps-danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, transparent); }
-.ps-btn.ps-pri { background: var(--acc); border-color: var(--acc); color: var(--acc-on, #fff); font-weight: 600; }
-.ps-grp2 { margin-top: 10px; }
-.ps-head { display: flex; align-items: center; gap: 10px; padding: 4px 4px 6px; }
-.ps-fold { appearance: none; cursor: pointer; border: 0; background: none; color: inherit; font: inherit; display: flex; align-items: center; gap: 10px; padding: 4px 4px; min-width: 0; text-align: left; }
-.ps-chev { color: var(--txd); transition: transform .18s ease; flex: none; }
-.ps-fold b { font: 600 13.5px var(--f); color: var(--txh); white-space: nowrap; }
-.ps-fold b i { font-style: normal; color: var(--txl); font-weight: 400; }
-.ps-n { font-size: 12px; color: var(--txd); white-space: nowrap; }
-.ps-rows { border-radius: 12px; background: var(--panel); border: 1px solid var(--l); overflow: visible; }
-.ps-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--l); }
-.ps-row:first-child { border-top: 0; }
-.ps-row[data-hidden] > :not(.ps-acts) { opacity: .5; }
-.ps-row .ptile { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: 0; border-radius: 6px; font: 600 9.5px var(--f); color: color-mix(in oklab, var(--pc) 30%, white); background: color-mix(in oklab, var(--pc) 26%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent); }
-.ps-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.ps-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
-.ps-rename { appearance: none; cursor: text; border: 0; background: none; padding: 0; color: inherit; font: inherit; display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: none; max-width: 100%; }
-.ps-rename b { font: 500 13.5px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ps-rename svg { color: var(--txl); opacity: .6; flex: none; }
-.ps-rename:hover svg { color: var(--acc); opacity: 1; }
-.ps-name input { font: 500 13.5px var(--f); color: var(--txb); background: var(--panel2); border: 1px solid var(--acc); border-radius: 6px; padding: 2px 8px; flex: 1 1 120px; min-width: 80px; width: auto; outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 16%, transparent); }
 .ps-keys { font: 11.5px var(--mono); color: var(--txl); white-space: nowrap; }
-.ps-chip { font: 600 10.5px var(--f); padding: 2px 8px; border-radius: 999px; background: var(--panel3); color: var(--txd); white-space: nowrap; }
-.ps-remote { font: 11.5px var(--mono); color: var(--txl); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
-.ps-remote:hover { color: var(--acc); }
-.ps-sess { font: 11.5px var(--mono); color: var(--txl); min-width: 46px; text-align: right; white-space: nowrap; }
-.ps-acts { display: flex; gap: 4px; }
 /* the profile picker: a chip with the login's tile, and a menu grouped by login */
 .ps-pickwrap { position: relative; }
 .ps-pick { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 9px 0 5px; border-radius: 7px; background: var(--panel2); border: 1px solid var(--l); font: 12.5px var(--f); color: var(--txh); width: 230px; }
@@ -5802,7 +5665,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-chk { width: 14px; color: var(--acc); flex: none; }
 .ps-optname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
-.ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
 
 /* ── SETTINGS ▸ Projects (ProjectsSettings): a list of every repo and, beside
    it, the one you picked (.mystical/design-drafts/projects-tab, variant B).
@@ -6303,28 +6165,16 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .mk-ghostbtn { border-color: transparent; color: var(--txd); padding-left: 6px; padding-right: 6px; }
 
 /* SETTINGS ▸ Projects: where each mark comes from, and the strips atop the list */
-.ps-via { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border: 1px solid color-mix(in oklab, var(--purple) 35%, transparent);
-  border-radius: 999px; font: 500 9.5px var(--f); letter-spacing: .08em; color: var(--purple); white-space: nowrap; }
-.ps-via i { width: 5px; height: 5px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
-.ps-via.ps-mine { color: var(--txd); border-color: var(--l2); }
 .ps-riv { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; padding: 11px 13px; border-radius: 12px;
   border: 1px solid color-mix(in oklab, var(--purple) 30%, var(--l)); background: color-mix(in oklab, var(--purple) 5%, var(--panel)); }
 .ps-riv > i { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px; background: color-mix(in oklab, var(--purple) 14%, var(--panel2)); }
 .ps-riv > div { flex: 1; min-width: 0; }
 .ps-riv b { display: block; font: 500 13px var(--f); color: var(--txb); }
 .ps-riv small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--txd); }
-.ps-pri { background: var(--acc) !important; border-color: var(--acc) !important; color: var(--acc-on) !important; }
 .ps-tog { position: relative; width: 30px; height: 18px; flex: none; border: 0; padding: 0; border-radius: 999px; background: var(--l2); cursor: pointer; }
 .ps-tog::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--txd); transition: left .15s ease; }
 .ps-tog[data-on] { background: var(--acc); }
 .ps-tog[data-on]::after { left: 15px; background: #fff; }
-
-.nt-acts { display: flex; gap: 8px; margin-top: 11px; }
-.nt-act { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
-  background: transparent; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .06em; color: var(--txm); cursor: pointer; }
-.nt-act[data-pri] { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
-.nt-act:hover { background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); color: var(--txb); }
-.nt-act[data-pri]:hover { background: color-mix(in oklab, var(--acc) 88%, white); color: var(--acc-on); }
 
 /* ── NOTIFICATIONS (components/hud/Notifications.tsx) ─────────────────────────
    The bell, its toasts and the pills, in the families' shared tokens: violet
@@ -6571,22 +6421,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gl-pill.bad { background: var(--err); }
 .gl-pill.q { display: inline-flex; align-items: center; justify-content: center; width: 15px; padding: 0; background: var(--warn); }
 .gl-dot { position: absolute; right: 5px; top: 4px; width: 8px; height: 8px; border-radius: 999px; background: var(--acc); }
-.gl-ring { position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; pointer-events: none; transform: rotate(-90deg); }
-.gl-ring circle { fill: none; stroke-width: 2; transition: stroke-dasharray .4s ease; }
-.gl-ring .bg { stroke: color-mix(in oklab, var(--acc) 18%, transparent); }
-.gl-ring .fg { stroke: var(--acc); stroke-linecap: round; }
-.gl-lead { font: 400 var(--t125)/1.55 var(--ui-font); color: var(--txh); }
-.gl-lead b { color: var(--txb); font-weight: 600; }
-.gl-lead i { font: normal 500 var(--t10) var(--mono); color: var(--txl); }
-.gl-part { margin-top: 14px; }
-.gl-ph { display: flex; align-items: center; gap: 8px; }
-.gl-ph > svg { flex: none; color: var(--txm); }
-.gl-ph .n { font: 600 var(--t12) var(--ui-font); color: var(--txb); }
-.gl-ph .m { font: 500 var(--t10) var(--mono); color: var(--txl); }
-.gl-ph .sp { flex: 1; }
-.gl-tag { flex: none; display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border-radius: calc(var(--f-rad-s, 0px) * .6);
-  font: 600 var(--t85) var(--ui-font); letter-spacing: .12em; color: var(--acc); background: color-mix(in oklab, var(--acc) 15%, transparent); }
-.gl-tag.rs { color: var(--warn); background: color-mix(in oklab, var(--warn) 14%, transparent); }
 .gl-cm { margin: 6px 0 0 6px; border-left: 2px solid color-mix(in srgb, var(--acc) 30%, transparent); padding: 1px 0 1px 13px; }
 .gl-cm div { font: 400 var(--t10)/1.55 var(--mono); color: var(--txm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gl-cm b { font-weight: 400; color: var(--acc); margin-right: 6px; }
@@ -6729,10 +6563,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* under the GIT hero: the task line, a sync op's outcome, and (on a failed
    auto-fetch) git's words. The hero's one move is the panel's only solid button:
    agents commit, you push. */
-.gp-rdw { flex: none; }
 .gp-rd:empty { display: none; }
 .gp-rd { flex: none; padding: 10px; }
-.rh + .gp-rdw .gp-rd { padding-top: 0; }
 /* A figure that changes rolls (Roll in GitPanel): the old one leaves upward as
    the new one rises into its place, clipped to its own line top and bottom. */
 .gp-roll { position: relative; display: inline-flex; min-width: 0; clip-path: inset(0 -100vw); }
@@ -6849,7 +6681,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border: 1px solid var(--l2); background: none; color: var(--txd); font: 400 var(--t10)/1 var(--m); white-space: nowrap; cursor: pointer; appearance: none; }
 .gp-filter:hover { color: var(--txh); }
 .gp-filter span { overflow: hidden; text-overflow: ellipsis; }
-.gp-body { flex: 1 1 auto; min-height: 0; padding-bottom: 6px; position: relative; }
 .gp-note { margin: 8px 10px 6px; font: 400 var(--t10)/1.5 var(--m); color: var(--txd); white-space: pre-wrap; word-break: break-word; cursor: pointer; }
 /* groups + file rows */
 .gp-group { display: flex; align-items: center; gap: 6px; height: 24px; padding: 4px 7px 0 12px; font: 600 var(--t95)/1 var(--f);
