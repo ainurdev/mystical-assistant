@@ -2,6 +2,7 @@ import {
   Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, 
@@ -95,7 +96,8 @@ import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib
 import { notify } from "./Notifications";
 import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { useAiFeatures } from "../../lib/ai";
-import { setIntegrations, useIntegrations } from "../../lib/integrations";
+import { useIntegrations } from "../../lib/integrations";
+import { main, queryClient, rail, reread, settings as setq } from "../../lib/queries";
 import { askConfirm } from "../ui/Ask";
 import { TONES, chime, push, pushGranted, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
@@ -1118,12 +1120,7 @@ function TypePicker({ settings, autoBase, onPatch }: {
 
 /** What the bridge's own checkout is running, and the pull-and-restart button. */
 function UpdatePanel({ onFeed }: { onFeed: Feed }) {
-  const [info, setInfo] = useState<UpdateInfo | null>(null);
-  useEffect(() => {
-    let live = true;
-    void api.update().then((u) => { if (live) setInfo(u); }).catch(() => { /* ignore */ });
-    return () => { live = false; };
-  }, []);
+  const info: UpdateInfo | null = useQuery(rail.update()).data ?? null;
 
   return (
     <div style={CARD}>
@@ -1286,14 +1283,15 @@ const ROUTE_OPTS = ["off", "away", "always"] as const;
 
 function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
   const plugins = useIntegrations();   // Rivendell's rows only while it's installed
-  const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
-  const [tg, setTg] = useState(true);
-  const [old, setOld] = useState(false);   // a bridge started before the feed: the route 404s
-  useEffect(() => {
-    api.notices().then((r) => { setPrefs(r.prefs); setTg(r.telegram); }, () => setOld(true));
-  }, []);
+  // The bell's own read: the prefs ride with its notices. A POST invalidates it.
+  const notices = rail.notices();
+  const noticesQ = useQuery(notices);
+  const prefs: NoticePrefs | null = noticesQ.data?.prefs ?? null;
+  const tg = noticesQ.data?.telegram ?? true;
+  const old = !noticesQ.data && noticesQ.isError;   // a bridge started before the feed: the route 404s
   const save = (p: NoticePrefsPatch) =>
-    void api.noticePrefs(p).then((r) => setPrefs(r.prefs), (e: Error) => notify("error", e.message));
+    void api.noticePrefs(p).then((r) => queryClient.setQueryData(notices.queryKey, (d) => d && { ...d, prefs: r.prefs }),
+      (e: Error) => notify("error", e.message));
   const q = prefs?.quiet;
   // Where news can reach you comes first (2026-11-06, A · CHANNELS + GRID): this
   // browser's banner, its sound, Telegram, each with its state and a way to try it.
@@ -1506,15 +1504,12 @@ function MacPanel() {
 }
 
 function StartupSection() {
-  const [st, setSt] = useState<StartupState | null>(null);
+  const key = setq.startup();
+  const st: StartupState | null = useQuery(key).data ?? null;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const canInstall = useSyncExternalStore(subscribe, canInstallNow, () => false);
   const [installed, setInstalled] = useState(isInstalled);
-
-  useEffect(() => {
-    void api.startup().then(setSt).catch(() => setSt(null));
-  }, []);
 
   // The toggles pass no profile and keep the current pin; the selector passes
   // its pick (null = back to the auto-guess).
@@ -1523,7 +1518,7 @@ function StartupSection() {
     setErr(null);
     try {
       const pin = profile === undefined ? (st?.profile ?? null) : profile;
-      setSt((await api.setStartup(login, win, pin)).startup);
+      queryClient.setQueryData(key.queryKey, (await api.setStartup(login, win, pin)).startup);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1639,22 +1634,20 @@ function StartupSection() {
  *  .env, and RESET puts a row back to whatever .env said rather than to a
  *  hardcoded default — so the file stays the floor under all of this. */
 function EnvPanel({ only }: { only?: string[] }) {
-  const [rows, setRows] = useState<EnvSetting[] | null>(null);
+  const envKey = setq.env();
+  const envQ = useQuery(envKey);
+  const rows: EnvSetting[] | null = envQ.data?.settings ?? (envQ.isError ? [] : null);
   const [busy, setBusy] = useState<string | null>(null);
   // Which row was refused, and why. A rejection belongs beside the field that
   // caused it — at the foot of eight scrolling blocks nobody sees it.
   const [err, setErr] = useState<{ key: string; message: string } | null>(null);
   const ai = useAiFeatures();   // AI TUNING rows go with the switch they tune
 
-  useEffect(() => {
-    void api.envSettings().then((r) => setRows(r.settings)).catch(() => setRows([]));
-  }, []);
-
   async function save(key: string, value: string | number | boolean | null) {
     setBusy(key);
     setErr(null);
     try {
-      setRows((await api.setEnvSetting(key, value)).settings);
+      queryClient.setQueryData(envKey.queryKey, { settings: (await api.setEnvSetting(key, value)).settings });
     } catch (e) {
       setErr({ key, message: e instanceof Error ? e.message : "could not save" });
     } finally {
@@ -1850,12 +1843,20 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   );
 }
 
-function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange: an instance was saved, switched or removed
-  const [rows, setRows] = useState<RivendellInstance[] | null>(null);
-  const [video, setVideo] = useState<VideoTools>();   // absent on a bridge older than the VIDEO JOBS row
-  const [gone, setGone] = useState(false);     // an old bridge: the route 404s
-  const [editing, setEditing] = useState<string | null>(() => takeSettingsFocus());   // instance id, "new", or null
+// A save, switch or remove invalidates the integrations too (lib/queries CHANGES): their summary counts instances.
+function RivendellPanel() {
   const [busy, setBusy] = useState(false);
+  // The socket goes up and down on its own (reconnect-forever with backoff), so the
+  // read polls for the live status while the panel is open. A save/remove holds the
+  // poll (busy), so it can't clobber its optimistic result mid-flight.
+  const key = setq.rivendell();
+  const riQ = useQuery({ ...key, refetchInterval: busy ? false : key.refetchInterval });
+  const gone = !riQ.data && riQ.isError;     // an old bridge: the route 404s
+  const rows: RivendellInstance[] | null = riQ.data?.instances ?? (gone ? [] : null);
+  const video: VideoTools | undefined = riQ.data?.video;   // absent on a bridge older than the VIDEO JOBS row
+  const setRows = (f: (p: RivendellInstance[]) => RivendellInstance[]) =>
+    queryClient.setQueryData(key.queryKey, (d) => d && { ...d, instances: f(d.instances) });
+  const [editing, setEditing] = useState<string | null>(() => takeSettingsFocus());   // instance id, "new", or null
   const [err, setErr] = useState("");
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -1866,7 +1867,7 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
     setTesting(id); setErr("");
     try {
       const r = await api.rivendellTest(id, job);
-      setRows((p) => (p ?? []).map((x) => (x.id === id ? { ...x, status: { ...x.status, last_test: r } } : x)));
+      setRows((p) => p.map((x) => (x.id === id ? { ...x, status: { ...x.status, last_test: r } } : x)));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not test");
     } finally {
@@ -1874,25 +1875,10 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
     }
   }
 
-  useEffect(() => {
-    void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => { setRows([]); setGone(true); });
-  }, []);
-
-  // The socket goes up and down on its own (reconnect-forever with backoff), so
-  // poll for the live status while the panel is open. A save/remove is skipped
-  // (busy) so the poll can't clobber its optimistic result mid-flight.
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (busy) return;
-      void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => {});
-    }, 4000);
-    return () => clearInterval(t);
-  }, [busy]);
-
   const byName = (a: RivendellInstance, b: RivendellInstance) => a.name.localeCompare(b.name);
   const upsert = (inst: RivendellInstance) =>
     setRows((p) => {
-      const rest = (p ?? []).filter((x) => x.id !== inst.id);
+      const rest = p.filter((x) => x.id !== inst.id);
       return [...rest, inst].sort(byName);
     });
 
@@ -1904,7 +1890,6 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
         : await api.addRivendell(input);
       upsert(r.instance);
       setEditing(null);
-      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     } finally {
@@ -1917,7 +1902,6 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
     try {
       const r = await api.updateRivendell(inst.id, { ...riToInput(inst), enable: !inst.enable });
       upsert(r.instance);
-      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     }
@@ -1926,9 +1910,8 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
   async function remove(id: string) {
     try {
       await api.removeRivendell(id);
-      setRows((p) => (p ?? []).filter((c) => c.id !== id));
+      setRows((p) => p.filter((c) => c.id !== id));
       if (editing === id) setEditing(null);
-      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -2057,27 +2040,22 @@ const OFFERS: { id: string; chip: string; color: string }[] = [
 ];
 
 function IntegrationsPanel() {
-  const [list, setList] = useState<Integration[] | null>(null);
-  const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
+  const key = setq.integrations();
+  const intQ = useQuery(key);
+  const list: Integration[] | null = intQ.data?.plugins ?? null;
+  // why the list can't be read; "not found" is a bridge from before integrations
+  const down = !list && intQ.error ? intQ.error.message || "could not read the integrations" : "";
   const [busy, setBusy] = useState("");   // the plugin being installed or removed
   const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
   const [open, setOpen] = useState<string | null>("rivendell");   // the one row whose settings are showing
 
-  // Every answer also goes to the shared store, so the tabs and buttons a
-  // plugin brings appear or leave in the same frame.
-  const take = (plugins: Integration[]) => { setList(plugins); setIntegrations(plugins); };
-  // A card's panel changed what its summary counts (instances, connections).
-  const recount = () => void api.integrations().then((r) => take(r.plugins)).catch(() => {});
-
-  useEffect(() => {
-    void api.integrations().then((r) => take(r.plugins))
-      .catch((e) => setDown(e instanceof Error ? e.message : "could not read the integrations"));
-  }, []);
 
   async function set(id: string, action: "install" | "remove") {
     setBusy(id); setErr(null);
     try {
-      take((await api.setIntegration(id, action)).plugins);
+      // The answer goes to the shared query, so the tabs and buttons a plugin brings
+      // appear or leave in the same frame.
+      queryClient.setQueryData(key.queryKey, { plugins: (await api.setIntegration(id, action)).plugins });
     } catch (e) {
       // A refused REMOVE (a Rivendell run in flight) is a 409 that says why.
       setErr({ id, msg: e instanceof Error ? e.message : `could not ${action}` });
@@ -2109,7 +2087,7 @@ function IntegrationsPanel() {
     rows.push({
       id: p.id, chip: offer?.chip ?? p.label.slice(0, 2).toUpperCase(), color: offer?.color ?? "var(--acc)", name: p.label,
       line: p.summary, plugin: p,
-      body: p.id === "rivendell" ? <RivendellPanel onChange={recount} />
+      body: p.id === "rivendell" ? <RivendellPanel />
         : p.id === "design" ? <div className="int-note">Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.</div>
         : <div className="int-note">{p.blurb}</div>,
     });
@@ -2200,10 +2178,6 @@ function IntegrationsPanel() {
 const REMOTE = /\((HTTP|SSE)\)\s*$/i;   // a stdio server has no OAuth to renew
 
 export function McpPanel() {
-  const [info, setInfo] = useState<McpInfo | null>(null);
-  // The client can be newer than the bridge: a dashboard built from this commit
-  // against a process that started before it gets a 404 here, not a panel.
-  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState("");            // the row mid-action, if any
   const [checking, setChecking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -2215,47 +2189,33 @@ export function McpPanel() {
   const [transport, setTransport] = useState("http");
   const [scope, setScope] = useState("user");
 
-  const load = (refresh = false) => {
-    if (refresh) setChecking(true);
-    return api
-      .mcp(refresh)
-      .then((r) => {
-        setInfo(r);
-        setLogin(r.pending?.url ? { name: r.pending.name, url: r.pending.url } : null);
-      })
-      .catch((e) => setStale(e instanceof Error && e.message.includes("404")))
-      .finally(() => setChecking(false));
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
   // The CLI runs its own localhost callback listener, so a browser on this
-  // machine usually finishes the flow with nothing pasted back. Poll for that,
-  // or the panel keeps asking for a code that already arrived.
+  // machine usually finishes the flow with nothing pasted back. Poll for that
+  // while a sign-in waits, or the panel keeps asking for a code that already arrived.
+  const key = setq.mcp();
+  const mcpQ = useQuery({ ...key, refetchInterval: login ? key.refetchInterval : false });
+  const info: McpInfo | null = mcpQ.data ?? null;
+  // The client can be newer than the bridge: a dashboard built from this commit
+  // against a process that started before it gets a 404 here, not a panel.
+  const stale = !info && !!mcpQ.error?.message.includes("404");
+  const setInfo = (f: (i: McpInfo) => McpInfo) => queryClient.setQueryData(key.queryKey, (i) => i && f(i));
   useEffect(() => {
-    if (!login) return;
-    const t = setInterval(() => {
-      void api
-        .mcp()
-        .then((r) => {
-          if (!r.pending) {
-            setLogin(null);
-            setInfo(r);
-          }
-        })
-        .catch(() => {});
-    }, 2500);
-    return () => clearInterval(t);
-  }, [login]);
+    const r = mcpQ.data;
+    if (r) setLogin(r.pending?.url ? { name: r.pending.name, url: r.pending.url } : null);
+  }, [mcpQ.data]);
+  // REFRESH pays for a fresh health check (seconds); the rest read the bridge's 5-minute cache.
+  const load = (refresh = false) => {
+    if (!refresh) return reread(key.queryKey);
+    setChecking(true);
+    return api.mcp(true).then((r) => queryClient.setQueryData(key.queryKey, r), () => {}).finally(() => setChecking(false));
+  };
 
   async function act(action: string, server: string, extra?: Record<string, unknown>) {
     setBusy(server);
     setErr(null);
     try {
       const r = await api.mcpAction(action, server, extra);
-      if (r.servers) setInfo((i) => (i ? { ...i, servers: r.servers! } : i));
+      if (r.servers) setInfo((i) => ({ ...i, servers: r.servers! }));
       return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed");
@@ -2287,7 +2247,7 @@ export function McpPanel() {
     setErr(null);
     try {
       const r = await api.mcpAction("add", name.trim(), { target: target.trim(), transport, scope });
-      if (r.servers) setInfo((i) => (i ? { ...i, servers: r.servers! } : i));
+      if (r.servers) setInfo((i) => ({ ...i, servers: r.servers! }));
       setName("");
       setTarget("");
     } catch (e) {
@@ -2614,13 +2574,20 @@ function AgentsSection({ profileRows, onChanged, signIn }: {
    *  editor keeps its own copy of this list and must re-read it. */
   onChanged?: (info: AcpAgentsInfo) => void;
 }) {
-  const [info, setInfo] = useState<AcpAgentsInfo | null>(null);
-  const [gone, setGone] = useState(false); // a bridge older than agents (404)
-  const [err, setErr] = useState<string | null>(null);
-  const load = () => api.acpAgents()
-    .then((r) => { setInfo(r); setGone(false); setErr(null); setAgentLabels(r.presets); onChanged?.(r); })
-    .catch((e) => { if ((e as Error).message === "not found") setGone(true); else setErr((e as Error).message); });
-  useEffect(() => { void load(); }, []);
+  const key = setq.acpAgents();
+  const agentsQ = useQuery(key);
+  const info = agentsQ.data ?? null;
+  const gone = agentsQ.error?.message === "not found"; // a bridge older than agents (404)
+  const err = agentsQ.error && !gone ? agentsQ.error.message : null;
+  const load = () => reread(key.queryKey);
+  // The first answer isn't a change: the page reads the profiles itself as it opens.
+  const seen = useRef<AcpAgentsInfo | null>(null);
+  useEffect(() => {
+    if (!info) return;
+    setAgentLabels(info.presets);
+    if (seen.current) onChanged?.(info);
+    seen.current = info;
+  }, [info]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const note = (
     <div style={NOTE}>
@@ -2672,34 +2639,28 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
   const [err, setErr] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
-  const [logins, setLogins] = useState<Record<string, AcpLogin>>({});
+  // Each sign-in's state is a query: started by LOG IN, polled (a status POST) until the CLI
+  // exits and its TEST is in. The machine login is account "".
   const live = (l?: AcpLogin) => !!l && (l.state === "starting" || l.state === "waiting" || l.state === "testing");
-  const anyLive = Object.values(logins).some(live);
-
-  // A running sign-in: poll until the CLI exits and its TEST is in.
-  useEffect(() => {
-    if (!anyLive) return;
-    const t = window.setInterval(() => {
-      for (const [acct, l] of Object.entries(logins)) {
-        if (!live(l)) continue;
-        api.acpLogin("status", p.id, acct)
-          .then((r) => {
-            setLogins((m) => ({ ...m, [acct]: r }));
-            if (r.state === "ok") onChanged();   // its models are cached now
-          })
-          .catch(() => {});
-      }
-    }, 2000);
-    return () => window.clearInterval(t);
-  }, [anyLive, logins, p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loginKey = (acct: string) => setq.acpLogin({ agent: p.id, account: acct });
+  const accts = ["", ...accounts.map((a) => a.id)];
+  const loginQs = useQueries({ queries: accts.map((acct) => ({
+    ...loginKey(acct),
+    queryFn: () => api.acpLogin("status", p.id, acct),
+    enabled: (q: { state: { data?: AcpLogin } }) => live(q.state.data),
+  })) });
+  const logins: Record<string, AcpLogin> = {};
+  accts.forEach((a, i) => { const d = loginQs[i].data; if (d) logins[a] = d; });
+  const setLogin = (acct: string, l: AcpLogin) => queryClient.setQueryData(loginKey(acct).queryKey, l);
+  const okNow = accts.filter((a) => logins[a]?.state === "ok").join();
+  useEffect(() => { if (okNow) onChanged(); }, [okNow]); // eslint-disable-line react-hooks/exhaustive-deps -- its models are cached now
 
   async function login(acct: string) {
-    setLogins((m) => ({ ...m, [acct]: { state: "starting" } }));
+    setLogin(acct, { state: "starting" });
     try {
-      const r = await api.acpLogin("start", p.id, acct);
-      setLogins((m) => ({ ...m, [acct]: r }));
+      setLogin(acct, await api.acpLogin("start", p.id, acct));
     } catch (e) {
-      setLogins((m) => ({ ...m, [acct]: { state: "error", error: (e as Error).message } }));
+      setLogin(acct, { state: "error", error: (e as Error).message });
     }
   }
   // Sent here to sign in: bring the card in and start that account's LOG IN, once.
@@ -2714,8 +2675,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
 
   async function cancelLogin(acct: string) {
     try {
-      const r = await api.acpLogin("cancel", p.id, acct);
-      setLogins((m) => ({ ...m, [acct]: r }));
+      setLogin(acct, await api.acpLogin("cancel", p.id, acct));
     } catch { /* the next poll says where it stands */ }
   }
 
@@ -2962,21 +2922,22 @@ export function MiniBtn({
 /** The login list and its actions, shared by the ACCOUNTS fold and the
  *  profile editor's LOGIN picker. */
 function useAccounts(onChanged: () => void) {
-  const [rows, setRows] = useState<AccountInfo[] | null>(null);
-  const [policy, setPolicy] = useState("ask");
+  const key = main.accounts();
+  const accQ = useQuery(key);
+  const rows: AccountInfo[] | null = accQ.data?.accounts ?? (accQ.isError ? [] : null);
+  const policy = accQ.data?.default_policy ?? "ask";
+  // Shown at once; its POST invalidates the accounts, so a refusal reads back.
+  const setPolicy = (default_policy: string) => queryClient.setQueryData(key.queryKey, (d) => d && { ...d, default_policy });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // A sign-in in flight: the CLI is parked on its "paste the code" prompt in a
   // fresh profile, waiting for what the browser hands back.
   const [login, setLogin] = useState<{ slot: number; url: string } | null>(null);
-  const load = () => api.accounts()
-    .then((r) => {
-      setRows(r.accounts);
-      setPolicy(r.default_policy);
-      if (r.pending_login?.url) setLogin({ slot: r.pending_login.slot, url: r.pending_login.url });
-    })
-    .catch(() => setRows([]));
-  useEffect(() => { void load(); }, []);
+  const load = () => reread(key.queryKey);
+  useEffect(() => {
+    const p = accQ.data?.pending_login;
+    if (p?.url) setLogin({ slot: p.slot, url: p.url });
+  }, [accQ.data]);
   async function act(action: Parameters<typeof api.accountAction>[0], slot?: number, on?: boolean) {
     setBusy(true); setErr(null);
     try { await api.accountAction(action, slot, on); onChanged(); await load(); }
@@ -2994,7 +2955,7 @@ function useAccounts(onChanged: () => void) {
     } catch (e) { setErr(e instanceof Error ? e.message : "could not start the sign-in"); }
     finally { setBusy(false); }
   }
-  return { rows, setRows, policy, setPolicy, busy, err, setErr, login, setLogin, load, act, startLogin };
+  return { rows, policy, setPolicy, busy, err, setErr, login, setLogin, load, act, startLogin };
 }
 
 /** A login's tile: its slot on a hue of its own. The six hues are the theme's
@@ -3288,19 +3249,18 @@ function SaverCard({ s, busy, err, onMode }: { s: Saver; busy: boolean; err?: st
 
 function SaversFold({ openSec }: { openSec: string | null }) {
   // null while reading; "gone" on a bridge older than Savers.
-  const [rows, setRows] = useState<Saver[] | "gone" | null>(null);
+  const key = setq.savers();
+  const saversQ = useQuery(key);
+  const rows: Saver[] | "gone" | null = saversQ.data?.savers
+    ?? (saversQ.error ? (saversQ.error.message === "not found" ? "gone" : []) : null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
-  useEffect(() => {
-    void api.savers().then((r) => setRows(r.savers))
-      .catch((e: Error) => setRows(e.message === "not found" ? "gone" : []));
-  }, []);
   if (rows === "gone") return null;
   async function pick(s: Saver, mode: Saver["mode"]) {
     setBusy(s.key);
     setErr(null);
     try {
-      setRows((await api.setSaver(s.key, mode)).savers);
+      queryClient.setQueryData(key.queryKey, { savers: (await api.setSaver(s.key, mode)).savers });
     } catch (e) {
       setErr({ key: s.key, msg: e instanceof Error ? e.message : "could not save" });
     } finally {
@@ -3381,13 +3341,18 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
   const [err, setErr] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const bench = useRef<HTMLDivElement>(null);
+  // Read once into the state the saves step from: a later answer (a save's invalidation)
+  // must not land over a newer click.
+  const councilQ = useQuery(setq.council());
   useEffect(() => {
-    void api.councilSettings().then((r) => {
-      if (!Array.isArray(r.reviewers)) return setErr("Restart the bridge to pick reviewers per account.");
-      latest.current = confirmed.current = r;
-      setS(r);
-    }).catch(() => setErr("Couldn't read the council's settings."));
-  }, []);
+    const r = councilQ.data;
+    if (latest.current) return;
+    if (councilQ.isError) return setErr("Couldn't read the council's settings.");
+    if (!r) return;
+    if (!Array.isArray(r.reviewers)) return setErr("Restart the bridge to pick reviewers per account.");
+    latest.current = confirmed.current = r;
+    setS(r);
+  }, [councilQ.data, councilQ.isError]);
   const shut = (refocus?: boolean) => {
     setMenu(false);
     if (refocus) bench.current?.querySelector<HTMLElement>(".cr-add")?.focus();
@@ -3553,8 +3518,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   const acc = useAccounts(onAccountsChanged);
   // Each fold head says where it stands without opening it (2026-11-06, A ·
   // SPEAKING FOLDS): every login's week left, extras on, MCP servers that wait.
-  const [mcp, setMcp] = useState<McpInfo | null>(null);
-  useEffect(() => { void api.mcp().then(setMcp).catch(() => { /* the fold still opens */ }); }, []);
+  // McpPanel's read; only the panel polls it, while a sign-in waits. A failed read: the fold still opens.
+  const mcp = useQuery({ ...setq.mcp(), refetchInterval: false }).data ?? null;
   const mcpN = mcp && {
     ok: mcp.servers.filter((x) => x.ok).length,
     auth: mcp.servers.filter((x) => !x.ok && x.status.trim().startsWith("!")).length,
@@ -3587,10 +3552,11 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   const [pBusy, setPBusy] = useState(false);
   const [pErr, setPErr] = useState<string | null>(null);
   const [loginsErr, setLoginsErr] = useState<string | null>(null);
-  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
-  const loadAcp = () => api.acpAgents().then(setAcp).catch(() => {});
+  // The same read as the AGENTS list's, so the page asks once.
+  const acpKey = setq.acpAgents();
+  const acp = useQuery(acpKey).data ?? null;
+  const loadAcp = () => reread(acpKey.queryKey);
   useEffect(() => {
-    void loadAcp();
     // Opening the page re-reads the list: a failed load, or a bridge that has
     // been restarted since it 404'd, gets another go without a page reload.
     onProfilesChanged();
@@ -3727,8 +3693,9 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
                 // The bridge keeps a sign-in going only through a paste worth
                 // retrying (half a code). Any other failure ended it, and this
                 // box could only fail again: back to the buttons, with the reason.
-                const r = await api.accounts().catch(() => null);
-                if (r && !r.pending_login) { acc.setLogin(null); acc.setRows(r.accounts); acc.setErr(e instanceof Error ? e.message : "sign-in failed"); }
+                await acc.load();
+                const r = queryClient.getQueryData(main.accounts().queryKey);
+                if (r && !r.pending_login) { acc.setLogin(null); acc.setErr(e instanceof Error ? e.message : "sign-in failed"); }
                 throw e;
               }
             }}
@@ -3753,7 +3720,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         <span className="aim-hint">Codex, OpenCode, Kimi — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
       </div>
       <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined}
-        onChanged={(i) => { setAcp(i); onProfilesChanged(); }} signIn={signIn} />
+        onChanged={() => onProfilesChanged()} signIn={signIn} />
     </>
   );
 
@@ -4137,14 +4104,13 @@ const isStale = (e: Error) => e.message === "not found";
 const STALE_MSG = "The bridge is running older code than this dashboard, so it has no MOVE yet. Restart it (SYSTEM ▸ PLATFORM) and this page fills in.";
 
 function MoveExport({ busy }: { busy: boolean }) {
-  const [plan, setPlan] = useState<MovePlan | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const planQ = useQuery(setq.movePlan());
+  const plan: MovePlan | null = planQ.data ?? null;
+  const err = !plan && planQ.error ? (isStale(planQ.error) ? STALE_MSG : `Couldn't look at this machine: ${planQ.error.message}`) : null;
   const [skip, setSkip] = useState<Set<string>>(() => new Set());
-  const [out, setOut] = useState("");
+  const [typed, setOut] = useState<string | null>(null);
+  const out = typed ?? plan?.out ?? "";
   const [startErr, setStartErr] = useState("");
-  useEffect(() => {
-    api.movePlan().then((p) => { setPlan(p); setOut(p.out); }, (e: Error) => setErr(isStale(e) ? STALE_MSG : `Couldn't look at this machine: ${e.message}`));
-  }, []);
   if (err) return <Placeholder icon={TriangleAlert}>{err}</Placeholder>;
   if (!plan) return <Placeholder icon={LoaderCircle} spin>looking at this machine: its repos, MCP servers, history…</Placeholder>;
   const sk = toSkip(plan.sections, skip, "export");
@@ -4262,16 +4228,22 @@ function MoveImported({ job }: { job: MoveJob }) {
 }
 
 function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
-  const [files, setFiles] = useState<MoveFile[] | null>(null);
-  const [read, setRead] = useState<MoveRead | null | undefined>(undefined);
-  const [err, setErr] = useState<string | null>(null);
+  const filesQ = useQuery(setq.moveFiles());
+  const readQ = useQuery(setq.moveRead());
+  const files: MoveFile[] | null = filesQ.data?.files ?? null;
+  const read: MoveRead | null | undefined = readQ.data ? readQ.data.read : readQ.isError ? null : undefined;
+  const err = !files && filesQ.error ? (isStale(filesQ.error) ? STALE_MSG : filesQ.error.message) : null;
   const [path, setPath] = useState("");
   const [startErr, setStartErr] = useState("");
   const [skip, setSkip] = useState<Set<string>>(() => new Set());
+  // A move that ends leaves a file, or reads one: read both again.
   const ended = jobs.filter((j) => j.status !== "running").map((j) => j.id).join();
+  const seen = useRef(ended);
   useEffect(() => {
-    api.moveFiles().then((r) => setFiles(r.files), (e: Error) => setErr(isStale(e) ? STALE_MSG : e.message));
-    api.moveRead().then((r) => setRead(r.read), () => setRead(null));
+    if (seen.current === ended) return;
+    seen.current = ended;
+    void reread(setq.moveFiles().queryKey);
+    void reread(setq.moveRead().queryKey);
   }, [ended]);
   const running = jobs.find((j) => j.status === "running");
   const last = [...jobs].reverse().find((j) => j.kind === "import");
@@ -4321,7 +4293,7 @@ function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
                 : `${count("repos")} repos · ${count("plugins")} plugins · ${count("claude")} Claude files · ${count("mcp")} MCP · ${count("history")} history · ${count("bridge") ? "bridge" : "no bridge"}`}
             </span>
             <span style={{ flex: 1 }} />
-            <MiniBtn disabled={busy} onClick={() => void api.moveForget().then(() => setRead(null))}>FORGET FILE</MiniBtn>
+            <MiniBtn disabled={busy} onClick={() => void api.moveForget()}>FORGET FILE</MiniBtn>
             <BigBtn disabled={busy} onClick={() => go(api.moveImport(sk))}>{last ? "▸ IMPORT AGAIN" : "▸ IMPORT"}</BigBtn>
           </div>
           {startErr && <div style={{ ...NOTE, color: "var(--err)", textAlign: "right" }}>{startErr}</div>}
@@ -4357,6 +4329,9 @@ function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
   );
 }
 
+const NO_JOBS: MoveJob[] = [];
+const NO_ENV: EnvSetting[] = [];
+
 function MovePanel() {
   // The dock's SETTINGS ▸ and REVIEW ▸ name the page to land on.
   // MOVE opens on its two ways side by side (2026-11-06, B · TWO WAYS); the dock's
@@ -4365,22 +4340,10 @@ function MovePanel() {
     const f = takeSettingsFocus();
     return f === "import" ? "import" : f === "export" ? "export" : "home";
   });
-  const [jobs, setJobs] = useState<MoveJob[]>([]);
-  useEffect(() => {
-    let t = 0;
-    let live = true;
-    const tick = () => {
-      window.clearTimeout(t);
-      api.moveJobs().then((r) => {
-        if (!live) return;
-        setJobs(r.jobs);
-        t = window.setTimeout(tick, r.jobs.some((j) => j.status === "running") ? 1000 : 5000);
-      }, () => { if (live) t = window.setTimeout(tick, 10000); });
-    };
-    tick();
-    window.addEventListener(MOVE_EVENT, tick);
-    return () => { live = false; window.clearTimeout(t); window.removeEventListener(MOVE_EVENT, tick); };
-  }, []);
+  // Each start is a POST under /local/move/, which invalidates the jobs (lib/queries CHANGES).
+  const jobs = useQuery({ ...setq.moveJobs(), refetchInterval: (q) =>
+    q.state.data?.jobs.some((j) => j.status === "running") ? 1000 : q.state.error ? 10000 : setq.moveJobs.poll!.ms,
+  }).data?.jobs ?? NO_JOBS;
   const running = jobs.find((j) => j.status === "running");
   if (sub === "home") return <MoveHome jobs={jobs} running={running} onGo={setSub} />;
   const way = MOVE_SUBS.find((t) => t.key === sub)!;
@@ -4399,15 +4362,11 @@ function MovePanel() {
 /** MOVE's landing: what leaving would carry, what is waiting to come in, and the
  *  moves already made — with the file one left behind, which still takes disk. */
 function MoveHome({ jobs, running, onGo }: { jobs: MoveJob[]; running?: MoveJob; onGo: (s: MoveSub) => void }) {
-  const [plan, setPlan] = useState<MovePlan | null | undefined>(undefined);
-  const [files, setFiles] = useState<MoveFile[] | null>(null);
+  const planQ = useQuery(setq.movePlan());
+  const filesQ = useQuery(setq.moveFiles());
+  const plan: MovePlan | null | undefined = planQ.data ?? (planQ.isError ? null : undefined);
+  const files: MoveFile[] | null = filesQ.data?.files ?? (filesQ.isError ? [] : null);
   const [gone, setGone] = useState<Set<string>>(() => new Set());
-  useEffect(() => {
-    let live = true;
-    void api.movePlan().then((r) => { if (live) setPlan(r); }, () => { if (live) setPlan(null); });
-    void api.moveFiles().then((r) => { if (live) setFiles(r.files); }, () => { if (live) setFiles([]); });
-    return () => { live = false; };
-  }, []);
   const sec = (k: MoveSectionKey) => plan?.sections.find((x) => x.key === k)?.items ?? [];
   const sum = (k: MoveSectionKey, f: (i: MoveItem) => number) => sec(k).reduce((a, i) => a + f(i), 0);
   const unpushed = sum("repos", (i) => i.unpushed ?? 0);
@@ -4556,7 +4515,7 @@ function ClockWeather({ settings, onPatch, weather, onSetUnit, onSetPlace }: {
     onPatch({ clocks: next.filter(Boolean) });
   };
   const findPlace = async (q: string) => {
-    const r = await api.weatherSearch(q).catch((e: Error) => ({ error: e.message, results: undefined }));
+    const r = await queryClient.fetchQuery(setq.weatherSearch({ q })).catch((e: Error) => ({ error: e.message, results: undefined }));
     return r.error ?? r.results ?? [];
   };
   // Not one already picked, nor this browser's own zone, which the Almanac shows as "you".
@@ -4631,26 +4590,20 @@ function sysTabOf(sec: string | null | undefined): SysTab {
 // Each rail row says what its page is set to, so you can read your setup without
 // opening ten pages (2026-11-06, .mystical/design-drafts/settings-pages, A · LIVE RAIL).
 // Quiet grey text; amber only when the page wants you (a login signed out).
-// Fetched once per open, from the same GETs the pages make themselves.
+// The same reads the pages make themselves, so a page opened after asks nothing again.
 type Readout = { text: string; want?: boolean };
-// The storage scan walks every repo's .mystical/ (~2 s); once per page load is plenty.
-let storageScan: Promise<number> | null = null;
 const titled = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 
 function useRailReadouts(settings: HudSettings, projectCount: number, plugins: Record<string, boolean>,
   project: string | null): Partial<Record<Tab, Readout>> {
-  const [live, setLive] = useState<{ accounts?: AccountInfo[]; workspaces?: number; skills?: number; storage?: number }>({});
-  useEffect(() => {
-    let on = true;
-    const put = (part: typeof live) => { if (on) setLive((l) => ({ ...l, ...part })); };
-    void api.accounts().then((r) => put({ accounts: r.accounts })).catch(() => {});
-    void api.workspaces().then((r) => put({ workspaces: r.workspaces.length })).catch(() => {});
-    void api.skills(project).then((r) => put({ skills: r.project.length + r.system.length })).catch(() => {});
-    void (storageScan ??= api.storage().then((r) => r.bytes))
-      .then((b) => put({ storage: b }))
-      .catch(() => { storageScan = null; });
-    return () => { on = false; };
-  }, [project]);
+  const skills = useQuery(setq.skills({ project: project || undefined })).data;
+  const live = {
+    accounts: useQuery(main.accounts()).data?.accounts,
+    workspaces: useQuery(setq.workspaces()).data?.workspaces.length,
+    skills: skills && skills.project.length + skills.system.length,
+    // The scan walks every repo's .mystical/ (~2 s): once per page load is plenty for a count.
+    storage: useQuery({ ...setq.storage(), staleTime: Infinity }).data?.bytes,
+  };
   const out: Partial<Record<Tab, Readout>> = {
     appearance: { text: titled(themeDef(settings.theme).name) },
     transcript: { text: settings.layout === "compact" ? "Compact" : "Default" },
@@ -4673,12 +4626,7 @@ function useRailReadouts(settings: HudSettings, projectCount: number, plugins: R
 /** The rail's foot: the bridge you are talking to, and the way to restart it
  *  (restartBridge asks first, as SYSTEM's own button does). */
 function RailFoot({ onOpen }: { onOpen: () => void }) {
-  const [branch, setBranch] = useState<string | null>(null);
-  useEffect(() => {
-    let on = true;
-    void api.update().then((u) => { if (on) setBranch(u.branch || null); }).catch(() => {});
-    return () => { on = false; };
-  }, []);
+  const branch = useQuery(rail.update()).data?.branch || null;
   return (
     <div className="set-railfoot">
       <button className="set-railfoot-who" onClick={onOpen} title="open System">
@@ -4743,14 +4691,9 @@ export function SettingsModal(props: SettingsModalProps) {
   const [q, setQ] = useState("");
   // Opened for an APPEARANCE block (the Almanac's ⚙), it scrolls there as a search hit would.
   const [jump, setJump] = useState<Hit | null>(() => start.tab === "appearance" && startSec ? { tab: "appearance", sec: startSec } : null);
-  const [env, setEnv] = useState<EnvSetting[]>([]);
-  const asked = useRef(false);
+  // Read once a search starts: one key, so typing doesn't ask again.
+  const env: EnvSetting[] = useQuery({ ...setq.env(), enabled: !!q.trim() }).data?.settings ?? NO_ENV;
   const pane = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!q.trim() || asked.current) return;
-    asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
-    void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
-  }, [q]);
   // Sections that exist only while their plugin is installed; AVAILABLE answers
   // for one that isn't, so a search never offers a card the page doesn't draw.
   const plugins = useIntegrations();

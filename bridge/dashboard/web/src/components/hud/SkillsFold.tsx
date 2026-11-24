@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
   Palette, PenLine, Play, Puzzle, Route, Scale, Scissors, ShieldQuestion, SkipForward, Sparkles,
   ShieldCheck, Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
-  api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo,
+  api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope,
 } from "../../api";
-import { setAiFeatures, useGraphify } from "../../lib/ai";
+import { useGraphify } from "../../lib/ai";
+import { queryClient, settings } from "../../lib/queries";
 import { PluginsView } from "./PluginsView";
 
 /* The extras and the skills — two kinds of card, one card grammar.
@@ -128,7 +130,9 @@ function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
  *  turns you typed until you decide otherwise. A switch applies to the next
  *  turn — nothing to restart. */
 function ExtrasGrid() {
-  const [rows, setRows] = useState<AiFeature[] | null>(null);
+  const key = settings.aiFeatures();
+  const q = useQuery(key);
+  const rows = q.data?.features ?? (q.isError ? [] : null);
   const [busy, setBusy] = useState<string | null>(null);
   // A failure belongs on the card whose switch just refused to move.
   const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
@@ -138,21 +142,13 @@ function ExtrasGrid() {
   const gfy = useGraphify();
   const missing = (f: AiFeature) => f.key === "graph" && gfy.installed === false;
 
-  useEffect(() => {
-    void api.aiFeatures()
-      .then((r) => { setRows(r.features); setAiFeatures(r.features); })
-      .catch(() => setRows([]));
-  }, []);
-
   async function toggle(f: AiFeature) {
     setBusy(f.key);
     setErr(null);
     try {
-      const fresh = (await api.setAiFeature(f.key, !f.enabled)).features;
-      setRows(fresh);
-      // The switch owns visible UI elsewhere (tabs, boards, cards) — hand the
-      // fresh answer to the shared store so it appears/disappears right now.
-      setAiFeatures(fresh);
+      // The switch owns visible UI elsewhere (tabs, boards, cards): its answer goes to the
+      // shared query, so they appear or disappear right now.
+      queryClient.setQueryData(key.queryKey, { features: (await api.setAiFeature(f.key, !f.enabled)).features });
     } catch (e) {
       setErr({ key: f.key, msg: e instanceof Error ? e.message : "could not save" });
     } finally {
@@ -260,8 +256,11 @@ function SkillRow({ s, scope, busy, onRemove, onUpdate }: {
 }
 
 function SkillsGrid({ project }: { project: string | null }) {
-  const [info, setInfo] = useState<SkillsInfo | null>(null);
-  const [err, setErr] = useState("");
+  const key = settings.skills({ project: project || undefined });
+  const skillsQ = useQuery(key);
+  const info = skillsQ.data ?? null;
+  const [failed, setErr] = useState("");
+  const err = failed || skillsQ.error?.message || "";
   const [busy, setBusy] = useState("");
   const [mode, setMode] = useState<Mode>("installed");
   const [cat, setCat] = useState<SkillCategory | "all">("all");
@@ -274,10 +273,7 @@ function SkillsGrid({ project }: { project: string | null }) {
 
   useEffect(() => {
     let live = true;
-    setInfo(null); setErr(""); setStale(new Set());
-    void api.skills(project)
-      .then((d) => { if (live) setInfo(d); })
-      .catch((e: Error) => { if (live) setErr(e.message); });
+    setErr(""); setStale(new Set());
     // Follow the source repos: one sweep per open, results shown as ↻ Update
     // rather than applied behind your back.
     setChecking(true);
@@ -295,7 +291,7 @@ function SkillsGrid({ project }: { project: string | null }) {
       // Both calls answer with the fresh installed lists, so no refetch.
       // Installing over an existing catalog skill is exactly what "update" is.
       const r = await (on ? api.removeSkill : api.installSkill)(id, scope, project);
-      setInfo((p) => (p ? { ...p, project: r.project, system: r.system } : p));
+      queryClient.setQueryData(key.queryKey, (p) => (p ? { ...p, project: r.project, system: r.system } : p));
       setStale((p) => { const n = new Set(p); n.delete(`${scope}:${id}`); return n; });
     } catch (e) {
       setErr((e as Error).message);

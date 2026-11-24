@@ -23,9 +23,11 @@
 // the batches after the router (tickets 12-15) each add to their own part.
 import { QueryClient, hashKey, queryOptions, type FetchQueryOptions } from "@tanstack/react-query";
 import type {
-  AccountsInfo, AcpAgentsInfo, AgentActivity, AgentsInfo, DashState, EnrichedSession, FlowSettings, GitBadge, GitStatus,
-  GraphState, HostStats, NextBoard, Notice, NoticePrefs, ProjectSettings, ProjectsListing, QueueSnapshot, RunningInfo,
-  SessionBrief, SlashCommand, Transcript, UpdateInfo, UsageInfo, Worktree,
+  AccountsInfo, AcpAgentsInfo, AcpLogin, AgentActivity, AgentsInfo, AiFeature, CouncilSettings, DashState, EnrichedSession,
+  EnvSetting, FlowSettings, GitBadge, GitStatus, GraphInstall, GraphState, HostStats, Integration, Lesson, McpInfo,
+  MoveFile, MoveJob, MovePlan, MoveRead, NextBoard, Notice, NoticePrefs, Place, PluginsInfo, ProjectSettings, ProjectsListing,
+  QueueSnapshot, RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState,
+  StorageScan, Transcript, UpdateInfo, UsageInfo, VideoTools, Worktree, WorkspaceSet,
 } from "../api.ts";
 import type { AgentDetail, Team } from "./agentteam.ts";
 import type { BranchStatus } from "./branchrows.ts";
@@ -141,9 +143,40 @@ export const main = {
   browser: readByPost<{ running: boolean; pinned: number; to: string | null }, { session_id: string; op: "state"; url: string }>("/local/chat/browser", { ms: 4000 }),
 };
 
-/** Settings. */
+/** Settings and its pages, and the switches they own that the rest of the page reads (AI
+ *  features, integrations, the FLOWS sheet). Its accounts, notices, update and projects are the
+ *  other parts' reads. */
 export const settings = {
   flows: read<FlowSettings>("/local/flows"),
+  aiFeatures: read<{ features: AiFeature[] }>("/local/aifeatures"),
+  integrations: read<{ plugins: Integration[] }>("/local/integrations"),
+  // Polled only while an install runs (lib/ai useGraphify).
+  graphInstall: read<GraphInstall>("/local/graph/install", { ms: 1500 }),
+  startup: read<StartupState>("/local/startup"),
+  env: read<{ settings: EnvSetting[] }>("/local/envsettings"),
+  // Polled while INTEGRATIONS ▸ Rivendell is open: the socket goes up and down on its own.
+  rivendell: read<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell", { ms: 4000 }),
+  // Polled only while an MCP sign-in waits for the CLI's own callback.
+  mcp: read<McpInfo>("/local/mcp", { ms: 2500 }),
+  acpAgents: read<AcpAgentsInfo>("/local/acp/agents"),
+  // A POST (`action: status`), polled only while that sign-in runs (AgentRow passes its queryFn).
+  acpLogin: read<AcpLogin, { agent: string; account: string }>("/local/acp/login", { ms: 2000 }),
+  savers: read<{ savers: Saver[] }>("/local/savers"),
+  council: read<CouncilSettings>("/local/council/settings"),
+  movePlan: read<MovePlan>("/local/move/plan"),
+  moveFiles: read<{ files: MoveFile[] }>("/local/move/files"),
+  moveRead: read<{ read: MoveRead | null }>("/local/move/read"),
+  // Every 5 s while MOVE is open, every second while a move runs.
+  moveJobs: read<{ jobs: MoveJob[] }>("/local/move/jobs", { ms: 5000 }),
+  weatherSearch: read<{ results?: Place[]; error?: string }, { q: string }>("/local/weather/search"),
+  workspaces: read<WorkspaceSet>("/local/workspaces"),
+  skills: read<SkillsInfo, { project?: string }>("/local/skills"),
+  storage: read<StorageScan>("/local/storage"),
+  usageSharing: read<{ share: boolean | null }>("/local/usage-sharing"),
+  projectSettings: read<ProjectSettings, { project: string }>("/local/project/settings"),
+  plugins: read<PluginsInfo>("/local/plugins"),
+  repoImages: read<RepoImages, { project: string }>("/local/project-mark/repo"),
+  lessons: read<{ lessons: Lesson[]; repo_enabled: boolean }, { project: string }>("/local/learn"),
 };
 
 /** The rail's code tabs: GIT, FILES, BRANCHES, MAP, the editor. */
@@ -186,12 +219,37 @@ export const CHANGES: Record<string, string[]> = {
   "/local/notices": [rail.notices.route],
   "/local/accounts": [main.accounts.route],
   "/local/flow/*": [main.flow.route],
-  "/local/flows": [settings.flows.route],
+  // FLOWS, AUTO PICKS and SMART ZONE are AI switches too.
+  "/local/flows": [settings.flows.route, settings.aiFeatures.route],
+  "/local/aifeatures": [settings.aiFeatures.route],
+  "/local/integrations": [settings.integrations.route],
+  "/local/startup": [settings.startup.route],
+  "/local/envsettings": [settings.env.route],
+  "/local/rivendell": [settings.rivendell.route, settings.integrations.route],
+  "/local/mcp": [settings.mcp.route],
+  "/local/acp/accounts": [settings.acpAgents.route],
+  "/local/acp/test": [settings.acpAgents.route],
+  "/local/policy/default": [main.accounts.route],
+  "/local/savers": [settings.savers.route],
+  "/local/council/settings": [settings.council.route],
+  // Not the plan: it runs git over every repo (seconds), and only an import changes what it lists.
+  "/local/move/*": [settings.moveFiles.route, settings.moveRead.route, settings.moveJobs.route],
+  "/local/move/import": [settings.movePlan.route],
+  "/local/workspaces": [settings.workspaces.route],
+  "/local/workspaces/*": [settings.workspaces.route],
+  "/local/skills/install": [settings.skills.route],
+  "/local/skills/remove": [settings.skills.route],
+  "/local/plugins/*": [settings.plugins.route],
+  "/local/storage/clear": [settings.storage.route],
+  "/local/usage-sharing": [settings.usageSharing.route],
+  "/local/learn/toggle": [settings.lessons.route],
+  "/local/project-mark/pick": [main.projects.route],
+  "/local/roots/remove": [main.projects.route],
   "/local/worklist/*": [main.worklist.route],
-  "/local/graph/*": [code.graphState.route],
+  "/local/graph/*": [code.graphState.route, settings.graphInstall.route],
   "/local/git/*": GIT,
   "/local/update": [rail.update.route],
-  "/local/project/settings": [main.projects.route, main.projectSettings.route, code.graphState.route],
+  "/local/project/settings": [main.projects.route, main.projectSettings.route, code.graphState.route, settings.projectSettings.route],
 };
 
 const matchers = Object.entries(CHANGES).map(([pat, routes]) => {

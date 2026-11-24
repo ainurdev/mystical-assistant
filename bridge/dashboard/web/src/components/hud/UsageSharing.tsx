@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { api } from "../../api";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryClient, settings as setq } from "../../lib/queries";
 import { CARD, Row, Section, Switch } from "./SettingsModal";
 import { answer, WHAT } from "./UsageOffer";
 
@@ -8,15 +9,14 @@ import { answer, WHAT } from "./UsageOffer";
 
 /** SETTINGS ▸ System. */
 export function UsageSharingSection() {
-  const [share, setShare] = useState<boolean | null | "old">(null);
+  const key = setq.usageSharing();
+  const q = useQuery(key);
+  const share: boolean | null | "old" = q.data ? q.data.share : q.isError ? "old" : null;
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api.usageSharing().then((r) => setShare(r.share)).catch(() => setShare("old"));
-  }, []);
   const flip = async () => {
     if (busy || share === "old") return;
     setBusy(true);
-    if (await answer(!share)) setShare(!share);
+    if (await answer(!share)) queryClient.setQueryData(key.queryKey, { share: !share });
     setBusy(false);
   };
   return (
