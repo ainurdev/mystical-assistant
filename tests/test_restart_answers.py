@@ -212,7 +212,8 @@ def test_an_expired_meter_answers_at_once_and_reads_behind(meters):
 def test_the_usage_meter_answers_at_once_after_a_restart_and_once_expired(meters, monkeypatch):
     # Sentry MYSTICAL-A: /local/usage waited on the spawn at every start and every 5 minutes.
     now, spawns = meters
-    assert usage.CREDENTIALS_FILE == accounts.credentials_path(1)   # /local/usage is login 1's meter
+    # /local/usage is login 1's meter (test_accounts leaves accounts.CLAUDE_HOME repointed, so say so here)
+    monkeypatch.setattr(usage, "CREDENTIALS_FILE", accounts.credentials_path(1))
     assert _get("/local/usage")["five_hour"]["percent"] == 20
     _restart_meters(monkeypatch)
     now[1] = _reading(40)
