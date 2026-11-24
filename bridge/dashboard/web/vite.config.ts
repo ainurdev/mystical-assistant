@@ -34,6 +34,8 @@ function builtFrom(): Plugin {
 // commit maps against the maps CI uploaded for it (.github/workflows/sourcemaps.yml).
 // The maps are written but no script links them. Only CI, with the token, talks to
 // Sentry; an install's build never does, and the plugin's telemetry is off.
+// shortcut: the ids match only when an install's bundle is byte-identical to CI's (Node 24,
+// npm ci on the lockfile); another Node or node_modules leaves its stacks minified. Pin Node if that bites.
 const upload = !!(process.env.CI && process.env.SENTRY_AUTH_TOKEN);
 process.env.SENTRY_CLI_NO_TELEMETRY = "1";   // the CLI that uploads sends its own error reports to Sentry's project otherwise
 const sentry = sentryVitePlugin({

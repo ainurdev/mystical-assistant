@@ -43,14 +43,15 @@ const out = send({
   exception: { values: [{ type: "Error", value: `ghp_${"a".repeat(30)} in ${TOKEN}` }] },
   request: { url: `${ORIGIN}/?token=${TOKEN}` },
   contexts: { turn: { prompt: "fix the login\nsecret second line" } },
-  extra: { long: "x".repeat(5000) },
+  extra: { long: "x".repeat(5000), call: "GET /local/files/grep?q=elvou+secret&project=/r failed" },
   breadcrumbs: [{ category: "navigation", data: { from: "#/", to: "#/s/1" } }, { category: "console", message: TOKEN }],
 })!;
 const json = JSON.stringify(out);
-for (const leak of [TOKEN, "sk-ant-", "abc.def", "AAxyz", "ghp_", "second line"]) assert.ok(!json.includes(leak), `${leak} in ${json}`);
+for (const leak of [TOKEN, "sk-ant-", "abc.def", "AAxyz", "ghp_", "second line", "elvou"]) assert.ok(!json.includes(leak), `${leak} in ${json}`);
 assert.equal(out.request?.url, ORIGIN + "/");
 assert.equal((out.contexts?.turn as { prompt: string }).prompt, "fix the login");
 assert.equal((out.extra?.long as string).length, 1000);
+assert.equal(out.extra?.call, "GET /local/files/grep failed");
 assert.deepEqual(out.breadcrumbs?.map((b) => b.category), ["navigation"]);
 
 // a script chunk missing after a newer build is never sent

@@ -99,6 +99,7 @@ def boot() -> bool:
     _team = _team_connection()
     if not _team:
         return False
+    # First on the path on purpose: the vendored urllib3/certifi win over any system copies for the whole process.
     sys.path.insert(0, VENDOR)
     try:
         import sentry_sdk
@@ -195,7 +196,7 @@ def _turn_context(job) -> dict:
         "session": job.store_session_id, "project": sess.get("project"),
         "account": job.runtime or (f"claude:{job.account_slot}" if job.account_slot else "default"),
         "model": job.model, "flow": flow.get("path"), "step": (flow.get("next") or {}).get("station"),
-        "prompt": t.get("prompt") or "" if t.get("id") == job.id else "",
+        "prompt": (t.get("prompt") or "") if t.get("id") == job.id else "",
     }
 
 

@@ -35,12 +35,13 @@ const SHAPES: [RegExp, string][] = [
   [/\bbot\d+:[\w-]+/g, "bot" + FILTERED],
 ];
 const QUERY = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#"'<>]*)\?[^\s#"'<>]*/gi;
-const TOKEN_PARAM = /([?&]token=)[^&#\s"'<>]*/gi;   // a relative URL's query is kept below, but never its token
+const LOCAL_QUERY = /(\/local\/[^\s?#"'<>]*)\?[^\s#"'<>]*/g;   // a bridge call's query can carry search or prompt text
+const TOKEN_PARAM = /([?&]token=)[^&#\s"'<>]*/gi;   // any other relative URL keeps its query, but never its token
 
 function text(s: string, key: string, held: string[]): string {
   for (const sec of held) s = s.split(sec).join(FILTERED);
   for (const [rx, sub] of SHAPES) s = s.replace(rx, sub);
-  s = s.replace(QUERY, "$1").replace(TOKEN_PARAM, `$1${FILTERED}`);
+  s = s.replace(QUERY, "$1").replace(LOCAL_QUERY, "$1").replace(TOKEN_PARAM, `$1${FILTERED}`);
   return key === "prompt" ? s.split("\n", 1)[0].slice(0, PROMPT_CAP) : s.slice(0, CAP);
 }
 
