@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type NextItem } from "../api";
-import { main } from "../lib/queries";
+import { queryClient, rail } from "../lib/queries";
 
 const EFFORT: Record<NextItem["effort"], string> = {
   small: "·",
@@ -22,19 +22,16 @@ function when(ts: number | null): string {
  *  instantly; REFRESH is the only thing that spends anything, and only on repos
  *  whose git state has moved since last time. */
 export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
-  // `busy`: when REFRESH's POST came back; the board polls until a read after it says the scouts are done.
-  const [busy, setBusy] = useState(0);
-  const nextQ = useQuery({ ...main.next(), refetchInterval: busy ? main.next.poll?.ms : false });
-  const board = nextQ.data ?? null;
-  useEffect(() => {
-    if (busy && board && !board.refreshing && nextQ.dataUpdatedAt > busy) setBusy(0);
-  }, [busy, board, nextQ.dataUpdatedAt]);
+  // Scouts run in the background; watch until the server says it's done.
+  const board = useQuery({ ...rail.next(), refetchInterval: (q) => (q.state.data?.refreshing ? 3000 : false) }).data ?? null;
+  const [asking, setAsking] = useState(false);
+  const busy = asking || !!board?.refreshing;
 
   async function refresh() {
-    setBusy(Date.now());
-    await api.refreshNext().catch(() => null);
-    // Scouts run in the background; the POST rereads the board, and it polls till they're done.
-    setBusy(Date.now());
+    setAsking(true);
+    const r = await api.refreshNext().catch(() => null);
+    if (r) queryClient.setQueryData(rail.next().queryKey, r);   // the board it answers with says it's refreshing
+    setAsking(false);
   }
 
   const items = board?.items ?? [];

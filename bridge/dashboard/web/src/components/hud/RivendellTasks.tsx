@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { ExternalLink, ListTodo, Play, RefreshCw, SquarePen } from "lucide-react";
-import type {
-  RivendellLink, RivendellTask, RivendellTaskDetail, RivendellTasks as TasksAnswer, RivendellTodolist, SessionBrief,
-} from "../../api";
+import type { RivendellLink, RivendellTask, RivendellTaskDetail, SessionBrief } from "../../api";
 import { api } from "../../api";
+import { queryClient, rail, reread } from "../../lib/queries";
 import { openSettings } from "../../lib/opensettings";
 import { RivendellIcon } from "../../lib/rivendellicon";
 import {
@@ -80,9 +80,13 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
    *  task's own checkout, everywhere view) or else this project. */
   onWorkOn: (text: string, dir?: string | null) => void;
 }) {
-  const [data, setData] = useState<TasksAnswer | null>(null);
-  const [fail, setFail] = useState<string | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  // TEAM reads the same key (lib/queries). TanStack never stacks a poll on one still out, so a
+  // slow Rivendell doesn't pile them up.
+  const tasksKey = rail.rivendellTasks({ project: project ?? "" });
+  const q = useQuery({ ...tasksKey, enabled: !!project, refetchInterval: (qq) => (qq.state.data?.everywhere ? EVERY_MS : POLL_MS) });
+  const data = q.data ?? null;
+  const fail = q.error?.message ?? null;
+  const now = new Date(q.dataUpdatedAt || Date.now());
   const [busy, setBusy] = useState<Set<string>>(new Set());
   // task id -> the request IMPLEMENT just created, shown QUEUED until the list
   // catches up with it; task id -> why IMPLEMENT (or an answer) failed.
@@ -95,59 +99,35 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
   const [armed, setArmed] = useState("");
   const [note, setNote] = useState("");
   const [peeks, setPeeks] = useState<Record<string, Peek>>({});
-  const [todo, setTodo] = useState<RivendellTodolist | null>(null);
-  const [todoTick, setTodoTick] = useState(0);
   const [laterOpen, setLaterOpen] = useState(() => localStorage.getItem(LATER_KEY) !== "closed");
   const [teamOpen, setTeamOpen] = useState(false);   // TEAM starts folded: the tab is about yours
   const [stored, setStored] = useState(() => readSkips(project));
   const cards = useRef(new Map<string, HTMLDivElement>());
-  const every = useRef(false);
   // TEST LINK on the TOKEN REJECTED banner: the connection being tested, and
   // what each test said.
   const [testing, setTesting] = useState("");
   const [tested, setTested] = useState<Record<string, string>>({});
 
-  const load = useCallback((): Promise<void> => {
-    if (!project) return Promise.resolve();
-    return api.rivendellTasks(project)
-      .then((r) => {
-        setData(r); setFail(null); setNow(new Date()); every.current = !!r.everywhere;
-        // Once the list has shown a request, the list is the truth about it.
-        const listed = new Set(r.tasks.map((t) => t.implementation?.id));
-        setQueued((q) => Object.fromEntries(Object.entries(q).filter(([, rid]) => !listed.has(rid))));
-      })
-      .catch((e: Error) => setFail(e.message));
-  }, [project]);
-
-  // A chain, not an interval: the next poll is set when this one has answered,
-  // so a slow answer (a Rivendell that is slow to list) never stacks polls.
+  const load = () => reread(tasksKey.queryKey);
+  // Once the list has shown a request, the list is the truth about it.
   useEffect(() => {
-    let alive = true;
-    let t: ReturnType<typeof setTimeout> | undefined;
-    const tick = () => void load().finally(() => { if (alive) t = setTimeout(tick, every.current ? EVERY_MS : POLL_MS); });
-    tick();
-    return () => { alive = false; clearTimeout(t); };
-  }, [load]);
+    if (!data) return;
+    const listed = new Set(data.tasks.map((t) => t.implementation?.id));
+    setQueued((qd) => Object.fromEntries(Object.entries(qd).filter(([, rid]) => !listed.has(rid))));
+  }, [data]);
 
   // NEXT UP: read once per set of projects (and on ⟳), not on every poll — a
   // todolist changes when Rivendell regenerates it, not while you watch. The
   // first project with open items wins; a bridge without the route has none.
-  const projectsKey = data?.everywhere ? "" : (data?.projects ?? []).map((p) => `${p.instance_id}|${p.id}`).join(",");
-  useEffect(() => {
-    if (!projectsKey) { setTodo(null); return; }
-    let alive = true;
-    Promise.all(projectsKey.split(",").map((s) => {
-      const [iid, pid] = s.split("|");
-      return api.rivendellTodolist(iid, pid).then((r) => r.todolist).catch(() => null);
-    })).then((ls) => { if (alive) setTodo(ls.find((l) => l && l.items.length) ?? null); });
-    return () => { alive = false; };
-  }, [projectsKey, todoTick]);
+  const todos = useQueries({ queries: (data?.everywhere ? [] : data?.projects ?? []).map((p) => rail.rivendellTodolist({ instance_id: p.instance_id, project_id: p.id })) });
+  const todo = todos.map((t) => t.data?.todolist).find((l) => l && l.items.length) ?? null;
 
   const unbusy = (id: string) => setBusy((b) => { const n = new Set(b); n.delete(id); return n; });
 
   function refresh() {
     setPeeks({});
-    setTodoTick((n) => n + 1);
+    void reread([rail.rivendellTask.route]);
+    void reread([rail.rivendellTodolist.route]);
     void load();
   }
 
@@ -155,7 +135,7 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
     const id = key(t);
     setPeeks((m) => ({ ...m, [id]: { state: "loading" } }));
     try {
-      const d = await api.rivendellTask(t.instance_id, t.id);
+      const d = await queryClient.fetchQuery(rail.rivendellTask({ instance_id: t.instance_id, task_id: t.id }));
       setPeeks((m) => ({ ...m, [id]: { state: "ok", d } }));
       return d;
     } catch (e) {
@@ -200,7 +180,6 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
       const r = await api.rivendellImplement(t.instance_id, t.id, note.trim());
       setQueued((q) => ({ ...q, [t.id]: r.request.id }));
       setArmed(""); setNote("");
-      void load();
     } catch (e) {
       setErrs((m) => ({ ...m, [t.id]: (e as Error).message }));
     } finally {
@@ -236,7 +215,6 @@ export function RivendellTasks({ project, sessions, onOpenSession, onWorkOn }: {
       setTested((m) => ({ ...m, [iid]: "" }));
       const r = await api.rivendellTest(iid);
       setTested((m) => ({ ...m, [iid]: testText(r) }));
-      void load();
     } catch (e) {
       setTested((m) => ({ ...m, [iid]: `✕ ${(e as Error).message}` }));
     } finally {

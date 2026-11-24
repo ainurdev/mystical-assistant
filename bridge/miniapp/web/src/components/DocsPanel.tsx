@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { byGroup, docParts, outlinePrompt, writePrompt, type DocPage } from "../lib/docparts";
-import { designCall, useRefSession } from "../lib/readapi";
+import { designCall, docsRead, useRefSession } from "../lib/readapi";
 import { DataView } from "./DataView";
 import { Dialog } from "./DesignSystem";
 import { Markdown } from "./Markdown";
@@ -38,24 +39,16 @@ function Reader({ open, session, onClose }: { open: Open; session: string; onClo
 
 export function DocsPanel({ onAsk }: { onAsk?: (text: string) => void }) {
   const session = useRefSession();
-  const [data, setData] = useState<Listing | null>(null);
-  const [error, setError] = useState("");
+  // The agent writes pages as you watch, so the contents keep up.
+  const q = useQuery({ ...docsRead<Listing>(session ?? ""), refetchInterval: 6000, enabled: !!session });
+  const data = q.data ?? null;
+  const error = q.error ? errorOf(q.error) : "";
   const [open, setOpen] = useState<Open | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [where, setWhere] = useState<"hidden" | "project">("hidden");
   const [folder, setFolder] = useState("docs");
   const [said, setSaid] = useState("");
   const [showFound, setShowFound] = useState(false);
-  const load = useCallback(() => {
-    if (!session) return;
-    designCall<Listing>(session, "docs").then((r) => { setData(r); setError(""); }, (e) => setError(errorOf(e)));
-  }, [session]);
-  // The agent writes pages as you watch, so the contents keep up.
-  useEffect(() => {
-    load();
-    const t = window.setInterval(load, 6000);
-    return () => window.clearInterval(t);
-  }, [load]);
   const ask = (text: string, note: string) => { onAsk?.(text); setSaid(note); };
   if (!session) return <div className="ds"><p className="dg-empty">Open a chat in a project to see its docs.</p></div>;
   const gen = data?.generated;

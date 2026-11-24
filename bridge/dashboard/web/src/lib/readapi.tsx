@@ -1,7 +1,9 @@
+import type { UseQueryOptions } from "@tanstack/react-query";
 import { req } from "../api";
 import { MdImage } from "../components/MdImage";
 import { useChatImageScope } from "./chatimages";
 import type { DataEv } from "./dataview";
+import { main, rail } from "./queries";
 import type { Ref } from "./refs";
 
 // The dashboard's side of FileRef and SelectionPop, which are the same files in both apps.
@@ -53,14 +55,19 @@ export const uploadImage = async (session: string, data: string) =>
   (await req<{ path: string }>("/local/chat-images/upload", { method: "POST", body: { session_id: session, data } })).path;
 
 /** Automations (bridge/automations.py). No session: they belong to you, not to a chat. */
-export const autoGet = <T,>() => req<T>("/local/automations");
 export const autoCall = <T,>(path: string, body: Record<string, unknown> = {}) =>
   req<T>(`/local/automations/${path}`, { method: "POST", body });
 
 /** The project's work: its tasks and this chat's plan (bridge/worklist.py, chatplan.py). */
-export const workGet = <T,>(session: string | null, project?: string | null) =>
-  req<T>(`/local/worklist?session=${encodeURIComponent(session ?? "")}&project=${encodeURIComponent(project ?? "")}`);
 export const workCall = <T,>(path: string, session: string | null, project: string | null | undefined, body: Record<string, unknown> = {}) =>
   req<T>(`/local/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await req<{ sources: string[] }>(`/local/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
+
+// The panels' polled reads (WORK, DOCS, AUTO), as query options: the dashboard's go through its key module.
+type Read<T> = UseQueryOptions<T, Error, T, readonly unknown[]>;
+export const workRead = <T,>(session: string | null, project?: string | null) =>
+  main.worklist({ session: session ?? "", project: project ?? "" }) as unknown as Read<T>;
+export const docsRead = <T,>(session: string) =>
+  ({ ...rail.docs({ session }), queryFn: () => designCall<T>(session, "docs") }) as unknown as Read<T>;
+export const autoRead = <T,>() => rail.automations() as unknown as Read<T>;

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type HostStats, type Place, type Weather } from "../api";
-import { rail } from "./queries";
+import { queryClient, rail } from "./queries";
 
 const EMPTY_HOST: HostStats = {
   available: false, host: "host", cpu: 0, mem_used: 0, mem_total: 16, mem_pct: 0,
@@ -18,28 +18,17 @@ export function useHostVitals(): HostStats {
   return useQuery(rail.sysinfo()).data ?? EMPTY_HOST;
 }
 
-/** Poll weather (cached server-side) every 10 minutes; setPlace moves it to a
- *  place the city picker offered, setUnit switches °C/°F. Both persist server-side. */
+// A place or unit change answers with the new weather: shown at once.
+const setWx = (w: Weather) => queryClient.setQueryData(rail.weather().queryKey, w);
+
+/** Weather (cached server-side), polled every 10 minutes while the page shows (lib/queries);
+ *  setPlace moves it to a place the city picker offered, setUnit switches °C/°F. Both persist server-side. */
 export function useWeather(): {
   weather: Weather;
   setPlace: (p: Place) => Promise<string | null>;
   setUnit: (unit: string) => Promise<string | null>;
 } {
-  const [wx, setWx] = useState<Weather>(EMPTY_WX);
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const w = await api.weather();
-        if (live) setWx(w);
-      } catch {
-        /* keep last */
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 600_000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
+  const wx = useQuery(rail.weather()).data ?? EMPTY_WX;
   const setPlace = useCallback(async (p: Place): Promise<string | null> => {
     try {
       const r = await api.setWeatherPlace(p);

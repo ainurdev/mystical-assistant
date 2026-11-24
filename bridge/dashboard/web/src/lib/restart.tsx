@@ -57,7 +57,7 @@ export async function watchRestart(signal = "SIGINT", tries = 60) {
   mark("signal", "ok", signal);
 
   // Every request fails while it re-execs; the first one that lands is the new
-  // process, so reload into it.
+  // process, so reload into it. Not a query: a cached state would say ONLINE before the bridge is back.
   for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, 1500));
     try {

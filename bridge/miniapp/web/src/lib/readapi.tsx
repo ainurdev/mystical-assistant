@@ -1,3 +1,4 @@
+import { queryOptions } from "@tanstack/react-query";
 import { request } from "./api";
 import { ChatImage } from "../components/ChatImage";
 import { useChat } from "./chat";
@@ -64,3 +65,10 @@ export const workCall = <T,>(path: string, session: string | null, project: stri
   request<T>(`/api/worklist/${path}`, { method: "POST", body: { session_id: session, project, ...body } });
 export const workSources = async (session: string | null) =>
   (await request<{ sources: string[] }>(`/api/worklist/sources?session=${encodeURIComponent(session ?? "")}`)).sources;
+
+// The panels' polled reads (WORK, DOCS, AUTO), as query options.
+export const workRead = <T,>(session: string | null, project?: string | null) =>
+  queryOptions({ queryKey: ["/api/worklist", session ?? "", project ?? ""], queryFn: () => workGet<T>(session, project) });
+export const docsRead = <T,>(session: string) =>
+  queryOptions({ queryKey: ["/api/chat/docs", session], queryFn: () => designCall<T>(session, "docs") });
+export const autoRead = <T,>() => queryOptions({ queryKey: ["/api/automations"], queryFn: () => autoGet<T>() });

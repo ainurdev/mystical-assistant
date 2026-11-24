@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, GitBranch, Search, SquareTerminal } from "lucide-react";
-import { api, type GitBadge, type GitStatus, type SessionBrief, type SessionStatus, type Worktree } from "../../api";
+import type { GitBadge, SessionBrief, SessionStatus } from "../../api";
+import { code, rail } from "../../lib/queries";
 import { useAiFeatures } from "../../lib/ai";
 import { isMacApp } from "../../lib/mac";
 import { projectName } from "../../lib/surfaces";
@@ -23,6 +25,8 @@ import MarkEditor from "./MarkEditor";
    changed file opens it on CHANGES with its diff inline (the GIT tab that showed
    diffs here went — commits are the rail's GIT tab); RUN and a transcript
    re-run open the terminal drawer; the MAP chip opens the map. */
+
+const NONE: never[] = [];   // one empty list, so a read still on its way doesn't change it every render
 
 export type Tab = "changes" | "editor" | "terminal" | "map";
 
@@ -59,12 +63,17 @@ export function AnalyzeModal(props: Props) {
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const aiFeatures = useAiFeatures();   // MAP hides with its switch, and with the repo's own
-  const [mapOn, setMapOn] = useState(false);
-  const [git, setGit] = useState<GitStatus | null>(null);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [defaultBranch, setDefaultBranch] = useState("main");
-  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
+  const mapQ = useQuery({ ...code.graphState({ project }), enabled: aiFeatures.graph });
+  const mapOn = aiFeatures.graph && !!mapQ.data && mapQ.data.repo_on !== false;
+  // Read once when the window opens (the GIT tab polls the same status key while it shows).
+  const git = useQuery({ ...code.git({ project }), refetchInterval: false }).data ?? null;
+  const br = useQuery(rail.branches({ project })).data;
+  const branches = br?.branches ?? NONE;
+  const defaultBranch = br?.default || "main";
+  const worktrees = useQuery(rail.worktrees({ project })).data?.worktrees ?? NONE;
+  const termsQ = useQuery(rail.terminals({ project }));
   const [termCount, setTermCount] = useState(0);
+  useEffect(() => { if (termsQ.data) setTermCount(termsQ.data.terminals.length); }, [termsQ.data]);
   // The drawer mounts on its first show and only hides after: its PTYs and
   // their scrollback keep running underneath.
   const [term, setTerm] = useState<"none" | "open" | "hidden">(props.initialTab === "terminal" ? "open" : "none");
@@ -77,26 +86,11 @@ export function AnalyzeModal(props: Props) {
   const bus = useRef<{ palette?: () => void }>({});
   const mac = isMacApp();
 
-  const refreshWt = () => {
-    void api.worktrees(project)
-      .then((w) => setWorktrees(w.worktrees))
-      .catch(() => {});
-  };
-
   useEffect(() => {
     setSelectedBranch(props.initialBranch ?? "");
     setMarkOpen(false);
-    void api.git(project).then(setGit).catch(() => {});
-    void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
-    refreshWt();
-    void api.terminals(project).then((d) => setTermCount(d.terminals.length)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
-
-  useEffect(() => {
-    if (!aiFeatures.graph) { setMapOn(false); return; }
-    void api.graphState(project).then((g) => setMapOn(g.repo_on !== false)).catch(() => setMapOn(false));
-  }, [project, aiFeatures.graph]);
 
   // default viewed branch → the checked-out branch
   useEffect(() => { const c = git?.branch || badge?.branch; if (c) setSelectedBranch((p) => p || c); }, [git, badge]);
