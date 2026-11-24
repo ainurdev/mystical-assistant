@@ -240,6 +240,21 @@ def test_dashboard_sets_any_accounts_auto_switch_switch():
         restore()
 
 
+def test_dashboard_saves_the_auto_switch_order():
+    """The whole list, first choice first; anything but a list of slots is a 400."""
+    calls, restore = _stub_action("set_order")
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "order", "slots": [3, 1, 2]})
+        assert box["code"] == 200 and calls == [(([3, 1, 2],), {})]
+        for bad in ({}, {"slots": "3,1"}, {"slots": [3, "1"]}, {"slots": [True]}):
+            h._post_api("/local/accounts", {"action": "order", **bad})
+            assert box["code"] == 400, bad
+        assert len(calls) == 1
+    finally:
+        restore()
+
+
 def test_dashboard_rejects_an_unknown_account_action():
     h, box = _dash_handler()
     h._post_api("/local/accounts", {"action": "nuke", "slot": 2})

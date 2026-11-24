@@ -37,8 +37,12 @@ One sign-in Mystical runs an agent under: a Claude login, another agent's login,
 _Avoid_: slot, profile
 
 **Auto-switch**:
-The on-limit choice that moves a **Session** whose **Account** ran out onto another Account with room, without asking you. The other two choices are Ask (it offers you the move) and Wait (for the **Limit reset**).
+The on-limit choice that moves a **Session** whose **Account** ran out onto the first Account down the **Auto-switch order** with room, without asking you. The other two choices are Ask (it offers you the move) and Wait (for the **Limit reset**).
 _Avoid_: auto mode, auto, auto fallback
+
+**Auto-switch order**:
+The order **Auto-switch** tries the **Accounts** in, first choice first, set by dragging them in the dashboard. A further-down Account with more room still waits its turn.
+_Avoid_: priority list, ranking, preference
 
 **Out of Auto-switch**:
 An **Account** whose own Auto-switch switch is off: **Auto-switch** never moves a **Session** onto it without asking you, though you can still pick it yourself. Unlike a disabled Account, which nothing runs on.

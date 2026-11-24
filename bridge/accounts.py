@@ -177,8 +177,8 @@ def _sync_user_mcp(p: str) -> None:
 # --- registry (ROOT/accounts.json) ------------------------------------------
 # Slot 1 is implicit: it *is* ~/.claude, so it needs no entry and is listed
 # whenever an ambient login exists. Only added slots are persisted, plus slot 1's
-# Auto-switch switch under "1" once it has been set (set_auto_switch): every
-# reader of slot rows skips that key.
+# Auto-switch switch and place in the order under "1" once either has been set
+# (set_auto_switch, set_order): every reader of slot rows skips that key.
 
 def _registry_path() -> str:
     return os.path.join(ROOT, "accounts.json")
@@ -243,9 +243,10 @@ def list_accounts() -> list:
     out = []
     ambient = credentials.read(credentials_path(DEFAULT_SLOT))
     if ambient:
+        slot1 = reg.get(str(DEFAULT_SLOT)) or {}
         out.append({"slot": DEFAULT_SLOT, "email": _email_at(IDENTITY),
                     "alias": None, "disabled": False, "default": True,
-                    "auto_switch": bool((reg.get(str(DEFAULT_SLOT)) or {}).get("auto_switch", True)),
+                    "auto_switch": bool(slot1.get("auto_switch", True)), "order": slot1.get("order"),
                     "plan": _plan_of(credentials.parse(ambient))})
     for key, e in reg.items():
         if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
@@ -257,7 +258,12 @@ def list_accounts() -> list:
         out.append({"slot": slot, "email": live or e.get("email"),
                     "alias": e.get("alias"), "disabled": bool(e.get("disabled")),
                     "default": False, "auto_switch": bool(e.get("auto_switch", True)),
+                    "order": e.get("order"),
                     "plan": _plan_of(credentials.load(credentials_path(slot)))})
+    # Each login's place in the Auto-switch order, 0 first. One never placed
+    # (set_order) comes after every placed one, by slot: a new login joins the bottom.
+    for i, a in enumerate(sorted(out, key=lambda a: (a["order"] is None, a["order"] or 0, a["slot"]))):
+        a["order"] = i
     return sorted(out, key=lambda a: a["slot"])
 
 
@@ -623,6 +629,18 @@ def set_auto_switch(slot: int, on: bool) -> None:
         _save(reg)
 
 
+def set_order(slots: list) -> None:
+    """The Auto-switch order, first choice first: a limit moves the session to
+    the first login down it with room. The dashboard sends the whole list."""
+    with _lock:
+        reg = _load()
+        for i, slot in enumerate(int(s) for s in slots):
+            if slot != DEFAULT_SLOT and str(slot) not in reg:
+                raise ValueError(f"no account in slot {slot}")   # before _save: nothing half-written
+            reg.setdefault(str(slot), {})["order"] = i
+        _save(reg)
+
+
 # --- pick(): which account takes the work ------------------------------------
 # EXHAUSTED matches limits._reset_epoch's threshold: at >=99% the window is over
 # and resuming there can only fail again.
@@ -665,13 +683,6 @@ def note_model_out(slot: "int | None", model: str, until: "float | None" = None)
     named, and for at least a meter cycle: the meter's model caps refresh only on
     a full read, so it can show room there for usage.CACHE_TTL after the refusal."""
     _model_out[(slot or DEFAULT_SLOT, model)] = max(until or 0.0, time.time() + usage.CACHE_TTL)
-
-
-def _weekly_reset(meter: dict) -> float:
-    """Epoch of this account's weekly reset; +inf when unknown, so an account
-    with no weekly window never wins consume-first."""
-    b = (meter or {}).get("seven_day") or {}
-    return usage.resets_epoch(b.get("resets_at")) or float("inf")
 
 
 def usage_for(slot: int) -> dict:
@@ -735,16 +746,15 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
         return list(pool.map(lambda a: {**a, **meter(a["slot"], max_age)}, accts))
 
 
-def pick(exclude=(), strategy: str = "best",
-         auto_switch: bool = False, model: "str | None" = None) -> "int | None":
-    """The slot that should take over, or None when nothing has headroom.
-
-    best          -- most quota left (default)
-    consume-first -- among accounts with room, the one whose weekly window
-                     resets soonest, so perishable quota is spent first
+def pick(exclude=(), auto_switch: bool = False,
+         model: "str | None" = None) -> "int | None":
+    """The slot that should take over, or None when nothing has headroom: the
+    first login down the Auto-switch order (set_order) with room. The order is
+    the user's to set, so a login further down with more left still waits.
 
     auto_switch picks only among accounts still in Auto-switch: the ones a
-    limit may move work onto without asking you.
+    limit may move work onto without asking you. Without it they still come
+    first, and the ones kept out follow in their own order.
 
     model ("fable") also skips an account whose own cap for that model is
     spent, though its shared windows have room: the turn would die there too.
@@ -758,8 +768,8 @@ def pick(exclude=(), strategy: str = "best",
     parked for a reset it didn't need. Trying it and failing beats waiting.
     """
     skip = {int(s) for s in exclude}
-    viable, unknown = [], []
-    for a in list_accounts():
+    unknown = []
+    for a in sorted(list_accounts(), key=lambda a: (not a["auto_switch"], a["order"])):
         if a["slot"] in skip or a["disabled"] or (auto_switch and not a["auto_switch"]):
             continue
         if model and _model_out.get((a["slot"], model), 0) > time.time():
@@ -768,12 +778,6 @@ def pick(exclude=(), strategy: str = "best",
         used = _used(meter)
         if used is None:
             unknown.append(a["slot"])
-            continue
-        if used >= EXHAUSTED or (model and _model_used(meter, model) >= EXHAUSTED):
-            continue
-        viable.append((a["slot"], used, _weekly_reset(meter)))
-    if not viable:
-        return min(unknown) if unknown else None
-    if strategy == "consume-first":
-        return min(viable, key=lambda v: (v[2], v[1], v[0]))[0]
-    return min(viable, key=lambda v: (v[1], v[0]))[0]
+        elif used < EXHAUSTED and not (model and _model_used(meter, model) >= EXHAUSTED):
+            return a["slot"]
+    return unknown[0] if unknown else None

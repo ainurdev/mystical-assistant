@@ -29,7 +29,7 @@ const FAQ: { q: string; a: string; soon?: boolean }[] = [
   },
   {
     q: "Can it use a second Claude account?",
-    a: "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory, so the login you already had is never touched, and every turn is still the real claude binary spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the account with the most quota left goes first, and its meter sits next to the others in that tab.",
+    a: "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory, so the login you already had is never touched, and every turn is still the real claude binary spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the first account in your Auto-switch order with room takes over, and you drag that order in the same tab.",
   },
   {
     q: "Where does my code actually go?",

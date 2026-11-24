@@ -39,13 +39,18 @@ export function limitNudge(prompt: string | null | undefined): "account" | "mode
     : prompt.includes("resumed on another model") ? "model" : "reset";
 }
 
+/** The logins in the Auto-switch order (bridge/accounts.set_order): the ones
+ *  in Auto-switch first, then the ones kept out of it, each by its place. */
+export const inAutoSwitchOrder = (accounts: AccountInfo[]): AccountInfo[] =>
+  [...accounts].sort((a, b) => Number(a.auto_switch === false) - Number(b.auto_switch === false) || a.order - b.order);
+
 /** The login to offer instead of a dry one, picked the way the ladder picks
- *  (bridge/accounts.pick): most left first, and one whose meter won't read only
- *  as a last resort — "can't tell" isn't "empty". null when none is usable. */
+ *  (bridge/accounts.pick): the first down the Auto-switch order with room, and
+ *  one whose meter won't read only as a last resort — "can't tell" isn't
+ *  "empty". null when none is usable. */
 export function otherLogin(accounts: AccountInfo[], dry: number | null): AccountInfo | null {
-  const live = accounts.filter((a) => a.slot !== dry && !a.disabled && a.logged_in !== false);
-  const known = live.filter((a) => a.left !== null && a.left > 0).sort((a, b) => b.left! - a.left!);
-  return known[0] ?? live.find((a) => a.left === null) ?? null;
+  const live = inAutoSwitchOrder(accounts).filter((a) => a.slot !== dry && !a.disabled && a.logged_in !== false);
+  return live.find((a) => a.left !== null && a.left > 0) ?? live.find((a) => a.left === null) ?? null;
 }
 
 /** How a login is named in the chat: its alias, its email, or its slot. */

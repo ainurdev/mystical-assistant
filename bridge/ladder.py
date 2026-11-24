@@ -112,15 +112,14 @@ def same_agent(runtime: "str | None") -> tuple:
 
 
 def rungs(session: "dict | None", dead_slot: "int | None" = None,
-          strategy: str = "best", auto_switch: bool = False,
-          model: "str | None" = None) -> list:
-    """Alternatives to waiting, best first. Waiting itself is always available
-    and is not listed here -- the caller offers it alongside these. With
-    auto_switch, only accounts still in Auto-switch: those it may move to
-    without asking. With model, only accounts with room left for it."""
+          auto_switch: bool = False, model: "str | None" = None) -> list:
+    """Alternatives to waiting, first choice first (accounts.pick follows the
+    Auto-switch order). Waiting itself is always available and is not listed
+    here -- the caller offers it alongside these. With auto_switch, only
+    accounts still in Auto-switch: those it may move to without asking. With model, only accounts with room left for it."""
     out = []
     slot = accounts.pick(exclude=(dead_slot,) if dead_slot else (),
-                         strategy=strategy, auto_switch=auto_switch, model=model)
+                         auto_switch=auto_switch, model=model)
     if slot:
         left = accounts.headroom(slot)
         room = f" ({left}% left)" if left is not None else ""
