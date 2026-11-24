@@ -386,7 +386,8 @@ def _fable_deaths(meters, deaths):
     saved = (ladder.accounts.list_accounts, ladder.accounts.usage_for,
              runner.start_streaming_job, config.AUTO_RESUME)
     ladder.accounts.list_accounts = lambda: [
-        {"slot": s, "disabled": False, "auto_switch": True} for s in sorted(meters)]
+        {"slot": s, "disabled": False, "auto_switch": True, "order": i}
+        for i, s in enumerate(sorted(meters))]
     ladder.accounts.usage_for = lambda slot: meters[slot]
     run = _Rec()
     runner.start_streaming_job = run

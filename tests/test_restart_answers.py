@@ -128,9 +128,9 @@ def test_a_dashboard_change_never_brings_the_saved_list_back(sessions, monkeypat
 # --- the login meters ---------------------------------------------------------
 
 LOGINS = [{"slot": 1, "email": "a@x.com", "alias": None, "disabled": False, "default": True,
-           "auto_switch": True},
+           "auto_switch": True, "order": 0},
           {"slot": 2, "email": "b@x.com", "alias": None, "disabled": False, "default": False,
-           "auto_switch": True}]
+           "auto_switch": True, "order": 1}]
 
 
 def _reading(five, seven=10):
