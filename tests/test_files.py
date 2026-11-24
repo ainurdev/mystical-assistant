@@ -57,6 +57,23 @@ def test_list_tree_tracked_untracked_and_ignored():
     assert tree == sorted(tree), tree   # stable, sorted
 
 
+def test_list_tree_without_ignored_is_the_mention_list():
+    # The composer's @ list read every path: 85k (7.7 MB) on mystical-assistant,
+    # 78k of them ignored scratch. Claude Code's own @ picker leaves those out.
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _write(d, ".gitignore", "ignored/\n*.log\n")
+    _write(d, "kept.log", "tracked, though the pattern ignores it\n")
+    _run(d, "add", "-A")
+    _run(d, "add", "-f", "kept.log")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "new.py", "n\n")
+    _write(d, "debug.log", "l\n")
+    _write(d, "ignored/x.txt", "z\n")
+    _write(d, "node_modules/pkg/index.js", "x\n")
+    assert g.list_tree(d, ignored=False) == [".gitignore", "a.txt", "kept.log", "new.py"]
+
+
 def test_list_tree_skips_dependency_dirs():
     d = _mkrepo()
     _write(d, "a.txt", "one\n")

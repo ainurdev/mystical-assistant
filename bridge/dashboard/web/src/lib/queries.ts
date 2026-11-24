@@ -122,7 +122,7 @@ export const main = {
   projectSettings: read<ProjectSettings, { cwd?: string; cwd_rel?: string; project?: string; branch?: string }>("/local/project/settings"),
   queue: read<QueueSnapshot, { session: string }>("/local/queue"),   // then its stream
   prompts: read<{ prompts: string[] }>("/local/prompts"),
-  filesTree: read<{ files: string[]; ignored?: string[]; root?: string }, { project: string; branch?: string }>("/local/files/tree"),
+  filesTree: read<{ files: string[]; ignored?: string[]; root?: string }, { project: string; branch?: string; ignored?: 0 }>("/local/files/tree"),
   paths: read<{ paths: { text: string; name: string; dir: boolean }[] }, { project: string; prefix: string }>("/local/complete/paths"),
   symbols: read<{ symbols: { name: string; file: string }[] }, { project: string }>("/local/complete/symbols"),
   chatSearch: read<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }, { session: string; q: string }>("/local/chat-search"),

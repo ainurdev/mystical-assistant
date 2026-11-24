@@ -2413,6 +2413,8 @@ export const api = {
     fetchFresh(main.paths({ project: project ?? "", prefix })),
   completeSymbols: (project: string) => fetchFresh(main.symbols({ project })),
   filesTree: (project: string, branch?: string) => fetchFresh(main.filesTree({ project, branch: branch || undefined })),
+  // What git doesn't ignore, as Claude Code's own @ picker: ./ and ~/ paths still reach the rest.
+  mentionFiles: (project: string) => fetchFresh(main.filesTree({ project, ignored: 0 })),
   fileWrite: (project: string, path: string, content: string, branch?: string) =>
     req<{ ok: boolean; error?: string }>("/local/files/write", {
       method: "POST",

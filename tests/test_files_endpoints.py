@@ -71,6 +71,10 @@ def test_tree_lists_ignored_files_and_flags_them():
     assert "secret.txt" in files and "build/out.js" in files, files
     # the whole ignored dir collapses to one prefix; a.txt is not ignored
     assert set(ignored) == {"build/", "secret.txt"}, ignored
+    # the composer's @ list asks without them
+    h._get_api("/local/files/tree", {"project": [name], "branch": [""], "ignored": ["0"]})
+    assert "secret.txt" not in box["obj"]["files"] and "build/out.js" not in box["obj"]["files"]
+    assert ".gitignore" in box["obj"]["files"] and "ignored" not in box["obj"], box["obj"]
 
 
 def test_read_endpoint_returns_content():

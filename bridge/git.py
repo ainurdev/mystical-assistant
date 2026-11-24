@@ -315,18 +315,20 @@ _TREE_SKIP = {"node_modules", ".venv", "venv", "__pycache__",
               ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 
 
-def list_tree(cwd: str) -> list[str]:
+def list_tree(cwd: str, ignored: bool = True) -> list[str]:
     """Every editable file in the working tree — tracked plus untracked,
     .gitignore'd files included (minus _TREE_SKIP) — as sorted repo-relative
     paths. `-z` keeps non-ASCII paths verbatim; empty list if cwd isn't a
     repo. The skip list also goes to git as exclude pathspecs so it never
     walks those dirs: on this repo that is 52k paths (4.5MB) down to 3.4k, and
     94ms down to 8ms. The Python filter stays — it is the exact-component
-    check the globs only approximate."""
+    check the globs only approximate. ignored=False leaves out untracked files
+    .gitignore covers: the composer's @ list, like Claude Code's own picker
+    (on this repo 85k paths, 7.7 MB, down to 1.8k)."""
     if not is_repo(cwd):
         return []
     rc, out, _ = _run(cwd, "-c", "core.quotePath=false", "ls-files", "-z",
-                      "--cached", "--others", "--", ".",
+                      "--cached", "--others", *(() if ignored else ("--exclude-standard",)), "--", ".",
                       *(f":(exclude,glob)**/{d}/**" for d in sorted(_TREE_SKIP)))
     if rc != 0:
         return []

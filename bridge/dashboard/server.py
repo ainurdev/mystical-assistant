@@ -971,6 +971,8 @@ class Handler(BaseHTTPRequestHandler):
                                 (qs.get("branch", [""])[0] or "").strip())
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
+            if qs.get("ignored", [""])[0] == "0":     # the composer's @ list
+                return self._json({"files": git.list_tree(cwd, ignored=False), "root": cwd})
             return self._json({"files": git.list_tree(cwd),
                                "ignored": git.ignored_paths(cwd),
                                "root": cwd})   # absolute, for Show in Finder

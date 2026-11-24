@@ -957,13 +957,13 @@ export function Composer({
 
   // --- @-mentions ----------------------------------------------------------
   // The project's file list, fetched once per project and kept for the session.
-  // A repo's tree is a few thousand short strings; re-fetching it per keystroke
-  // to save that memory would be the expensive choice.
+  // Without what git ignores: a few thousand short strings, where the full tree
+  // was 85k (7.7 MB) on a repo with a big ignored scratch folder.
   const [tree, setTree] = useState<string[]>([]);
   useEffect(() => {
     if (!project) { setTree([]); return; }
     let live = true;
-    void api.filesTree(project)
+    void api.mentionFiles(project)
       .then((r) => { if (live) setTree(r.files); })
       .catch(() => { if (live) setTree([]); });
     return () => { live = false; };
