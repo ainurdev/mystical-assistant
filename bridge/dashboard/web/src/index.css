@@ -4,7 +4,10 @@
    stack still names a local fallback (Georgia / system-ui) so an offline
    dashboard stays readable. */
 @import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Nunito:wght@400;600;700&family=Space+Mono:wght@400;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:wght@400;600&family=Source+Code+Pro:wght@400;500;600&display=swap");
-@import "tailwindcss";
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "./preflight.css" layer(base);   /* Tailwind's, without ::before/::after in its reset (preflight.css says why) */
+@import "tailwindcss/utilities.css" layer(utilities);
 
 :root {
   color-scheme: dark;
@@ -621,18 +624,21 @@ body {
   border: 1px solid rgb(var(--accent-rgb) / 0.6);
   pointer-events: none;
   z-index: 3;
+  box-sizing: border-box;
 }
 .panel::before {
   top: -1px;
   left: -1px;
   border-right: 0;
   border-bottom: 0;
+  box-sizing: border-box;
 }
 .panel::after {
   right: -1px;
   bottom: -1px;
   border-left: 0;
   border-top: 0;
+  box-sizing: border-box;
 }
 
 /* A one-sided rule — a tab underline, a rail marker, a row divider — must stay
@@ -946,8 +952,8 @@ body {
 .bootcontinue.bootleaving .kd-scene[data-gl] .kd-pool { animation-delay: .45s !important; }
 .boot-after { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 /* the swap flickers, one line or the other, never both */
-.bootleaving:has(.kd-scene[data-gl]) .boot-before { animation: kdtitleout .3s steps(1) .96s forwards; }
-.bootleaving:has(.kd-scene[data-gl]) .boot-after { animation: kdtitlein .3s steps(1) .96s forwards; }
+.bootleaving[data-gl] .boot-before { animation: kdtitleout .3s steps(1) .96s forwards; }
+.bootleaving[data-gl] .boot-after { animation: kdtitlein .3s steps(1) .96s forwards; }
 @keyframes kdyank {
   0%, 58% { transform: none; animation-timing-function: cubic-bezier(.5, 0, .9, .5); }
   63% { transform: rotate(-78deg); animation-timing-function: cubic-bezier(.55, 0, .85, .4); }
@@ -1145,7 +1151,7 @@ input {
 .md li { margin: 0.2em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
 /* GFM task lists: the box is a bullet, not a control — nothing here is clickable. */
-.md li:has(> input[type="checkbox"]) { list-style: none; }
+.md li.task-list-item { list-style: none; }
 .md li > input[type="checkbox"] { margin-right: 0.45em; accent-color: var(--acc); pointer-events: none; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
 /* Bold reads as a highlight, Claude-style: a translucent accent wash (never a
@@ -1567,7 +1573,7 @@ input {
    :focus-visible, because a dialog opened by a click autofocuses without
    "visible" focus, and the ring is how you see that Enter cancels a destructive
    ask. A click on either button closes the dialog, so no ring lingers. */
-.ask :is(.act-alt, .act-pri):focus { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; }
+.ask .act-alt:focus, .ask .act-pri:focus { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; }
 
 /* --- SETTINGS MODAL --------------------------------------------------------
    The category rail runs down the side of the panel, and across the top of it
@@ -2081,7 +2087,7 @@ input {
 /* the node */
 .tw[data-tw="wire"]::before {
   content: ""; position: absolute; left: -4.5px; top: 3px; width: 8px; height: 8px;
-  border: 1px solid var(--h); background: var(--panel); transform: rotate(45deg);
+  border: 1px solid var(--h); background: var(--panel); transform: rotate(45deg); box-sizing: border-box;
 }
 .tw[data-tw="wire"]::after { content: none; }
 .tw[data-tw="wire"] > .tw-rail { display: none; }
@@ -2157,8 +2163,8 @@ input {
   content: ""; position: absolute; width: 9px; height: 9px;
   border-color: color-mix(in srgb, var(--h) 30%, transparent); pointer-events: none;
 }
-.tw[data-idiom="field"]::before { left: 0; top: 0; border-left: 1px solid; border-top: 1px solid; }
-.tw[data-idiom="field"]::after { right: 0; bottom: 0; border-right: 1px solid; border-bottom: 1px solid; }
+.tw[data-idiom="field"]::before { left: 0; top: 0; border-left: 1px solid; border-top: 1px solid; box-sizing: border-box; }
+.tw[data-idiom="field"]::after { right: 0; bottom: 0; border-right: 1px solid; border-bottom: 1px solid; box-sizing: border-box; }
 .tw[data-idiom="field"] > .tw-head { padding: 5px 12px 3px 12px; }
 .tw[data-idiom="field"] > .tw-body { padding: 0 12px 11px 12px; }
 /* CAP — a field is the only idiom that can swallow a viewport, so a turn gets
@@ -2287,7 +2293,8 @@ input {
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 45%, transparent); }
 .jobbar-orb { position: relative; width: 22px; height: 22px; flex: none; }
 .jobbar-orb::before { content: ""; position: absolute; inset: 3px; border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--purple) 35%, transparent); }
+  border: 1.5px solid color-mix(in srgb, var(--purple) 35%, transparent);
+  box-sizing: border-box; }
 .jobbar-orb::after { content: ""; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px;
   border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple);
   transform-origin: 3px 11px; animation: jobbar-orbit 1.6s steps(13) infinite; }
@@ -2431,7 +2438,7 @@ input {
 .jv-fl-h.att { color: var(--warn); margin-top: 6px; }
 .jv-fl-h svg { position: absolute; left: 0; top: -2px; border-radius: 50%; background: var(--panel2); }
 .jv-bl { position: relative; padding: 0 0 11px; font-size: var(--t13); line-height: 1.55; color: var(--tx); }
-.jv-bl::before { content: ""; position: absolute; left: -20px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--panel2); border: 2px solid var(--ok); }
+.jv-bl::before { content: ""; position: absolute; left: -20px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--panel2); border: 2px solid var(--ok); box-sizing: border-box; }
 .jv-bl.att::before { border-color: var(--warn); }
 
 /* MEETING NOTES — minutes: topics, stamped decisions, action items with owners. */
@@ -2483,7 +2490,7 @@ input {
 .jv-stub > div { padding: 12px 16px; }
 .jv-tear { position: relative; display: grid; place-items: center; border-left: 1.5px dashed var(--line2); }
 .jv-tear::before, .jv-tear::after { content: ""; position: absolute; left: calc(var(--notch) * -1 - 1px); width: calc(var(--notch) * 2); height: calc(var(--notch) * 2);
-  border-radius: 50%; background: var(--panel2); border: 1px solid var(--line2); }
+  border-radius: 50%; background: var(--panel2); border: 1px solid var(--line2); box-sizing: border-box; }
 .jv-tear::before { top: calc(var(--notch) * -1 - 1px); clip-path: inset(50% 0 0 0); }
 .jv-tear::after { bottom: calc(var(--notch) * -1 - 1px); clip-path: inset(0 0 50% 0); }
 .jv-pr-h { display: flex; align-items: center; gap: 9px; }
@@ -2526,7 +2533,7 @@ input {
 .jv-tk { display: grid; grid-template-columns: 34px 1fr; border-radius: var(--f-rad-l, 14px); border: 1px solid var(--line2); overflow: hidden; background: var(--panel3); }
 .jv-tk-tab { position: relative; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--acc) 14%, var(--panel)); border-right: 1.5px dashed var(--line2); }
 .jv-tk-tab span { writing-mode: vertical-rl; transform: rotate(180deg); font-family: var(--mono); font-size: var(--t10); letter-spacing: .2em; color: var(--acc); }
-.jv-tk-tab::before, .jv-tk-tab::after { content: ""; position: absolute; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--line2); }
+.jv-tk-tab::before, .jv-tk-tab::after { content: ""; position: absolute; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--line2); box-sizing: border-box; }
 .jv-tk-tab::before { top: 12px; } .jv-tk-tab::after { bottom: 12px; }
 .jv-tk-main { padding: 15px 18px 16px; min-width: 0; }
 .jv-tk-title { margin: 6px 0 8px; font-size: var(--t17); font-weight: 600; line-height: 1.3; color: var(--txb); }
@@ -2947,7 +2954,7 @@ input {
 }
 .cmdseg .sg::after {
   content: ""; position: absolute; left: 100%; top: 0;
-  border-left: .67em solid var(--sgc); border-block: .8em solid transparent;
+  border-left: .67em solid var(--sgc); border-block: .8em solid transparent; box-sizing: border-box;
 }
 .cmdseg .ns { --sgc: color-mix(in oklab, var(--acc) 30%, var(--panel)); color: var(--txh); z-index: 1; }
 .cmdseg .ns ~ .sg { border-radius: 0; padding-left: 1.15em; }
@@ -2968,9 +2975,9 @@ input {
 /* The ghost (an empty box's next step) and its argument keep to one line: the argument is cut
    with an ellipsis, never wrapped, so a long ticket path can't grow the box. inline-size
    containment keeps the unwrapped line from widening the editor to fit it. */
-.cmdbox .cm-line:has(> .cmdseg.ghost) { display: flex; align-items: baseline; contain: inline-size; }
-.cmdbox .cm-line:has(> .cmdseg.ghost) > .cmdseg { flex: none; }
-.cmdbox .cm-line:has(> .cmdseg.ghost) > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdbox .cm-line.cm-ghostline { display: flex; align-items: baseline; contain: inline-size; }
+.cmdbox .cm-line.cm-ghostline > .cmdseg { flex: none; }
+.cmdbox .cm-line.cm-ghostline > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
@@ -3041,7 +3048,7 @@ input {
   height: 1px; pointer-events: none; background: var(--line, var(--d-hair));
 }
 [data-style="dossier"] .dwork[data-open] .dwork-l2 { display: none; }
-[data-style="dossier"] .dwork[data-open] :is(.dwork-node, .dwork-right) { grid-row: 1; }
+[data-style="dossier"] .dwork[data-open] .dwork-node, [data-style="dossier"] .dwork[data-open] .dwork-right { grid-row: 1; }
 [data-style="dossier"] .dwork[data-open] .dwork-node { background: none; box-shadow: none; }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before {
   content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 100%;
@@ -3072,6 +3079,7 @@ input {
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="think"] .dwork-node::before {
   content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
   animation: dwripple 2.2s steps(18) infinite;
+  box-sizing: border-box;
 }
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="work"] .dwork-node::after {
   content: ""; position: absolute; inset: -4px; border-radius: 50%;
@@ -3107,11 +3115,11 @@ input {
    icons and the live line read it off their mark (data-m, MarkIcon's too); only
    icons wear it, the words stay the work's own ink */
 [data-style="dossier"] .dwork [data-m="command"] { --m: var(--acc); }
-[data-style="dossier"] .dwork :is([data-m="read"], [data-m="search"], [data-m="fetch"]) { --m: var(--info); }
+[data-style="dossier"] .dwork [data-m="read"], [data-style="dossier"] .dwork [data-m="search"], [data-style="dossier"] .dwork [data-m="fetch"] { --m: var(--info); }
 [data-style="dossier"] .dwork [data-m="edit"] { --m: var(--warn); }
 [data-style="dossier"] .dwork [data-m="write"] { --m: var(--ok); }
-[data-style="dossier"] .dwork :is([data-m="agent"], [data-m="skill"], [data-m="call"]) { --m: var(--purple); }
-[data-style="dossier"] .dwork :is([data-m="log"], [data-m="hook"], [data-m="step"]) { --m: var(--txl); }
+[data-style="dossier"] .dwork [data-m="agent"], [data-style="dossier"] .dwork [data-m="skill"], [data-style="dossier"] .dwork [data-m="call"] { --m: var(--purple); }
+[data-style="dossier"] .dwork [data-m="log"], [data-style="dossier"] .dwork [data-m="hook"], [data-style="dossier"] .dwork [data-m="step"] { --m: var(--txl); }
 [data-style="dossier"] .dwork [data-m="think"] { --m: var(--d-think); }
 /* the tile: the hue over the plate's own ground, the icon the hue lifted toward the text */
 [data-style="dossier"] .dwork-k > i {
@@ -3186,6 +3194,7 @@ input {
 [data-style="dossier"] .now-ring::after {
   content: ""; position: absolute; inset: -1.6px; border-radius: 50%; border: 1.4px solid currentColor;
   animation: nowripple 2s steps(16) infinite;
+  box-sizing: border-box;
 }
 @keyframes nowripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.3); opacity: 0; } }
 [data-style="dossier"] .now-tx { grid-column: 2; position: relative; min-width: 0; height: 28px; overflow: hidden; }
@@ -3265,12 +3274,12 @@ input {
 /* a side holding pictures out of view fades out under their count (ShotRow
    counts a tile once its middle is in the fade's faint half), which wears the
    accent while one of them is unseen; a tap pages that way */
-[data-style="dossier"] .dwork-row:has(> .dwork-more) > .dwork-row-thumbs {
+[data-style="dossier"] .dwork-row:is([data-ml], [data-mr]) > .dwork-row-thumbs {
   --fl: 0px; --fr: 0px;
   mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent);
 }
-[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="l"]) > .dwork-row-thumbs { --fl: 64px; }
-[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="r"]) > .dwork-row-thumbs { --fr: 64px; }
+[data-style="dossier"] .dwork-row[data-ml] > .dwork-row-thumbs { --fl: 64px; }
+[data-style="dossier"] .dwork-row[data-mr] > .dwork-row-thumbs { --fr: 64px; }
 /* on the tiles' midline: the row's 3px padding, the thumbs' 6px, half a 60px tile */
 [data-style="dossier"] .dwork-more {
   position: absolute; top: 39px; translate: 0 -50%; z-index: 1;
@@ -3285,17 +3294,18 @@ input {
   box-shadow: 0 0 12px color-mix(in oklab, var(--acc) 45%, transparent);
 }
 [data-style="dossier"] .dwork-row-thumbs figure { position: relative; flex: none; margin: 0; display: flex; flex-direction: column; gap: 4px; }
-[data-style="dossier"] .dwork-row-thumbs :is(img, video) {
+[data-style="dossier"] .dwork-row-thumbs img, [data-style="dossier"] .dwork-row-thumbs video {
   height: 60px; width: 96px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
   border: 1px solid var(--d-hair); background: #000;
 }
-[data-style="dossier"] .dwork-row-thumbs figure[data-new] :is(img, video) {
+[data-style="dossier"] .dwork-row-thumbs figure[data-new] img, [data-style="dossier"] .dwork-row-thumbs figure[data-new] video {
   border: 1.5px solid var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 40%, transparent);
 }
 [data-style="dossier"] .dwork-row-thumbs figure[data-new]::after {
   content: "NEW"; position: absolute; top: -6px; right: -6px; padding: 3px 4px; border-radius: 3px;
   background: var(--acc); color: var(--acc-on, var(--canvas)); font-size: var(--t75); font-weight: 700; letter-spacing: 1px;
   box-shadow: 0 0 6px color-mix(in oklab, var(--acc) 45%, transparent);
+  box-sizing: border-box;
 }
 [data-style="dossier"] .dwork-row-thumbs figcaption {
   font-size: var(--t85); color: var(--txf); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -3321,7 +3331,7 @@ input {
 }
 @media (prefers-reduced-motion: reduce) { .lbx-th { transition: none; } }
 /* an unseen picture inside the open zone wears the accent until it has been on screen */
-[data-style="dossier"] .dwork-body :is(img, video)[data-new] {
+[data-style="dossier"] .dwork-body img[data-new], [data-style="dossier"] .dwork-body video[data-new] {
   outline: 1.5px solid var(--acc); outline-offset: 1px;
   box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 45%, transparent);
 }
@@ -3335,7 +3345,7 @@ input {
 [data-style="dossier"] .dwork-part { display: flow-root; }
 [data-style="dossier"] .dwork-part[hidden] { display: none; }
 [data-style="dossier"] .dwork-fold[data-moving] { position: relative; overflow: clip; }
-.mscroll:has(.dwork-fold[data-moving]) { overflow-anchor: none; }
+.mscroll[data-moving] { overflow-anchor: none; }
 [data-style="dossier"] .dwork-part[data-leaving] { position: absolute; left: 0; right: 0; pointer-events: none; }
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
@@ -3402,21 +3412,21 @@ input {
    language exists to undo. A failure still swaps to --err (data-err rules). */
 [data-style="dossier"] .dwork-body [style*="--h"] { --h: var(--d-tool) !important; }
 
-[data-style="dossier"] .dwork-body :is(.actrow, .zrow) {
+[data-style="dossier"] .dwork-body .actrow, [data-style="dossier"] .dwork-body .zrow {
   --m: var(--d-tool);
   position: relative; display: grid; align-items: start; width: 100%; max-width: none; min-height: 28px;
   grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content var(--zc);
   margin: 0; padding: 0; border: 0; border-radius: 0; background: none; text-align: left;
 }
-[data-style="dossier"] .dwork-body :is(.actrow, .zrow)[data-err] { --m: var(--err); }
+[data-style="dossier"] .dwork-body .actrow[data-err], [data-style="dossier"] .dwork-body .zrow[data-err] { --m: var(--err); }
 /* a plate (hover, a failure) starts right of the spine, so the spine runs
    past it untouched */
-[data-style="dossier"] .dwork-body :is(.actrow, .zrow)::after {
+[data-style="dossier"] .dwork-body .actrow::after, [data-style="dossier"] .dwork-body .zrow::after {
   content: ""; position: absolute; inset: 0 0 0 var(--zn); z-index: 0; pointer-events: none;
   border-radius: calc(var(--d-rad) * .5);
 }
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > * { position: relative; z-index: 1; }
-[data-style="dossier"] .dwork-body :is(.actrow[role="button"], .zrow.log):hover::after {
+[data-style="dossier"] .dwork-body .actrow[role="button"]:hover::after, [data-style="dossier"] .dwork-body .zrow.log:hover::after {
   background: color-mix(in oklab, var(--d-tool) 7%, transparent);
 }
 [data-style="dossier"] .dwork-body .actrow[data-err]::after { background: color-mix(in oklab, var(--err) var(--d-tint), transparent); }
@@ -3450,7 +3460,7 @@ input {
 [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-stat { color: var(--d-you); }
 /* object, then figure and chevron: a row with no drawer keeps the empty
    chevron cell, so every figure ends on one edge */
-[data-style="dossier"] .dwork-body :is(.actrow, .zrow) > :is(.ax-obj, .zo) { grid-column: 3; grid-row: 1; min-width: 0; }
+[data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-obj, [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .zo { grid-column: 3; grid-row: 1; min-width: 0; }
 [data-style="dossier"] .dwork-body .ax-obj { padding-right: 0; line-height: 28px; font-size: var(--t115); color: var(--d-ink); }
 /* a span in another face (a command's words are sans) would grow the line */
 [data-style="dossier"] .dwork-body .ax-obj > * { vertical-align: top; }
@@ -3564,7 +3574,7 @@ input {
 [data-style="dossier"] .dwork-body .agb[data-plate] { margin: 4px 0 !important; }
 [data-style="dossier"] .dwork-body .agb[data-plate]::before {
   content: ""; position: absolute; inset: 0 0 0 var(--zn); z-index: 0; pointer-events: none;
-  background: var(--panel); border: 1px solid var(--zline); border-radius: calc(var(--d-rad) * .6);
+  background: var(--panel); border: 1px solid var(--zline); border-radius: calc(var(--d-rad) * .6); box-sizing: border-box;
 }
 [data-style="dossier"] .dwork-body .agb > * { position: relative; z-index: 1; }
 /* what hangs under a row — a drawer, a widget, shots, the reason a call failed
@@ -3579,17 +3589,17 @@ input {
 [data-style="dossier"] .dwork-body .zx .tw::before,
 [data-style="dossier"] .dwork-body .zx .tw::after { content: none; }
 [data-style="dossier"] .dwork-body .zx .tw[data-idiom="field"] { background: none; border: 0; }
-[data-style="dossier"] .dwork-body .zx .tw > :is(.tw-head, .tw-body) { padding-left: 0; padding-right: 0; }
-[data-style="dossier"] .dwork-body .zx :is(img, video) {
+[data-style="dossier"] .dwork-body .zx .tw > .tw-head, [data-style="dossier"] .dwork-body .zx .tw > .tw-body { padding-left: 0; padding-right: 0; }
+[data-style="dossier"] .dwork-body .zx img, [data-style="dossier"] .dwork-body .zx video {
   height: 64px; width: auto; max-width: 180px; border-color: var(--zline); border-radius: calc(var(--d-rad) * .5);
 }
 /* pictures: the row above names them (the call, or "N pictures"), so the
    gallery drops its SCREENS caption and rule; names under each, legible */
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) { margin: 2px 0 8px; }
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-head { display: none; }
-[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-body { padding: 0; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] { margin: 2px 0 8px; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] > .tw-head { display: none; }
+[data-style="dossier"] .dwork-body .zx .tw[data-gal] > .tw-body { padding: 0; }
 [data-style="dossier"] .dwork-body .zx .flc-shots { gap: 10px; }
-[data-style="dossier"] .dwork-body .zx .flc-shots :is(figure, figcaption) { max-width: 180px; }
+[data-style="dossier"] .dwork-body .zx .flc-shots figure, [data-style="dossier"] .dwork-body .zx .flc-shots figcaption { max-width: 180px; }
 [data-style="dossier"] .dwork-body .zx .flc-shots figcaption { font-size: var(--t95); letter-spacing: 0; }
 
 /* A stretch (RunStream WorkStretch, lib/dossier stretchesOf): an open zone reads
@@ -3625,7 +3635,7 @@ input {
 [data-style="dossier"] .wtally-chev { flex: none; color: var(--txf); transform: rotate(-90deg); transition: transform .2s ease; }
 [data-style="dossier"] .wtally[aria-expanded="true"] .wtally-chev { transform: none; color: var(--txm); }
 @media (prefers-reduced-motion: reduce) {
-  [data-style="dossier"] :is(.wtally, .wtally-chev) { transition: none; }
+  [data-style="dossier"] .wtally, [data-style="dossier"] .wtally-chev { transition: none; }
 }
 /* work before any words: the tally on a row of its own, on a small dot */
 [data-style="dossier"] .dwork-body .zrow.wlead > .ax-bar::before {
@@ -3641,10 +3651,10 @@ input {
 [data-style="dossier"] .dwork-body .wstrip .zx { margin: 0 !important; }
 [data-style="dossier"] .dwork-body .wstrip .zx .tw { margin: 0; }
 [data-style="dossier"] .dwork-body .wstrip :is(.flc-shots, .zx.flex) { gap: 10px; }
-[data-style="dossier"] .dwork-body .wstrip .zx :is(img, video) {
+[data-style="dossier"] .dwork-body .wstrip .zx img, [data-style="dossier"] .dwork-body .wstrip .zx video {
   width: 96px; height: 60px; max-width: none; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
 }
-[data-style="dossier"] .dwork-body .wstrip .zx .flc-shots :is(figure, figcaption) { max-width: 96px; }
+[data-style="dossier"] .dwork-body .wstrip .zx .flc-shots figure, [data-style="dossier"] .dwork-body .wstrip .zx .flc-shots figcaption { max-width: 96px; }
 /* a picture the uploads have since lost keeps its tile; the name under it says which */
 [data-style="dossier"] .dwork-body .wstrip .flc-gone {
   display: flex; align-items: center; justify-content: center; width: 96px; height: 60px; font-size: 0;
@@ -3681,8 +3691,8 @@ input {
 }
 /* a result with no words (they were the prose a card already showed) is a
    receipt, not an answer: it keeps the clock and drops to the ghost tier */
-[data-style="dossier"] .res:not(:has(.res-body)) { border-left-width: 2px; border-left-color: var(--d-hair); }
-[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 8px 18px; color: var(--txf); }
+[data-style="dossier"] .res[data-bare] { border-left-width: 2px; border-left-color: var(--d-hair); }
+[data-style="dossier"] .res[data-bare] .res-head { padding: 8px 18px; color: var(--txf); }
 [data-style="dossier"] .res-head {
   font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
 }
@@ -3707,6 +3717,7 @@ input {
   background: color-mix(in oklab, var(--d-ask) var(--d-tint), var(--panel));
   border-bottom: 1px solid color-mix(in oklab, var(--d-ask) var(--d-edge), var(--panel));
   border-radius: var(--d-rad) var(--d-rad) 0 0;
+  box-sizing: border-box;
 }
 [data-style="dossier"] .qcard-live::before { content: "● NEEDS YOUR ANSWER"; }
 [data-style="dossier"] .qcard-live.tcard::before { content: "● NEEDS YOUR ANSWER · RIVENDELL TASK"; }
@@ -4440,7 +4451,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the shell columns are the page, not cards on it: square, so their edges
    meet the cap rule and the column hairlines cleanly */
 [data-fam] .shellcol > .panel { border-radius: 0; }
-[data-fam] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
+[data-fam] button, [data-fam] input, [data-fam] textarea, [data-fam] select { border-radius: var(--f-rad-s); }
 /* every inline JetBrains pin (139 of them, across the shell) reads FLINT's
    mono instead. ponytail: an attribute match on the inline style rather than a
    class on each site — it costs nothing until a component stops writing the
@@ -4531,7 +4542,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .cmdbox:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--line2)) !important;
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
 [data-fam] .cmdbox[data-drag] { border-color: var(--acc) !important; }
-[data-fam] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
+[data-fam] .cmdbox .cm-editor, [data-fam] .cmdbox .cm-content, [data-fam] .cmdbox .cm-line, [data-fam] .cmdbox .cm-placeholder { font-family: var(--ui-font) !important; }
 [data-fam]:not([data-fam="aurora"]) .cmdbox > span:first-child { display: none; }
 [data-fam] .drop-btn {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
@@ -4543,7 +4554,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .ctrl-verb, [data-fam] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
 [data-fam] .act-glyph { border-color: var(--line); border-radius: var(--f-rad-s); }
 [data-fam] .act-fence { background: var(--line); }
-[data-fam] :is(.act-alt, .act-pri) { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
+[data-fam] .act-alt, [data-fam] .act-pri { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
 [data-fam] .act-alt.neutral { border-color: var(--line2); }
 [data-fam] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
 [data-theme^="flint-sunset"] .act-pri { color: #fff; }
@@ -4624,7 +4635,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-fam] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
 [data-fam] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
-[data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
+[data-fam] [data-style="dossier"] .res[data-bare] .res-head { padding: 12px 2px 0; }
 [data-fam] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
 [data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 0; }
 [data-fam] [data-style="dossier"] .rstream > .dprompt { margin-top: 10px; margin-bottom: 20px; }
@@ -4851,7 +4862,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam]:not([data-fam="aurora"]) .wordmark .bw-b { margin-left: .3em; }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-badge, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] .pmeta, [data-fam] .res-head, [data-fam] .dwork-lab, [data-fam] .dwork-badge, [data-fam] .lab1 { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
@@ -4896,9 +4907,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after {
   content: ""; position: absolute; z-index: 1; width: 9px; height: 9px; pointer-events: none;
   border: 1px solid color-mix(in oklab, var(--acc) 70%, transparent);
+  box-sizing: border-box;
 }
-[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before { left: 0; top: 0; border-right: 0; border-bottom: 0; }
-[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before { left: 0; top: 0; border-right: 0; border-bottom: 0; box-sizing: border-box; }
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after { right: 0; bottom: 0; border-left: 0; border-top: 0; box-sizing: border-box; }
 [data-fam="aurora"] .setpane [style*="padding: 14px 16px"] { position: relative; }
 /* the settings page in the HUD's voice */
 [data-fam="aurora"] .set-crumb { font: 400 15px var(--ui-font); letter-spacing: .22em; text-transform: uppercase; text-shadow: var(--f-glow); }
@@ -4915,7 +4927,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .setrail button.on { background: color-mix(in oklab, var(--acc) 9%, var(--panel3)); box-shadow: inset 2px 0 0 var(--acc); text-shadow: var(--f-glow); }
 [data-fam="aurora"] .setrail button.on svg { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--acc) 70%, transparent)); }
 [data-fam="aurora"] .set-head h2 { font-weight: 400 !important; font-size: 18px !important; letter-spacing: .24em !important; text-transform: uppercase; text-shadow: var(--f-glow) !important; }
-[data-fam="aurora"] .set-head p, [data-fam="aurora"] :is(.set-secdesc, .set-desc) { font-family: var(--mono); }
+[data-fam="aurora"] .set-head p, [data-fam="aurora"] .set-secdesc, [data-fam="aurora"] .set-desc { font-family: var(--mono); }
 [data-fam="aurora"] .set-head p { font-size: 12px !important; line-height: 1.65 !important; }
 [data-fam="aurora"] :is(.set-sectitle, .set-themehead b) { font-weight: 400 !important; font-size: 12px !important; letter-spacing: .22em !important; text-transform: uppercase; }
 [data-fam="aurora"] .set-secrule { background: linear-gradient(90deg, color-mix(in oklab, var(--acc) 45%, transparent), transparent) !important; }
@@ -5054,15 +5066,15 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .sessrow::before { border-radius: 0; box-shadow: 0 0 8px var(--acc); }
 /* a title is yours, not chrome: lit, not capitalised */
 [data-fam="aurora"] .np-title { font-weight: 400; letter-spacing: .02em !important; text-shadow: var(--f-glow); }
-[data-fam="aurora"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
+[data-fam="aurora"] .cmdbox .cm-editor, [data-fam="aurora"] .cmdbox .cm-content, [data-fam="aurora"] .cmdbox .cm-line, [data-fam="aurora"] .cmdbox .cm-placeholder { font-family: var(--mono) !important; }
 /* the prompt glyph is yours: phosphor, where violet now means waiting on you */
-[data-fam="aurora"] :is(.pb-pfx, .fresh-pfx) { color: var(--acc) !important; text-shadow: var(--f-glow); }
+[data-fam="aurora"] .pb-pfx, [data-fam="aurora"] .fresh-pfx { color: var(--acc) !important; text-shadow: var(--f-glow); }
 [data-fam="aurora"] [data-style="dossier"] { --d-face: var(--mono); }
-[data-fam="aurora"] :is(.act-alt, .act-pri) { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
+[data-fam="aurora"] .act-alt, [data-fam="aurora"] .act-pri { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .act-pri:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 40%, transparent); }
 [data-fam="aurora"] .act-pri.queue:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--ask) 40%, transparent); }
 [data-fam="aurora"] .act-pri.danger:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--err) 40%, transparent); }
-[data-fam="aurora"] :is(.ctrl-verb, .ctrl-more) { letter-spacing: .14em; text-transform: uppercase; }
+[data-fam="aurora"] .ctrl-verb, [data-fam="aurora"] .ctrl-more { letter-spacing: .14em; text-transform: uppercase; }
 [data-fam="aurora"] .drop-btn { letter-spacing: .06em !important; }
 [data-fam="aurora"] .lanehead > span:nth-child(2) { font-weight: 400; letter-spacing: .2em !important; }
 [data-fam="aurora"] [data-ctxmenu] button span { letter-spacing: .1em !important; }
@@ -5087,14 +5099,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 :root[data-light] .composer[data-pb] { --pb-isle: var(--panel); }
 .pb-lead .np-sep { display: none; }
 [data-fam] .pb-lead .np-tile .pdot { display: none; }
-.pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run, .np-task) { box-sizing: border-box; white-space: nowrap; }
+.pb-lead .np-tile, .pb-lead .np-title-btn, .pb-lead .np-proj, .pb-lead .np-branch, .pb-lead .np-pr, .pb-lead .np-run, .pb-lead .np-task { box-sizing: border-box; white-space: nowrap; }
 .pb-lead .np-title-btn { flex: 0 1 auto !important; min-width: 110px !important; align-items: center !important; }
-.pb-lead :is(.np-branch, .np-pr, .np-run, .np-task) { font-size: var(--t10) !important; }
+.pb-lead .np-branch, .pb-lead .np-pr, .pb-lead .np-run, .pb-lead .np-task { font-size: var(--t10) !important; }
 .pb-lead .np-pr { letter-spacing: 0 !important; }
 .pb-lead .np-branch .np-name { max-width: 220px; }
 [data-pb] .sp { flex: 1; }
 /* over the open-menu backdrop (z 25), so a second trigger toggles directly */
-:is(.pb-keys, .pb-rail, .pb-ledger, .pb-tabs) { position: relative; z-index: 26; }
+.pb-keys, .pb-rail, .pb-ledger, .pb-tabs { position: relative; z-index: 26; }
 .pb-plus { width: 24px; height: 24px; margin-top: -2px; flex: none; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
            border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); border-radius: 50%; background: transparent; color: var(--txd);
            font-family: inherit; font-size: 16px; font-weight: 300; line-height: 1; padding: 0; }
@@ -5104,7 +5116,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    rail (docs/superpowers/specs/prompt-kinds.md, R3 · RAIL). The rows carry the card's padding
    so the rail runs edge to edge; a device run's plate (.pb-card, no rail) keeps the card's own. */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
-.cmdbox.pb-card:has(> .pb-rail) { padding: 0 !important; gap: 0 !important; }
+.cmdbox.pb-railed { padding: 0 !important; gap: 0 !important; }
 .pb-card > .pb-ledger { margin: 12px 14px 0; }
 /* the text at 12px on the 10px base the scale is drawn at, two lines tall at least, so a
    one-line prompt and a two-line one make the same box */
@@ -5146,18 +5158,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* The flow the session is on, until its last step is done (a3-running). */
 .pb-kg[data-run] { position: relative; color: color-mix(in oklab, var(--acc) 72%, var(--txb)); }
 .pb-kind[data-run] { position: relative; }
-:is(.pb-kind, .pb-kg)[data-run]::after { content: ""; position: absolute; left: 50%; bottom: -2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--acc); }
+.pb-kind[data-run]::after, .pb-kg[data-run]::after { content: ""; position: absolute; left: 50%; bottom: -2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--acc); }
 .pb-kind { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 6px; font-size: var(--t10); font-weight: 700; letter-spacing: .3px;
            color: color-mix(in oklab, var(--acc) 70%, var(--txb)); background: color-mix(in oklab, var(--acc) 13%, transparent); }
 .pb-kind[data-how="auto"] { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 55%, transparent); }
 .pb-kind > i { font-style: normal; font-size: var(--t7); letter-spacing: 1px; text-transform: uppercase; color: var(--txd); margin-left: 2px; }
 .pb-kinds[data-dim] > * { opacity: .45; cursor: default; }
-[data-fam]:not([data-fam="aurora"]) :is(.pb-kind, .pb-kg) { border-radius: 5px; }
+[data-fam]:not([data-fam="aurora"]) .pb-kind, [data-fam]:not([data-fam="aurora"]) .pb-kg { border-radius: 5px; }
 /* usage: the PROFILE chip, flat, its face the ring (Composer UsageRing) while its login has a
    reading. Without one it keeps its name (an expired login says so in it), which gives way to
    the spinner while the first reading lands. The menu is the PROFILE menu, unchanged. */
 .pb-rail .drop-btn { border: 0 !important; background: transparent !important; padding: 0 !important; min-width: 0; }
-.pb-use .drop-btn:has(.ctrl-meter) .drop-val { display: none; }
+.pb-use .drop-btn[data-meter] .drop-val { display: none; }
 .pb-ring { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t10); color: var(--txl); white-space: nowrap; }
 .pb-ring > svg { flex: none; }
 .pb-ring > .pb-clock { text-transform: lowercase; }   /* "2d20h", the rail's quiet case, as its facts' "37m ago" */
@@ -5238,7 +5250,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fs-gsep { flex: none; width: 1px; height: 14px; margin: 0 3px 0 auto; background: var(--line2, var(--border)); }
 .pb-kg.fs-gear { flex: none; width: 22px; color: var(--txl); }
 .pb-kg.fs-gear[aria-expanded="true"] { background: color-mix(in oklab, var(--acc) 18%, transparent); color: var(--txb); }
-.pb-kinds[data-dim] > :is(.fs-gear, .fs-gsep) { opacity: 1; cursor: pointer; }
+.pb-kinds[data-dim] > .fs-gear, .pb-kinds[data-dim] > .fs-gsep { opacity: 1; cursor: pointer; }
 .fs-off { flex: none; padding-left: 4px; font-size: var(--t8); font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txl); }
 .pb-pp.fs-sheet { left: 0; right: auto; width: min(660px, 100%); }
 .fs-sheet > h4 > span { display: inline-flex; align-items: center; gap: 4px; }
@@ -5301,8 +5313,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* AS TICKETS fills its half of the segment, and its note hangs above with an arrow on it */
 .pb-sg > .fs-tipw { flex: 1 !important; display: flex !important; }
 .pb-sg > .fs-tipw > button { flex: 1; }
-.fs-tipw:has(> [role="tooltip"])::after { content: ""; position: absolute; z-index: 41; left: 50%; bottom: calc(100% + 3px); width: 7px; height: 7px; margin-left: -4px;
-  transform: rotate(45deg); background: var(--panel2); border: solid color-mix(in srgb, var(--acc) 35%, transparent); border-width: 0 1px 1px 0; }
+.fs-tipw[data-tip]::after { content: ""; position: absolute; z-index: 41; left: 50%; bottom: calc(100% + 3px); width: 7px; height: 7px; margin-left: -4px;
+  transform: rotate(45deg); background: var(--panel2); border: solid color-mix(in srgb, var(--acc) 35%, transparent); border-width: 0 1px 1px 0; box-sizing: border-box; }
 .fs-why { display: flex; flex-direction: column; gap: 8px; white-space: normal; }
 .fs-why > b { font-size: var(--t8); font-weight: 800; letter-spacing: 1.6px; color: var(--txh); }
 .fs-why ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -5343,7 +5355,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fss .fs-st .set-toggle { transform: none; margin: 0; }
 .fss .fs-st > em { width: 34px; }
 .fss .fs-st[data-off] > b { text-decoration: none; opacity: .45; }
-.fss .fs-st[data-off] > :is(i, span) { opacity: .45; box-shadow: none; }
+.fss .fs-st[data-off] > i, .fss .fs-st[data-off] > span { opacity: .45; box-shadow: none; }
 .fss .fs-kv { grid-template-columns: 110px minmax(0, 1fr); min-height: 34px; }
 .fss .fs-steps + .fs-kv { margin-top: auto; }
 .fss .fs-kv > span { font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--txd); }
@@ -5365,7 +5377,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 @container (max-width: 479px) {
   .pb-kinds { width: auto; flex: 1; }
-  .pb-facts:not(:has(.pb-flow-w)) { display: none; }   /* the FLOW chip stays; an empty cell goes */
+  .pb-facts:not([data-flow]) { display: none; }   /* the FLOW chip stays; an empty cell goes */
   .pb-kind > :not(svg), .pb-facts > [role="status"], .pb-flow-n, .pb-run > :not(svg), .pb-ring > .pb-pc { display: none; }
 }
 /* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
@@ -5394,9 +5406,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    means terse: past one live item every description goes, and the words stay
    in each chip's title and popover. */
 .pb-ledger { display: none; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
-.pb-ledger:has(> :not(.pillstrip), > .pillstrip > *) { display: flex; }
+.pb-ledger[data-n] { display: flex; }
 .pb-ledger > .pillstrip { display: contents; }
-.pb-ledger:has(> :nth-child(2), > .pillstrip > :nth-child(2)) .pill-desc { display: none; }
+.pb-ledger[data-n="2"] .pill-desc { display: none; }
 /* The login this chat spends is dry (Composer, design-drafts/limit-chat C): said
    before you send, with the login that has room one tap away. */
 .pb-dry { display: inline-flex; align-items: center; gap: 7px; height: 22px; max-width: 100%; box-sizing: border-box; padding: 0 3px 0 9px;
@@ -5418,7 +5430,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs, .pb-isles > .pb-dry { background: var(--pb-isle); box-shadow: 0 8px 22px -14px var(--shadow-pop); }
 /* outside .pb-isles (DeviceRunPlate) the pill centres itself */
 :not(.pb-isles) > .pb-tabs { width: fit-content; margin: 0 auto 6px; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > :is(.ctrl-ctx, .pb-work) {
+.pb-tabs .np-tile, .pb-tabs .np-title-btn, .pb-tabs .np-branch, .pb-tabs .np-pr, .pb-tabs .np-run, .pb-tabs .np-task, .pb-tabs > .ctrl-ctx, .pb-tabs > .pb-work {
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 100% !important; margin: 0 !important;
   padding: 0 11px !important; border: 0 !important; border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)) !important;
   border-radius: 0 !important; background: none !important; }
@@ -5443,7 +5455,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
 /* mid-turn what the turn is doing, and the circling light, are the chat's live row (LiveRow) */
-.pb-tabs[data-live] > .pb-work:not([data-paused]):not(:has(.pb-wq)) { display: none !important; }
+.pb-tabs[data-live] > .pb-work:not([data-paused]):not([data-q]) { display: none !important; }
 .pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
 @keyframes pb-orbit { to { --pb-a: 360deg; } }   /* turns the live row's ring (spine.css) */
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
@@ -5505,8 +5517,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 
 /* FLINT: the same shells in its skin — Geist, mono for the branch and PR */
-[data-fam] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
-[data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run, .np-task) { font-family: var(--mono) !important; }
+[data-fam] .pb-tabs .np-tile, [data-fam] .pb-tabs .np-title-btn, [data-fam] .pb-tabs .np-branch, [data-fam] .pb-tabs .np-run, [data-fam] .pb-tabs .np-task, [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
+[data-fam] .pb-tabs .np-branch, [data-fam] .pb-tabs .np-pr, [data-fam] .pb-tabs .np-run, [data-fam] .pb-tabs .np-task { font-family: var(--mono) !important; }
 [data-fam] .pb-tabs .np-title { font-size: var(--t12) !important; }
 [data-fam] .pb-plus { border-color: var(--line2); border-radius: 50%; }
 [data-fam] .pb-dry { font-family: var(--ui-font); letter-spacing: 0; }
@@ -5518,9 +5530,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    no ASK while running, then no accent on focus either); only a file drag
    lights it. The card reads the same variable, so the two can never drift. */
 .composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
-.composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+.composer[data-pb="tabs"][data-drag] { --pb-edge: var(--acc); }
 [data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
-[data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+[data-fam] .composer[data-pb="tabs"][data-drag] { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 /* TABS: the transcript stops above the header row, so nothing scrolls under it (prompt-pill-row).
    13 keeps the box's menus over the island (12). */
@@ -6426,7 +6438,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-none { padding: 14px 14px 0; font: 400 var(--t11)/1.45 var(--ui-font); color: var(--txd); }
 mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var(--acc) 28%, transparent); color: var(--txb); }
 .clg-read { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px; }
-.clg-read > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out backwards; }
+.clg-read > .clg-stage, .clg-read > .clg-t { animation: clg-in .16s ease-out backwards; }
 @keyframes clg-in { from { opacity: 0; transform: translateY(3px); } }
 .clg-stage { position: relative; flex: none; aspect-ratio: 16 / 10; overflow: hidden; border-radius: calc(var(--f-rad-s, 0px) * 1.4);
   border: 1px solid var(--line, var(--border)); background: color-mix(in oklab, var(--txl) 10%, var(--panel)); }
@@ -6501,7 +6513,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
   box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease backwards; }
 .clg-co::after { content: ""; position: absolute; right: -6px; bottom: 18px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--panel);
-  border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); }
+  border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); box-sizing: border-box; }
 .clg-co .in { position: relative; overflow: hidden; padding: 11px 36px 12px 13px; border-radius: var(--f-rad, 0); }
 .clg-co-h { display: flex; align-items: center; gap: 7px; min-width: 0; }
 /* its first picture, edge to edge over the words */
@@ -6547,7 +6559,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .upd-fold:hover { color: var(--acc); }
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
-@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > :is(.clg-stage, .clg-t), .rl-body > :is(.clg-stage, .clg-t) { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > .clg-stage, .clg-read > .clg-t, .rl-body > .clg-stage, .rl-body > .clg-t { animation: none; } }
 /* the rail's ⟳ over the changelog (LiveButton): what's on disk but not running. The card
    is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
 @keyframes gl-spin { to { transform: rotate(360deg); } }
@@ -7086,7 +7098,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .sq-head:disabled { cursor: default; }
 .sq-head:not(:disabled):hover .sq-lab { color: var(--txb); }
 .sq-lab { flex: none; font: 800 var(--t95)/1 var(--f); letter-spacing: .13em; color: var(--txl); }
-:is(.sq-head, .sq-wbtn, .sq-seg, .sq-mn, .sq-blk):focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; border-radius: 4px; }
+.sq-head:focus-visible, .sq-wbtn:focus-visible, .sq-seg:focus-visible, .sq-mn:focus-visible, .sq-blk:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; border-radius: 4px; }
 /* FLOWS: a segment per flow, sized by its worked time; the active one striped, a stopped one hatched */
 .sq-f-design { --fc: color-mix(in srgb, var(--purple) 45%, var(--txb)); }
 .sq-f-build { --fc: var(--acc); }
@@ -7230,7 +7242,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* quiet rows: number, prompt and time; marks, spend, copy and send again on hover. The buttons
    hide out of sight, not display: none, so Tab still reaches them and its focus shows them. */
 .ss-t:not(:hover, :focus-within, .sel) > em { display: none; }
-.ss-t:not(:hover, :focus-within, .sel) :is(.ss-mk, .ss-acts) {
+.ss-t:not(:hover, :focus-within, .sel) .ss-mk, .ss-t:not(:hover, :focus-within, .sel) .ss-acts {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip-path: inset(50%); white-space: nowrap;
 }
@@ -7300,11 +7312,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-c em { position: absolute; bottom: -15px; font: 800 var(--t85)/1 var(--f); font-style: normal; letter-spacing: 1px; color: var(--txg); }
 .cn-c.now i { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cn-acc2) 30%, transparent) 0 4px, color-mix(in srgb, var(--cn-acc2) 8%, transparent) 4px 8px);
   box-shadow: inset 0 0 0 1.5px var(--cn-acc2), 0 0 16px color-mix(in srgb, var(--acc) 50%, transparent); }
-.cn-c.now :is(b, em) { color: var(--cn-acc2); }
+.cn-c.now b, .cn-c.now em { color: var(--cn-acc2); }
 .cn-c.pass i { background: linear-gradient(180deg, var(--cn-ok2), color-mix(in srgb, var(--ok) 22%, transparent)); box-shadow: 0 0 16px color-mix(in srgb, var(--ok) 45%, transparent); }
-.cn-c.pass :is(b, em) { color: var(--cn-ok2); }
+.cn-c.pass b, .cn-c.pass em { color: var(--cn-ok2); }
 .cn-c.stall i { background: linear-gradient(180deg, var(--ask), color-mix(in srgb, var(--ask) 18%, transparent)); }
-.cn-c.stall :is(b, em) { color: var(--ask); }
+.cn-c.stall b, .cn-c.stall em { color: var(--ask); }
 .cn-c.left i { background: color-mix(in srgb, var(--txl) 16%, transparent); }
 /* the two pass rules */
 .cn-rule { flex: none; display: flex; gap: 6px; margin-top: 9px; }
@@ -7323,7 +7335,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cr-coin.busy .cn-mk { box-shadow: 0 0 0 2px color-mix(in srgb, var(--cn-acc2) 55%, transparent); }
 .cr-coin.busy em { color: var(--cn-acc2); }
 .cr-coin.ok b { color: var(--cn-ok2); }
-.cr-coin.err :is(b, em) { color: var(--cn-err2); }
+.cr-coin.err b, .cr-coin.err em { color: var(--cn-err2); }
 .cr-coin.off .cn-mk { opacity: .35; } .cr-coin.off b { color: var(--txg); } .cr-coin.off em { text-decoration: line-through; color: var(--txg); }
 .cr-coin .cn-spin { width: 13px; height: 13px; }
 .cr-why { flex: none; height: 16px; margin: 6px 14px 0; font: 600 var(--t105)/16px var(--f); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -7403,8 +7415,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    chips, + Add a reviewer's menu of every account by agent, and a line per outside
    agent of the projects it may read. The fold clips (rounded corners), so it lets
    the menu out while the menu is open. */
-.aim-fold:has(.cr-menu) { overflow: visible; }
-.aim-fold:has(.cr-menu) > .aim-foldbody { border-radius: 0 0 11px 11px; }
+.aim-fold[data-menu] { overflow: visible; }
+.aim-fold[data-menu] > .aim-foldbody { border-radius: 0 0 11px 11px; }
 .aim-vfield.cr-revs { gap: 0; padding-bottom: 8px; }
 .cr-head { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; }
 .cr-bench { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 12px; position: relative; }
@@ -7481,7 +7493,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* the new-session screen sits outside every region above: its words in the UI
    voice, the oracle line in Nunito's italic */
 [data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] { --mono: var(--ui-font); font-family: var(--ui-font); }
-[data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] :is(div, span, button) { letter-spacing: 0 !important; }
+[data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] div, [data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] span, [data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] button { letter-spacing: 0 !important; }
 [data-fam="pebble"] .fresh-quote { font-family: var(--ui-font) !important; font-size: var(--t17) !important; }
 /* natural case. A title or a label takes a capital, a reading stays lower
    ("8 steps · 35s", "4h12m"), nothing is tracked. The HUD writes many labels
@@ -7502,7 +7514,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
 /* the readings that were caps by CSS rather than in the markup */
-[data-fam="pebble"] :is(.gp-pb, .gg-older, .rp-sg, .prun, .setgroup) { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam="pebble"] .gp-pb, [data-fam="pebble"] .gg-older, [data-fam="pebble"] .rp-sg, [data-fam="pebble"] .prun, [data-fam="pebble"] .setgroup { text-transform: none !important; letter-spacing: 0 !important; }
 /* modal heads (TOOLS, ANALYZE), their buttons and tabs, the editor's EDIT/SAVE */
 [data-fam="pebble"] [style*="--shadow-modal"] > div:first-child > :is(span:first-child, button),
 [data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 5px 12px"] {
@@ -7514,7 +7526,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* headings in the popovers read as titles, like the slabs' Files and Git */
 [data-fam="pebble"] :is(.ntf-head .t) { font: 700 var(--t13) var(--ui-font) !important; color: var(--txb) !important; }
 [data-fam="pebble"] .gp-fh b { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txh) !important; }
-[data-fam="pebble"] :is(.dwork-lab, .res-lab) { font-weight: 700 !important; color: var(--txm) !important; }
+[data-fam="pebble"] .dwork-lab, [data-fam="pebble"] .res-lab { font-weight: 700 !important; color: var(--txm) !important; }
 [data-fam="pebble"] .setgroup { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txd) !important; }
 
 /* ── 2 · ONE CORNER ── */
@@ -7559,7 +7571,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="pebble"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--panel2); }
 
 /* the Git slab's sections are titled, not ruled: FLINT's hairlines ran edge to edge through a rounded slab */
-[data-fam="pebble"] :is(.gp-fold, .gp-fh) { border-color: transparent !important; }
+[data-fam="pebble"] .gp-fold, [data-fam="pebble"] .gp-fh { border-color: transparent !important; }
 
 /* ── 4 · ONE LADDER ── */
 /* the slabs are opaque: at 90% the corner glow tinted them blue at the top-left and coral at the foot */
@@ -7746,16 +7758,16 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* dark: the sheet is a step darker than the forest round it (Rivendell's inset), with an edge */
 :root:not([data-light]) [data-fam="middle-earth"] [data-ctx-type="terminal"] { box-shadow: inset 1px 1px 0 var(--line), inset 0 -1px 0 var(--line); }
 /* the right panel folded to the rail: the transcript is the whole sheet */
-[data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { border-radius: var(--f-rad-l); }
-:root:not([data-light]) [data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { box-shadow: inset 0 0 0 1px var(--line); }
+[data-fam="middle-earth"] .hudgrid[data-rnone] [data-ctx-type="terminal"] { border-radius: var(--f-rad-l); }
+:root:not([data-light]) [data-fam="middle-earth"] .hudgrid[data-rnone] [data-ctx-type="terminal"] { box-shadow: inset 0 0 0 1px var(--line); }
 
 /* ── the sessions column, as Rivendell's sidebar ── */
 /* the wordmark in Rivendell's: the serif, a capital each (as specific as the families' lower-case rule it follows) */
 [data-fam="middle-earth"]:not([data-fam="aurora"]) .wordmark {
   font-family: var(--f-disp) !important; font-size: 18px !important; letter-spacing: -.005em !important; text-transform: capitalize; color: var(--txb) !important;
 }
-[data-fam="middle-earth"] .wordmark :is(.bw-a, .bw-b) { display: inline-block; font-weight: 600; text-transform: lowercase; }
-[data-fam="middle-earth"] .wordmark :is(.bw-a, .bw-b)::first-letter { text-transform: uppercase; }
+[data-fam="middle-earth"] .wordmark .bw-a, [data-fam="middle-earth"] .wordmark .bw-b { display: inline-block; font-weight: 600; text-transform: lowercase; }
+[data-fam="middle-earth"] .wordmark .bw-a::first-letter, [data-fam="middle-earth"] .wordmark .bw-b::first-letter { text-transform: uppercase; }
 /* the mode tabs: one well, the open tab a lighter fill with a gold glyph */
 [data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child {
   border: 0 !important; border-radius: var(--f-rad) !important; background: var(--side-well) !important; box-shadow: none !important;
@@ -7837,8 +7849,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   .hudgrid > div:last-child .swapin > span[style*="margin-left: auto"]) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
-[data-fam="middle-earth"] :is(.gp-pb, .gg-older, .rp-sg, .prun, .setgroup) { text-transform: none !important; letter-spacing: 0 !important; }
-[data-fam="middle-earth"] :is(.dwork-lab, .res-lab) { font-weight: 600 !important; color: var(--txm) !important; }
+[data-fam="middle-earth"] .gp-pb, [data-fam="middle-earth"] .gg-older, [data-fam="middle-earth"] .rp-sg, [data-fam="middle-earth"] .prun, [data-fam="middle-earth"] .setgroup { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam="middle-earth"] .dwork-lab, [data-fam="middle-earth"] .res-lab { font-weight: 600 !important; color: var(--txm) !important; }
 [data-fam="middle-earth"] .gp-fh b { font-weight: 600 !important; font-size: var(--t12) !important; color: var(--txh) !important; }
 
 /* ── titles and big numbers in the serif (Rivendell's h1 and its canopy figures) ── */
@@ -7853,7 +7865,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] .md :not(pre) > code { background: color-mix(in oklab, var(--txl) 13%, transparent) !important; border-radius: 6px !important; padding: .1em .4em !important; }
 
 /* ── one ladder: popovers are cards one step up, with the soft shadow ── */
-[data-fam="middle-earth"] :is([style*="--shadow-pop"], [data-ctxmenu], .ntf-pop):not(.isle):not(.sessrow) {
+[data-fam="middle-earth"] [style*="--shadow-pop"]:not(.isle):not(.sessrow), [data-fam="middle-earth"] [data-ctxmenu]:not(.isle):not(.sessrow), [data-fam="middle-earth"] .ntf-pop:not(.isle):not(.sessrow) {
   background: var(--panel) !important; border-color: var(--line) !important; box-shadow: var(--f-pop-shadow) !important;
 }
 [data-fam="middle-earth"] [style*="border-left: 2px solid var(--acc)"] {
@@ -7960,7 +7972,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 :root[data-light] .askdock { box-shadow: 0 -14px 30px -22px color-mix(in srgb, var(--txb) 18%, transparent); }
 /* Bigger: the stage takes most of the column (the transcript still shows its marker above). */
-.askdock:has(.ad-stage) { max-height: min(80vh, 900px); }
+.askdock[data-stage] { max-height: min(80vh, 900px); }
 .askdock[data-flash] { animation: adflash .9s ease; }
 @keyframes adflash { 30% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--rc) 40%, transparent); } }
 /* zero specificity: every button below sets its own size */
@@ -7998,7 +8010,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-more { font-size: var(--t11); color: var(--txl); }
 .ad-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t115); color: var(--txm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ad-beacon { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rc); }
-.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s steps(19) infinite; }
+.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s steps(19) infinite; box-sizing: border-box; }
 @keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
 /* the fold (ask-dock-readable): one line, the ask itself, so the session above can be read; the body is hidden, not gone */
@@ -8161,7 +8173,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-replies { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 .ad-reply { display: inline-flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 13px 0 5px; border-radius: max(3px, var(--rc-rs));
   background: var(--panel2); border: 1px solid var(--rc-line2); font-size: var(--t13); font-weight: 750; color: var(--txh); }
-.ad-reply:not(:has(.ad-key)) { padding-left: 13px; }
+.ad-reply:not([data-key]) { padding-left: 13px; }
 .ad-reply .ad-key { grid-row: auto; width: 22px; height: 22px; }
 .ad-reply:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 50%, var(--rc-line2)); }
 .ad-reply[aria-pressed="true"] { border-color: var(--rc); }
@@ -8449,7 +8461,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
   display: flex; flex-direction: column; flex: 0 1 auto; min-height: 48px; }
 /* The chat header floats over the transcript's top 78px (Terminal's ISLE_EDGE 50 + its LAST row, PEEK_H 28): with a ticket card in
    the column the transcript keeps that much, so a short window shrinks the card's graph (it scrolls) instead of pushing the card under the header. */
-[data-ctx-type="terminal"]:has(> .tm-card) > .swapwrap { min-height: 78px !important; }   /* over its inline minHeight: 0 */
+[data-ctx-type="terminal"][data-tmcard] > .swapwrap { min-height: 78px !important; }   /* over its inline minHeight: 0 */
 .tm-row { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 8px 6px 14px; flex-wrap: nowrap; min-width: 0; flex: none; }
 .tm-ic { color: var(--acc2, var(--acc)); flex: none; }
 .tm-k { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; color: var(--acc2, var(--acc)); flex: none; }
@@ -8464,13 +8476,13 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
 .tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
 /* A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
-@container (max-width: 800px) { .tm-row:has(.tm-call) > .tm-c, .tm-row:has(.tm-call) > .tm-c + .tm-div { display: none; } }
-@container (max-width: 900px) { .tm-row:has(.tm-auto) > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
+@container (max-width: 800px) { .tm-row[data-call] > .tm-c, .tm-row[data-call] > .tm-c + .tm-div { display: none; } }
+@container (max-width: 900px) { .tm-row[data-auto] > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
 @container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
 .tm-auto { flex: none; margin-right: 6px; white-space: nowrap; text-transform: none; }   /* its .caps word carries the capitals */
 /* LIVE's bar has no container to ask: while a set waits its chips are every ticket, which its dots show. */
-.tl-bar:has(.tm-auto) > :is(.tm-c, .tl-chips) { display: none; }
+.tl-bar[data-auto] > .tm-c, .tl-bar[data-auto] > .tl-chips { display: none; }
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
@@ -8522,7 +8534,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tl-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .tl-row { display: flex; align-items: center; gap: 10px; padding-right: 12px; border: 1px solid var(--line2); border-radius: var(--f-rad, 12px);
   background: color-mix(in srgb, var(--panel2) 70%, transparent); min-width: 0; flex: none; }
-.tl-row:has(.tl-open:not(:disabled):hover) { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
+.tl-row[data-hot] { border-color: color-mix(in srgb, var(--acc) 50%, var(--line2)); }
 .tl-row.k-ask, .tl-row.k-idle, .tl-row.k-you { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 .tl-row.k-fix { border-color: color-mix(in srgb, var(--err) 50%, transparent); }
 .tl-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 2px 9px 14px; border: 0; background: none;
@@ -8935,7 +8947,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .home-sky-cap { position: absolute; inset: 0 0 -1px; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
 .home-emblem { position: absolute; left: 8px; top: -11px; opacity: .34; }
 :root[data-light] .home-emblem { opacity: .55; }
-.home-emblem :is(circle, rect) { fill: none; stroke: var(--sky-ink); }
+.home-emblem circle, .home-emblem rect { fill: none; stroke: var(--sky-ink); }
 .home-emblem .core { fill: var(--sky-ink); stroke: none; }
 .home-emblem .ring { transform-origin: 80px 80px; animation: homeSpin 40s linear infinite; }
 .home-rune { position: absolute; font-family: var(--mono); line-height: 1; color: var(--sky-ink); animation: twinkle 3.2s ease-in-out infinite; }
@@ -9000,7 +9012,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .gs-hl { font: 800 var(--t15)/1.3 var(--f); color: var(--txb); }
 .gs-sub { margin-top: 3px; font: 400 var(--t125)/1.45 var(--f); color: var(--txm); }
 .gs-stn { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: 14px; }
-.gs-stn::before { content: ""; position: absolute; left: 17%; right: 17%; top: 15px; border-top: 2px dashed var(--l2); }
+.gs-stn::before { content: ""; position: absolute; left: 17%; right: 17%; top: 15px; border-top: 2px dashed var(--l2); box-sizing: border-box; }
 .gs-stn > div { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
 .gs-stn .o { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--panel2, var(--panel)); color: var(--txl);
   box-shadow: inset 0 0 0 1.5px var(--l2); transition: background .3s, color .3s, box-shadow .3s; }
@@ -9108,7 +9120,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .rl-read { overflow: hidden; padding: 0; gap: 0; }
 .rl-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px 16px;
   -webkit-mask-image: linear-gradient(#000 calc(100% - 14px), transparent); mask-image: linear-gradient(#000 calc(100% - 14px), transparent); }
-.rl-body > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out backwards; }
+.rl-body > .clg-stage, .rl-body > .clg-t { animation: clg-in .16s ease-out backwards; }
 .rl-kick { margin-bottom: 5px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .16em; color: var(--acc); }
 .rl-kick.ok { color: var(--ok); } .rl-kick.warn { color: var(--warn); } .rl-kick.bad { color: var(--err); }
 .rl-sha { margin-top: 4px; font: 500 var(--t10)/1.3 var(--mono); color: var(--txf); overflow-wrap: anywhere; }

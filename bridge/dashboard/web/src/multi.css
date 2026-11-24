@@ -322,7 +322,7 @@ button.zrow.ma-checks { appearance: none; width: 100%; border: 0; background: no
 [data-style="dossier"] .dwork [data-m="p-git"] { --m: var(--purple); }
 [data-style="dossier"] .dwork [data-m="p-install"] { --m: var(--purple); }
 [data-style="dossier"] .dwork [data-m="p-run"] { --m: var(--acc); }
-[data-style="dossier"] .dwork :is([data-m="p-search"], [data-m="p-read"]) { --m: var(--info); }
+[data-style="dossier"] .dwork [data-m="p-search"], [data-style="dossier"] .dwork [data-m="p-read"] { --m: var(--info); }
 [data-style="dossier"] .dwork [data-m="p-other"] { --m: var(--txl); }
 .ma-purp { margin-right: 7px; font-family: var(--mono); font-size: var(--t9); letter-spacing: 1px; text-transform: uppercase; color: var(--txl); }
 .ma-recovered { color: var(--txl); }

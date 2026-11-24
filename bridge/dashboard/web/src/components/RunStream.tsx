@@ -957,6 +957,13 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // top is far above you. A click mid-glide starts from where the box is.
   const fold = useRef<HTMLDivElement>(null);
   const [motion, setMotion] = useState(false);
+  // Mid-glide the scroller sits anchoring out (index.css .mscroll[data-moving]); counted, as two zones can glide at once.
+  useLayoutEffect(() => {
+    const sc = motion ? fold.current?.closest<HTMLElement>(".mscroll") : null;
+    if (!sc) return;
+    sc.dataset.moving = String(+(sc.dataset.moving ?? 0) + 1);
+    return () => { const n = +(sc.dataset.moving ?? 1) - 1; if (n > 0) sc.dataset.moving = String(n); else delete sc.dataset.moving; };
+  }, [motion]);
   // How many of the zone's rows are mounted. Opening, only those the glide can
   // show (a row is 28px or more, so this many fill the scroller under the
   // header), the rest once it has played out. Built whole in the click, a zone
@@ -1515,7 +1522,7 @@ function ShotRow({ pics, shut, label, onOpen }: {
     );
   };
   return (
-    <div className="dwork-row">
+    <div className="dwork-row" data-ml={edge.l ? "" : undefined} data-mr={edge.r ? "" : undefined}>
       <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label} data-drag={grabbing ? "" : undefined}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onLostPointerCapture={onUp}
         onClickCapture={(e) => { if (dragged.current) { e.stopPropagation(); e.preventDefault(); } }}
@@ -3758,10 +3765,10 @@ export function FinalResult({
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
     // of rules, a level bar, a margin note, a floating surface) — and nothing
     // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
-    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined}
+    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined} data-said={drawn == null && body ? "" : undefined}
       style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
-      <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
+      <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined} data-bare={drawn == null && body ? undefined : ""}>
         <div className="res-head">
           <span className="res-lab caps">{update ? "Update" : label ?? (dossier ? (bad ? "Answer · error" : "Answer") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {/* how long the turn took sits by the label; the right side says done and when */}

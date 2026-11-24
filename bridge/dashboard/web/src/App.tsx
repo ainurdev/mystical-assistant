@@ -3585,6 +3585,7 @@ export function App() {
             <div
               className="hudgrid grid min-h-0 flex-1"
               data-rbare={rightShown ? undefined : ""}
+              data-rnone={rightShown && !inDesign ? undefined : ""}
               style={{ gridTemplateColumns: inDesign ? `0 ${designChat}px 7px minmax(0,1fr)` : shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0,
                        ...(settings.rightW ? { "--rbody": rbody(settings.rightW) } : {}) } as CSSProperties}
             >

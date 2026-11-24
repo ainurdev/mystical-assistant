@@ -877,7 +877,7 @@ export function ToolWidget({ spec, accent, style, children, gallery }: {
   const idiom = idiomFor(spec.type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw={material(style)} data-idiom={idiom}
+    <div className="tw" data-tw={material(style)} data-idiom={idiom} data-gal={!children && spec.type === "screens" ? "" : undefined}
          style={{ "--h": accent } as CSSProperties}>
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
@@ -909,7 +909,7 @@ export function BlockWidget({ type, value, style = "dossier" }: {
   const idiom = idiomFor(type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw={material(style)} data-idiom={idiom} data-said="">
+    <div className="tw" data-tw={material(style)} data-idiom={idiom} data-said="" data-gal={type === "screens" ? "" : undefined}>
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
         <div className="tw-head">

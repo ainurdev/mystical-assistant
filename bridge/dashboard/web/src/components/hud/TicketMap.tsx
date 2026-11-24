@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { main } from "../../lib/queries";
 import { ChevronDown, ChevronUp, Hand, Radio, RotateCcw, Ticket, Zap } from "lucide-react";
@@ -150,9 +150,7 @@ function useTicketSet(sessionId: string): TicketSet | null {
 
 /** AUTO-START beside Approve & build while a set waits: every flow that builds as tickets at once
  *  (the FLOWS sheet sets one), for later sets only; the set waiting now still waits for the tap. */
-function AutoStart({ onErr }: { onErr: (text: string) => void }) {
-  const flows = useFlowSettings()?.flows.filter((f) => f.tickets !== undefined) ?? [];
-  if (!flows.length) return null;
+function AutoStart({ flows, onErr }: { flows: AutoFlows; onErr: (text: string) => void }) {
   const on = flows.every((f) => !f.approve);
   // One at a time: each answer is the whole settings, so the last one back must be the last one sent.
   const flip = async () => { for (const f of flows) await changeFlows({ flow: f.id, key: "approve", value: on }); };
@@ -163,7 +161,10 @@ function AutoStart({ onErr }: { onErr: (text: string) => void }) {
 }
 
 /** What a set says in a few words, and the buttons that act on it: the strip and TICKETS share these. */
+type AutoFlows = NonNullable<ReturnType<typeof useFlowSettings>>["flows"];
+
 function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, onOpenSession: (id: string) => void) {
+  const flows = useFlowSettings()?.flows.filter((f) => f.tickets !== undefined) ?? [];
   const [note, setNoteNow] = useState("");
   const noteT = useRef(0);
   useEffect(() => () => window.clearTimeout(noteT.current), []);
@@ -214,8 +215,10 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, o
     : t ? <span className="tm-call warn"><b>#{first}</b> stopped</span>
     : first === "merge" ? <span className={`tm-call ${set.status === "fix" ? "err" : "warn"}`}>the merge {set.status === "fix" ? "needs a fix" : "stopped"}</span>
     : null;
+  // AUTO-START shown: the strip and the bar drop their facts for it (index.css [data-auto])
+  const auto = !note && set.status === "approve" && flows.length > 0;
   const action = note ? null
-    : set.status === "approve" ? <><AutoStart onErr={setNote} /><button className="tm-btn ghost" onClick={ops.decline}>Not now</button>
+    : set.status === "approve" ? <>{auto && <AutoStart flows={flows} onErr={setNote} />}<button className="tm-btn ghost" onClick={ops.decline}>Not now</button>
       <button className="tm-btn acc" onClick={ops.approve}>Approve &amp; build</button></>
     : set.status === "stopped" ? <button className="tm-btn" onClick={ops.build}>Build</button>
     : t && kinds[first] === "ask" ? <button className="tm-btn warn" onClick={() => onOpenSession(t.session_id)}>Answer</button>
@@ -234,7 +237,7 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, o
       ))}
     </span>
   );
-  return { set, ns, kinds, name, facts, ops, call, action, dots, first };
+  return { set, ns, kinds, name, facts, ops, call, action, dots, first, auto };
 }
 
 /** Switch the open super session's view (Terminal listens): the strip's Sessions button. */
@@ -249,6 +252,15 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   const [wide, setWide] = useState(false);
   useEffect(() => { setWide(!!set && localStorage.getItem(openKey(set.folder)) === "1"); }, [set?.folder]);   // eslint-disable-line react-hooks/exhaustive-deps
   const v = useSetView(set, status, onOpenSession);
+  // In the chat column the card marks it, so the transcript keeps its room (index.css [data-tmcard])
+  const card = useRef<HTMLDivElement>(null);
+  const shown = !!v && !except;
+  useLayoutEffect(() => {
+    const col = card.current?.parentElement;
+    if (!shown || !col?.matches('[data-ctx-type="terminal"]')) return;
+    col.dataset.tmcard = "";
+    return () => { delete col.dataset.tmcard; };
+  }, [shown]);
   if (!v) return null;
   const { ns, kinds, name, facts, call, action, dots } = v;
   if (except) return <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} except={except} />;
@@ -260,8 +272,8 @@ export function TicketMapCard({ sessionId, status, onOpenSession, except }: {
   return (
     <>
     <TicketAsks set={v.set} kinds={kinds} status={status} onOpenSession={onOpenSession} />
-    <div className="tm-card" role="region" aria-label={`Parts: ${name}`}>
-      <div className="tm-row">
+    <div ref={card} className="tm-card" role="region" aria-label={`Parts: ${name}`}>
+      <div className="tm-row" data-call={v.call ? "" : undefined} data-auto={v.auto ? "" : undefined}>
         <Ticket size={15} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span><span className="tm-nm">{name}</span>
         <span className="tm-div" />
         {dots}
@@ -321,10 +333,15 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
   };
   const order = [...ns].sort((a, b) => RANK[kinds[a]] - RANK[kinds[b]] || a.localeCompare(b));
   const mergeSid = v.set.merge_session;
+  // A row lights while its open button is hovered, not its Retry or Go (index.css .tl-row[data-hot])
+  const hot = {
+    onPointerEnter: (e: React.PointerEvent<HTMLButtonElement>) => { if (!e.currentTarget.disabled) e.currentTarget.parentElement!.dataset.hot = ""; },
+    onPointerLeave: (e: React.PointerEvent<HTMLButtonElement>) => { delete e.currentTarget.parentElement!.dataset.hot; },
+  };
   const into = v.set.feature_branch || "the feature branch";
   return (
     <div className="tl-live" role="region" aria-label={`Parts: ${name}`} style={{ paddingTop: top }}>
-      <div className="tl-bar">
+      <div className="tl-bar" data-auto={v.auto ? "" : undefined}>
         <Ticket size={14} aria-hidden className="tm-ic" /><span className="caps tm-k">Parts</span>
         {dots}<span className="tm-c">{facts}</span>
         {call && <><span className="tm-div" />{call}</>}
@@ -337,7 +354,7 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
       <div className="tl-list">
         {mergeSid && (
           <div className={`tl-row${v.set.status === "fix" ? " k-fix" : ""}`}>
-            <button className="tl-open" onClick={() => onOpenSession(mergeSid)} title={`Open the merge into ${into}`}>
+            <button className="tl-open" {...hot} onClick={() => onOpenSession(mergeSid)} title={`Open the merge into ${into}`}>
               <span className="tl-dot" style={{ background: v.set.status === "fix" ? COLOR.fix : v.set.status === "merged" ? COLOR.done : COLOR.run }} />
               <span className="tl-no">⇢</span>
               <span className="tl-lt"><b>merge into {into}</b>
@@ -350,7 +367,7 @@ export function TicketList({ sessionId, status, onOpenSession, top = 4 }: {
           const t = tk[n], k = kinds[n], sid = t.session_id;
           return (
             <div key={n} className={`tl-row k-${k}`}>
-              <button className="tl-open" disabled={!sid} onClick={() => sid && onOpenSession(sid)}
+              <button className="tl-open" {...hot} disabled={!sid} onClick={() => sid && onOpenSession(sid)}
                       title={sid ? `Open #${n} ${t.title}` : `#${n} has no session yet`}>
                 <span className="tl-dot" style={k === "q" ? undefined : { background: COLOR[k], boxShadow: busy(k) ? `0 0 6px ${COLOR[k]}` : undefined }} />
                 <span className="tl-no">#{n}</span>

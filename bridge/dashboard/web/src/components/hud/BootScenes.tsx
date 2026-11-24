@@ -157,7 +157,7 @@ const KD_EXIT_MS = 1300;
  *  Gandalf are drawn on a canvas under the SVG (BootFire); the whip's ending
  *  needs it, so without WebGL the scene leaves as it did before. Always drawn
  *  at night: the intro hands this scene a dark ground (lib/theme nightOf). */
-export function KhazadDum({ progress }: { progress: number }) {
+export function KhazadDum({ progress, onGl }: { progress: number; onGl?: (gl: boolean) => void }) {
   const lit = Math.floor(progress * 6 + 1e-9);
   // the step's pulse and flinch restart by swapping between twin keyframes, so nothing remounts
   const beat = lit ? (lit % 2 ? "a" : "b") : "";
@@ -169,6 +169,8 @@ export function KhazadDum({ progress }: { progress: number }) {
     if (!stop) setGl(false);
     return stop ?? undefined;
   }, [gl]);
+  // the intro's exit swaps its title on the GL scene's beat (index.css .bootleaving[data-gl])
+  useEffect(() => { onGl?.(gl); }, [gl, onGl]);
   return (
     <>
       {gl ? <canvas ref={canvas} className="kd-gl" aria-hidden /> : (
