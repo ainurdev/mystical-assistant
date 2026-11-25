@@ -31,7 +31,9 @@ function builtFrom(): Plugin {
 
 // Reports (lib/reports.ts): every script is stamped with a debug id that ties it to
 // its map, and the release is HEAD, so a crash on any install's build of a pushed
-// commit maps against the maps CI uploaded for it (.github/workflows/sourcemaps.yml).
+// commit maps against the maps CI uploaded for it.
+// shortcut: no CI job uploads them yet (the push login lacks GitHub's `workflow` scope), so
+// stacks stay minified; add one that runs `npm run build` on push with CI and SENTRY_* set.
 // The maps are written but no script links them. Only CI, with the token, talks to
 // Sentry; an install's build never does, and the plugin's telemetry is off.
 // shortcut: the ids match only when an install's bundle is byte-identical to CI's (Node 24,
