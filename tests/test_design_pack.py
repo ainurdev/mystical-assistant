@@ -217,3 +217,27 @@ def test_the_judgement_pass_is_one_shared_reference_with_its_three_parts():
         assert re.search(rf"^## \d\. {part}$", text, re.M), part
     for name in re.findall(r"/?mystical-design:([\w-]+)", text):
         assert name in _skills(), name
+
+
+def _bold_section(text):
+    """design-first's Bold-run section: from its heading to the next ## heading."""
+    m = re.search(r"^## Bold runs\n.*?(?=^## )", text, re.M | re.S)
+    assert m, "no Bold runs section"
+    return m.group(0)
+
+
+def test_design_first_reads_the_bold_note_ticket_07_sends():
+    text = open(_skills()["design-first"], encoding="utf-8").read()
+    note = getattr(paths, "BOLD_NOTE", "Bold run: you lit BOLD.")   # ticket 07's line, once it lands
+    assert f"`{note}`" in _bold_section(text)
+
+
+def test_the_bold_section_stands_alone():
+    """Taking it out leaves design-first's eleven steps whole, with nothing naming it."""
+    text = open(_skills()["design-first"], encoding="utf-8").read()
+    bold = _bold_section(text)
+    for part in ("fifteen", "critique_design", "bold: true", "Go bold", "OFF-SYSTEM"):
+        assert part in bold, part
+    rest = text.replace(bold, "")
+    assert re.findall(r"^## (\d+)\. ", rest, re.M) == [str(n) for n in range(1, 12)]
+    assert not re.search(r"bold run|go bold|Bold runs", rest, re.I)
