@@ -1,15 +1,19 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  chartSheet, delimited, domain, flatten, fmt, layoutFlow, matches, nodePath, overdue, pinsAt, pinText, sorted, splitViews, sumOf, ticks, xLabel,
+  chartSheet, delimited, domain, flatten, fmt, hasComments, layoutFlow, matches, nodePath, overdue, pinsAt, pinText, sorted, splitViews, sumOf, ticks, xLabel,
   type BoardCol, type Card, type ChartEv, type Col, type DataEv, type FlowEv, type KanbanEv, type Row, type StatsEv, type TableEv, type TimelineEv,
 } from "../lib/dataview";
 import { saveView, sendFile, useRefSession } from "../lib/readapi";
 import { xlsx } from "../lib/viewexport";
+import { usePanZoom } from "../lib/panzoom";
+import { DiffView } from "./DiffView";
+import { Mark, NoteList } from "./ViewNotes";
+import { pdfOf } from "../lib/viewpdf";
 import { viewPng } from "../lib/viewpng";
 
-// A sheet, chart, board, diagram or row of figures an agent showed on the turn (show_data,
-// bridge/data_views.py). Hand-built SVG, as neither app has a chart library and these four
+// A sheet, chart, board, diagram, row of figures or diff an agent showed on the turn (show_data
+// and show_diff, bridge/data_views.py; the diff draws in components/DiffView). Hand-built SVG, as neither app has a chart library and these four
 // don't justify one. The same file is in both apps, styled by dataview.css: it needs no API,
 // only what's on the event, so a chat scrolled back to in a year still draws.
 //
@@ -521,9 +525,15 @@ function Tiles({ ev }: { ev: StatsEv }) {
 
 // ---- diagrams ---------------------------------------------------------------
 
+/** What a step or a box says when you hover it, tap it or tab to it: the full label and note
+ *  (the drawing cuts them to fit), then the comment, which is only ever shown here. */
+type FlowTip = { kind: "node" | "box"; id: string; left: number; top: number; title: string; note: string; comment: string; count?: number };
+
 /** Also draws a Mermaid flowchart in Markdown (lib/mermaid), inside a `.dv` frame for its tokens. */
-export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean }) {
+export function Flow({ ev, full, print, notes }: { ev: FlowEv; full: boolean; print?: boolean; notes?: boolean }) {
   const [ref, w] = useSize();
+  const host = useRef<HTMLDivElement | null>(null);
+  const [tip, setTip] = useState<FlowTip | null>(null);
   const layout = useMemo(() => {
     const right = layoutFlow(ev, "right");
     if (ev.direction) return layoutFlow(ev, ev.direction);
@@ -534,46 +544,119 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
     const down = layoutFlow(ev, "down");
     return down.width <= right.width ? down : right;
   }, [ev, w, full, print]);
-  // Shrink a little to fit rather than scroll, and past that scroll rather than go unreadable.
+  // Shrink a little to fit rather than pan, and past that pan rather than go unreadable. In a
+  // chat the frame is as tall as the drawing at that size, up to most of the screen.
   const scale = print || !w || layout.width <= w ? 1 : Math.max(0.8, w / layout.width);
+  const pz = usePanZoom(layout.width, layout.height, full, !!print, () => setTip(null));
+  const tall = Math.max(140, Math.min(layout.height * scale + 2, Math.round(window.innerHeight * 0.7)));
   const shown = (g: string) => (g ? series(ev.groups.indexOf(g)) : "var(--dv-zero)");
+  // Exported with its comments: each commented box and step gets a number, in reading order,
+  // and the comments are listed under the drawing, since a picture has no hover.
+  const marks = useMemo(() => {
+    if (!notes) return null;
+    const said = [
+      ...layout.clusters.filter((c) => c.comment).map((c) => ({ key: `c${c.id}`, x: c.x, y: c.y, title: c.label, text: c.comment! })),
+      ...layout.nodes.filter((n) => n.comment).map((n) => ({ key: `n${n.id}`, x: n.x, y: n.y, title: n.label, text: n.comment! })),
+    ].sort((a, b) => a.y - b.y || a.x - b.x);
+    return new Map(said.map((m, i) => [m.key, { ...m, n: i + 1 }]));
+  }, [notes, layout]);
+  // The wires that touch what's under the pointer stand out, so a step's paths read at a glance.
+  const lit = useMemo(() => {
+    if (!tip) return null;
+    const ids = new Set(tip.kind === "node" ? [tip.id] : layout.clusters.find((c) => c.id === tip.id)?.nodes ?? []);
+    return new Set(layout.arrows.flatMap((a, i) => (ids.has(a.from) || ids.has(a.to) ? [i] : [])));
+  }, [tip, layout]);
+  const open = (el: Element, t: Omit<FlowTip, "left" | "top">) => {
+    const box = host.current?.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (!box) return;
+    const left = Math.max(0, Math.min(r.left - box.left, box.width - 280));
+    setTip({ ...t, left, top: r.bottom - box.top + 6 });
+  };
+  const close = () => setTip(null);
+  const hoverable = (has: boolean, t: () => Omit<FlowTip, "left" | "top">) => (has ? {
+    tabIndex: 0, className: "dv-flow-hit",
+    onMouseEnter: (e: React.MouseEvent) => open(e.currentTarget, t()),
+    onMouseLeave: close,
+    onFocus: (e: React.FocusEvent) => open(e.currentTarget, t()),
+    onBlur: close,
+    // A tap on a phone: no hover there, so a tap opens it and a second tap closes it.
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); if (tip?.id === t().id && tip.kind === t().kind) close(); else open(e.currentTarget, t()); },
+  } : {});
   return (
-    <div className="dv-chart">
+    <div className="dv-chart dv-flow-host" ref={host}>
       {ev.groups.length > 1 ? <Legend items={ev.groups.map((g, i) => ({ label: g, color: series(i) }))} /> : null}
-      <div className="dv-flow" ref={ref} tabIndex={0} role="img"
-        aria-label={`${ev.title}: ${ev.nodes.map((n) => n.label).join(", ")}`}>
+      <div className="dv-flow" ref={ref}>
         {w || print ? (
-          <svg width={layout.width * scale} height={layout.height * scale} viewBox={`0 0 ${layout.width} ${layout.height}`}>
-            {layout.arrows.map((a, i) => (
-              <g key={i}>
-                <path d={a.d} fill="none" stroke="var(--txd)" strokeWidth={1.5} strokeDasharray={a.back || a.dashed ? "4 4" : undefined} />
-                {a.head ? <path d={a.head} fill="var(--txd)" /> : null}
-                {a.tail ? <path d={a.tail} fill="var(--txd)" /> : null}
+          <div className="dv-pan" ref={pz.ref} tabIndex={print ? undefined : 0} role="img" data-full={full || undefined} {...pz.handlers}
+            style={print ? undefined : full ? undefined : { height: tall }}
+            aria-label={`${ev.title}: ${ev.nodes.map((n) => n.label).join(", ")}. Drag to move, pinch or ctrl and scroll to zoom.`}>
+          <svg {...(print ? { width: layout.width, height: layout.height, viewBox: `0 0 ${layout.width} ${layout.height}` } : { width: "100%", height: "100%" })}>
+          <g transform={print || !pz.view ? undefined : `translate(${pz.view.x} ${pz.view.y}) scale(${pz.view.k})`} opacity={print || pz.view ? 1 : 0}>
+            {layout.clusters.map((c) => (
+              <g key={`c${c.id}`} {...(print ? {} : hoverable(true, () => ({ kind: "box", id: c.id, title: c.label, note: "", comment: c.comment ?? "", count: c.nodes.length })))}>
+                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={4} className="dv-box" data-on={tip?.kind === "box" && tip.id === c.id ? "" : undefined} />
+                <text x={c.x + 10} y={c.y + 17} className="dv-box-name">{c.label}</text>
+                {marks?.get(`c${c.id}`) ? <Mark x={c.x + 10 + c.label.length * 6.6 + 12} y={c.y + 13} n={marks.get(`c${c.id}`)!.n} />
+                  : c.comment ? <circle cx={c.x + 10 + c.label.length * 6.6 + 7} cy={c.y + 13} r={3} className="dv-said-dot" /> : null}
               </g>
             ))}
-            {layout.nodes.map((n) => (
-              <g key={n.id}>
-                <path d={nodePath(n)} fill="var(--dv-surface)" stroke={shown(n.group)} strokeWidth={n.group ? 2 : 1} />
-                {n.lines.map((l, i) => {
-                  const total = n.lines.length * 15 + n.notes.length * 13;
-                  return <text key={i} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + 12 + i * 15} textAnchor="middle" className="dv-node">{l}</text>;
-                })}
-                {n.notes.map((l, i) => {
-                  const total = n.lines.length * 15 + n.notes.length * 13;
-                  return <text key={`n${i}`} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + n.lines.length * 15 + 10 + i * 13} textAnchor="middle" className="dv-tick">{l}</text>;
-                })}
-                {n.note ? <title>{n.note}</title> : null}
-              </g>
-            ))}
+            {layout.arrows.map((a, i) => {
+              const on = lit?.has(i), off = lit && !on;
+              const ink = on ? "var(--txb)" : "var(--txd)";
+              return (
+                <g key={i} opacity={off ? 0.3 : 1}>
+                  <path d={a.d} fill="none" stroke={ink} strokeWidth={on ? 2 : 1.5} strokeLinejoin="round" strokeDasharray={a.back || a.dashed ? "4 4" : undefined} />
+                  {a.head ? <path d={a.head} fill={ink} /> : null}
+                  {a.tail ? <path d={a.tail} fill={ink} /> : null}
+                </g>
+              );
+            })}
+            {layout.nodes.map((n) => {
+              const cut = n.lines.join(" ") !== n.label || (n.note && n.notes.join(" ") !== n.note);
+              const has = !print && !!(n.comment || cut);
+              const total = n.lines.length * 15 + n.notes.length * 13;
+              return (
+                <g key={n.id} {...hoverable(has, () => ({ kind: "node", id: n.id, title: n.label, note: n.note, comment: n.comment ?? "" }))}>
+                  <path d={nodePath(n)} fill="var(--dv-surface)" stroke={shown(n.group)} strokeWidth={n.group ? 2 : 1} />
+                  {n.lines.map((l, i) => (
+                    <text key={i} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + 12 + i * 15} textAnchor="middle" className="dv-node">{l}</text>
+                  ))}
+                  {n.notes.map((l, i) => (
+                    <text key={`n${i}`} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + n.lines.length * 15 + 10 + i * 13} textAnchor="middle" className="dv-tick">{l}</text>
+                  ))}
+                  {marks?.get(`n${n.id}`) ? <Mark x={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} y={n.y + 2} n={marks.get(`n${n.id}`)!.n} />
+                    : n.comment ? <circle cx={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} cy={n.y + 9} r={3} className="dv-said-dot" /> : null}
+                </g>
+              );
+            })}
             {layout.arrows.map((a, i) => (a.label ? (
-              <g key={`l${i}`}>
+              <g key={`l${i}`} opacity={lit && !lit.has(i) ? 0.4 : 1}>
                 <rect x={a.lx - a.label.length * 3.2 - 4} y={a.ly - 8} width={a.label.length * 6.4 + 8} height={15} fill="var(--dv-surface)" />
                 <text x={a.lx} y={a.ly + 3.5} textAnchor="middle" className="dv-tick">{a.label}</text>
               </g>
             ) : null))}
+          </g>
           </svg>
+          {print ? null : (
+            <div className="dv-zoom" onPointerDown={(e) => e.stopPropagation()}>
+              <button type="button" className="dv-btn" aria-label="Zoom out" onClick={() => pz.zoomBy(1 / 1.25)}>−</button>
+              <button type="button" className="dv-btn dv-zoom-k" aria-label="Back to where it started" title="Back to where it started" onClick={pz.reset}>{Math.round((pz.view?.k ?? 1) * 100)}%</button>
+              <button type="button" className="dv-btn" aria-label="Zoom in" onClick={() => pz.zoomBy(1.25)}>+</button>
+              <button type="button" className="dv-btn" onClick={pz.fit}>FIT</button>
+            </div>
+          )}
+          </div>
         ) : null}
       </div>
+      {marks?.size ? <NoteList notes={[...marks.values()].map((m) => ({ n: m.n, title: m.title, text: m.text }))} /> : null}
+      {tip && !print ? (
+        <div className="dv-tip dv-flow-tip" role="tooltip" style={{ left: tip.left, top: tip.top }}>
+          <div className="dv-tip-x">{tip.title}</div>
+          {tip.note ? <div className="dv-flow-tip-note">{tip.note}</div> : null}
+          {tip.comment ? <div className="dv-flow-tip-said">{tip.comment}</div> : null}
+          {tip.count !== undefined ? <div className="dv-flow-tip-note">{tip.count === 1 ? "1 step" : `${tip.count} steps`}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -601,7 +684,7 @@ const noSheet: Sheet = { columns: [], rows: [], totals: {} };
 const PRINT_ROWS = 200;
 const nameOf = (title: string, ext: string) => `${title.replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "view"}.${ext}`;
 
-function Body({ ev, sheet, st, full, asTable, print }: { ev: DataEv; sheet: Sheet; st: SheetState; full: boolean; asTable: boolean; print?: boolean }) {
+function Body({ ev, sheet, st, full, asTable, print, notes }: { ev: DataEv; sheet: Sheet; st: SheetState; full: boolean; asTable: boolean; print?: boolean; notes?: boolean }) {
   if (ev.view === "table" || (ev.view === "chart" && asTable)) return <SheetTable cols={sheet.columns} st={st} full={full} />;
   if (ev.view === "chart") {
     if (ev.kind === "donut") return <Donut ev={ev} />;
@@ -610,7 +693,8 @@ function Body({ ev, sheet, st, full, asTable, print }: { ev: DataEv; sheet: Shee
   }
   if (ev.view === "kanban") return <Board ev={ev} full={full} />;
   if (ev.view === "stats") return <Tiles ev={ev} />;
-  if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} /> : <Timeline ev={ev} />;
+  if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} notes={notes} /> : <Timeline ev={ev} />;
+  if (ev.view === "diff") return <DiffView ev={ev} full={full} print={print} notes={notes} />;
   return null;
 }
 
@@ -626,7 +710,7 @@ function Foot({ ev, st, total, cut }: { ev: DataEv; st: SheetState; total: numbe
 }
 
 /** The whole view, off screen, with nothing scrolled away: what a PNG is painted from. */
-function PrintCopy({ ev, sheet, st, asTable, onDone }: { ev: DataEv; sheet: Sheet; st: SheetState; asTable: boolean; onDone: (b: Blob | Error) => void }) {
+function PrintCopy({ ev, sheet, st, asTable, notes, onDone }: { ev: DataEv; sheet: Sheet; st: SheetState; asTable: boolean; notes: boolean; onDone: (b: Blob | Error) => void }) {
   const ref = useRef<HTMLElement>(null);
   const cut = st.rows.length > PRINT_ROWS ? PRINT_ROWS : 0;
   const shown = useMemo(() => (cut ? { ...st, rows: st.rows.slice(0, cut) } : st), [st, cut]);
@@ -642,7 +726,7 @@ function PrintCopy({ ev, sheet, st, asTable, onDone }: { ev: DataEv; sheet: Shee
     <section ref={ref} className="dv" data-print="" data-view={ev.view} aria-hidden>
       <header className="dv-head"><h4>{ev.title}</h4></header>
       {ev.caption ? <p className="dv-caption">{ev.caption}</p> : null}
-      <div className="dv-body"><Body ev={ev} sheet={sheet} st={shown} full={false} asTable={asTable} print /></div>
+      <div className="dv-body"><Body ev={ev} sheet={sheet} st={shown} full={false} asTable={asTable} print notes={notes} /></div>
       <Foot ev={ev} st={shown} total={sheet.rows.length} cut={cut} />
     </section>,
     document.body,
@@ -681,7 +765,7 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
   const [asTable, setAsTable] = useState(false);
   const [said, setSaid] = useState("");
   const [savedHere, setSavedHere] = useState(false);
-  const [printing, setPrinting] = useState<((b: Blob | Error) => void) | null>(null);
+  const [printing, setPrinting] = useState<{ done: (b: Blob | Error) => void; notes: boolean } | null>(null);
   const sheet = useMemo<Sheet>(() => (ev.view === "table" ? (ev as TableEv) : ev.view === "chart" ? chartSheet(ev) : noSheet), [ev]);
   const st = useSheet(sheet);
   useEffect(() => {
@@ -694,12 +778,13 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
     setSaid(text);
     if (!stay) window.setTimeout(() => setSaid((s) => (s === text ? "" : s)), 3500);
   }, []);
-  const png = useCallback(() => new Promise<Blob>((resolve, reject) => {
-    setPrinting(() => (b: Blob | Error) => {
+  const png = useCallback((notes = false) => new Promise<Blob>((resolve, reject) => {
+    setPrinting({ notes, done: (b: Blob | Error) => {
       setPrinting(null);
       if (b instanceof Error) reject(b); else resolve(b);
-    });
+    } });
   }), []);
+  const commented = hasComments(ev);
   const flat = () => (ev.view === "table" ? { columns: sheet.columns, rows: st.rows, totals: st.q ? st.totals : sheet.totals } : flatten(ev));
   const attempt = async (doing: string, f: () => Promise<string>) => {
     tell(doing, true);
@@ -721,6 +806,9 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
   };
   const exportItems: Item[] = [
     { label: "PNG image", run: () => attempt("Drawing…", async () => deliver(await png(), nameOf(ev.title, "png"))) },
+    ...(commented ? [{ label: "PNG + comments", run: () => attempt("Drawing…", async () => deliver(await png(true), nameOf(`${ev.title} comments`, "png"))) }] : []),
+    { label: "PDF", run: () => attempt("Drawing…", async () => deliver(await pdfOf(await png(), ev.title), nameOf(ev.title, "pdf"))) },
+    ...(commented ? [{ label: "PDF + comments", run: () => attempt("Drawing…", async () => deliver(await pdfOf(await png(true), ev.title), nameOf(`${ev.title} comments`, "pdf"))) }] : []),
     { label: "Excel (.xlsx)", run: () => attempt("Exporting…", async () => {
       const f = flat();
       return deliver(new Blob([xlsx(ev.title, f.columns, f.rows, f.totals) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nameOf(ev.title, "xlsx"));
@@ -779,7 +867,7 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
       {ev.caption ? <p className="dv-caption">{ev.caption}</p> : null}
       <div className="dv-body"><Body ev={ev} sheet={sheet} st={st} full={full} asTable={asTable} /></div>
       <Foot ev={ev} st={st} total={sheet.rows.length} />
-      {printing ? <PrintCopy ev={ev} sheet={sheet} st={st} asTable={asTable} onDone={printing} /> : null}
+      {printing ? <PrintCopy ev={ev} sheet={sheet} st={st} asTable={asTable} notes={printing.notes} onDone={printing.done} /> : null}
     </section>
   );
   return full ? createPortal(panel, document.body) : panel;

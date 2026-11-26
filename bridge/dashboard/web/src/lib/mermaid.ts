@@ -9,7 +9,8 @@
 // So this reads the part of Mermaid's flowchart grammar that agents write: the header and its
 // direction, nodes in their shapes, links solid, dotted or thick, one way, both ways or open,
 // labels in both spellings (`-->|yes|` and `-- yes -->`), chains, `&`, and subgraphs, which
-// become Flow's groups. Styling lines are skipped; thick links draw as solid ones. Anything
+// become Flow's groups (a colour) and its clusters (a named box; a nested subgraph boxes its
+// steps in the innermost one only). Styling lines are skipped; thick links draw as solid ones. Anything
 // else returns null, and the fence stays the code block it always was: a wrong picture is
 // worse than the source.
 //
@@ -146,6 +147,8 @@ export function mermaidFlow(code: string): FlowEv | null {
   const subs: { id: string; title: string }[] = [];
   const subIds = new Set<string>();
   const groups: string[] = [];
+  const inBox = new Map<string, string>();   // step -> the subgraph it was first declared in
+  const boxOrder: { id: string; label: string }[] = [];
 
   const declare = (n: Read): string => {
     const group = subs.length ? subs[subs.length - 1].title : "";
@@ -154,6 +157,7 @@ export function mermaidFlow(code: string): FlowEv | null {
     if (n.text !== undefined) { node.label = n.text || n.id; node.said = true; }
     if (n.shape) { node.shape = n.shape; node.said = true; }
     if (!node.group && group) node.group = group;
+    if (subs.length && !inBox.has(n.id)) inBox.set(n.id, subs[subs.length - 1].id);
     nodes.set(n.id, node);
     return n.id;
   };
@@ -169,6 +173,7 @@ export function mermaidFlow(code: string): FlowEv | null {
       const t = named ? clean(named[2]) || id : clean(spec);
       subs.push({ id, title: t });
       subIds.add(id);
+      if (!boxOrder.some((b) => b.id === id)) boxOrder.push({ id, label: t });
       if (!groups.includes(t)) groups.push(t);
       continue;
     }
@@ -217,5 +222,7 @@ export function mermaidFlow(code: string): FlowEv | null {
     edges: edges.filter((e) => !boxes.has(e.from) && !boxes.has(e.to)),
     groups: groups.filter((g) => shown.some((n) => n.group === g)),
     direction: dir === "LR" || dir === "RL" ? "" : "down",
+    clusters: boxOrder.map((b) => ({ ...b, nodes: shown.filter((n) => inBox.get(n.id) === b.id).map((n) => n.id) }))
+      .filter((b) => b.nodes.length),
   };
 }

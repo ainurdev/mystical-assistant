@@ -196,6 +196,75 @@ def test_a_flow_keeps_its_steps_and_arrows():
     assert dv.describe(ev) == "a flow diagram, Retry: 3 steps"
 
 
+def test_a_flow_boxes_steps_and_keeps_their_comments():
+    spec = {**FLOW, "nodes": [*FLOW["nodes"][:2], {"id": "c", "cluster": "out", "comment": "  why\nthis   step "}],
+            "clusters": [{"id": "core", "label": "Core path", "comment": "the hot loop", "nodes": ["a", "b"]},
+                         {"id": "out"}, {"id": "empty", "nodes": []}]}
+    ev, _ = dv.build(spec)
+    assert ev["clusters"] == [{"id": "core", "label": "Core path", "comment": "the hot loop", "nodes": ["a", "b"]},
+                              {"id": "out", "label": "out", "comment": "", "nodes": ["c"]}]
+    assert ev["nodes"][2]["comment"] == "why this step" and ev["nodes"][0]["comment"] == ""
+
+
+def test_a_flow_without_clusters_has_none():
+    ev, _ = dv.build(FLOW)
+    assert ev["clusters"] == []
+
+
+@pytest.mark.parametrize("clusters,node,word", [
+    ([{"id": "x", "nodes": ["zz"]}], {}, "isn't in nodes"),
+    ([{"id": "x", "nodes": ["a"]}, {"id": "y", "nodes": ["a"]}], {}, "one box"),
+    ([{"id": "x"}, {"id": "x"}], {}, "own id"),
+    ([], {"cluster": "nope"}, "isn't in clusters"),
+    ([{"id": str(i)} for i in range(dv.MAX_CLUSTERS + 1)], {}, "At most"),
+])
+def test_clusters_refuse_with_a_sentence(clusters, node, word):
+    spec = {**FLOW, "nodes": [{**FLOW["nodes"][0], **node}, *FLOW["nodes"][1:]], "clusters": clusters}
+    with pytest.raises(dv.Refused, match=word):
+        dv.build(spec)
+
+
+def test_a_diff_keeps_its_code_as_written_and_counts_the_change():
+    ev, _ = dv.build({"view": "diff", "title": "Fix", "files": [
+        {"path": "a.py", "language": "python", "old": "def f():\r\n    return 1\r\n", "new": "def f():\n    return  2\n    # done\n",
+         "new_start": 10, "comments": [{"at": "11:12", "text": "  the   fix "}, {"at": "1", "side": "old", "text": "same"}]},
+        {"path": "b.md", "code": "just\ncode"}]})
+    a, b = ev["files"]
+    assert a["old"] == "def f():\n    return 1" and a["new"] == "def f():\n    return  2\n    # done"
+    assert a["old_start"] == 1 and a["new_start"] == 10
+    assert a["comments"][0] == {"side": "new", "from": [11, 12], "to": [11, 13], "at": "11:12", "text": "the fix"}
+    assert b["old"] is None and b["new"] == "just\ncode"
+    assert (ev["added"], ev["removed"], ev["comments"]) == (2, 1, 2)
+    assert dv.describe(ev) == "a diff, Fix: 2 files, +2 −1, 2 comments"
+
+
+def test_code_alone_is_one_file_with_its_ranges():
+    ev, _ = dv.build({"view": "diff", "title": "How", "code": "ab\n\ncd", "comments": [
+        {"at": "1-3", "text": "all"}, {"at": "2", "text": "blank"}, {"at": "1:2-3:1", "text": "across"}]})
+    assert [(c["from"], c["to"]) for c in ev["files"][0]["comments"]] == [([1, 1], [3, 2]), ([2, 1], [2, 0]), ([1, 2], [3, 1])]
+    assert dv.describe(ev) == "a diff, How: 1 file, code without a change, 3 comments"
+
+
+@pytest.mark.parametrize("spec,word", [
+    ({}, "needs old and new"),
+    ({"old": "a"}, None),
+    ({"files": [{"path": "x"}]}, "give new"),
+    ({"new": "a", "comments": [{"at": "2", "text": "t"}]}, "isn't inside"),
+    ({"new": "a", "comments": [{"at": "1", "side": "old", "text": "t"}]}, "no old code"),
+    ({"new": "a", "comments": [{"at": "one", "text": "t"}]}, "line:char"),
+    ({"new": "a", "comments": [{"at": "1"}]}, "needs text"),
+    ({"new": "\n" * (dv.MAX_CODE_LINES + 1)}, "Show the part"),
+    ({"files": [{"new": "a"}] * (dv.MAX_FILES + 1)}, "At most"),
+])
+def test_diffs_refuse_with_a_sentence(spec, word):
+    if word is None:
+        ev, _ = dv.build({"view": "diff", "title": "T", **spec})     # one version given as old is still code
+        assert ev["files"][0]["old"] is None and ev["files"][0]["new"] == "a"
+        return
+    with pytest.raises(dv.Refused, match=word):
+        dv.build({"view": "diff", "title": "T", **spec})
+
+
 def test_a_timeline():
     ev, _ = dv.build({"view": "diagram", "kind": "timeline", "title": "Launch", "items": [
         {"date": "Mar", "label": "Beta", "state": "done"}, {"date": "Apr", "label": "GA", "state": "soon"}, "Later"]})

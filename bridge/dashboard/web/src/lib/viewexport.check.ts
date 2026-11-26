@@ -35,5 +35,40 @@ for (const n of [...line.nodes, ...down.nodes, ...loop.nodes]) {
 }
 assert.ok(down.width > 0 && down.height > 0);
 
+// Wires run like traces on a board: straight runs across or down, 45° cuts at the bends only,
+// never through a step, and no two arriving at the same point on one.
+const board: FlowEv = { ...flow([["s", "a"], ["s", "b"], ["s", "c"], ["s", "t"], ["a", "t"], ["b", "x"], ["x", "t"], ["c", "t"], ["s", "x"], ["t", "s"]],
+  ["s", "a", "b", "c", "x", "t"]), clusters: [{ id: "k", label: "Middle", comment: "why", nodes: ["b", "x"] }] };
+const pts = (d: string) => [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+for (const dir of ["down", "right"] as const) {
+  const l = layoutFlow(board, dir);
+  assert.equal(l.arrows.length, board.edges.length);
+  const ends = new Set<string>();
+  for (const a of l.arrows) {
+    const p = pts(a.d);
+    for (let i = 1; i < p.length; i++) {
+      const dx = Math.abs(p[i][0] - p[i - 1][0]), dy = Math.abs(p[i][1] - p[i - 1][1]);
+      assert.ok(dx < 0.2 || dy < 0.2 || Math.abs(dx - dy) < 0.2, `${dir} ${a.from}>${a.to}: a slanted run in ${a.d}`);
+      for (const n of l.nodes) {   // sample the run: no point strictly inside a step
+        for (let t = 0; t <= 1; t += 0.05) {
+          const x = p[i - 1][0] + (p[i][0] - p[i - 1][0]) * t, y = p[i - 1][1] + (p[i][1] - p[i - 1][1]) * t;
+          assert.ok(!(x > n.x + 1 && x < n.x + n.w - 1 && y > n.y + 1 && y < n.y + n.h - 1), `${dir} ${a.from}>${a.to} runs through ${n.id}`);
+        }
+      }
+    }
+    const end = p[p.length - 1].map(Math.round).join(",");
+    assert.ok(!ends.has(end), `${dir}: two wires end at ${end}`);
+    ends.add(end);
+  }
+  const [k] = l.clusters;
+  assert.equal(k.label, "Middle");
+  for (const n of l.nodes) {
+    const inside = n.x >= k.x && n.x + n.w <= k.x + k.w && n.y >= k.y && n.y + n.h <= k.y + k.h;
+    const apart = n.x + n.w <= k.x || n.x >= k.x + k.w || n.y + n.h <= k.y || n.y >= k.y + k.h;
+    assert.ok(k.nodes.includes(n.id) ? inside : apart, `${dir}: ${n.id} and the box`);
+  }
+  assert.ok(l.arrows.find((a) => a.from === "t" && a.to === "s")!.back);
+}
+
 assert.deepEqual(flatten(flow([["a", "b"]])).rows, [{ from: "a", label: "", to: "b" }]);
 console.log("viewexport ok");

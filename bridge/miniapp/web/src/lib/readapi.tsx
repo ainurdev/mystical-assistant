@@ -72,3 +72,8 @@ export const workRead = <T,>(session: string | null, project?: string | null) =>
 export const docsRead = <T,>(session: string) =>
   queryOptions({ queryKey: ["/api/chat/docs", session], queryFn: () => designCall<T>(session, "docs") });
 export const autoRead = <T,>() => queryOptions({ queryKey: ["/api/automations"], queryFn: () => autoGet<T>() });
+
+/** How views read, kept by the bridge for every surface (bridge/saved_views.py prefs). */
+export type ViewPrefs = { diff_mode: "unified" | "split" | "code" };
+export const getViewPrefs = () => request<ViewPrefs>("/api/view-prefs");
+export const setViewPrefs = (p: Partial<ViewPrefs>) => request<ViewPrefs>("/api/view-prefs", { method: "POST", body: p });

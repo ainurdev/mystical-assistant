@@ -60,7 +60,7 @@ writes it at boot and keeps the token across restarts.
 
 | Route | Body or query | Answer |
 |---|---|---|
-| `POST /local/runs` | `{"cwd", "prompt", "title"?, "client"?, "ref"?, "model"?, "effort"?}` | `202 {"run": Run}` at once |
+| `POST /local/runs` | `{"cwd", "prompt", "title"?, "client"?, "ref"?, "model"?, "effort"?, "session_id"?}` | `202 {"run": Run}` at once |
 | `GET /local/runs/<id>` | `?wait=N` blocks up to N seconds (30 at most per request) for the run to end | `200 {"run": Run}` |
 | `GET /local/runs` | `?client=NAME&limit=N` (50 by default) | `200 {"runs": [Run]}`, newest first |
 | `POST /local/runs/<id>/cancel` | `{}` | `200 {"run": Run}`; `409` when it is already over |
@@ -82,6 +82,16 @@ default profile's model, else the CLI's own). A named or default model wins over
 Both are settled when the run is accepted, so a queued run keeps them, and both are saved on the
 session, so a turn resumed after a crash, a limit or a restart stays on that model.
 
+`session_id` continues an earlier run's session: the prompt becomes the next turn there instead of
+the first turn of a new session, so a program holding a conversation shows in the dashboard as one
+chat and Claude keeps what it already read and said. Only a session a run of the same `client` made,
+in the same `cwd`, may be continued (404 for any other, your own sessions included; 400 for another
+folder). A session that is busy (a turn running in it, or another run on it not over yet) is a 409,
+never queued behind. The session keeps its first title; a `model` or `effort` given is saved on it
+as for a new run. The Run's `continues` is that session id, else null. A bridge from before this
+key ignores `session_id` and starts a fresh session, and its Run has no `continues` key: a caller
+should continue only after a Run from that bridge has shown the key.
+
 A bridge still running code from before `model` existed ignores the key (it reads the keys it
 knows and no others): the run is accepted and runs on that bridge's default. Its Run then has no
 `model` key, which is how a caller can tell.
@@ -102,6 +112,7 @@ This is also what `--json` prints. Keys are added over time, never renamed or dr
   "cwd": "/home/me/projects/atlas",
   "model": "sonnet",
   "effort": null,
+  "continues": null,
   "session_id": "9c1e...",
   "session_url": "http://127.0.0.1:8790/?s=9c1e...",
   "created": 1794000000.0,
@@ -121,7 +132,7 @@ the caller sent one.
 ## CLI
 
 ```
-mystical prompt --cwd <dir> [--title T] [--client NAME] [--ref R] [--model M] [--effort low|medium|high]
+mystical prompt --cwd <dir> [--title T] [--client NAME] [--ref R] [--model M] [--effort low|medium|high] [--session ID]
                 [--wait [SECONDS]] [--json] <prompt | - | @file>
 mystical run-status <id> [--wait [SECONDS]] [--json]
 mystical runs [--client NAME] [--limit N] [--json]
@@ -131,7 +142,8 @@ mystical run-cancel <id> [--json]
 - `prompt` prints the run id and returns. With `--wait` it blocks until the run ends and prints the
   final response on stdout; `--wait 600` gives up after 600 seconds. `-` reads the prompt from
   stdin, `@file` from a file. Changes of state go to stderr, one line each. `--model sonnet` and
-  `--effort high` are sent only when given; `run-status` and `runs` show the model.
+  `--effort high` are sent only when given; `run-status` and `runs` show the model. `--session ID`
+  sends `session_id`: the run continues that earlier run's session.
 - `--json` prints the Run (for `runs`, `{"runs": [...]}`) as one line, whatever the outcome.
 - Ending a wait (a timeout, Ctrl-C, the caller killing the command) does not stop the run.
   `run-cancel` does.
@@ -183,7 +195,7 @@ tab (RUNS) and take effect without a restart.
 
 ## Limits and open choices
 
-- Text only: no images, no second prompt into the same run's session.
+- Text only: no images.
 - Runs are JSON beside the database (`run-api-runs.json`); the last 200 finished ones are kept. A
   queued run's prompt is in that file until it starts.
 - A finished run pings you like any session's turn does. Quiet per client if that gets loud.

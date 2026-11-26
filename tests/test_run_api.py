@@ -402,6 +402,71 @@ def test_a_finished_run_stays_finished_when_you_carry_on_in_its_session(world):
     assert run_api.get(run["id"])["response"] == "First answer."
 
 
+# --- continuing an earlier run's session ---------------------------------------------
+
+
+def test_a_second_run_continues_the_first_runs_session(world):
+    first = submit(world, client="atlas", title="Chat: a book")
+    sid = first["session_id"]
+    assert first["continues"] is None
+    job_of(world, first["id"]).end("done", result="First answer.")
+    assert until(lambda: status(first["id"]) == "done")
+    second = submit(world, client="atlas", title="ignored", session_id=sid, model="opus")
+    assert second["continues"] == sid and second["session_id"] == sid
+    call = world["calls"][-1]
+    assert call["session_id"] == sid and call["model"] == "opus"
+    s = store.get_session(sid)
+    assert s["title"] == "atlas: Chat: a book" and s["model"] == "opus"  # one chat, its first title
+    world["jobs"][sid].end("done", result="Second answer.")
+    assert until(lambda: status(second["id"]) == "done")
+    assert run_api.get(second["id"])["response"] == "Second answer."
+    assert run_api.get(first["id"])["response"] == "First answer."
+
+
+def test_only_a_quiet_session_of_the_same_client_and_folder_is_continued(world):
+    first = submit(world, client="atlas")
+    sid = first["session_id"]
+    with pytest.raises(run_api.Refused) as busy:
+        submit(world, client="atlas", session_id=sid)  # its turn is still live
+    assert busy.value.code == 409
+    job_of(world, first["id"]).end("done", result="ok")
+    assert until(lambda: status(first["id"]) == "done")
+    for kw, code in (
+        ({"client": "other", "session_id": sid}, 404),
+        ({"client": "atlas", "session_id": "nope"}, 404),
+        ({"client": "atlas", "session_id": "../x"}, 400),
+        ({"client": "atlas", "session_id": sid, "repo": "shop"}, 400),
+    ):
+        repo = kw.pop("repo", "atlas")
+        with pytest.raises(run_api.Refused) as e:
+            submit(world, repo=repo, **kw)
+        assert e.value.code == code, kw
+    mine = store.create_session(config.DASH_CHAT_ID, "/atlas", cwd=world["atlas"], origin="dashboard")
+    with pytest.raises(run_api.Refused) as e:
+        submit(world, client="atlas", session_id=mine["id"])  # your own sessions stay yours
+    assert e.value.code == 404
+    starts = len(world["calls"])
+    assert submit(world, client="atlas", session_id=sid)["continues"] == sid
+    assert len(world["calls"]) == starts + 1
+
+
+def test_a_queued_continuation_is_refused_a_second_time(world, monkeypatch):
+    first = submit(world, client="atlas")
+    sid = first["session_id"]
+    job_of(world, first["id"]).end("done", result="ok")
+    assert until(lambda: status(first["id"]) == "done")
+    monkeypatch.setattr(config, "RUN_API_CONCURRENCY", 1)
+    blocker = submit(world, client="atlas", repo="shop")
+    queued = submit(world, client="atlas", session_id=sid)
+    assert queued["status"] == "queued"
+    with pytest.raises(run_api.Refused) as e:
+        submit(world, client="atlas", session_id=sid)
+    assert e.value.code == 409
+    job_of(world, blocker["id"]).end("done", result="ok")
+    assert until(lambda: status(queued["id"]) == "running")
+    assert run_api.get(queued["id"])["session_id"] == sid
+
+
 # --- wait --------------------------------------------------------------------------
 
 
@@ -719,6 +784,7 @@ def test_the_json_shape_scripts_rely_on(world):
         "cwd",
         "model",
         "effort",
+        "continues",
         "session_id",
         "session_url",
         "created",

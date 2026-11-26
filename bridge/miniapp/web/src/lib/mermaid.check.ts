@@ -83,6 +83,14 @@ assert.ok(sub);
 assert.deepEqual(sub.groups, ["Back office", "Apps"]);
 assert.deepEqual(sub.nodes.map((n) => [n.id, n.group]), [["X", "Back office"], ["Y", "Back office"], ["Z", "Apps"], ["Q", ""]]);
 assert.deepEqual(sub.edges.map((e) => `${e.from}>${e.to}`), ["X>Y", "Y>Z"]);
+// ...and boxes, named as the subgraph is titled.
+assert.deepEqual(sub.clusters, [{ id: "office", label: "Back office", nodes: ["X", "Y"] }, { id: "Apps", label: "Apps", nodes: ["Z"] }]);
+const boxed = layoutFlow(sub, "down");
+for (const b of boxed.clusters) for (const n of boxed.nodes) {
+  const inside = n.x >= b.x && n.x + n.w <= b.x + b.w && n.y >= b.y && n.y + n.h <= b.y + b.h;
+  const apart = n.x + n.w <= b.x || n.x >= b.x + b.w || n.y + n.h <= b.y || n.y >= b.y + b.h;
+  assert.ok(b.nodes.includes(n.id) ? inside : apart, `${n.id} vs box ${b.id}`);
+}
 
 // No direction is Mermaid's default, top to bottom; `;` separates statements; frontmatter titles.
 const plain = mermaidFlow("---\ntitle: Paying an invoice\n---\ngraph\n  A-->B; B-->C");

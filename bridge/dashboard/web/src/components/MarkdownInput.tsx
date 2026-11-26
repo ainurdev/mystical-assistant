@@ -83,7 +83,7 @@ const mdHighlight = HighlightStyle.define([
 
 const mdTheme = EditorView.theme({
   // The completion list (autocompletion above): the composer's own lists' look, in CodeMirror's tooltip.
-  ".cm-tooltip.cm-mi-complete": { background: "var(--panel)", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", borderRadius: "var(--prad, 6px)", boxShadow: "0 -8px 26px var(--shadow-pop, rgba(0,0,0,.35))", overflow: "hidden" },
+  ".cm-tooltip.cm-mi-complete": { background: "var(--panel)", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", borderRadius: "var(--f-rad, 6px)", boxShadow: "0 -8px 26px var(--shadow-pop, rgba(0,0,0,.35))", overflow: "hidden" },
   ".cm-mi-complete > ul": { fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", maxHeight: "210px", minWidth: "180px", maxWidth: "min(460px, 80vw)" },
   ".cm-tooltip.cm-tooltip-autocomplete.cm-mi-complete > ul > li": { display: "flex", alignItems: "baseline", gap: "8px", padding: "4px 10px", color: "var(--tx)", borderLeft: "2px solid transparent" },
   ".cm-tooltip.cm-tooltip-autocomplete.cm-mi-complete > ul > li[aria-selected]": { background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", borderLeftColor: "var(--acc)" },
