@@ -278,6 +278,21 @@ def test_a_meter_that_cannot_be_read_holds_only_its_first_ask(meters):
     assert _until(lambda: sorted(spawns) == [1, 2])
 
 
+def test_a_failed_read_shows_one_meter_waiting_and_retrying(meters):
+    # A login a turn reported on, whose reads then fail: the ask that finds the retry due
+    # shows what the asks between retries show, so the meter never flips from poll to poll.
+    now, spawns = meters
+    _get("/local/accounts")
+    path = accounts.credentials_path(1)
+    usage.note_event(path, {"rateLimitType": "five_hour", "utilization": 0.2, "status": "allowed"})
+    now[1] = None
+    _age(usage.STALE_MAX + 1)
+    usage._cache[path]["live_at"] -= usage.STALE_MAX + 1
+    waiting = _get("/local/accounts")["accounts"][0]["five_hour"]    # read anew in the ask: it fails
+    usage._cache[path]["next_try"] = time.time() - 1                 # the retry is due
+    assert _get("/local/accounts")["accounts"][0]["five_hour"] == waiting
+
+
 def test_a_meter_read_inside_the_ask_is_not_the_bridges_own_time(meters, monkeypatch):
     # The first read of a login, and one past STALE_MAX, wait on `claude -p` by design
     # (0.7 to 2.6 s): reports.outside takes that wait out of the request's time.
