@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from bridge import config
 
@@ -981,6 +982,9 @@ def _made_from(cwd: str, name: str, local: set, remote: set, base: str) -> tuple
     return ("" if hit == name else hit), (len(lines) != 1)
 
 
+_status_facts: dict = {}   # cwd -> (the refs, base and targets a read saw, each branch's facts off them)
+
+
 def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     """Every local branch, and every detached checkout, with where it goes and what
     it has against that: the dashboard's BRANCHES tab in one call.
@@ -1004,16 +1008,20 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
 
     One `for-each-ref` for the names, dates and upstreams, then a rev-list and a
     reflog read per branch, a status per checkout, and a dry-run merge per branch
-    with work to land. ponytail: a repo with hundreds of branches pays a few git
-    calls each; fold them into one `rev-list` if that bites."""
+    with work to land. What the refs alone decide (where a branch came from, its
+    counts, its dry-run merge) is kept until a ref, the base or a target changes:
+    the tab asks every 30 s, and 24 unmoved branches were 76 git runs and 0.76 s
+    each time (Sentry MYSTICAL-T). The statuses are read on every ask, side by side.
+    shortcut: one moved ref reads every branch again (a few git calls each); keep
+    the facts per branch if a busy repo with hundreds of branches bites."""
     if not is_repo(cwd):
         return {"base": "", "branches": []}
     base = default_branch(cwd)
     trees = worktrees(cwd)
     held = {w["branch"]: w for w in trees if w["branch"]}
     want = targets or {}
-    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
-    remote = {r.strip() for r in out.splitlines() if r.strip()} if rc == 0 else set()
+    rc, remotes, _ = _run(cwd, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/remotes")
+    remote = {r.split(" ")[0] for r in remotes.splitlines() if r.strip()} if rc == 0 else set()
 
     def dirty(path: str) -> int:   # porcelain v2: "#" lines are the branch header
         return sum(1 for ln in (_porcelain(path) or "").splitlines() if ln and not ln.startswith("#"))
@@ -1021,41 +1029,51 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     # the subject goes last: a tab inside it stays part of it
     fmt = ("%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
            "%09%(objectname)%09%(subject)")
-    rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
-    lines = out.splitlines() if rc == 0 else []
+    rc, heads, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
+    lines = heads.splitlines() if rc == 0 else []
     local = {ln.split("\t", 1)[0] for ln in lines}
 
     def known(t: str) -> str:      # a target as a ref git can read: local, else origin's copy
         return t if t in local else f"origin/{t}" if f"origin/{t}" in remote else t if t in remote else ""
 
+    seen = (heads, remotes, base, sorted(want.items()))
+    hit = _status_facts.get(cwd)
+    facts = hit[1] if hit and hit[0] == seen else None
+    if facts is None:
+        facts = []
+        dry = 12   # dry-run merges per read: the newest branches with work to land
+        for line in lines:
+            name, at, up, track, sha, subject = (line.split("\t", 5) + [""] * 6)[:6]
+            if not name:
+                continue
+            gone = track.strip() == "gone"
+            m = re.search(r"ahead (\d+)", track)
+            start, worked = _made_from(cwd, name, local, remote, base)
+            target = "" if name == base else known(want[name]) if name in want else start or base
+            if target == name:
+                target = ""
+            lr = _left_right(cwd, target, name) if target else None
+            ahead, behind = lr or (0, 0)
+            clash = None
+            if lr and ahead:
+                clash = [] if not behind else merge_check(cwd, target, name) if dry > 0 else None
+                dry -= 1 if behind else 0
+            facts.append({
+                "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
+                "target": target, "ahead": ahead, "behind": behind,
+                "merged": bool(lr) and ahead == 0, "worked": worked, "clash": clash,
+                "upstream": "" if gone else up,
+                "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
+            })
+        _status_facts[cwd] = (seen, facts)
+    paths = [w["path"] for w in trees if w["detached"] or w["branch"] in local]
+    with ThreadPoolExecutor(min(8, len(paths)) or 1) as pool:
+        dirt = dict(zip(paths, pool.map(dirty, paths)))
     rows: list[dict] = []
-    dry = 12   # dry-run merges per read: the newest branches with work to land
-    for line in lines:
-        name, at, up, track, sha, subject = (line.split("\t", 5) + [""] * 6)[:6]
-        if not name:
-            continue
-        gone = track.strip() == "gone"
-        m = re.search(r"ahead (\d+)", track)
-        start, worked = _made_from(cwd, name, local, remote, base)
-        target = "" if name == base else known(want[name]) if name in want else start or base
-        if target == name:
-            target = ""
-        lr = _left_right(cwd, target, name) if target else None
-        ahead, behind = lr or (0, 0)
-        clash = None
-        if lr and ahead:
-            clash = [] if not behind else merge_check(cwd, target, name) if dry > 0 else None
-            dry -= 1 if behind else 0
-        w = held.get(name)
-        rows.append({
-            "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
-            "target": target, "ahead": ahead, "behind": behind,
-            "merged": bool(lr) and ahead == 0, "worked": worked, "clash": clash,
-            "upstream": "" if gone else up,
-            "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
-            "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
-            "dirty": dirty(w["path"]) if w else None,
-        })
+    for f in facts:
+        w = held.get(f["name"])
+        rows.append({**f, "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
+                     "dirty": dirt[w["path"]] if w else None})
     for w in trees:
         if not w["detached"]:
             continue
@@ -1066,7 +1084,7 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
             "name": "", "head": w["head"][:7], "at": int(at or 0), "subject": subject, "sha": w["head"],
             "target": base, "ahead": ahead, "behind": behind, "merged": False, "worked": True, "clash": None,
             "upstream": "", "unpushed": None,
-            "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]),
+            "worktree": w["path"], "main": w["is_main"], "dirty": dirt[w["path"]],
         })
     return {"base": base, "branches": rows}
 

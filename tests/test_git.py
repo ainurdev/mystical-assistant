@@ -712,6 +712,45 @@ def test_branch_status_lists_a_detached_checkout_by_its_commit():
     assert [r["name"] for r in rows if r["name"]] == [base]
 
 
+def test_branch_status_reads_a_branch_again_only_once_a_ref_moved(monkeypatch):
+    # The BRANCHES tab polls every 30 s. A reflog, a rev-list and a dry-run merge per
+    # branch, with nothing moved, were 76 git runs and 0.76 s for 24 branches (Sentry MYSTICAL-T).
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    wt = tempfile.mkdtemp()
+    os.rmdir(wt)
+    _run(d, "worktree", "add", "-q", "-b", "feat", wt)
+    _write(wt, "b.txt", "b")
+    _run(wt, "add", "-A")
+    _run(wt, "commit", "-qm", "feat work")
+    _write(d, "m.txt", "m")                       # the base moves on: feat is ahead and behind
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base moves on")
+    first = g.branch_status(d)
+    feat = {r["name"]: r for r in first["branches"]}["feat"]
+    assert (feat["ahead"], feat["behind"], feat["clash"], feat["dirty"]) == (1, 1, [], 0)
+
+    ran, real = [], g._run
+    monkeypatch.setattr(g, "_run", lambda cwd, *a, **k: (ran.append(a[2] if a[0] == "-c" else a[0]),
+                                                         real(cwd, *a, **k))[1])
+    assert g.branch_status(d) == first
+    assert not {"reflog", "rev-list", "merge-tree", "merge-base"} & set(ran)
+
+    def row(targets=None):
+        return {r["name"]: r for r in g.branch_status(d, targets)["branches"]}["feat"]
+    _write(wt, "new.txt", "x")                    # an uncommitted file moves no ref, and still shows
+    assert row()["dirty"] == 1
+    assert row({"feat": ""})["target"] == "" and row()["target"] == base   # a pick is read at once
+    ran.clear()
+    _run(wt, "add", "-A")
+    _run(wt, "commit", "-qm", "more")             # the ref moved: its numbers are read again
+    assert (row()["ahead"], row()["dirty"]) == (2, 0)
+    assert "rev-list" in ran
+
+
 def test_current_branch_detached_names_something_useful():
     d = _mkrepo()
     _write(d, "a.txt", "one\n")
