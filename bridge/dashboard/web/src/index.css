@@ -8171,15 +8171,76 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   font-size: var(--t95); color: var(--txm); background: transparent; border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); }
 .wspick-foot button:hover { color: var(--txb); border-color: var(--acc); }
 [data-fam] .wspick-foot button { border-radius: var(--f-rad-s, 6px); }
-/* Something new in a workspace you aren't on (WorkspaceButton `news`): a dot at
-   the button's top right, cut out of the cap by a ring of the panel's ground,
-   and NEW with the count on its menu row. */
+/* ── the workspace marks (WorkspaceButton `news`), on a workspace you aren't on ──
+   Three states in the sidebar's own colours: one waiting on you (ask) or finished
+   and unopened (done) is a dot at the avatar's top right, ask over done; one
+   running (work) is a ring round the avatar, alongside a dot or alone. Before,
+   ask and done were the same amber dot and a running chat showed nothing.
+   The ring is a conic arc turned through --wsa (registered, so it animates), cut
+   to a band by a mask, so it follows a square avatar's corners instead of
+   spinning the square. Each family dresses the three below. */
+@property --wsa { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes wsturn { to { --wsa: 360deg; } }
+@keyframes wsbreathe { 50% { opacity: .35; } }
+@keyframes wsblink { 50% { opacity: 0; } }
+@keyframes wstwinkle { 50% { transform: scale(.7) rotate(45deg); opacity: .6; } }
 .wsbtn { position: relative; }
-.wsdot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
-  background: var(--warn, #f5a524); box-shadow: 0 0 0 2px var(--panel, #000); }
+.wsdot { position: absolute; top: -3px; right: -3px; z-index: 1; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
+  background: var(--acc); box-shadow: 0 0 0 2px var(--panel, #000); }
+.wsdot[data-kind="ask"] { background: var(--ask, var(--warn, #f5a524)); }
+.wsring {
+  --wsr: 6px; --wsw: 1.5px; --wsarc: var(--ok);
+  position: absolute; inset: -4px; border-radius: var(--wsr); padding: var(--wsw); pointer-events: none;
+  background: conic-gradient(from var(--wsa), var(--wsarc) 0 26%, color-mix(in srgb, var(--wsarc) 16%, transparent) 26% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: wsturn 1.5s steps(12) infinite;   /* stepped, ~8 a second, like every loop here (tools/loops.mjs) */
+}
+[data-fam] .wsring { --wsr: calc(max(4px, var(--f-rad-s)) + 4px); }
+/* AURORA, the CRT: pixels, not dots, with a phosphor glow; the ask blinks like a
+   cursor; the ring is a radar sweep that steps round, glowing. */
+[data-fam="aurora"] .wsdot { border-radius: 0; width: 7px; height: 7px; box-shadow: 0 0 0 2px var(--panel, #000), 0 0 6px currentColor; color: var(--acc); }
+[data-fam="aurora"] .wsdot[data-kind="ask"] { color: var(--ask, var(--warn)); animation: wsblink 1.1s steps(1) infinite; }
+[data-fam="aurora"] .wsring {
+  --wsr: 5px; --wsw: 2px; animation: wsturn 1.2s steps(16) infinite; filter: drop-shadow(0 0 4px var(--ok));
+  background: conic-gradient(from var(--wsa), var(--wsarc) 0 36%, color-mix(in srgb, var(--wsarc) 30%, transparent) 36% 100%);
+}
+/* CLAUDE: calm. Round dots without glow, one thin arc turning slowly. */
+[data-fam="claude"] .wsring { --wsw: 1.5px; animation: wsturn 1.8s steps(14) infinite; }
+[data-fam="claude"] .wsdot[data-kind="ask"] { animation: wsbreathe 2.4s steps(19) infinite; }
+/* FLINT: crisp. Diamonds, and two opposite arcs that turn briskly, no glow. */
+[data-fam="flint"] .wsdot { width: 7px; height: 7px; top: -2px; right: -2px; border-radius: 1px; transform: rotate(45deg); }
+[data-fam="flint"] .wsring {
+  --wsw: 2px; animation: wsturn 1s steps(8) infinite;
+  background: conic-gradient(from var(--wsa), var(--wsarc) 0 14%, transparent 14% 50%, var(--wsarc) 50% 64%, transparent 64% 100%);
+}
+/* PEBBLE: soft. Round dots cut out of the panel, and a ring that breathes in and
+   out instead of turning: a stone doesn't spin. */
+[data-fam="pebble"] .wsdot { width: 9px; height: 9px; top: -3px; right: -3px; box-shadow: 0 0 0 2.5px var(--pb-pop, var(--panel, #000)); }
+[data-fam="pebble"] .wsring {
+  --wsw: 2px; background: var(--wsarc); animation: wsbreathe 2s steps(16) infinite;
+  box-shadow: 0 0 10px -2px var(--wsarc);
+}
+/* MIDDLE-EARTH: a lantern. The ask is a small star that twinkles; the ring is a
+   slow glow that runs from the accent's gold into the running green. */
+[data-fam="middle-earth"] .wsdot[data-kind="ask"] {
+  width: 10px; height: 10px; top: -4px; right: -4px; border-radius: 0; transform: rotate(45deg);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); box-shadow: none;
+  animation: wstwinkle 2.2s steps(18) infinite;
+}
+[data-fam="middle-earth"] .wsring {
+  animation: wsturn 3.2s steps(26) infinite; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--acc) 70%, transparent));
+  background: conic-gradient(from var(--wsa), var(--acc), var(--wsarc) 40%, color-mix(in srgb, var(--wsarc) 10%, transparent) 60%, var(--acc));
+}
+@media (prefers-reduced-motion: reduce) { .wsring, .wsdot { animation: none !important; } }
+/* the menu's rows name the counts, each in its colour */
+.wspop-tags { flex: none; display: inline-flex; gap: 4px; }
 .wspop-new { flex: none; padding: 2px 6px; border-radius: 4px; font: 700 var(--t85, 9px)/1.2 var(--mono); letter-spacing: .06em;
-  color: var(--warn, #f5a524); background: color-mix(in srgb, var(--warn, #f5a524) 16%, transparent); }
+  --c: var(--acc); color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.wspop-new[data-kind="ask"] { --c: var(--ask, var(--warn, #f5a524)); }
+.wspop-new[data-kind="work"] { --c: var(--ok); }
 [data-fam] .wspop-new { font-family: var(--ui-font); border-radius: 999px; }
+[data-fam="aurora"] .wspop-new { border-radius: 0; font-family: var(--mono); }
 /* The Linux window (linux/window.py): its buttons live in the right rail
    (LinuxControls), so the caps keep their corners; data-wco="linux" only
    marks the caps as the title bar to drag. */

@@ -96,7 +96,7 @@ import { chime, pushGranted } from "./lib/push";
 import { isLinuxApp, isMacApp, isNativeApp, linuxWindow, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { watchWco } from "./lib/wco";
 import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
-import { WorkspaceButton } from "./components/hud/WorkspaceButton";
+import { WorkspaceButton, type WsNews } from "./components/hud/WorkspaceButton";
 import { TicketMapCard } from "./components/hud/TicketMap";
 import { chatToMarkdown } from "./lib/chatmd";
 import { ChatImagesScope } from "./lib/chatimages";
@@ -2555,20 +2555,25 @@ export function App() {
     return m;
   }, [drafts, heldMap, checkingMap]);
 
-  // What's new in the workspaces you aren't looking at: per workspace, its chats
-  // the sidebar would flag (DONE, finished and unopened; ASK, waiting on you),
-  // so the switch can say a hidden one wants you. Read-only runs and what you
-  // hid never count, as in the sidebar's own lanes; nor does a finish the filter
-  // keeps out of them, unless a pin or a prompt of yours keeps it in.
+  // What's going on in the workspaces you aren't looking at: per workspace, its
+  // chats the sidebar would flag (ASK, waiting on you; DONE, finished and
+  // unopened) and the ones running (WORK), so the switch can say a hidden one
+  // wants you or is busy. Read-only runs and what you hid never count, as in the
+  // sidebar's own lanes; nor does a finish the filter keeps out of them, unless
+  // a pin or a prompt of yours keeps it in.
   const wsNews = useMemo(() => {
-    const m = new Map<string, number>();
+    const m = new Map<string, WsNews>();
     for (const s of sessions) {
       if (isReadOnly(s.origin) || hiddenProjects[s.project] || hiddenProjects[jobGroup(s)]) continue;
       const id = workspaceOf(ws.set, jobGroup(s));
       if (id === ws.cur) continue;
       const lane = resolve(statusMap.get(s.id), doneIds.has(s.id), promptFlags.get(s.id)).lane;
       const listed = shows(showKinds, s) || pins.has(s.id) || promptFlags.has(s.id);
-      if (lane === "ask" || (lane === "done" && listed)) m.set(id, (m.get(id) ?? 0) + 1);
+      const k = lane === "ask" ? "ask" : lane === "work" ? "work" : lane === "done" && listed ? "done" : null;
+      if (!k) continue;
+      const n = m.get(id) ?? { ask: 0, done: 0, work: 0 };
+      n[k] += 1;
+      m.set(id, n);
     }
     return m;
   }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags, showKinds, pins]);

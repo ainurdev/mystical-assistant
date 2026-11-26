@@ -28,11 +28,37 @@ export function WorkspaceAvatar({ ws, size = 22 }: { ws: Workspace; size?: numbe
  *  row scrolls sideways once it outgrows the cap rather than pushing the fold
  *  off it.
  *
- *  `news` counts, per workspace you aren't on, the chats the sidebar would
- *  flag (App's wsNews): each such workspace's button wears a dot at its top
- *  right, the menu's trigger wears one when any does, and the menu tags the
- *  workspace NEW with the count. */
-export function WorkspaceButton({ onManage, news }: { onManage: () => void; news?: Map<string, number> }) {
+ *  `news` counts, per workspace you aren't on, its chats by state (App's
+ *  wsNews), in the sidebar's colours: one waiting on you (ask, --warn) or
+ *  finished and unopened (done, --acc) puts a dot on its avatar, ask over
+ *  done; one running (work, --ok) puts a ring round it, with or without a
+ *  dot. The menu's trigger shows the same for every workspace but yours, and
+ *  the menu names the counts per row. Each theme family dresses the marks in
+ *  its own manner (index.css, the workspace marks). */
+export type WsNews = { ask: number; done: number; work: number };
+
+/** The marks on an avatar: a ring while something runs, one dot for what wants you. */
+function Marks({ n }: { n?: WsNews }) {
+  if (!n) return null;
+  const dot = n.ask ? "ask" : n.done ? "done" : null;
+  return (
+    <>
+      {n.work > 0 && <i className="wsring" aria-hidden />}
+      {dot && <i className="wsdot" data-kind={dot} aria-hidden />}
+    </>
+  );
+}
+
+/** "2 waiting on you, 1 running": what the marks mean, for a title. */
+function said(n?: WsNews): string {
+  if (!n) return "";
+  return [n.ask && `${n.ask} waiting on you`, n.done && `${n.done} finished`, n.work && `${n.work} running`].filter(Boolean).join(", ");
+}
+
+const sum = (a: WsNews, b: WsNews): WsNews => ({ ask: a.ask + b.ask, done: a.done + b.done, work: a.work + b.work });
+const NONE: WsNews = { ask: 0, done: 0, work: 0 };
+
+export function WorkspaceButton({ onManage, news }: { onManage: () => void; news?: Map<string, WsNews> }) {
   const { set, cur } = useWorkspaces();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
@@ -50,18 +76,20 @@ export function WorkspaceButton({ onManage, news }: { onManage: () => void; news
   const here = list.find((w) => w.id === cur) ?? list[0];
   const count = (id: string) => Object.values(set?.assign ?? {}).filter((v) => v === id).length;
   const manage = () => { setOpen(false); onManage(); };
-  const newIn = (id: string) => (id === here.id ? 0 : news?.get(id) ?? 0);
-  const anyNew = list.some((w) => newIn(w.id) > 0);
+  const newIn = (id: string): WsNews | undefined => (id === here.id ? undefined : news?.get(id));
+  // The trigger stands for every workspace but this one.
+  const others = list.reduce((t, w) => sum(t, newIn(w.id) ?? NONE), NONE);
+  const anyNews = others.ask + others.done + others.work > 0;
   const onCtx = (e: RMouseEvent) => { e.preventDefault(); e.stopPropagation(); manage(); };
 
   if (set?.display === "row" && list.length > 1) return (
     <span className="wsrow" role="radiogroup" aria-label="Workspaces">
       {list.map((w) => (
         <button key={w.id} type="button" className="wsbtn" role="radio" aria-checked={w.id === here.id}
-          title={`${w.name}${newIn(w.id) ? ` — ${newIn(w.id)} new` : ""} — right-click to manage workspaces`}
+          title={`${w.name}${said(newIn(w.id)) ? ` — ${said(newIn(w.id))}` : ""} — right-click to manage workspaces`}
           onClick={() => switchWorkspace(w.id)} onContextMenu={onCtx}>
           <WorkspaceAvatar ws={w} size={20} />
-          {newIn(w.id) > 0 && <i className="wsdot" aria-hidden />}
+          <Marks n={newIn(w.id)} />
         </button>
       ))}
     </span>
@@ -70,12 +98,12 @@ export function WorkspaceButton({ onManage, news }: { onManage: () => void; news
   return (
     <span ref={wrap} className="wsbtn-wrap">
       <button type="button" className="wsbtn" aria-haspopup="menu" aria-expanded={open}
-        title={`Workspace: ${here.name}${anyNew ? " — something new in another workspace" : ""} — click to switch, right-click to manage`}
+        title={`Workspace: ${here.name}${anyNews ? ` — in other workspaces: ${said(others)}` : ""} — click to switch, right-click to manage`}
         onClick={() => setOpen((o) => !o)}
         // Stopped here: the dashboard's own right-click menu would open over the page.
         onContextMenu={onCtx}>
         <WorkspaceAvatar ws={here} />
-        {anyNew && <i className="wsdot" aria-hidden />}
+        <Marks n={anyNews ? others : undefined} />
       </button>
       {open && (
         <div className="wspop" role="menu" aria-label="Workspaces">
@@ -85,7 +113,17 @@ export function WorkspaceButton({ onManage, news }: { onManage: () => void; news
               onClick={() => { switchWorkspace(w.id); setOpen(false); }}>
               <WorkspaceAvatar ws={w} size={20} />
               <span className="wspop-name">{w.name}</span>
-              {newIn(w.id) > 0 && <span className="wspop-new" title={`${newIn(w.id)} chat${newIn(w.id) === 1 ? "" : "s"} finished or waiting on you`}>NEW {newIn(w.id)}</span>}
+              {(() => {
+                const n = newIn(w.id);
+                if (!n) return null;
+                return (
+                  <span className="wspop-tags" title={said(n)}>
+                    {n.ask > 0 && <span className="wspop-new" data-kind="ask">ASKS {n.ask}</span>}
+                    {n.done > 0 && <span className="wspop-new" data-kind="done">DONE {n.done}</span>}
+                    {n.work > 0 && <span className="wspop-new" data-kind="work">RUNNING {n.work}</span>}
+                  </span>
+                );
+              })()}
               <span className="wspop-n">{w.id === "default" ? "the rest" : `${count(w.id)} project${count(w.id) === 1 ? "" : "s"}`}</span>
               {w.id === here.id && <Check size={13} strokeWidth={2.4} aria-hidden className="wspop-on" />}
             </button>
