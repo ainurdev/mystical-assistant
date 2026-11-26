@@ -247,6 +247,37 @@ def test_a_meter_past_stale_max_is_read_anew_not_shown(meters, monkeypatch):
     assert _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 70
 
 
+def test_a_meter_that_cannot_be_read_holds_only_its_first_ask(meters):
+    # Sentry MYSTICAL-A and -B on a teammate's install: a login with no readable meter
+    # was read again inside the poll at every retry, 1.3 to 2.6 s each, for hours.
+    now, spawns = meters
+
+    def retry_due():
+        for e in usage._cache.values():
+            e["next_try"] = e["next_try"] and time.time() - 1
+        spawns.clear()
+
+    now[2] = None                                           # signed out, or a login with no plan
+    _get("/local/accounts")
+    retry_due()
+    t0 = time.time()
+    got = {a["slot"]: a for a in _get("/local/accounts")["accounts"]}
+    assert time.time() - t0 < 0.1
+    assert got[2]["five_hour"] is None and got[1]["five_hour"]["percent"] == 20
+    assert _until(lambda: spawns == [2])                    # read again, behind
+    assert _until(lambda: not usage._behind)
+
+    now[1] = None                                           # login 1's reads fail from here on
+    _age(usage.STALE_MAX + 1)
+    _get("/local/accounts")                                 # past STALE_MAX: read anew, in the ask
+    retry_due()
+    t0 = time.time()
+    got = {a["slot"]: a for a in _get("/local/accounts")["accounts"]}
+    assert time.time() - t0 < 0.1
+    assert got[1]["five_hour"] is None                      # too old to show, and said so at once
+    assert _until(lambda: sorted(spawns) == [1, 2])
+
+
 def test_picking_an_account_reads_an_expired_meter_anew(meters):
     now, spawns = meters
     _get("/local/accounts")                                 # login 1 has room

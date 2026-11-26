@@ -279,23 +279,32 @@ _behind: set = set()    # logins being read behind the meter on screen
 def shown(creds_path: str | None = None) -> "dict | None":
     """For a screen only, never for picking an Account: a reading past CACHE_TTL
     answers at once, keeping the time it was read, while a fresh one is read behind;
-    so does the last run's, for a login this process hasn't read yet. None while the
-    reading is fresh, past STALE_MAX (not every screen prints its age), a failed
-    read waits for its retry, or there is nothing to show: get_usage() answers those."""
+    so does the last run's, for a login this process hasn't read yet. A failed read's
+    retry is read behind as well, and the ask gets what that read left: the reading
+    while it may stand in (STALE_MAX), else nothing. A login whose meter can't be read
+    held every second poll for 1.3 to 2.6 s (Sentry MYSTICAL-A, -B). None while the
+    reading is fresh, past STALE_MAX with no failed read before it (not every screen
+    prints its age), a failed read waits for its retry, or nothing was ever read:
+    get_usage() answers those."""
     path = creds_path or CREDENTIALS_FILE
     now = time.time()
     with _lock:
         e, hit = _entry(path), _boot.get(path)
+        retry = 0 < e["next_try"] <= now      # the last read failed and its wait is over
         if e["data"] is not None:
             if now - e["ts"] < CACHE_TTL or now < e["next_try"]:
                 return None
             view = _view(e)
+        elif retry:
+            view = None
         elif hit is None or e["next_try"]:
             return None
         else:
             view = _view({"ts": hit["ts"], "data": hit["data"]})
-        if now - (view.get("read_at") or 0.0) >= STALE_MAX:
-            return None
+        if view is None or now - (view.get("read_at") or 0.0) >= STALE_MAX:
+            if not retry:
+                return None
+            view = {"available": False}
         start = path not in _behind
         _behind.add(path)
     if start:
