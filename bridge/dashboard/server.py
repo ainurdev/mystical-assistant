@@ -409,13 +409,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silence default logging
         pass
 
-    # Every request timed from its first line read to its answer written; a slow
-    # one is a report on a team install (bridge/reports.py bridge_call).
+    # Every request timed from its first line read to its answer written, less its
+    # waits outside the bridge (reports.outside); a slow one is a report on a team
+    # install (bridge/reports.py bridge_call).
     def handle_one_request(self):
         self._t0 = self._status = None
         super().handle_one_request()
+        waited = reports.take_outside()
         if self._t0 is not None:
-            reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0)
+            reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0 - waited)
 
     def parse_request(self):
         t0 = time.monotonic()

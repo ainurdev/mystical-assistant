@@ -256,7 +256,7 @@ from datetime import datetime
 from urllib.parse import quote, urlsplit
 
 from bridge import (config, device_ask, device_share, device_side, device_view, git, integrations,
-                    notices, rivendell_jobs, team, transcript_page, wsutil)
+                    notices, reports, rivendell_jobs, team, transcript_page, wsutil)
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -661,7 +661,7 @@ class Worker:
             },
             method="POST" if payload is not None else "GET",
         )
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+        with reports.outside(), urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
             return json.loads(resp.read().decode() or "{}")
 
     def _fetch_prompt(self, kind_path: str, request_id: str) -> dict:

@@ -58,8 +58,11 @@ _get_api = dash.Handler._get_api
 
 
 def _boom(self, path, qs):
-    if "sleep" in qs:              # any route, slowed: /local/x?sleep=0.7
-        time.sleep(float(qs["sleep"][0]))
+    if "outside" in qs:            # ... and a wait on something that is not the bridge
+        with reports.outside():
+            time.sleep(float(qs["outside"][0]))
+    if "sleep" in qs or "outside" in qs:   # any route, slowed: /local/x?sleep=0.7
+        time.sleep(float(qs.get("sleep", ["0"])[0]))
         return self._json({"ok": True})
     if not path.startswith("/local/boom/"):
         return _get_api(self, path, qs)

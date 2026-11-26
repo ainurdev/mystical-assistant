@@ -14,6 +14,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from bridge import reports
+
 _CFG = os.path.expanduser("~/.mystical/weather.json")
 _TTL = 600  # seconds
 
@@ -70,7 +72,7 @@ def _save() -> None:
 
 
 def _get_json(url: str, timeout: int = 8):
-    with urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310 — fixed host
+    with reports.outside(), urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310 — fixed host
         return json.loads(r.read().decode())
 
 

@@ -32,7 +32,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from bridge import credentials, usage
+from bridge import credentials, reports, usage
 
 ROOT = os.path.expanduser(os.environ.get("ACCOUNTS_DIR", "~/.mystical/accounts"))
 CLAUDE_HOME = os.path.expanduser("~/.claude")
@@ -747,7 +747,8 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
     accts = list_accounts()
     if not accts:
         return []
-    with ThreadPoolExecutor(max_workers=len(accts)) as pool:
+    # outside: what this waits on is the logins' reads through the CLI, on the pool's threads
+    with reports.outside(), ThreadPoolExecutor(max_workers=len(accts)) as pool:
         return list(pool.map(lambda a: {**a, **meter(a["slot"], max_age)}, accts))
 
 
