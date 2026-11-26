@@ -102,8 +102,8 @@ export function scopeKey(tab: PanelTab, project?: string | null, branch?: string
  *  the column's edge sweeps over a panel that stays pinned to the rail, and
  *  only the transcript reflows. `shown` outlives `open` by that sweep, so a
  *  shut covers the panel instead of dropping it into an empty band; App pins
- *  the cap above the same way. Collapsed, the track is the rail's 48px alone
- *  (App's grid track hardcodes the same number — change both).
+ *  the cap above the same way. Collapsed, the track is the rail alone, --rail-w
+ *  (index.css), which lib/shell and App's grid tracks read too.
  *
  *  The rail is live but quiet (/design-first right-rail-shell): a tile prints
  *  under its icon only what wants you (ASK, ↑4, 2 new, !), in that thing's
@@ -285,7 +285,7 @@ export function RightPanel({
         ref={railRef}
         data-ctx-type="railtab"
         data-ctx-label="Rail"
-        className="relative flex w-[48px] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
+        className="relative flex w-[var(--rail-w)] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
         style={{ background: "var(--panel3)", isolation: "isolate", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) backwards .12s" }}
       >
         {railHead && <div className="mb-1 flex flex-col items-stretch border-b border-border pb-1">{railHead}</div>}

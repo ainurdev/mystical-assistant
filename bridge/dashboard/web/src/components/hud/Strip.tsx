@@ -29,7 +29,7 @@ import { keyAttrs, SHORTCUTS } from "../../lib/shortcuts";
  * CLOCK & WEATHER popover are gone: the settings moved to SETTINGS ▸
  * APPEARANCE, and right-click here is the plain dashboard menu.
  *
- * Collapsed, the right column is the rail's 48px, too narrow for the cluster,
+ * Collapsed, the right column is the rail (--rail-w), too narrow for the cluster,
  * so App hands it to the chat header instead (Terminal's `chrome`). */
 
 // The chat header's 40px row plus its 1px rule, so a cap's bottom line sits
@@ -186,7 +186,7 @@ function FoldButton({ onClick }: { onClick: () => void }) {
 }
 
 /** Right column cap: the cluster over the panel, the gear over the rail.
- *  Collapsed there are no children — the column is the rail's 48px alone. */
+ *  Collapsed there are no children — the column is the rail (--rail-w) alone. */
 export function RightCap({ onOpenSettings, children, railTop, sky }: {
   onOpenSettings: () => void;
   children?: ReactNode;

@@ -18,7 +18,8 @@ export const rbody = (px: number) => `clamp(230px, ${px}px, 40vw)`;
  *  16px margin each side and the Mac app's traffic lights (13 + 3×12 + 2×8 =
  *  65px, drawn in the cap above it) still fit across it. */
 export function shellCols(rightOpen: boolean, leftOpen = true): string {
-  return `${leftOpen ? "clamp(260px,22vw,400px)" : "72px"} minmax(0,1fr) ${rightOpen ? `calc(${rightBodyW} + 48px)` : "48px"}`;
+  // The rail is --rail-w (index.css): 48px at the default font, wider with a bigger base font.
+  return `${leftOpen ? "clamp(260px,22vw,400px)" : "72px"} minmax(0,1fr) ${rightOpen ? `calc(${rightBodyW} + var(--rail-w))` : "var(--rail-w)"}`;
 }
 
 /** Wide screens: the chat stops growing and the surplus becomes even gutters.

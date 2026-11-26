@@ -205,6 +205,10 @@
    SETTINGS ▸ TYPE's preview (.typepv) re-declares the scale: a custom property
    resolves where it is declared, so its own --fs (set inline) would otherwise
    never reach the --t* it inherits from :root. */
+/* The right rail's width: 48px at the default font, and wider with a bigger base font,
+   whose labels (HOME, SESSION, RIVENDELL) grow with it. At a fixed 48px they clipped from
+   14px up. lib/shell's and App's grid tracks read it too. */
+:root { --rail-w: max(48px, calc(var(--fsu) * 48)); }   /* --fsu is a length: 1px at the default font */
 :root, .typepv {
   --fs: 12px;
   --fsu: calc(var(--fs) / 12);
@@ -6605,12 +6609,12 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* The right rail's tiles (RightPanel, /design-first right-rail-shell): an icon,
    and under it only what wants you, in that thing's tone. Every tile is one
    height, so a word appearing never moves the rail. */
-.rtile-n, .rtile-v { max-width: 38px; text-align: center; }
+.rtile-n, .rtile-v { max-width: calc(var(--rail-w) - 8px); text-align: center; }
 .rtile-ico { position: relative; display: flex; }
 .rtile-v { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rtile-n { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; white-space: nowrap; color: var(--txg); }
 .rtile[aria-current="true"] .rtile-n { color: var(--acc); }
-.rtile-n[data-long] { font-size: var(--t7); letter-spacing: 0; }   /* RIVENDELL in the 38px label */
+.rtile-n[data-long] { font-size: var(--t7); letter-spacing: 0; }   /* RIVENDELL in the label's 40px at the default font */
 .capdate { min-width: 0; border-left: 1px solid var(--line2); padding-left: 9px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; text-align: left; }
 .capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }   /* the clip box is a line: tall enough for caps and descenders, or overflow trims them */
 .rtile[data-tone="acc"] .rtile-v { color: color-mix(in srgb, var(--acc) 72%, var(--txb)); }
@@ -8095,7 +8099,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    translucent --panel3 under the gear's cell there, a lighter square. */
 [data-wco=""] .wco-bar.brand { padding-left: calc(12px + var(--wco-l)) !important; }
 [data-wco=""] .rcap { padding-right: var(--wco-r); }
-/* Right panel folded: the cap is the rail's 48px, narrower than the buttons,
+/* Right panel folded: the cap is the rail (--rail-w), narrower than the buttons,
    so it grows left over the transcript's corner and the chat header's own
    cluster (it moves there when folded) steps out of the way. */
 [data-wco=""] .rcap[data-bare] { margin-left: calc(-1 * var(--wco-r)); background: var(--panel3); }

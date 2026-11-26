@@ -3850,7 +3850,7 @@ export function App() {
                 // the rail: cap and panel keep their open width, the edge sweeps,
                 // nothing inside slides or reflows. Only then — the strip's
                 // popovers hang past this column at rest, so it can't clip always.
-                ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + 48px)`, justifyContent: "end", overflow: "hidden" }) }}>
+                ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + var(--rail-w))`, justifyContent: "end", overflow: "hidden" }) }}>
                 <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined} sky={homeOpen ? <HomeSky sky={homeSky} top={0} /> : undefined}>
                   {rightShown && strip}
                 </RightCap>
