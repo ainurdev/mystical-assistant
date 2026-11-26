@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { AppWindow, Columns2, RotateCw, Eraser, MessageSquare, Monitor, MousePointer2, Pencil, Smartphone, SlidersHorizontal, Tablet, X } from "lucide-react";
 import {
-  ASPECTS, SCRIPT, commentsMessage, frameDoc, remixMessage,
-  type DesignBoard, type DesignComment,
+  ASPECTS, SCRIPT, commentsMessage, critiqueMessage, frameDoc, remixMessage,
+  type CriticProblem, type DesignBoard, type DesignComment,
 } from "../lib/designframe";
 import { designCall, uploadImage, useRefSession } from "../lib/readapi";
 import { useQuery } from "@tanstack/react-query";
@@ -482,16 +482,18 @@ export function DesignPane({ board: boardId, onClose, onSend, chrome }: {
               ) : null}
               {side === "critique" ? (
                 <div className="dg-critic">
-                  {!critique || critique.state === "failed" ? <p className="dg-empty">{critique?.error ?? "A separate model, which can only read, looks at this page on phone and desktop and scores it against your references. It takes a minute or two."}</p> : null}
+                  {!critique || critique.state === "failed" ? <p className="dg-empty">{critique?.error ?? "A separate model, which can only read, looks at this page on phone and desktop and lists its problems, worst first. It takes a minute or two."}</p> : null}
                   {critique?.state === "running" ? <p className="dg-empty">Reviewing…</p> : null}
                   {critique?.state === "done" ? (
                     <>
                       <p className="dg-verdict">{critique.verdict}</p>
-                      {Object.entries(critique.scores ?? {}).map(([k, v]) => (
-                        <div key={k} className="dg-score"><span>{k}</span><span className="dg-track"><i style={{ width: `${Math.min(10, Number(v)) * 10}%` }} /></span><b>{v}</b></div>
-                      ))}
-                      <ol className="dg-fixes">{(critique.fixes ?? []).map((f, i) => <li key={i}><b>{f.where}</b> {f.fix}</li>)}</ol>
-                      <button type="button" className="dg-send" onClick={() => void send(`An independent review of "${page}" on board ${boardId} said: ${critique.verdict}\n${(critique.fixes ?? []).map((f, i) => `${i + 1}. ${f.where}: ${f.fix}`).join("\n")}\nFix the ones you agree with, and say which you skipped.`)}>Send the fixes to the agent</button>
+                      <ol className="dg-fixes">{(critique.fixes ?? []).map((f, i) => (
+                        <li key={i}>
+                          {f.severity ? <span className="dg-sev" data-sev={f.severity}>{f.severity}{f.heuristic ? <i> · {f.heuristic}</i> : null}</span> : null}
+                          <b>{f.where}</b> {f.fix}
+                        </li>
+                      ))}</ol>
+                      <button type="button" className="dg-send" onClick={() => void send(critiqueMessage(page, boardId, critique.verdict ?? "", critique.fixes ?? []))}>Send the fixes to the agent</button>
                     </>
                   ) : null}
                   <button type="button" className="dg-btn dg-wide" disabled={critique?.state === "running"} onClick={() => askCritic(true)}>{critique?.state === "done" ? "Review again" : "Review this page"}</button>
