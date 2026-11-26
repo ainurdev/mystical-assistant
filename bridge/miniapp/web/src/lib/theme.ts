@@ -194,7 +194,9 @@ const FAMILY: Record<Family, { rows: Row[]; font: string; prad: string; fx: bool
   aurora: { rows: AURORA_ROWS, font: "", prad: "0", fx: true },
   claude: { rows: CLAUDE_ROWS, font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", fx: false },
   flint: { rows: FLINT_ROWS, font: "'Geist',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", fx: false },
-  pebble: { rows: PEBBLE_ROWS, font: "'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "999px", fx: false },
+  // prad is every shared panel's corner (views, menus, the Mini App's radius scale), not a pill's:
+  // 999px drew a whole diff as an ellipse. Pebble's pills are its own rules in index.css.
+  pebble: { rows: PEBBLE_ROWS, font: "'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "12px", fx: false },
   "middle-earth": { rows: MIDDLE_EARTH_ROWS, font: "'Source Sans 3',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", fx: false },
 };
 
