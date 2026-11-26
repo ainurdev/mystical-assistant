@@ -206,7 +206,7 @@ def test_the_judgement_pass_is_one_shared_reference_with_its_three_parts():
 def test_the_polish_pass_names_its_steps_and_its_limits():
     md = open(_skills()["polish"], encoding="utf-8").read()
     assert "user-invocable: true" in md
-    for step in ("compare_images", "at 2x", "inspect_ui", "references/judgement-pass.md",
+    for step in ("compare_images", "at 2x", "inspect_ui", "../../references/judgement-pass.md",
                  "/mystical-design:web-design-guidelines", "/mystical-design:break-ui",
                  "at most two rounds", "Never commit the drafts", "Run tool", "Native-only behaviour wasn't checked"):
         assert step in md, step

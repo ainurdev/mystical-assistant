@@ -27,7 +27,7 @@ For each state:
 1. Capture the built screen at the mockup's width, at 2x (device scale factor 2), in a
    headless browser: the repo's own screenshot kit if it has one, else a short Playwright
    script in `.mystical/scratch/`. Save it to `.mystical/screenshots/<date>/polish/`.
-   Capture the mockup the same way.
+   Capture the mockup the same way. Keep these first shots: the reply's `before` is them.
 2. Call `compare_images` with the mockup as `before` and the build as `after`.
 3. List the drift: layout, spacing, type, colour, copy, missing or extra elements, motion.
 
@@ -36,8 +36,8 @@ For each state:
 Each on the built screen, for every state:
 
 1. **axe and the measured facts:** `inspect_ui` on the page, at the mockup's widths.
-2. **The judgement pass:** read `references/judgement-pass.md` in the mystical-design pack
-   (beside its `skills/` folder) and go through its three parts.
+2. **The judgement pass:** read `../../references/judgement-pass.md` from this skill's base
+   directory (the pack's shared reference) and go through its three parts.
 3. **The web interface rules:** load `/mystical-design:web-design-guidelines` over the UI
    files the build changed (`git diff --name-only` against the base branch).
 4. **Worst-case data:** load `/mystical-design:break-ui` and feed the screen long names, zero
