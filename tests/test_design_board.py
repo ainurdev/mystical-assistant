@@ -225,6 +225,26 @@ def test_bold_adds_the_template_look_and_expo_tells_in_an_expo_repo(repo, monkey
     assert "Template look" not in seen["prompt"] and "native-slop" not in seen["prompt"]
 
 
+def test_a_failed_bold_critique_is_kept_not_respawned(repo, monkeypatch):
+    db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": PAGE}]})
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
+    runs = []
+
+    def broken(root, a):
+        runs.append(1)
+        raise OSError("no browser")
+    monkeypatch.setattr(design_audit, "inspect", broken)
+    a = {"board": "home", "page": "A", "bold": True}
+    design_audit.critique(repo, a, 1)
+    for _ in range(100):
+        got = design_audit.critique(repo, a, 1)
+        if got["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert got == {**got, "state": "failed", "error": "no browser"} and design_audit.critique(repo, a, 1)["state"] == "failed"
+    assert len(runs) == 1
+
+
 def test_the_critic_is_off_with_its_switch(repo, monkeypatch):
     monkeypatch.setattr(aifeatures, "enabled", lambda key: False)
     assert design_audit.critique(repo, {"board": "home"}, 1)["state"] == "failed"

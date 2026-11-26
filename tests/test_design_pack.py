@@ -135,11 +135,20 @@ def test_the_send_refuses_bold_off_design(switches, monkeypatch, extra):
 
 
 def test_bold_at_the_send_carries_the_note_after_the_command(switches):
+    switches.add("designpack")
     flowsettings.change({"flow": "design", "key": "step", "step": "grill", "value": False})
     sid, _ = _session()
     sent = paths.start_flow(sid, "design", "you", "a calmer header", bold=True)
-    assert sent.startswith(f"/design-first {NOTE}\na calmer header")
+    assert sent.startswith(f"/mystical-design:design-first {NOTE}\na calmer header")
     assert paths.get(sid)["bold"] is True
+
+
+def test_with_the_gate_closed_bold_sends_no_note(switches):
+    """The personal /design-first has no Bold-run section to read it."""
+    flowsettings.change({"flow": "design", "key": "step", "step": "grill", "value": False})
+    sid, _ = _session()
+    sent = paths.start_flow(sid, "design", "you", "a calmer header", bold=True)
+    assert sent.startswith("/design-first a calmer header") and NOTE not in sent
 
 
 def test_bold_lit_before_a_grill_reaches_the_queued_design_step(switches, fake_queue):  # noqa: F811
@@ -152,12 +161,13 @@ def test_bold_lit_before_a_grill_reaches_the_queued_design_step(switches, fake_q
 
 
 def test_bold_lit_while_answering_the_grill_still_counts(switches, fake_queue):  # noqa: F811
+    switches.add("designpack")
     sid, _ = _session()
     paths.start_flow(sid, "design", "you", "a calmer header")
     paths.start_flow(sid, "design", "you", "the answer", bold=True)       # the running flow keeps it
     paths.step_done(sid, "t1")
     paths.continue_after_turn(_job(sid, "t1"))
-    assert fake_queue.items[-1]["prompt"].startswith(f"/design-first {NOTE}\n")
+    assert fake_queue.items[-1]["prompt"].startswith(f"/mystical-design:design-first {NOTE}\n")
 
 
 def test_bold_holds_for_one_send(switches, fake_queue):  # noqa: F811

@@ -157,7 +157,8 @@ _STEPDONE = ('When you finish a step of a path and need nothing more from the us
 def pack_text(design: bool = False) -> str:
     """The routing text, from the FLOWS settings only: NO KIND, which of DESIGN, BUILD,
     REFACTOR and FIX are on, and their grills. Nothing per turn goes in, so the text, and
-    the cache write it costs, change only when a setting does. AS TYPED keeps the StepDone line.
+    the cache write it costs, change only when a setting does (a session's DESIGN PACK
+    override is one: its text can differ from other sessions', and stays put turn to turn). AS TYPED keeps the StepDone line.
     `design`: the DESIGN PACK gate is open, so DESIGN starts the pack's design-first."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if flowsettings.nokind() == "typed":
@@ -768,9 +769,11 @@ def _set_bold(session_id: str) -> None:
 
 
 def _bold(session_id: str) -> str:
-    """The Bold-run note and its line break when the session's flow was started with BOLD lit."""
+    """The Bold-run note and its line break when the session's flow was started with BOLD lit
+    and the DESIGN PACK gate is open: the personal /design-first has no Bold-run section."""
     with _lock:
-        return f"{BOLD_NOTE}\n" if (_cache.get(session_id) or {}).get("bold") else ""
+        lit = bool((_cache.get(session_id) or {}).get("bold"))
+    return f"{BOLD_NOTE}\n" if lit and design_pack(session_id) else ""
 # The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
 _TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000

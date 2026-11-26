@@ -1204,7 +1204,7 @@ export function Composer({
   // BOLD (design-drafts/bold-toggle, B · FLAME): beside a lit DESIGN while the design pack is on; one send.
   const [bold, setBold] = useState(false);
   const boldOn = boldShows(kind, kindsOn, !!designPack);
-  useEffect(() => { if (!boldOn) setBold(false); }, [boldOn]);
+  useEffect(() => { setBold(false); }, [boldOn, sessionId]);   // one send, in the chat it was lit in
   const run = kind ? presetFor(kind, flowRuns(flowCfg?.flows), runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;

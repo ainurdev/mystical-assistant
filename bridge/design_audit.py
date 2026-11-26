@@ -535,9 +535,9 @@ def _critique_job(key: str, root: str, a: dict, chat_id: int, title: str, bold: 
         got = _parse_critique(reply) if not failed else None
         if not got:
             print(f"[critic] {str(reply)[:200]}", file=sys.stderr)
-        result = {"state": "done", **got, "facts": facts, "bold": bold} if got else {"state": "failed", "error": "The critic didn't give a usable answer."}
+        result = {"state": "done", **got, "facts": facts, "bold": bold} if got else {"state": "failed", "error": "The critic didn't give a usable answer.", "bold": bold}
     except (OSError, design_board.Refused) as e:
-        result = {"state": "failed", "error": str(e)}
+        result = {"state": "failed", "error": str(e), "bold": bold}   # bold: a bold ask takes it, not a respawn
     with _lock:
         _critics[key] = {**result, "at": time.time()}
 
