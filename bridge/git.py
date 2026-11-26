@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from bridge import config
@@ -596,19 +597,39 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+_fetch_locks: dict[str, threading.Lock] = {}
+
+
+def _fetch_lock(cwd: str) -> threading.Lock:
+    """One per repo, not per checkout: its worktrees share the refs a fetch moves."""
+    rc, out, _ = _run(cwd, "rev-parse", "--git-common-dir")
+    repo = os.path.realpath(os.path.join(cwd, out.strip()) if rc == 0 else cwd)
+    return _fetch_locks.setdefault(repo, threading.Lock())
+
+
 def fetch(cwd: str, timeout: int = 20) -> tuple[bool, str]:
     """Refresh the remote-tracking refs, so status()'s behind count is current.
     The dashboard also runs it unasked (auto-fetch), so a remote that wants a
-    password fails at once instead of prompting on a hand-launched bridge's tty."""
-    rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout,
-                        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    password fails at once instead of prompting on a hand-launched bridge's tty.
+    One at a time per repo: two at once race to move the same refs and one fails
+    ("cannot lock ref")."""
+    with _fetch_lock(cwd):
+        rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
     return rc == 0, (out + err).strip()
 
 
 def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
     """Fast-forward only: never merges or rebases local work behind your back —
-    a diverged or dirty tree fails loudly with git's own message."""
-    rc, out, err = _run(cwd, "pull", "--ff-only", timeout=timeout)
+    a diverged or dirty tree fails loudly with git's own message. A fetch, then a
+    merge of the upstream's ref, never `git pull`: pull merges what FETCH_HEAD
+    lists, and a fetch running alongside (a session's, which no lock here sees)
+    lists the branch twice, so pull refused ("Cannot fast-forward to multiple
+    branches", 2026-11-26)."""
+    ok, out = fetch(cwd, timeout=timeout)
+    if not ok:
+        return False, out
+    rc, out, err = _run(cwd, "merge", "--ff-only", "@{u}", timeout=timeout)
     return rc == 0, (out + err).strip()
 
 
