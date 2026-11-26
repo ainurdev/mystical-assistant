@@ -20,6 +20,7 @@ export interface EnqueueInput {
   // The flow this prompt starts when it runs, and who picked it (bridge/paths.py start_flow).
   flow?: string;
   by?: "you" | "guess";
+  bold?: boolean; // BOLD lit with DESIGN: the flow's design step is a Bold run
 }
 
 /** Live view of a session's server-side prompt queue, plus the ops to mutate it.

@@ -110,6 +110,67 @@ def test_the_routing_text_and_the_slash_list_follow_the_gate(switches):
     assert {"mystical-design:design-first", "mystical-design:design-implement"} <= names()
 
 
+# --- Seam 1: BOLD, the prompt box's Bold run -----------------------------------
+
+NOTE = "Bold run: you lit BOLD."
+
+
+def test_bold_goes_with_design_alone(switches):
+    assert paths.flow_refusal("design", "you", "x", "claude", bold=True) == ""
+    assert paths.flow_refusal("build", "you", "x", "claude", bold=True)
+    assert paths.flow_refusal("", "you", "x", "claude", bold=True)
+
+
+@pytest.mark.parametrize("extra", [{"flow": "build", "by": "you"}, {}])
+def test_the_send_refuses_bold_off_design(switches, monkeypatch, extra):
+    from bridge.dashboard import server as dash
+    monkeypatch.setattr(dash, "_chat", lambda: 1)
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **k: pytest.fail("bold off DESIGN ran"))
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
+    h._post_api("/local/run", {"prompt": "a calmer header", "bold": True, **extra})  # noqa: SLF001
+    assert box["code"] == 400 and "DESIGN" in box["obj"]["error"]
+
+
+def test_bold_at_the_send_carries_the_note_after_the_command(switches):
+    flowsettings.change({"flow": "design", "key": "step", "step": "grill", "value": False})
+    sid, _ = _session()
+    sent = paths.start_flow(sid, "design", "you", "a calmer header", bold=True)
+    assert sent.startswith(f"/design-first {NOTE}\na calmer header")
+    assert paths.get(sid)["bold"] is True
+
+
+def test_bold_lit_before_a_grill_reaches_the_queued_design_step(switches, fake_queue):  # noqa: F811
+    switches.add("designpack")
+    sid, _ = _session()
+    paths.start_flow(sid, "design", "you", "a calmer header", bold=True)   # the grill first
+    paths.step_done(sid, "t1")
+    paths.continue_after_turn(_job(sid, "t1"))
+    assert fake_queue.items[-1]["prompt"].startswith(f"/mystical-design:design-first {NOTE}\n")
+
+
+def test_bold_holds_for_one_send(switches, fake_queue):  # noqa: F811
+    sid, _ = _session()
+    paths.start_flow(sid, "design", "you", "first", bold=True)
+    paths.set_path(sid, "design", "a new screen", "claude")             # the next flow, no BOLD
+    assert not paths.get(sid)["bold"]
+    paths.step_done(sid, "t1")
+    paths.continue_after_turn(_job(sid, "t1"))
+    assert NOTE not in fake_queue.items[-1]["prompt"]
+
+
+def test_a_queued_send_keeps_bold(monkeypatch):
+    from bridge import queue_manager
+    got = {}
+    monkeypatch.setattr(runner, "start_streaming_job", lambda **k: got.update(k))
+    item = queue_manager.QueueItem(id="q", session_id="s", chat_id=1, project=None, text="x", prompt="x",
+                                   images=[], model=None, effort=None, permission_mode=None, width=0, sel=[],
+                                   surface="dashboard", flow="design", flow_by="you", bold=True)
+    queue_manager._default_run_fn(item)
+    assert got["bold"] is True
+
+
 # --- Seam 3: the pack's own files ----------------------------------------------
 
 def _manifest():

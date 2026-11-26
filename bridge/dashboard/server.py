@@ -743,7 +743,8 @@ class Handler(BaseHTTPRequestHandler):
             flow = paths.get(sid)
             if flow:
                 flow["stations"] = paths.stations(sid)   # the steps as they stand: FLOW draws these
-            return self._json({"flow": flow, "past": paths.past(sid), "set": tset})
+            # pack: the DESIGN PACK gate is open for it, so the prompt box offers BOLD beside DESIGN.
+            return self._json({"flow": flow, "past": paths.past(sid), "set": tset, "pack": paths.design_pack(sid)})
         if path == "/local/tickets":
             from bridge import tickets
             return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only
@@ -2778,7 +2779,8 @@ class Handler(BaseHTTPRequestHandler):
         # _save_images so a held prompt writes nothing.
         from bridge import paths as flows   # `paths` below is the image paths
         flow = body.get("flow") or None
-        if flow and (why := flows.flow_refusal(str(flow), str(body.get("by") or ""), prompt, agent)):
+        bold = body.get("bold") is True   # BOLD: this DESIGN send's design is a Bold run
+        if (flow or bold) and (why := flows.flow_refusal(str(flow or ""), str(body.get("by") or ""), prompt, agent, bold)):
             return self._json({"error": why}, 400)
         t = time.monotonic()
         held = relevance.gate(chat, project_path, session_id, prompt,
@@ -2803,7 +2805,7 @@ class Handler(BaseHTTPRequestHandler):
                                          session_id=session_id, profile_id=profile_id,
                                          origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
-                                         runtime=runtime, flow=flow,
+                                         runtime=runtime, flow=flow, bold=bold,
                                          flow_by=body.get("by") if flow else None, style=style)
         if job is None:
             runner._cleanup_uploads(job_id)
@@ -2896,9 +2898,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             from bridge import paths as flows   # `paths` below is the image paths
             flow = body.get("flow") or None
-            if flow and (why := flows.flow_refusal(
-                    str(flow), str(body.get("by") or ""), prompt,
-                    profiles.agent_for(store.get_session(sid)))):
+            bold = body.get("bold") is True
+            if (flow or bold) and (why := flows.flow_refusal(
+                    str(flow or ""), str(body.get("by") or ""), prompt,
+                    profiles.agent_for(store.get_session(sid)), bold)):
                 return self._json({"error": why}, 400)
             agent = (body.get("agent") or "").strip()
             try:
@@ -2922,7 +2925,7 @@ class Handler(BaseHTTPRequestHandler):
                 effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
-                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None, style=style)
+                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None, style=style, bold=bold)
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)

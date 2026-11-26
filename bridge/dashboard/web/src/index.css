@@ -5064,6 +5064,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-kind > i { font-style: normal; font-size: var(--t7); letter-spacing: 1px; text-transform: uppercase; color: var(--txd); margin-left: 2px; }
 .pb-kinds[data-dim] > * { opacity: .45; cursor: default; }
 [data-fam]:not([data-fam="aurora"]) .pb-kind, [data-fam]:not([data-fam="aurora"]) .pb-kg { border-radius: 5px; }
+/* BOLD (Composer, design-drafts/bold-toggle B · FLAME): a flame at the lit DESIGN pill's end, its own
+   button laid over the room the pill keeps for it; lit, amber on an amber tint. */
+.pb-kind[data-bold] { padding-right: 24px; }
+.pb-bold { appearance: none; flex: none; position: relative; display: grid; place-items: center; width: 16px; height: 16px; margin-left: -21px; margin-right: 5px;
+           padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--txl); cursor: pointer; }
+.pb-bold:hover { color: color-mix(in oklab, var(--warn) 70%, var(--txb)); }
+.pb-bold[aria-pressed="true"] { color: var(--warn); background: color-mix(in oklab, var(--warn) 18%, transparent); }
 /* usage: the PROFILE chip, flat, its face the ring (Composer UsageRing) while its login has a
    reading. Without one it keeps its name (an expired login says so in it), which gives way to
    the spinner while the first reading lands. The menu is the PROFILE menu, unchanged. */

@@ -1796,6 +1796,7 @@ export interface RunBody {
   no_path?: boolean; // Esc took the auto-applied skill out of this prompt: the run is told there is no path
   flow?: string; // the flow this prompt starts; the bridge puts its first step in front (bridge/paths.py start_flow)
   by?: "you" | "guess"; // a tap or Tab, or the box's guess
+  bold?: boolean; // BOLD lit with DESIGN: the flow's design step is a Bold run (refused with any other flow)
 }
 
 // /local/run either starts a job or holds the prompt because it looks unrelated to

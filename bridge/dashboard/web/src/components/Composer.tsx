@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { code, main, queryClient, reread } from "../lib/queries";
-import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Flame, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
-import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
+import { KINDS, KIND_ORDER, boldShows, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
@@ -728,7 +728,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, style = "", onStyle, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, designPack, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
   /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
   words?: string[];
@@ -787,7 +787,7 @@ export function Composer({
   /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). flow: the
    *  flow the prompt starts and who picked it; the bridge puts its first step in front. */
   onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string,
-           flow?: { id: KindId; by: "you" | "guess" }) => void;
+           flow?: { id: KindId; by: "you" | "guess"; bold?: boolean }) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -834,6 +834,8 @@ export function Composer({
   flowChip?: FlowChip | null;
   /** The flow the session is on until its last step is done (lib/flowview runningFlow): its glyph's dot. */
   runningFlow?: string | null;
+  /** The DESIGN PACK gate is open for this session (lib/useFlow): DESIGN offers BOLD. */
+  designPack?: boolean;
   /** The FLOW chip's switches, Reset and skips (lib/useFlow). */
   onFlow?: (act: FlowAct) => void;
   /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
@@ -1199,6 +1201,10 @@ export function Composer({
   const kindsOn = shelled && flowsOn && !onAgent && !helper && !ask?.send && !leadsSlash;
   const pick = kindPick && kindPick !== "plain" && flowsOff.includes(kindPick) ? null : kindPick;
   const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff, hand: flowCfg?.guess === "hand" }) : { kind: null, how: "none" as const };
+  // BOLD (design-drafts/bold-toggle, B · FLAME): beside a lit DESIGN while the design pack is on; one send.
+  const [bold, setBold] = useState(false);
+  const boldOn = boldShows(kind, kindsOn, !!designPack);
+  useEffect(() => { if (!boldOn) setBold(false); }, [boldOn]);
   const run = kind ? presetFor(kind, flowRuns(flowCfg?.flows), runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
@@ -1421,8 +1427,10 @@ export function Composer({
     if (!t || disabled) return;
     // The kind on show sends its preset with the prompt, and the flow when the prompt starts one.
     const plan = sendPlan({ kind, how: kindHow, text: t, running: runningFlow, flows: flowsOn,
-                            answering: !!ask?.send, agent: onAgent, run });
-    onSend(plan.text, images, noPath || undefined, plan.run, t, plan.flow && plan.by && { id: plan.flow, by: plan.by });
+                            answering: !!ask?.send, agent: onAgent, run, bold: boldOn && bold });
+    onSend(plan.text, images, noPath || undefined, plan.run, t,
+      plan.flow && plan.by && { id: plan.flow, by: plan.by, bold: plan.bold });
+    setBold(false);
     setText("");
     setImages([]);
   }
@@ -2269,7 +2277,8 @@ export function Composer({
           const off = !kindsOn || (id === "design" && !plugins.design);   // no Claude Design, no DESIGN kind
           // The editor keeps the focus (and the caret) through a tap.
           return (
-            <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
+            <Fragment key={id}>
+            <button type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined} data-bold={lit && boldOn ? "" : undefined}
               data-run={id === runningFlow ? "" : undefined}
               disabled={off} aria-pressed={lit && kindHow === "picked"}
               title={lit ? `${KINDS[id].name} — ${blank ? "click to go back to guessing" : "click to send as typed"}` : KINDS[id].name}
@@ -2277,6 +2286,14 @@ export function Composer({
               <Icon size={lit ? 11 : 12} strokeWidth={2} aria-hidden />
               {lit && <><span>{KINDS[id].verb}</span>{kindHow === "auto" && <i>auto</i>}</>}
             </button>
+            {lit && boldOn && (
+              <button type="button" className="pb-bold" aria-pressed={bold} aria-label="Bold"
+                title={bold ? "BOLD — this send's design is a Bold run" : "BOLD"}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => setBold((b) => !b)}>
+                <Flame size={11} strokeWidth={2} aria-hidden />
+              </button>
+            )}
+            </Fragment>
           );
         })}
         {gear}

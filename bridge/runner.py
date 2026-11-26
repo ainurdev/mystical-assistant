@@ -3769,7 +3769,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         hang_timeout: float | None = None,
                         skip_pack: bool = False,
                         native_resume: bool = False,
-                        flow: str | None = None, flow_by: str | None = None,
+                        flow: str | None = None, flow_by: str | None = None, bold: bool = False,
                         sent_by: str | None = None, sent_why: str | None = None,
                         style: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
@@ -3883,7 +3883,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.hang_timeout = hang_timeout
         _register(job)
         if flow and not refusal and not is_acp:   # the box's flow starts with this turn, queued or not
-            prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt)
+            prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt, bold)
             # BUILD with its grill off moved the session onto a branch of its own: this turn runs there.
             moved = (store.get_session(session["id"]) or {}).get("cwd")
             if moved and moved != cwd and os.path.isdir(moved):

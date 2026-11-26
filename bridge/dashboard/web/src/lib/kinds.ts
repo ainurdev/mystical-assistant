@@ -102,14 +102,19 @@ export function presetFor(kind: KindId, saved?: Partial<Record<KindId, Partial<K
 /** What a send carries. The bridge starts the flow and puts its first step's command in front
  *  (bridge/paths.py start_flow), so the text goes as typed. A flow goes only when the prompt starts
  *  one: a tap or Tab (`you`), or a guess (`guess`) while no flow runs. A guess during a running flow
- *  shapes only this prompt's run, and the prompt stays in that flow. `flows`: SKILL PATHS is on. */
+ *  shapes only this prompt's run, and the prompt stays in that flow. `flows`: SKILL PATHS is on.
+ *  `bold`: BOLD lit (shown only beside DESIGN), sent only with a DESIGN flow the prompt starts. */
 export function sendPlan(o: { kind: KindId | null; how: "auto" | "picked" | "plain" | "none"; text: string; running: string | null;
-  flows: boolean; answering: boolean; agent: boolean; run: KindRun | null }):
-  { text: string; run: KindRun | null; flow?: KindId; by?: "you" | "guess" } {
+  flows: boolean; answering: boolean; agent: boolean; run: KindRun | null; bold?: boolean }):
+  { text: string; run: KindRun | null; flow?: KindId; by?: "you" | "guess"; bold?: true } {
   if (!o.kind || o.answering || o.agent || o.text.startsWith("/")) return { text: o.text, run: null };
   const by = o.how === "picked" ? "you" : o.running ? null : "guess";
-  return o.flows && by ? { text: o.text, run: o.run, flow: o.kind, by } : { text: o.text, run: o.run };
+  if (!o.flows || !by) return { text: o.text, run: o.run };
+  return { text: o.text, run: o.run, flow: o.kind, by, ...(o.bold && o.kind === "design" ? { bold: true as const } : {}) };
 }
+
+/** BOLD shows beside a lit DESIGN while the kinds are live and the DESIGN PACK gate is open. */
+export const boldShows = (kind: KindId | null, kindsOn: boolean, pack: boolean) => kind === "design" && kindsOn && pack;
 
 export interface LastCheck { ok: boolean; line: string; at: number | null }
 
