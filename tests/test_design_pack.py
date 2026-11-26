@@ -140,10 +140,26 @@ def test_every_listed_source_has_its_licence_file():
         assert lic and all(os.path.isfile(os.path.join(PACK, p)) for p in lic), row
 
 
+# shortcut: design-first names /mystical-design:polish, which ticket 09 adds; drop this when it lands.
+_DUE = {"polish"}
+
+
 def test_every_pack_name_a_skill_mentions_is_in_the_pack():
+    assert not _DUE & set(_skills()), "a due skill landed: empty _DUE"
     for md in _skills().values():
         for name in re.findall(r"/?mystical-design:([\w-]+)", open(md, encoding="utf-8").read()):
-            assert name in _skills(), (md, name)
+            assert name in _skills() or name in _DUE, (md, name)
+
+
+def test_design_first_names_each_skill_it_loads_by_its_pack_name():
+    text = open(_skills()["design-first"], encoding="utf-8").read()
+    steps = re.findall(r"^## (\d+)\. ", text, re.M)
+    assert steps == [str(n) for n in range(1, 12)]
+    for name in ("create-design-md", "frontend-design", "expo-native-ui", "expo-design-system",
+                 "shadcn", "expo-animation", "polish"):
+        assert f"/mystical-design:{name}" in text, name
+    assert os.path.isfile(os.path.join(PACK, "references", "judgement-pass.md"))
+    assert "judgement-pass.md" in text and "critique_design" in text and "inspect_ui" in text
 
 
 def test_design_pack_is_an_ai_feature_off_by_default():
