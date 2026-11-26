@@ -389,3 +389,12 @@ def test_a_designed_sets_tickets_and_merge_get_the_drafts(make_set, gate):  # no
     assert (f"The approved design is in {DRAFT}: build to it." in first) is gate
     assert (f"run /mystical-design:polish (the skill mystical-design:polish) against the approved design in {DRAFT}. "
             "Then call StepDone." in m["prompt"]) is gate
+
+
+def test_the_polish_pass_names_its_steps_and_its_limits():
+    md = open(_skills()["polish"], encoding="utf-8").read()
+    assert "user-invocable: true" in md
+    for step in ("compare_images", "at 2x", "inspect_ui", "../../references/judgement-pass.md",
+                 "/mystical-design:web-design-guidelines", "/mystical-design:break-ui",
+                 "at most two rounds", "Never commit the drafts", "Run tool", "Native-only behaviour wasn't checked"):
+        assert step in md, step
