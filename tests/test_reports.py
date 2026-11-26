@@ -271,7 +271,10 @@ def test_a_long_poll_an_agents_tool_call_and_a_server_start_are_untimed(monkeypa
                          ("POST", "/local/server"), ("POST", "/local/git/worktree/remove"),
                          ("GET", "/local/complete/symbols?project=/x"), ("GET", "/local/runs")]:
         reports.bridge_call(method, path, 200, 30.0)
-    assert sent == ["bridge call: GET /local/runs"]           # the list of runs waits on nothing
+    # The list of runs waits on nothing. The composer's symbol scan is no wait either: a regex
+    # over every source file on the bridge's own CPU (232 of its 246 ms here), which slows the
+    # calls beside it; 8 of its 13 reports sat in the same seconds as other slow calls.
+    assert sent == ["bridge call: GET /local/complete/symbols", "bridge call: GET /local/runs"]
 
 
 def test_gh_rivendell_and_the_weather_service_are_waits_outside_the_bridge(monkeypatch):
