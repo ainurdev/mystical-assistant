@@ -39,7 +39,8 @@ MAX_BOARD_COLUMNS, MAX_CARDS, MAX_POINTS, MAX_STATS = 30, 1000, 500, 12
 MAX_BYTES = 768 * 1024
 DIAGRAMS = ("flow", "timeline")
 SHAPES = ("process", "decision", "terminal")
-MAX_NODES, MAX_EDGES, MAX_EVENTS = 60, 120, 100
+MAX_NODES, MAX_EDGES, MAX_EVENTS, MAX_CLUSTERS = 60, 120, 100, 12
+_COMMENT = 1000
 MAX_NOTES, MAX_LINES, MAX_MONEY_EVENTS = 40, 8, 300
 # Where an agent wants a view inside its answer. The clients cut the answer there; everywhere
 # else (Telegram, a chat's history) it's noise, so strip_refs takes it out.
@@ -465,7 +466,8 @@ def _flow(spec: dict) -> "tuple[dict, list]":
         if group and group not in groups:
             groups.append(group)
         nodes.append({"id": nid, "label": _s(n.get("label"), 120) or nid, "note": _s(n.get("note"), 160),
-                      "shape": n.get("shape") if n.get("shape") in SHAPES else "process", "group": group})
+                      "shape": n.get("shape") if n.get("shape") in SHAPES else "process", "group": group,
+                      "comment": _s(n.get("comment"), _COMMENT)})
     if len(groups) > MAX_SERIES:
         raise Refused(f"At most {MAX_SERIES} groups: past that the colours stop meaning anything.")
     rawe = spec.get("edges") if isinstance(spec.get("edges"), list) else []
@@ -477,8 +479,42 @@ def _flow(spec: dict) -> "tuple[dict, list]":
         if a not in ids or b not in ids:
             raise Refused(f"The arrow from {a!r} to {b!r} names a node that isn't in nodes.")
         edges.append({"from": a, "to": b, "label": _s(e.get("label"), 60)})
-    return {"kind": "flow", "nodes": nodes, "edges": edges, "groups": groups,
+    return {"kind": "flow", "nodes": nodes, "edges": edges, "groups": groups, "clusters": _clusters(spec, raw, ids),
             "direction": spec.get("direction") if spec.get("direction") in ("right", "down") else ""}, []
+
+
+def _clusters(spec: dict, raw: list, ids: set) -> list:
+    """Boxes drawn round steps, each named, with an optional comment shown on hover. A `group` only
+    colours a step; a cluster puts it in a box. Steps join one by the cluster's `nodes` or by their
+    own `cluster`. ponytail: one box per step and no box inside another, which the layout keeps
+    simple; nesting would want a compound layout."""
+    rawc = spec.get("clusters") if isinstance(spec.get("clusters"), list) else []
+    if len(rawc) > MAX_CLUSTERS:
+        raise Refused(f"At most {MAX_CLUSTERS} clusters: past that, split the flow.")
+    out, owner = [], {}
+    for c in rawc:
+        c = c if isinstance(c, dict) else {"id": c}
+        cid = _s(c.get("id") or c.get("label"), 80)
+        if not cid or any(o["id"] == cid for o in out):
+            raise Refused(f"Every cluster needs its own id, and {cid or 'one'!r} isn't.")
+        out.append({"id": cid, "label": _s(c.get("label"), 80) or cid, "comment": _s(c.get("comment"), _COMMENT), "nodes": []})
+        for nid in c.get("nodes") if isinstance(c.get("nodes"), list) else []:
+            nid = _s(nid, 80)
+            if nid not in ids:
+                raise Refused(f"Cluster {cid!r} names {nid!r}, which isn't in nodes.")
+            owner.setdefault(nid, []).append(cid)
+    known = {o["id"] for o in out}
+    for n in raw:
+        if isinstance(n, dict) and n.get("cluster"):
+            cid = _s(n.get("cluster"), 80)
+            if cid not in known:
+                raise Refused(f"Step {_s(n.get('id'), 80)!r} is in cluster {cid!r}, which isn't in clusters.")
+            owner.setdefault(_s(n.get("id"), 80), []).append(cid)
+    for nid, cs in owner.items():
+        if len(set(cs)) > 1:
+            raise Refused(f"Step {nid!r} is in clusters {', '.join(sorted(set(cs)))}: a step sits in one box.")
+        next(o for o in out if o["id"] == cs[0])["nodes"].append(nid)
+    return [o for o in out if o["nodes"]]
 
 
 def _timeline(spec: dict) -> "tuple[dict, list]":

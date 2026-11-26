@@ -140,6 +140,18 @@
 .dv-flow { overflow: auto; overscroll-behavior: contain; max-height: 70vh; }
 .dv[data-full] .dv-flow { max-height: none; }
 .dv-flow svg { display: block; margin: 0 auto; }
+.dv-flow-host { position: relative; }
+.dv-flow-hit { cursor: default; outline: none; }
+.dv-flow-hit:focus-visible path:first-child, .dv-flow-hit:focus-visible .dv-box { stroke: var(--acc); }
+/* a group of steps: a quiet box, named on its top edge, that the wires run over */
+.dv-box { fill: color-mix(in srgb, var(--txl) 5%, transparent); stroke: var(--dv-grid); stroke-dasharray: 5 4; }
+.dv-box[data-on] { stroke: var(--dv-zero); }
+.dv-box-name { font-size: var(--t11, 11px); font-weight: 600; letter-spacing: 0.02em; fill: var(--txm); }
+/* a step or box that has a comment: the dot says there's more on hover */
+.dv-said-dot { fill: var(--acc); }
+.dv-flow-tip { max-width: min(320px, 92%); pointer-events: none; }
+.dv-flow-tip-note { color: var(--txm); line-height: 1.45; overflow-wrap: anywhere; margin-top: 2px; }
+.dv-flow-tip-said { color: var(--tx); line-height: 1.5; overflow-wrap: anywhere; margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); white-space: pre-line; }
 .dv-time { list-style: none; margin: 0; padding: 4px 14px 12px; }
 .dv-time li { position: relative; padding: 0 0 14px 20px; border-left: 1px solid var(--border); margin-left: 5px; }
 .dv-time li:last-child { padding-bottom: 2px; border-left-color: transparent; }

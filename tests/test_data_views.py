@@ -196,6 +196,34 @@ def test_a_flow_keeps_its_steps_and_arrows():
     assert dv.describe(ev) == "a flow diagram, Retry: 3 steps"
 
 
+def test_a_flow_boxes_steps_and_keeps_their_comments():
+    spec = {**FLOW, "nodes": [*FLOW["nodes"][:2], {"id": "c", "cluster": "out", "comment": "  why\nthis   step "}],
+            "clusters": [{"id": "core", "label": "Core path", "comment": "the hot loop", "nodes": ["a", "b"]},
+                         {"id": "out"}, {"id": "empty", "nodes": []}]}
+    ev, _ = dv.build(spec)
+    assert ev["clusters"] == [{"id": "core", "label": "Core path", "comment": "the hot loop", "nodes": ["a", "b"]},
+                              {"id": "out", "label": "out", "comment": "", "nodes": ["c"]}]
+    assert ev["nodes"][2]["comment"] == "why this step" and ev["nodes"][0]["comment"] == ""
+
+
+def test_a_flow_without_clusters_has_none():
+    ev, _ = dv.build(FLOW)
+    assert ev["clusters"] == []
+
+
+@pytest.mark.parametrize("clusters,node,word", [
+    ([{"id": "x", "nodes": ["zz"]}], {}, "isn't in nodes"),
+    ([{"id": "x", "nodes": ["a"]}, {"id": "y", "nodes": ["a"]}], {}, "one box"),
+    ([{"id": "x"}, {"id": "x"}], {}, "own id"),
+    ([], {"cluster": "nope"}, "isn't in clusters"),
+    ([{"id": str(i)} for i in range(dv.MAX_CLUSTERS + 1)], {}, "At most"),
+])
+def test_clusters_refuse_with_a_sentence(clusters, node, word):
+    spec = {**FLOW, "nodes": [{**FLOW["nodes"][0], **node}, *FLOW["nodes"][1:]], "clusters": clusters}
+    with pytest.raises(dv.Refused, match=word):
+        dv.build(spec)
+
+
 def test_a_timeline():
     ev, _ = dv.build({"view": "diagram", "kind": "timeline", "title": "Launch", "items": [
         {"date": "Mar", "label": "Beta", "state": "done"}, {"date": "Apr", "label": "GA", "state": "soon"}, "Later"]})

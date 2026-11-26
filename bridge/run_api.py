@@ -59,9 +59,18 @@ turn, so a turn resumed after a crash, a limit or a restart (recovery starts it
 with the session's own model) stays on that model. Changing the model in the
 dashboard afterwards works as for any session.
 
-Not built: images, a mode per request, continuing an earlier run's
-session with a second prompt, a dashboard panel of runs (the sessions list
-already shows them). The prompt gets one line appended saying who sent it and
+Continuing: "session_id" names the session of an earlier run, and the new
+run is the next turn in it instead of a fresh session, so a program holding a
+conversation (Atlas's book chat) shows in the dashboard as one chat, and
+Claude keeps what it read and said. Only a session a run of the same client
+made (origin "api:<client>"), in the same cwd, may be continued: the token
+must not open your own sessions. One the session is busy with (a live turn,
+or another run on it not yet over) is refused with 409, never queued behind.
+The Run says "continues": that session id, or null; a caller can read the key
+being there at all as "this bridge knows how to continue".
+
+Not built: images, a mode per request, a dashboard panel of runs (the
+sessions list already shows them). The prompt gets one line appended saying who sent it and
 that nobody may be watching, as an automation's does.
 
 ponytail: runs are JSON beside the database, like automations: KEEP of them,
@@ -265,6 +274,23 @@ def _model_effort(body: dict) -> "tuple[str | None, str | None]":
     return model, effort
 
 
+def _continuable(sid, client: str, cwd: str) -> "str | None":
+    """The session a run continues, or None for a fresh one; Refused when it
+    may not be continued (see the module docstring)."""
+    if sid in (None, ""):
+        return None
+    if not isinstance(sid, str) or not re.match(r"^[A-Za-z0-9-]{1,64}$", sid):
+        raise Refused("session_id must be the session_id of an earlier run")
+    s = store.get_session(sid)
+    if not s or s.get("origin") != f"api:{client}":
+        raise Refused(f"no session {sid} made by a run of {client}", 404)
+    if os.path.realpath(s.get("cwd") or "") != cwd:
+        raise Refused(f"session {sid} runs in another folder, not {cwd}")
+    if state.is_running(sid):
+        raise Refused("that session is busy: a turn is still running in it", 409)
+    return sid
+
+
 def _cap() -> int:
     try:
         return max(1, int(getattr(config, "RUN_API_CONCURRENCY", 2)))
@@ -304,6 +330,7 @@ def public(run: dict) -> dict:
         "cwd": run["cwd"],
         "model": run.get("model"),
         "effort": run.get("effort"),
+        "continues": run.get("continues"),
         "session_id": sid,
         "session_url": f"http://127.0.0.1:{config.DASH_PORT}/?s={sid}" if sid else None,
         "created": run["created"],
@@ -354,6 +381,7 @@ def submit(body: dict) -> dict:
         prompt.strip().splitlines()[0], 60
     )
     model, effort = _model_effort(body)
+    continues = _continuable(body.get("session_id"), client, cwd)
     run = {
         "id": uuid.uuid4().hex[:12],
         "status": "queued",
@@ -365,6 +393,7 @@ def submit(body: dict) -> dict:
         "model": model,
         "effort": effort,
         "prompt": prompt.strip(),
+        "continues": continues,
         "session_id": None,
         "created": time.time(),
         "started": None,
@@ -377,6 +406,12 @@ def submit(body: dict) -> dict:
         runs = _load_locked()
         if sum(1 for r in runs.values() if r["status"] == "queued") >= QUEUE_MAX:
             raise Refused(f"{QUEUE_MAX} runs are already waiting", 429)
+        if continues and any(
+            r["status"] not in TERMINAL
+            and continues in (r.get("session_id"), r.get("continues"))
+            for r in runs.values()
+        ):
+            raise Refused("that session already has a run that is not over", 409)
         runs[run["id"]] = run
         _save_locked()
     _pump()
@@ -467,12 +502,35 @@ def _note(client: str) -> str:
 
 
 def _start(run: dict) -> "str | None":
-    """Create the run's session and start its first turn, as the dashboard would.
+    """Create the run's session and start its first turn, as the dashboard would,
+    or (continuing) start the next turn in the earlier run's session.
     Returns the session id, or None when the bridge is going down."""
     from bridge import browser, profiles, runner
 
-    project = browser.rel(run["cwd"])
     origin = f"api:{run['client']}"
+    if run.get("continues"):
+        sid = run["continues"]
+        for field in ("model", "effort"):
+            if run.get(field):
+                store.set_session_field(sid, field, run[field])
+        job = runner.start_streaming_job(
+            config.DASH_CHAT_ID,
+            run["prompt"] + _note(run["client"]),
+            [],
+            run["cwd"],
+            session_id=sid,
+            origin=origin,
+            model=run.get("model"),
+            effort=run.get("effort"),
+            sent_by="mystical:api",
+            sent_why=f"{run['client']} continued it through the run API",
+        )
+        if job is None:
+            if state.shutting_down:
+                return None
+            raise RuntimeError("the session is busy: a turn is running in it")
+        return sid
+    project = browser.rel(run["cwd"])
     # The dashboard's own rule (POST /local/sessions): the project's default
     # profile decides the mode, else the mode new sessions carry.
     pid = profiles.project_default(project)

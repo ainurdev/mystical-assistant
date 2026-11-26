@@ -46,7 +46,7 @@ EXIT = {"done": 0, "failed": 4, "cancelled": 5}
 NOT_OVER = 6
 USAGE = """usage:
   mystical prompt --cwd DIR [--title T] [--client NAME] [--ref R]
-                  [--model M] [--effort low|medium|high]
+                  [--model M] [--effort low|medium|high] [--session ID]
                   [--wait [SECONDS]] [--json] <prompt | - | @file>
   mystical run-status ID [--wait [SECONDS]] [--json]
   mystical runs [--client NAME] [--limit N] [--json]
@@ -57,7 +57,9 @@ USAGE = """usage:
                --wait, block until the run ends (or SECONDS pass) and print
                its final response instead. --model picks the run's model
                (haiku, sonnet, opus, fable or a full id); without it the run
-               gets the bridge's RUN_API_MODEL.
+               gets the bridge's RUN_API_MODEL. --session ID continues the
+               session of an earlier run (its session_id, same client and
+               DIR) instead of starting a fresh one.
   run-status   one run: state, session link, and the response once done
   runs         recent runs, newest first
   run-cancel   stop a run (a queued one never starts)
@@ -210,6 +212,8 @@ def _show(run: dict, as_json: bool, answer_only: bool = False) -> int:
         )
     if run.get("session_url"):
         print(f"  session  {run['session_url']}")
+    if run.get("continues"):
+        print("  (continues that session)")
     for label, key in (
         ("created", "created"),
         ("started", "started"),
@@ -284,6 +288,7 @@ def main(argv: list) -> int:
         p.add_argument("--ref", default="")
         p.add_argument("--model", default="")
         p.add_argument("--effort", default="")
+        p.add_argument("--session", default="")
         p.add_argument("--wait", type=float, default=None)
         p.add_argument("prompt", nargs="+")
     elif cmd == "run-status":
@@ -325,6 +330,8 @@ def main(argv: list) -> int:
             body["model"] = ns.model.strip()
         if ns.effort.strip():
             body["effort"] = ns.effort.strip()
+        if ns.session.strip():
+            body["session_id"] = ns.session.strip()
         out, code = call("POST", "/local/runs", body)
         if code != 202:
             return _refused(out, code)

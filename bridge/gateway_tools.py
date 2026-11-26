@@ -75,7 +75,13 @@ DATA = {"name": "show_data", "description": (
                  "Up to 5000 for a table, 500 for a chart."},
         "totals": {"type": "boolean", "description": "table: false hides the computed totals row."},
         "nodes": {"type": "array", "items": {"type": "object"}, "description":
-                  "diagram, flow: [{id, label, note, shape: process|decision|terminal, group}]. Laid out for you."},
+                  "diagram, flow: [{id, label, note, comment, shape: process|decision|terminal, group, cluster}]. Laid out "
+                  "for you, arrows routed like wires on a board. note shows under the label (keep it short); comment shows "
+                  "when the user hovers or taps the step, so the detail goes there. group colours a step; cluster puts it in "
+                  "a box."},
+        "clusters": {"type": "array", "items": {"type": "object"}, "description":
+                     "diagram, flow: named boxes round steps that belong together, [{id, label, comment, nodes: [ids]}]. "
+                     "A step is in one box at most; boxes don't nest. comment shows on hover, like a step's."},
         "edges": {"type": "array", "items": {"type": "object"}, "description": "diagram, flow: [{from, to, label}]."},
         "direction": {"type": "string", "enum": ["right", "down"], "description": "diagram, flow. Default: fits the screen."},
         "kind": {"type": "string", "enum": ["bar", "bar_horizontal", "bar_stacked", "line", "step", "area", "donut", "burndown", "projection",

@@ -521,9 +521,15 @@ function Tiles({ ev }: { ev: StatsEv }) {
 
 // ---- diagrams ---------------------------------------------------------------
 
+/** What a step or a box says when you hover it, tap it or tab to it: the full label and note
+ *  (the drawing cuts them to fit), then the comment, which is only ever shown here. */
+type FlowTip = { kind: "node" | "box"; id: string; left: number; top: number; title: string; note: string; comment: string; count?: number };
+
 /** Also draws a Mermaid flowchart in Markdown (lib/mermaid), inside a `.dv` frame for its tokens. */
 export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean }) {
   const [ref, w] = useSize();
+  const host = useRef<HTMLDivElement | null>(null);
+  const [tip, setTip] = useState<FlowTip | null>(null);
   const layout = useMemo(() => {
     const right = layoutFlow(ev, "right");
     if (ev.direction) return layoutFlow(ev, ev.direction);
@@ -537,36 +543,72 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
   // Shrink a little to fit rather than scroll, and past that scroll rather than go unreadable.
   const scale = print || !w || layout.width <= w ? 1 : Math.max(0.8, w / layout.width);
   const shown = (g: string) => (g ? series(ev.groups.indexOf(g)) : "var(--dv-zero)");
+  // The wires that touch what's under the pointer stand out, so a step's paths read at a glance.
+  const lit = useMemo(() => {
+    if (!tip) return null;
+    const ids = new Set(tip.kind === "node" ? [tip.id] : layout.clusters.find((c) => c.id === tip.id)?.nodes ?? []);
+    return new Set(layout.arrows.flatMap((a, i) => (ids.has(a.from) || ids.has(a.to) ? [i] : [])));
+  }, [tip, layout]);
+  const open = (el: Element, t: Omit<FlowTip, "left" | "top">) => {
+    const box = host.current?.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (!box) return;
+    const left = Math.max(0, Math.min(r.left - box.left, box.width - 280));
+    setTip({ ...t, left, top: r.bottom - box.top + 6 });
+  };
+  const close = () => setTip(null);
+  const hoverable = (has: boolean, t: () => Omit<FlowTip, "left" | "top">) => (has ? {
+    tabIndex: 0, className: "dv-flow-hit",
+    onMouseEnter: (e: React.MouseEvent) => open(e.currentTarget, t()),
+    onMouseLeave: close,
+    onFocus: (e: React.FocusEvent) => open(e.currentTarget, t()),
+    onBlur: close,
+    // A tap on a phone: no hover there, so a tap opens it and a second tap closes it.
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); if (tip?.id === t().id && tip.kind === t().kind) close(); else open(e.currentTarget, t()); },
+  } : {});
   return (
-    <div className="dv-chart">
+    <div className="dv-chart dv-flow-host" ref={host}>
       {ev.groups.length > 1 ? <Legend items={ev.groups.map((g, i) => ({ label: g, color: series(i) }))} /> : null}
-      <div className="dv-flow" ref={ref} tabIndex={0} role="img"
+      <div className="dv-flow" ref={ref} tabIndex={0} role="img" onScroll={tip ? close : undefined}
         aria-label={`${ev.title}: ${ev.nodes.map((n) => n.label).join(", ")}`}>
         {w || print ? (
           <svg width={layout.width * scale} height={layout.height * scale} viewBox={`0 0 ${layout.width} ${layout.height}`}>
-            {layout.arrows.map((a, i) => (
-              <g key={i}>
-                <path d={a.d} fill="none" stroke="var(--txd)" strokeWidth={1.5} strokeDasharray={a.back || a.dashed ? "4 4" : undefined} />
-                {a.head ? <path d={a.head} fill="var(--txd)" /> : null}
-                {a.tail ? <path d={a.tail} fill="var(--txd)" /> : null}
+            {layout.clusters.map((c) => (
+              <g key={`c${c.id}`} {...(print ? {} : hoverable(true, () => ({ kind: "box", id: c.id, title: c.label, note: "", comment: c.comment ?? "", count: c.nodes.length })))}>
+                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={4} className="dv-box" data-on={tip?.kind === "box" && tip.id === c.id ? "" : undefined} />
+                <text x={c.x + 10} y={c.y + 17} className="dv-box-name">{c.label}</text>
+                {c.comment ? <circle cx={c.x + 10 + c.label.length * 6.6 + 7} cy={c.y + 13} r={3} className="dv-said-dot" /> : null}
               </g>
             ))}
-            {layout.nodes.map((n) => (
-              <g key={n.id}>
-                <path d={nodePath(n)} fill="var(--dv-surface)" stroke={shown(n.group)} strokeWidth={n.group ? 2 : 1} />
-                {n.lines.map((l, i) => {
-                  const total = n.lines.length * 15 + n.notes.length * 13;
-                  return <text key={i} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + 12 + i * 15} textAnchor="middle" className="dv-node">{l}</text>;
-                })}
-                {n.notes.map((l, i) => {
-                  const total = n.lines.length * 15 + n.notes.length * 13;
-                  return <text key={`n${i}`} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + n.lines.length * 15 + 10 + i * 13} textAnchor="middle" className="dv-tick">{l}</text>;
-                })}
-                {n.note ? <title>{n.note}</title> : null}
-              </g>
-            ))}
+            {layout.arrows.map((a, i) => {
+              const on = lit?.has(i), off = lit && !on;
+              const ink = on ? "var(--txb)" : "var(--txd)";
+              return (
+                <g key={i} opacity={off ? 0.3 : 1}>
+                  <path d={a.d} fill="none" stroke={ink} strokeWidth={on ? 2 : 1.5} strokeLinejoin="round" strokeDasharray={a.back || a.dashed ? "4 4" : undefined} />
+                  {a.head ? <path d={a.head} fill={ink} /> : null}
+                  {a.tail ? <path d={a.tail} fill={ink} /> : null}
+                </g>
+              );
+            })}
+            {layout.nodes.map((n) => {
+              const cut = n.lines.join(" ") !== n.label || (n.note && n.notes.join(" ") !== n.note);
+              const has = !print && !!(n.comment || cut);
+              const total = n.lines.length * 15 + n.notes.length * 13;
+              return (
+                <g key={n.id} {...hoverable(has, () => ({ kind: "node", id: n.id, title: n.label, note: n.note, comment: n.comment ?? "" }))}>
+                  <path d={nodePath(n)} fill="var(--dv-surface)" stroke={shown(n.group)} strokeWidth={n.group ? 2 : 1} />
+                  {n.lines.map((l, i) => (
+                    <text key={i} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + 12 + i * 15} textAnchor="middle" className="dv-node">{l}</text>
+                  ))}
+                  {n.notes.map((l, i) => (
+                    <text key={`n${i}`} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + n.lines.length * 15 + 10 + i * 13} textAnchor="middle" className="dv-tick">{l}</text>
+                  ))}
+                  {n.comment ? <circle cx={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} cy={n.y + 9} r={3} className="dv-said-dot" /> : null}
+                </g>
+              );
+            })}
             {layout.arrows.map((a, i) => (a.label ? (
-              <g key={`l${i}`}>
+              <g key={`l${i}`} opacity={lit && !lit.has(i) ? 0.4 : 1}>
                 <rect x={a.lx - a.label.length * 3.2 - 4} y={a.ly - 8} width={a.label.length * 6.4 + 8} height={15} fill="var(--dv-surface)" />
                 <text x={a.lx} y={a.ly + 3.5} textAnchor="middle" className="dv-tick">{a.label}</text>
               </g>
@@ -574,6 +616,14 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
           </svg>
         ) : null}
       </div>
+      {tip && !print ? (
+        <div className="dv-tip dv-flow-tip" role="tooltip" style={{ left: tip.left, top: tip.top }}>
+          <div className="dv-tip-x">{tip.title}</div>
+          {tip.note ? <div className="dv-flow-tip-note">{tip.note}</div> : null}
+          {tip.comment ? <div className="dv-flow-tip-said">{tip.comment}</div> : null}
+          {tip.count !== undefined ? <div className="dv-flow-tip-note">{tip.count === 1 ? "1 step" : `${tip.count} steps`}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
