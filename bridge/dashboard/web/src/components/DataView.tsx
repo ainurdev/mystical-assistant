@@ -1,12 +1,14 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  chartSheet, delimited, domain, flatten, fmt, layoutFlow, matches, nodePath, overdue, pinsAt, pinText, sorted, splitViews, sumOf, ticks, xLabel,
+  chartSheet, delimited, domain, flatten, fmt, hasComments, layoutFlow, matches, nodePath, overdue, pinsAt, pinText, sorted, splitViews, sumOf, ticks, xLabel,
   type BoardCol, type Card, type ChartEv, type Col, type DataEv, type FlowEv, type KanbanEv, type Row, type StatsEv, type TableEv, type TimelineEv,
 } from "../lib/dataview";
 import { saveView, sendFile, useRefSession } from "../lib/readapi";
 import { xlsx } from "../lib/viewexport";
 import { usePanZoom } from "../lib/panzoom";
+import { Mark, NoteList } from "./ViewNotes";
+import { pdfOf } from "../lib/viewpdf";
 import { viewPng } from "../lib/viewpng";
 
 // A sheet, chart, board, diagram or row of figures an agent showed on the turn (show_data,
@@ -527,7 +529,7 @@ function Tiles({ ev }: { ev: StatsEv }) {
 type FlowTip = { kind: "node" | "box"; id: string; left: number; top: number; title: string; note: string; comment: string; count?: number };
 
 /** Also draws a Mermaid flowchart in Markdown (lib/mermaid), inside a `.dv` frame for its tokens. */
-export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: boolean }) {
+export function Flow({ ev, full, print, notes }: { ev: FlowEv; full: boolean; print?: boolean; notes?: boolean }) {
   const [ref, w] = useSize();
   const host = useRef<HTMLDivElement | null>(null);
   const [tip, setTip] = useState<FlowTip | null>(null);
@@ -547,6 +549,16 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
   const pz = usePanZoom(layout.width, layout.height, full, !!print, () => setTip(null));
   const tall = Math.max(140, Math.min(layout.height * scale + 2, Math.round(window.innerHeight * 0.7)));
   const shown = (g: string) => (g ? series(ev.groups.indexOf(g)) : "var(--dv-zero)");
+  // Exported with its comments: each commented box and step gets a number, in reading order,
+  // and the comments are listed under the drawing, since a picture has no hover.
+  const marks = useMemo(() => {
+    if (!notes) return null;
+    const said = [
+      ...layout.clusters.filter((c) => c.comment).map((c) => ({ key: `c${c.id}`, x: c.x, y: c.y, title: c.label, text: c.comment! })),
+      ...layout.nodes.filter((n) => n.comment).map((n) => ({ key: `n${n.id}`, x: n.x, y: n.y, title: n.label, text: n.comment! })),
+    ].sort((a, b) => a.y - b.y || a.x - b.x);
+    return new Map(said.map((m, i) => [m.key, { ...m, n: i + 1 }]));
+  }, [notes, layout]);
   // The wires that touch what's under the pointer stand out, so a step's paths read at a glance.
   const lit = useMemo(() => {
     if (!tip) return null;
@@ -583,7 +595,8 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
               <g key={`c${c.id}`} {...(print ? {} : hoverable(true, () => ({ kind: "box", id: c.id, title: c.label, note: "", comment: c.comment ?? "", count: c.nodes.length })))}>
                 <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={4} className="dv-box" data-on={tip?.kind === "box" && tip.id === c.id ? "" : undefined} />
                 <text x={c.x + 10} y={c.y + 17} className="dv-box-name">{c.label}</text>
-                {c.comment ? <circle cx={c.x + 10 + c.label.length * 6.6 + 7} cy={c.y + 13} r={3} className="dv-said-dot" /> : null}
+                {marks?.get(`c${c.id}`) ? <Mark x={c.x + 10 + c.label.length * 6.6 + 12} y={c.y + 13} n={marks.get(`c${c.id}`)!.n} />
+                  : c.comment ? <circle cx={c.x + 10 + c.label.length * 6.6 + 7} cy={c.y + 13} r={3} className="dv-said-dot" /> : null}
               </g>
             ))}
             {layout.arrows.map((a, i) => {
@@ -610,7 +623,8 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
                   {n.notes.map((l, i) => (
                     <text key={`n${i}`} x={n.x + n.w / 2} y={n.y + (n.h - total) / 2 + n.lines.length * 15 + 10 + i * 13} textAnchor="middle" className="dv-tick">{l}</text>
                   ))}
-                  {n.comment ? <circle cx={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} cy={n.y + 9} r={3} className="dv-said-dot" /> : null}
+                  {marks?.get(`n${n.id}`) ? <Mark x={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} y={n.y + 2} n={marks.get(`n${n.id}`)!.n} />
+                    : n.comment ? <circle cx={n.x + n.w - (n.shape === "terminal" ? 16 : n.shape === "decision" ? 20 : 9)} cy={n.y + 9} r={3} className="dv-said-dot" /> : null}
                 </g>
               );
             })}
@@ -633,6 +647,7 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
           </div>
         ) : null}
       </div>
+      {marks?.size ? <NoteList notes={[...marks.values()].map((m) => ({ n: m.n, title: m.title, text: m.text }))} /> : null}
       {tip && !print ? (
         <div className="dv-tip dv-flow-tip" role="tooltip" style={{ left: tip.left, top: tip.top }}>
           <div className="dv-tip-x">{tip.title}</div>
@@ -668,7 +683,7 @@ const noSheet: Sheet = { columns: [], rows: [], totals: {} };
 const PRINT_ROWS = 200;
 const nameOf = (title: string, ext: string) => `${title.replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "view"}.${ext}`;
 
-function Body({ ev, sheet, st, full, asTable, print }: { ev: DataEv; sheet: Sheet; st: SheetState; full: boolean; asTable: boolean; print?: boolean }) {
+function Body({ ev, sheet, st, full, asTable, print, notes }: { ev: DataEv; sheet: Sheet; st: SheetState; full: boolean; asTable: boolean; print?: boolean; notes?: boolean }) {
   if (ev.view === "table" || (ev.view === "chart" && asTable)) return <SheetTable cols={sheet.columns} st={st} full={full} />;
   if (ev.view === "chart") {
     if (ev.kind === "donut") return <Donut ev={ev} />;
@@ -677,7 +692,7 @@ function Body({ ev, sheet, st, full, asTable, print }: { ev: DataEv; sheet: Shee
   }
   if (ev.view === "kanban") return <Board ev={ev} full={full} />;
   if (ev.view === "stats") return <Tiles ev={ev} />;
-  if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} /> : <Timeline ev={ev} />;
+  if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} notes={notes} /> : <Timeline ev={ev} />;
   return null;
 }
 
@@ -693,7 +708,7 @@ function Foot({ ev, st, total, cut }: { ev: DataEv; st: SheetState; total: numbe
 }
 
 /** The whole view, off screen, with nothing scrolled away: what a PNG is painted from. */
-function PrintCopy({ ev, sheet, st, asTable, onDone }: { ev: DataEv; sheet: Sheet; st: SheetState; asTable: boolean; onDone: (b: Blob | Error) => void }) {
+function PrintCopy({ ev, sheet, st, asTable, notes, onDone }: { ev: DataEv; sheet: Sheet; st: SheetState; asTable: boolean; notes: boolean; onDone: (b: Blob | Error) => void }) {
   const ref = useRef<HTMLElement>(null);
   const cut = st.rows.length > PRINT_ROWS ? PRINT_ROWS : 0;
   const shown = useMemo(() => (cut ? { ...st, rows: st.rows.slice(0, cut) } : st), [st, cut]);
@@ -709,7 +724,7 @@ function PrintCopy({ ev, sheet, st, asTable, onDone }: { ev: DataEv; sheet: Shee
     <section ref={ref} className="dv" data-print="" data-view={ev.view} aria-hidden>
       <header className="dv-head"><h4>{ev.title}</h4></header>
       {ev.caption ? <p className="dv-caption">{ev.caption}</p> : null}
-      <div className="dv-body"><Body ev={ev} sheet={sheet} st={shown} full={false} asTable={asTable} print /></div>
+      <div className="dv-body"><Body ev={ev} sheet={sheet} st={shown} full={false} asTable={asTable} print notes={notes} /></div>
       <Foot ev={ev} st={shown} total={sheet.rows.length} cut={cut} />
     </section>,
     document.body,
@@ -748,7 +763,7 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
   const [asTable, setAsTable] = useState(false);
   const [said, setSaid] = useState("");
   const [savedHere, setSavedHere] = useState(false);
-  const [printing, setPrinting] = useState<((b: Blob | Error) => void) | null>(null);
+  const [printing, setPrinting] = useState<{ done: (b: Blob | Error) => void; notes: boolean } | null>(null);
   const sheet = useMemo<Sheet>(() => (ev.view === "table" ? (ev as TableEv) : ev.view === "chart" ? chartSheet(ev) : noSheet), [ev]);
   const st = useSheet(sheet);
   useEffect(() => {
@@ -761,12 +776,13 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
     setSaid(text);
     if (!stay) window.setTimeout(() => setSaid((s) => (s === text ? "" : s)), 3500);
   }, []);
-  const png = useCallback(() => new Promise<Blob>((resolve, reject) => {
-    setPrinting(() => (b: Blob | Error) => {
+  const png = useCallback((notes = false) => new Promise<Blob>((resolve, reject) => {
+    setPrinting({ notes, done: (b: Blob | Error) => {
       setPrinting(null);
       if (b instanceof Error) reject(b); else resolve(b);
-    });
+    } });
   }), []);
+  const commented = hasComments(ev);
   const flat = () => (ev.view === "table" ? { columns: sheet.columns, rows: st.rows, totals: st.q ? st.totals : sheet.totals } : flatten(ev));
   const attempt = async (doing: string, f: () => Promise<string>) => {
     tell(doing, true);
@@ -788,6 +804,9 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
   };
   const exportItems: Item[] = [
     { label: "PNG image", run: () => attempt("Drawing…", async () => deliver(await png(), nameOf(ev.title, "png"))) },
+    ...(commented ? [{ label: "PNG + comments", run: () => attempt("Drawing…", async () => deliver(await png(true), nameOf(`${ev.title} comments`, "png"))) }] : []),
+    { label: "PDF", run: () => attempt("Drawing…", async () => deliver(await pdfOf(await png(), ev.title), nameOf(ev.title, "pdf"))) },
+    ...(commented ? [{ label: "PDF + comments", run: () => attempt("Drawing…", async () => deliver(await pdfOf(await png(true), ev.title), nameOf(`${ev.title} comments`, "pdf"))) }] : []),
     { label: "Excel (.xlsx)", run: () => attempt("Exporting…", async () => {
       const f = flat();
       return deliver(new Blob([xlsx(ev.title, f.columns, f.rows, f.totals) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nameOf(ev.title, "xlsx"));
@@ -846,7 +865,7 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
       {ev.caption ? <p className="dv-caption">{ev.caption}</p> : null}
       <div className="dv-body"><Body ev={ev} sheet={sheet} st={st} full={full} asTable={asTable} /></div>
       <Foot ev={ev} st={st} total={sheet.rows.length} />
-      {printing ? <PrintCopy ev={ev} sheet={sheet} st={st} asTable={asTable} onDone={printing} /> : null}
+      {printing ? <PrintCopy ev={ev} sheet={sheet} st={st} asTable={asTable} notes={printing.notes} onDone={printing.done} /> : null}
     </section>
   );
   return full ? createPortal(panel, document.body) : panel;

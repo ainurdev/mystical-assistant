@@ -194,6 +194,12 @@ export const viewsNamed = (md: string): Set<string> =>
 // ---- diagrams -----------------------------------------------------------------------
 
 /** A sheet of any view, for Copy, CSV and Excel. */
+/** Whether a view has comments to export (a flow's steps and boxes). */
+export function hasComments(ev: DataEv): boolean {
+  if (ev.view === "diagram" && ev.kind === "flow") return ev.nodes.some((n) => n.comment) || !!ev.clusters?.some((c) => c.comment);
+  return false;
+}
+
 export function flatten(ev: DataEv): { columns: Col[]; rows: Row[]; totals: Record<string, number> } {
   const text = (key: string, label: string): Col => ({ key, label, type: "text" });
   if (ev.view === "table") return { columns: ev.columns, rows: ev.rows, totals: ev.totals };

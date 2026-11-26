@@ -162,6 +162,14 @@
 .dv-box-name { font-size: var(--t11, 11px); font-weight: 600; letter-spacing: 0.02em; fill: var(--txm); }
 /* a step or box that has a comment: the dot says there's more on hover */
 .dv-said-dot { fill: var(--acc); }
+/* an exported picture's comments: numbers on the drawing, the list under it */
+.dv-mark { fill: var(--acc); }
+.dv-mark-n { font-size: 10px; font-weight: 700; fill: var(--acc-on, #06100e); }
+.dv-notes { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; max-width: 900px; }
+.dv-note-row { display: flex; gap: 8px; align-items: flex-start; font-size: var(--t115, 11.5px); line-height: 1.45; }
+.dv-note-n { flex: none; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--acc); color: var(--acc-on, #06100e); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.dv-note-title { color: var(--txb); font-weight: 500; }
+.dv-note-text { color: var(--tx); white-space: pre-line; overflow-wrap: anywhere; }
 .dv-flow-tip { max-width: min(320px, 92%); pointer-events: none; }
 .dv-flow-tip-note { color: var(--txm); line-height: 1.45; overflow-wrap: anywhere; margin-top: 2px; }
 .dv-flow-tip-said { color: var(--tx); line-height: 1.5; overflow-wrap: anywhere; margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); white-space: pre-line; }
