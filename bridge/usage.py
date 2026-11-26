@@ -333,7 +333,7 @@ def get_usage(creds_path: str | None = None, max_age: float = CACHE_TTL) -> dict
             return _view(e)
         if now < next_try and max_age:          # read recently and it failed
             return _view(e) if now - ts < STALE_MAX or e.get("live_at") else {"available": False}
-    from bridge import reports   # lazy: usage stays importable alone
+    from bridge import reports   # lazy, as _saved_file's config is: reports imports config
     with reports.outside():      # a `claude -p`, by design: the first read, or one past STALE_MAX
         payload = _fetch(path)
     with _lock:

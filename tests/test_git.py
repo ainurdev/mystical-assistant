@@ -712,7 +712,7 @@ def test_branch_status_lists_a_detached_checkout_by_its_commit():
     assert [r["name"] for r in rows if r["name"]] == [base]
 
 
-def test_branch_status_reads_a_branch_again_only_once_a_ref_moved(monkeypatch):
+def test_branch_status_asks_git_once_about_what_two_commits_have_between_them(monkeypatch):
     # The BRANCHES tab polls every 30 s. A reflog, a rev-list and a dry-run merge per
     # branch, with nothing moved, were 76 git runs and 0.76 s for 24 branches (Sentry MYSTICAL-T).
     d = _mkrepo()
@@ -722,16 +722,18 @@ def test_branch_status_reads_a_branch_again_only_once_a_ref_moved(monkeypatch):
     base = g.current_branch(d)
     wt = tempfile.mkdtemp()
     os.rmdir(wt)
-    _run(d, "worktree", "add", "-q", "-b", "feat", wt)
+    _run(d, "worktree", "add", "-q", "-b", "feat", wt)   # "Created from HEAD", as the dashboard's are
     _write(wt, "b.txt", "b")
     _run(wt, "add", "-A")
     _run(wt, "commit", "-qm", "feat work")
-    _write(d, "m.txt", "m")                       # the base moves on: feat is ahead and behind
+    _commit_on_branch(d, "other")
+    _run(d, "checkout", "-q", base)
+    _write(d, "m.txt", "m")                       # the base moves on: both are ahead and behind
     _run(d, "add", "-A")
     _run(d, "commit", "-qm", "base moves on")
     first = g.branch_status(d)
     feat = {r["name"]: r for r in first["branches"]}["feat"]
-    assert (feat["ahead"], feat["behind"], feat["clash"], feat["dirty"]) == (1, 1, [], 0)
+    assert (feat["target"], feat["ahead"], feat["behind"], feat["clash"], feat["dirty"]) == (base, 1, 1, [], 0)
 
     ran, real = [], g._run
     monkeypatch.setattr(g, "_run", lambda cwd, *a, **k: (ran.append(a[2] if a[0] == "-c" else a[0]),
@@ -746,9 +748,9 @@ def test_branch_status_reads_a_branch_again_only_once_a_ref_moved(monkeypatch):
     assert row({"feat": ""})["target"] == "" and row()["target"] == base   # a pick is read at once
     ran.clear()
     _run(wt, "add", "-A")
-    _run(wt, "commit", "-qm", "more")             # the ref moved: its numbers are read again
-    assert (row()["ahead"], row()["dirty"]) == (2, 0)
-    assert "rev-list" in ran
+    _run(wt, "commit", "-qm", "more")             # feat moved: git is asked about feat, not about other
+    assert (row()["ahead"], row()["worked"]) == (2, True)
+    assert (ran.count("rev-list"), ran.count("merge-tree"), ran.count("reflog")) == (1, 1, 0)
 
 
 def test_current_branch_detached_names_something_useful():
