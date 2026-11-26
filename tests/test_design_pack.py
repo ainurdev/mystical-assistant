@@ -150,6 +150,15 @@ def test_bold_lit_before_a_grill_reaches_the_queued_design_step(switches, fake_q
     assert fake_queue.items[-1]["prompt"].startswith(f"/mystical-design:design-first {NOTE}\n")
 
 
+def test_bold_lit_while_answering_the_grill_still_counts(switches, fake_queue):  # noqa: F811
+    sid, _ = _session()
+    paths.start_flow(sid, "design", "you", "a calmer header")
+    paths.start_flow(sid, "design", "you", "the answer", bold=True)       # the running flow keeps it
+    paths.step_done(sid, "t1")
+    paths.continue_after_turn(_job(sid, "t1"))
+    assert fake_queue.items[-1]["prompt"].startswith(f"/design-first {NOTE}\n")
+
+
 def test_bold_holds_for_one_send(switches, fake_queue):  # noqa: F811
     sid, _ = _session()
     paths.start_flow(sid, "design", "you", "first", bold=True)

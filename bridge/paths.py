@@ -719,15 +719,15 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str, bold: bool = Fa
         return prompt
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
+        if bold:   # BOLD lit mid-flow (answering the grill): its design step still goes bold
+            _set_bold(session_id)
         return prompt
     here = flow in ("design", "build") and not flowsettings.steps(flow).get("grill", True)
     # The grill goes behind it, as claude_path has it: switched on later, it can't take this turn's step.
     rec = set_path(session_id, flow + "-here" if here else flow, f"{BY[by]} {flow.upper()}", by,
                    done=["grill"] if here else None)
     if bold:
-        with _lock:
-            _cache[session_id]["bold"] = True
-            _save_locked()
+        _set_bold(session_id)
     first, skill, _ = _stations(rec)[0]
     if first == "design":
         return f"{design_cmd(session_id)} {_bold(session_id)}{prompt}\n\n{DESIGN_STEP}"
@@ -759,6 +759,12 @@ DESIGN_TEXT = f"/design-first {DESIGN_ASK}"   # with the design pack's gate clos
 # BOLD lit for the send: the line design-first's Bold-run section reads (design-pack tickets 06
 # and 07), right after the command, since a / command has to open the message.
 BOLD_NOTE = "Bold run: you lit BOLD."
+
+
+def _set_bold(session_id: str) -> None:
+    with _lock:
+        _cache[session_id]["bold"] = True
+        _save_locked()
 
 
 def _bold(session_id: str) -> str:
