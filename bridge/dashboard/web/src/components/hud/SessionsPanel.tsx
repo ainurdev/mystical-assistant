@@ -788,7 +788,9 @@ export function SessionsPanel(props: Props) {
   // at rest, so a session at work never sits under one that finished, and it
   // rejoins them when the turn ends. Not native "working": it lasts
   // 3 s after each write, so a terminal row lifted on it would bounce mid-turn.
-  const busy = (s: SessionBrief) => { const st = status.get(s.id); return st?.source === "bridge" && BUSY_NOW.includes(st.state); };
+  const ownBusy = (s: SessionBrief) => { const st = status.get(s.id); return st?.source === "bridge" && BUSY_NOW.includes(st.state); };
+  // A super session is at work while one of its parts is: their sessions are off the list.
+  const busy = (s: SessionBrief) => ownBusy(s) || !!props.ticketKids?.get(s.id)?.some(ownBusy);
   const rankOf = (s: SessionBrief): Rank => held?.get(s.id) ?? { busy: busy(s), asked: askedAt(s) };
   // The ranks on screen now, kept while the pointer is over the sidebar. A
   // session started since has none, so it ranks live: new ones still show.
