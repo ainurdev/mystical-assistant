@@ -222,7 +222,7 @@ CORE_ALL = (SHOW, DATA, DIFF, DESIGN, OFFER, CHECKS, DRIVE, OPEN_SITE)
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
 INSPECT = _t("inspect_ui", "Open a page and get measured facts: overflow, content cut off, contrast, tap targets, broken images, "
-             "fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
+             "axe's WCAG A and AA violations, fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
              "widths, like [340] for a side panel. Use before saying a design is done, and with steps for states you can click to.",
              {"board": _S, "page": _S, "url": _S,
               "widths": {"type": "array", "items": {"type": "integer"}, "description": "Up to 4. Treated as mouse-driven unless touch is true."},

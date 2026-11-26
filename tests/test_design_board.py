@@ -1,6 +1,7 @@
 """Design boards: pages on disk, comments, the tools an agent calls."""
 import json
 import os
+import shutil
 import subprocess
 import time
 
@@ -392,3 +393,101 @@ def test_agents_ask_when_its_complex_and_otherwise_go_ahead_normally(session):
     for text in (prompt_pack.SHOW, runner._EXPERIMENTAL_NOTE):
         assert "offer_review" in text and "complex enough" in text and "go ahead normally" in text
         assert "by yourself" not in text and "Never run" not in text
+
+
+# ---- axe inside inspect_ui ------------------------------------------------------------------
+
+AUDIT = json.dumps({"width": 340, "overflow": 0, "fonts": {"A": 1}})
+
+
+@pytest.fixture
+def axe_driver(repo, monkeypatch):
+    """The driver faked: the axe eval answers with what `answer` holds."""
+    db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": PAGE}]})
+    calls, answer = [], {"value": json.dumps({"axe": []})}
+
+    def run(url, w, h, steps, mobile=False):
+        calls.append(steps)
+        evals = [answer["value"] if "axe.run" in s["eval"] else AUDIT for s in steps if "eval" in s]
+        return {"evals": evals, "shots": []}
+    monkeypatch.setattr(design_audit, "_run", run)
+    return calls, answer
+
+
+def _axe_evals(steps):
+    return [s["eval"] for s in steps if "eval" in s and "axe.run" in s["eval"]]
+
+
+def test_axe_is_injected_at_every_width(repo, axe_driver):
+    calls, _ = axe_driver
+    design_audit.inspect(repo, {"board": "home", "widths": [340, 800, 1280]})
+    src = open(design_audit._AXE, encoding="utf-8").read()
+    assert len(calls) == 3
+    for steps in calls:
+        (ev,) = _axe_evals(steps)
+        assert ev.startswith(src) and "wcag2aa" in ev and "wcag21aa" in ev and "wcag22aa" in ev
+        # Before the audit: its facts are still the last eval, as callers' steps expect.
+        assert "TOUCH" in [s for s in steps if "eval" in s][-1]["eval"]
+
+
+def test_axe_violations_reach_the_facts(repo, axe_driver):
+    _, answer = axe_driver
+    answer["value"] = json.dumps({"axe": [
+        {"id": "image-alt", "impact": "critical", "count": 1, "targets": ["img.hero"], "help": "Images must have alternative text"},
+        {"id": "color-contrast", "impact": "serious", "count": 5, "targets": ["p.a", "p.b", "p.c"],
+         "help": "Elements must meet minimum color contrast ratio thresholds"}]})
+    facts, _ = design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert "image-alt (critical, 1 element: img.hero): Images must have alternative text" in facts
+    assert "color-contrast (serious, 5 elements: p.a, p.b, p.c): Elements must meet" in facts
+    assert "accessible" not in facts.replace("accessibility", "")
+
+
+def test_a_selector_limits_axe_to_that_element(repo, axe_driver):
+    calls, _ = axe_driver
+    design_audit.inspect(repo, {"board": "home", "widths": [340], "selector": ".panel"})
+    assert 'axe.run(".panel"' in _axe_evals(calls[0])[0]
+    calls.clear()
+    design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert "axe.run(document" in _axe_evals(calls[0])[0]
+
+
+def test_a_clean_axe_run_says_only_part(repo, axe_driver):
+    facts, _ = design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert "axe: no violations. Automated checks find only part of accessibility problems" in facts
+    assert "accessible" not in facts.replace("accessibility", "")
+
+
+@pytest.mark.parametrize("value", [None, json.dumps({"axe_error": "it ran out of time"}), "junk"])
+def test_an_axe_that_failed_is_not_run_never_clean(repo, axe_driver, value):
+    _, answer = axe_driver
+    answer["value"] = value
+    facts, _ = design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert "axe didn't run" in facts and "no violations" not in facts
+    if value and "time" in value:
+        assert "it ran out of time" in facts
+
+
+def test_a_missing_axe_file_is_not_run(repo, axe_driver, monkeypatch):
+    calls, _ = axe_driver
+    monkeypatch.setattr(design_audit, "_AXE", "/nonexistent/axe.min.js")
+    facts, _ = design_audit.inspect(repo, {"board": "home", "widths": [340]})
+    assert not _axe_evals(calls[0]) and "axe didn't run" in facts and "no violations" not in facts
+
+
+def _headless_shell() -> bool:
+    d = os.path.expanduser("~/.cache/ms-playwright")
+    return os.path.isdir(d) and any(n.startswith("chromium_headless_shell-") for n in os.listdir(d))
+
+
+@pytest.mark.skipif(not shutil.which("node") or not _headless_shell(), reason="needs node and Chrome for Testing")
+def test_the_real_axe_finds_a_missing_alt_and_low_contrast(repo):
+    page = ('<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>'
+            '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="40" height="40">'
+            '<p style="color:#bbb;background:#fff">faint words here</p></main></body></html>')
+    db.put(repo, repo, {"title": "Fixture", "pages": [{"name": "A", "html": page}]})
+    facts, shots = design_audit.inspect(repo, {"board": "fixture", "widths": [800]})
+    for sh in shots:
+        shutil.rmtree(os.path.dirname(sh), ignore_errors=True)
+    if "no headless chrome" in facts or "debug port" in facts:
+        pytest.skip("Chrome for Testing didn't start here")
+    assert "image-alt (critical" in facts and "color-contrast (serious" in facts, facts
