@@ -319,10 +319,10 @@ export function RightPanel({
                 {...(i < 9 ? keyAttrs(`Alt+${i + 1}`) : {})}
                 aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 aria-current={on}
-                className={`rtile relative flex ${names ? "h-[50px]" : "h-[40px]"} flex-col items-center justify-start gap-[2px] border-l-2 pt-[7px] text-[length:var(--t13)] hover:bg-accent ${
-                  on
-                    ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
-                    : "border-transparent text-muted-2 hover:text-primary"
+                // No fill, no plate: hover tints the glyph, and the open tile is a bar on the
+                // seam (index.css, THE RAIL'S TILES), the same in every theme.
+                className={`rtile relative flex ${names ? "h-[50px]" : "h-[40px]"} flex-col items-center justify-start gap-[2px] pt-[7px] text-[length:var(--t13)] ${
+                  on ? "text-foreground-bright" : "text-muted-2 hover:text-primary"
                 }`}
               >
                 <span className="rtile-ico">{t.icon}{t.busy && <span className="rail-orbit" aria-hidden />}</span>

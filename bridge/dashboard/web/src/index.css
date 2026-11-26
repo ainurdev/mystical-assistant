@@ -4911,10 +4911,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button {
   width: 36px; height: 36px; margin: 0 auto; border: 0 !important; border-radius: 999px; transition: background .15s ease, color .15s ease;
 }
-[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px; height: 50px; }
-[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
-  background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important; color: var(--acc) !important;
-}
 /* the sessions slab */
 [data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child {
   border-radius: 999px !important; background: var(--panel3) !important; box-shadow: inset 0 0 0 1px var(--line);
@@ -6621,22 +6617,14 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .rtile[data-tone="warn"] .rtile-v { color: var(--warn); }
 .rtile[data-tone="ask"] { --tone: var(--ask, var(--warn)); }
 .rtile[data-tone="err"] { --tone: var(--err); }
-/* past every family's own rail fill: a tile that waits on you glows, open or not */
-[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile:is([data-tone="ask"], [data-tone="err"]) {
-  color: var(--tone) !important; background: color-mix(in srgb, var(--tone) 11%, transparent) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 50%, transparent), 0 0 18px -5px var(--tone);
-}
+/* a tile that waits on you is in its tone, open or not, with its bar lit in that tone (THE RAIL'S TILES below) */
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile:is([data-tone="ask"], [data-tone="err"]) { color: var(--tone) !important; }
 .rtile:is([data-tone="ask"], [data-tone="err"]) .rtile-v { color: var(--tone); }
 /* a tab whose news is good (COUNCIL, passed): the glyph and its word in --ok, open or not, with no glow */
 [data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[data-tone="ok"] { color: var(--ok) !important; }
 .rtile[data-tone="ok"] .rtile-v { color: var(--ok); }
 .rtile[data-drag] { opacity: .85; cursor: grabbing; }
-/* the open tile plugs into the panel: a bar on the seam. AURORA's tiles carry it
-   as their left border already; the families that inset their tiles draw it. */
-:is([data-fam="middle-earth"], [data-fam="pebble"]) .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[aria-current="true"]::before {
-  content: ""; position: absolute; left: -4px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0;
-  background: var(--acc); box-shadow: 0 0 10px var(--acc);
-}
+
 /* something runs for the tab unasked (GIT's auto-fetch): an orbit, the working indicator's shape */
 .rail-orbit { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s steps(19) infinite; pointer-events: none; }
@@ -6645,8 +6633,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 @media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
 /* the session's tabs, the project's, yours: a short rule where one meets the next */
 .rail-rule { flex: none; align-self: center; width: 16px; height: 1px; margin: 5px 0; background: color-mix(in srgb, var(--txl) 34%, transparent); }
-/* Names off (a tile's right-click menu ▸ LOOK): a 40px tile, which the families that pin 50px have to let through. */
-:is([data-fam="middle-earth"], [data-fam="pebble"]) .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[data-bare] { height: 40px !important; }
 /* the foot (go live, changelog, update, ⌘K) apart from the tabs, in its own well */
 .rail-well { margin: auto 4px 0; padding: 2px 0; border-radius: var(--f-rad, 0); background: var(--side-well, color-mix(in srgb, var(--acc) 5%, transparent)); }
 /* the panel's left seam: drag to resize, double-click to reset (RightPanel startResize) */
@@ -7674,10 +7660,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child button {
   width: 36px !important; height: 36px !important; margin: 0 auto; border: 0 !important; border-radius: var(--f-rad) !important; color: var(--txm) !important;
 }
-[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
-  background: var(--side-row) !important; color: var(--acc) !important;
-}
-[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px !important; height: 50px !important; }
 [data-fam="middle-earth"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--side); }
 [data-fam="middle-earth"] .rcap > div:last-child button { color: var(--txm) !important; }
 
@@ -9063,3 +9045,23 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .cu-perms { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed color-mix(in srgb, var(--acc) 20%, transparent); }
 .cu-perm { display: flex; align-items: center; gap: 8px; font-size: var(--t11); color: var(--txm); }
 .cu-open { margin-left: auto; font-size: var(--t9); letter-spacing: 1.2px; color: var(--acc); text-decoration: none; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }
+
+/* ── THE RAIL'S TILES, every theme (RightPanel). No plate: no fill and no rounded
+   highlight on hover or when open, which drew a different shape in each family.
+   Hover tints the glyph; the open tile is the glyph in the accent and a bar on
+   the rail's seam, cornered like the theme (square in AURORA, a soft end in the
+   families). A tile that waits on you lights its bar in its tone, open or not.
+   Full rail width, so a label has all of it. Last in the file, so it outranks
+   each family's rail rules (PEBBLE's 36px pills are for the rail's foot buttons). ── */
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile {
+  width: auto !important; height: 50px !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important;
+  background: transparent !important; box-shadow: none !important;
+}
+/* names off (a tile's right-click menu ▸ LOOK): the 40px tile */
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[data-bare] { height: 40px !important; }
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[aria-current="true"] { color: var(--acc) !important; }
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile:is([aria-current="true"], [data-tone="ask"], [data-tone="err"])::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px;
+  border-radius: 0 min(2px, var(--f-rad-s, 0px)) min(2px, var(--f-rad-s, 0px)) 0;
+  background: var(--tone, var(--acc)); box-shadow: 0 0 8px color-mix(in srgb, var(--tone, var(--acc)) 55%, transparent);
+}
