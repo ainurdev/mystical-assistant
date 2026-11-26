@@ -1,0 +1,10 @@
+{
+  "name": "mystical-design",
+  "version": "0.1.0",
+  "description": "Mystical's design skills: design a change before building it, and build one made in Claude Design.",
+  "license": "MIT",
+  "skills": [
+    "./skills/design-first",
+    "./skills/design-implement"
+  ]
+}

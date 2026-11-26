@@ -24,7 +24,10 @@ The paths are the six Flows (ADR 0003): DESIGN, BUILD, REFACTOR, FIX, SHIP and A
 plus `one` for a single skill and for ticket and merge sessions. DESIGN and BUILD each
 come as tickets (the flow's id) or here (`-here`), and the grill's StepDone choice
 picks, as feature and feature-here did. DESIGN's design step is /design-first, told
-that building is the next step's job, so its Approve is a StepDone. SHIP and ASK are
+that building is the next step's job, so its Approve is a StepDone. While the DESIGN PACK
+gate is open (design_pack: the switch or the session's override, attended origins only)
+it is the vendored pack's /mystical-design:design-first instead, and the runner loads that
+pack (bridge/skills/mystical-design) beside Matt's. SHIP and ASK are
 one step, the turn itself, which ends at its clean end like a PONYTAIL step. Records
 and SetPath calls from before carry the old names (OLD); they load as their flow.
 
@@ -56,8 +59,8 @@ diff before its StepDone (tickets._prompt), and the REVIEW after MERGE is the co
 StepDone, so the clean end of a turn sent as their command, while the path is on that
 step, is the step's end (_end_pony_step); one that calls StepDone anyway moves once.
 
-A session may override three SETTINGS switches for itself, from the prompt box's FLOW
-chip: AUTO NEXT STEPS, AUTO PICKS and SMART ZONE (OPTIONS). The overrides live in the
+A session may override four SETTINGS switches for itself: from the prompt box's FLOW
+chip AUTO NEXT STEPS, AUTO PICKS and SMART ZONE, and through the same API DESIGN PACK (OPTIONS). The overrides live in the
 flow record and outlive a new path in the same session; a new session follows SETTINGS.
 A record from before them kept `auto`, True by default and False once held: a held one
 loads as an override of AUTO NEXT STEPS. skip_to marks the steps before a target done
@@ -89,6 +92,8 @@ from typing import NamedTuple
 from bridge import aifeatures, config, flowsettings, store
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "mattpocock")
+DESIGN_DIR = os.path.join(os.path.dirname(PACK_DIR), "mystical-design")
+_UNATTENDED = ("rivendell", "device-run")   # origins nobody attends: no pack, no design pack
 
 
 def on() -> bool:
@@ -146,10 +151,11 @@ _STEPDONE = ('When you finish a step of a path and need nothing more from the us
              'hasn\'t started takes its file\'s new Blocked by.')
 
 
-def pack_text() -> str:
+def pack_text(design: bool = False) -> str:
     """The routing text, from the FLOWS settings only: NO KIND, which of DESIGN, BUILD,
     REFACTOR and FIX are on, and their grills. Nothing per turn goes in, so the text, and
-    the cache write it costs, change only when a setting does. AS TYPED keeps the StepDone line."""
+    the cache write it costs, change only when a setting does. AS TYPED keeps the StepDone line.
+    `design`: the DESIGN PACK gate is open, so DESIGN starts the pack's design-first."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if flowsettings.nokind() == "typed":
         return "\n".join([_INTRO, _STEPDONE])
@@ -159,6 +165,9 @@ def pack_text() -> str:
             continue
         if fl in _NO_GRILL and not flowsettings.steps(fl)["grill"]:
             start, setpath = _NO_GRILL[fl], setpath or fl == "build"
+            if design and fl == "design":
+                start = start.replace("the design-first skill (named just design-first, not mattpocock-skills:)",
+                                      "/mystical-design:design-first (the skill mystical-design:design-first)")
         lines.append(f"- {fl}: {what}. {start}")
     return "\n".join([_INTRO, _ASK, *lines, _ONE, _FIRST + (_FIRST_SETPATH if setpath else ""),
                       *_ROUTE_TAIL, _STEPDONE])
@@ -178,8 +187,39 @@ def pack_for(claude_session_id: str) -> str:
             origin = str((store.get_by_claude_session_id(claude_session_id) or {}).get("origin") or "")
         except Exception:  # noqa: BLE001 — the pack never blocks a turn
             origin = ""
-        _pack_ok[claude_session_id] = not origin.startswith(("rivendell", "device-run"))
-    return pack_text() if _pack_ok[claude_session_id] else ""
+        _pack_ok[claude_session_id] = not origin.startswith(_UNATTENDED)
+    return pack_text(design_pack_for(claude_session_id)) if _pack_ok[claude_session_id] else ""
+
+
+def design_pack(session_id: str) -> bool:
+    """The DESIGN PACK gate: does this session's run get the design pack. The session's
+    own override, else the switch, and attended origins only, as with the skill pack.
+    Read on every run, so a change applies from the next turn."""
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        on = _eff(f, "designpack") if f else aifeatures.enabled("designpack")
+    if not on:
+        return False
+    try:
+        origin = str((store.get_session(session_id) or {}).get("origin") or "")
+    except Exception:  # noqa: BLE001 — the pack never blocks a turn
+        origin = ""
+    return not origin.startswith(_UNATTENDED)
+
+
+def design_pack_for(claude_session_id: str) -> bool:
+    """design_pack() for the session a claude session id belongs to (the switch alone with none)."""
+    try:
+        sid = str((store.get_by_claude_session_id(claude_session_id) or {}).get("id") or "")
+    except Exception:  # noqa: BLE001
+        sid = ""
+    return design_pack(sid)
+
+
+def design_cmd(session_id: str) -> str:
+    """The design step's command: the pack's design-first while its gate is open, else the personal one."""
+    return "/mystical-design:design-first" if design_pack(session_id) else "/design-first"
 
 
 class Step(NamedTuple):
@@ -229,8 +269,9 @@ _PONY = {"review": "the work on this path: this branch's commits since it left t
                    "and anything uncommitted",
          "audit": ""}
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
-# The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
-OPTIONS = ("nextstep", "autopick", "smartzone")
+# The SETTINGS switches one session may override: from the prompt box (AUTO NEXT STEPS, AUTO PICKS,
+# SMART ZONE), and DESIGN PACK through the API alone (the blind test's pack arm).
+OPTIONS = ("nextstep", "autopick", "smartzone", "designpack")
 _STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch")
 # shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
 _PAST = 50
@@ -477,8 +518,9 @@ def set_auto(session_id: str, on: bool) -> None:
 
 
 def reset(session_id: str) -> None:
-    """Every switch follows SETTINGS again."""
-    _set(session_id, lambda own: own.clear())
+    """The FLOW chip's switches follow SETTINGS again. DESIGN PACK's override, which the chip
+    doesn't show, stays."""
+    _set(session_id, lambda own: [own.pop(k) for k in list(own) if k != "designpack"])
 
 
 def _set(session_id: str, edit) -> None:
@@ -673,7 +715,7 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
                    done=["grill"] if here else None)
     first, skill, _ = _stations(rec)[0]
     if first == "design":
-        return f"/design-first {prompt}\n\n{DESIGN_STEP}"
+        return f"{design_cmd(session_id)} {prompt}\n\n{DESIGN_STEP}"
     if first == "build-here":
         sess = store.get_session(session_id) or {}
         moved = _branch_off(session_id, sess, rec, sess.get("chat_id"), prompt)
@@ -697,7 +739,8 @@ _AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit", "des
 # The design step's turn: /design-first draws, and the build step builds (it may be switched off).
 DESIGN_STEP = ("This is a flow's design step: building is the next step's job, so when the user approves, "
                "call StepDone instead of implementing.")
-DESIGN_TEXT = f"/design-first the change the grill above settled. {DESIGN_STEP}"
+DESIGN_ASK = f"the change the grill above settled. {DESIGN_STEP}"
+DESIGN_TEXT = f"/design-first {DESIGN_ASK}"   # with the design pack's gate closed (design_cmd)
 # The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
 _TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000
@@ -740,7 +783,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None, style=None)
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
     texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY
-             else DESIGN_TEXT if station == "design" else f"/mattpocock-skills:{skill}"]
+             else f"{design_cmd(session_id)} {DESIGN_ASK}" if station == "design" else f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
