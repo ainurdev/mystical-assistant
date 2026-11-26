@@ -79,6 +79,8 @@ One AskUserQuestion card:
   fewer). Fix only those.
 - **Park:** fix nothing.
 
+With one problem, the card is Fix it / Park.
+
 Fix in the repo's normal way and show the before and after per problem with
 compare_images. A fix that needs a design decision goes to the user first.
 
