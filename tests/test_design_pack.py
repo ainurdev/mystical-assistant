@@ -201,3 +201,15 @@ def test_the_judgement_pass_is_one_shared_reference_with_its_three_parts():
         assert re.search(rf"^## \d\. {part}$", text, re.M), part
     for name in re.findall(r"/?mystical-design:([\w-]+)", text):
         assert name in _skills(), name
+
+
+def test_the_screen_audit_is_in_the_slash_list_and_names_only_real_tools(switches):
+    from bridge import gateway, gateway_tools
+    md = open(_skills()["screen-audit"], encoding="utf-8").read()
+    assert "user-invocable: true" in md
+    switches.add("designpack")
+    assert "mystical-design:screen-audit" in {c["name"] for c in commands.available(None)}
+    tools = gateway_tools.HANDLED | {gateway.WORK_LIST["name"]}
+    for name in ("show_design", "inspect_ui", "critique_design", "show_image", "compare_images", "work_list"):
+        assert name in md and name in tools, name
+    assert os.path.isfile(os.path.join(os.path.dirname(_skills()["screen-audit"]), "../../references/judgement-pass.md"))
