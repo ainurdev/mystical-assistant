@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import {
-  AlignLeft, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Eye, FilePlus, Files, FolderPlus, GitCompare,
+  AlignLeft, ChevronLeft, ChevronRight, ChevronsDownUp, Eye, FilePlus, Files, FolderPlus, GitCompare,
   ListTree, Pencil, RefreshCw, Save, Search, Waypoints,
 } from "lucide-react";
 import { basicSetup } from "codemirror";
@@ -42,7 +42,8 @@ import { revealItems } from "../../lib/revealfile";
 
    VS Code-ish extras: the activity bar picks the side view (EXPLORER tree ·
    SEARCH in files), a quick-open palette (Ctrl-P files · Ctrl-Shift-O symbols ·
-   Ctrl-Shift-P commands), expand/collapse-all in the explorer,
+   Ctrl-Shift-P commands), collapse-all in the explorer (never expand-all: the
+   tree lists git-ignored files too, and a whole repo open is ~90k rows),
    reveal-the-open-file, and new/rename/delete via right-click.
 
    One CMDS table below drives both the command palette and the key bindings, so
@@ -491,7 +492,8 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const labels = useMemo(() => tabLabels(tabs), [tabs]);
   const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
-  const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
+  // Checked against the folders that exist now: `collapsed` keeps deleted ones, so its size can't tell.
+  const allCollapsed = useMemo(() => dirs.every((d) => collapsed.has(d)), [dirs, collapsed]);
 
   // Keep the open file's row visible when it's opened from the palette.
   useEffect(() => { rowRef.current?.scrollIntoView({ block: "nearest" }); }, [open, rows]);
@@ -1158,8 +1160,8 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     { label: "Toggle Terminal", key: "Ctrl+`", off: !onToggleTerm, run: () => onToggleTerm?.() },
     ...(mapView ? [{ label: mapOpen ? "Back to the Code" : "Show Project Map", run: () => setMapOpen((o) => !o) }] : []),
     { label: "Toggle Side Bar", key: "Ctrl+B", run: () => setSideOpen((o) => !o) },
-    { label: allCollapsed ? "Expand Folders in Explorer" : "Collapse Folders in Explorer",
-      run: () => { showView("explorer"); setCollapsed(allCollapsed ? new Set() : new Set(dirs)); } },
+    { label: "Collapse Folders in Explorer", off: allCollapsed,
+      run: () => { showView("explorer"); setCollapsed(new Set(dirs)); } },
     { label: "Refresh Explorer", run: () => void loadTree() },
     { label: preview !== null ? "Back to the Editor" : isSvg ? "Open SVG Preview" : "Open Markdown Preview",
       off: !editable || !canPreview,
@@ -1482,13 +1484,18 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
               { k: "nf", I: FilePlus, t: "New File… · Alt-N", on: () => startNew("new", "", true) },
               { k: "nd", I: FolderPlus, t: "New Folder… · Shift-Alt-N", on: () => startNew("newdir", "", true) },
               { k: "ref", I: RefreshCw, t: "Refresh Explorer", on: () => void loadTree() },
-              { k: "col", I: allCollapsed ? ChevronsUpDown : ChevronsDownUp, t: allCollapsed ? "Expand Folders" : "Collapse Folders", on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
-            ] as const).map(({ k, I, t, on }) => (
-              <button key={k} onClick={on} title={t} aria-label={t} {...hp(`tb:${k}`)}
-                style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === `tb:${k}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: hov === `tb:${k}` ? "var(--txb)" : "var(--txm)", display: "flex", alignItems: "center", padding: 4 }}>
-                <I size={13} strokeWidth={1.7} />
-              </button>
-            ))}
+              { k: "col", I: ChevronsDownUp, t: "Collapse Folders", on: () => setCollapsed(new Set(dirs)) },
+            ] as const).map(({ k, I, t, on }) => {
+              // aria-disabled, not disabled: a disabled button may miss its mouseleave and keep `hov`.
+              const off = k === "col" && allCollapsed;
+              const lit = hov === `tb:${k}` && !off;
+              return (
+                <button key={k} onClick={off ? undefined : on} aria-disabled={off || undefined} title={t} aria-label={t} {...hp(`tb:${k}`)}
+                  style={{ appearance: "none", cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.4 : 1, border: 0, background: lit ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: lit ? "var(--txb)" : "var(--txm)", display: "flex", alignItems: "center", padding: 4 }}>
+                  <I size={13} strokeWidth={1.7} />
+                </button>
+              );
+            })}
           </div>
           {edit && (
             <div style={{ padding: "0 8px 8px", flex: "none" }}>
