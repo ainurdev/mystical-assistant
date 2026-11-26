@@ -8151,6 +8151,13 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .wsrow .wsbtn[aria-checked="false"] .wsav { opacity: .55; box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px color-mix(in srgb, var(--acc) 22%, transparent); }
 .wsrow .wsbtn[aria-checked="false"]:hover .wsav { opacity: 1; }
 .wsrow .wsbtn[aria-checked="true"] .wsav { box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px var(--acc); }
+/* The brand gives way to the row: the wordmark stood fixed and the row shrank, so
+   at a sidebar's usual width (~280px) the third workspace was half cut and the
+   rest gone, marks and all. With a row in the cap, the cap measures itself:
+   under 440px the wordmark keeps its first word, under 340px only the mark. */
+.brand { container: brand / inline-size; }
+@container brand (max-width: 439px) { .brand:has(.wsrow) :is(.bw-sep, .bw-b) { display: none; } }
+@container brand (max-width: 339px) { .brand:has(.wsrow) .wordmark { display: none; } }
 /* The picture picker under a workspace's avatar (WorkspacesSettings) */
 .wspick { position: absolute; top: calc(100% + 8px); left: -4px; z-index: 70; width: 288px; padding: 10px;
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
