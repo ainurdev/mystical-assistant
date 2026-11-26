@@ -22,8 +22,9 @@ with its licence file beside it.
 | expo-animation | github.com/expo/skills, `plugins/expo/skills/expo-animation` | 6d0506a (2026-11-26) | MIT (its own file, Emil Kowalski) | `skills/expo-animation/LICENSE` |
 | create-design-md | github.com/ibelick/ui-skills, `skills/create-design-md` | 1a2f2bf (2026-11-25) | MIT | `skills/create-design-md/LICENSE` |
 
-- `skills/design-first/SKILL.md`: copied from the personal copy in `~/.claude/skills/design-first`,
-  the one that ran before this pack, unedited.
+- `skills/design-first/SKILL.md`: started from the personal copy in `~/.claude/skills/design-first`
+  (the one that ran before this pack) and the repo copy's design-board paragraph, then
+  rewritten for three Directions and the Self-check.
 - `skills/design-implement/SKILL.md`: moved from `.claude/skills/design-implement`, unedited.
 - web-design-guidelines 1.1.0 bundles its rules in `references/command.md` (pinned to
   vercel-labs/web-interface-guidelines 434b7f9, SHA-256 in its SKILL.md) and tells the
