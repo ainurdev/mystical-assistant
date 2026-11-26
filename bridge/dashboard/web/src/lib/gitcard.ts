@@ -1,6 +1,6 @@
 /* The GIT tab's status card (/design-first git-calm, A · PIPE, 2026-11-19):
    the one step this branch is on, a headline that says the situation in plain
-   words, and three stops (this Mac, committed, origin) with what sits at each.
+   words, and three stops (this computer, committed, origin) with what sits at each.
    Pure, so the panel only maps the step to its button; the step order is the
    ledger's NEXT STEP order: commit, then sync with origin, then push, then a
    pull request, then whatever the PR needs from you. */
@@ -35,7 +35,7 @@ export function gitCard(c: CardIn): Card {
   const fails = pr?.checks.filter((k) => k.state === "fail").map((k) => k.name) ?? [];
 
   const [head, sub] = step === "commit"
-    ? ["Your work is still on this Mac",
+    ? ["Your work is still on this computer",
       `Commit ${staged ? `${staged} of ${plural(dirty, "file")}` : plural(dirty, "file")}${down ? `, then bring in origin's ${down}` : remote ? ", then push" : ""}.`]
     : step === "sync" ? (sync.kind === "diverged"
       ? ["You and origin both moved", `${up} here, ${down} on origin. Merge them in.`]

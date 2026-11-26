@@ -19,8 +19,8 @@ const pr = (o: Partial<PrInfo>): PrInfo => ({
 
 const c1 = at({ sync: { kind: "ahead", n: 5, upstream: "origin/feat" }, dirty: 3, up: 5 });
 ok(c1.step === "commit" && !c1.amber, "edits first: commit, accent");
-ok(c1.head === "Your work is still on this Mac" && c1.sub === "Commit 3 files, then push.", "commit headline and sub");
-ok(c1.stops[0].tone === "on" && c1.stops[0].value === "3 files", "this Mac is the lit stop");
+ok(c1.head === "Your work is still on this computer" && c1.sub === "Commit 3 files, then push.", "commit headline and sub");
+ok(c1.stops[0].tone === "on" && c1.stops[0].value === "3 files", "this computer is the lit stop");
 ok(c1.stops[1].value === "5 to push" && c1.stops[1].tone === "", "committed waits, not lit");
 ok(c1.stops[2].value === "1m ago" && c1.stops[2].tone === "dim", "origin says how fresh");
 ok(at({ dirty: 3, staged: 2 }).sub === "Commit 2 of 3 files, then push.", "staged: the commit takes only those");
