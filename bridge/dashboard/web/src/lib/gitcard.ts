@@ -1,6 +1,6 @@
 /* The GIT tab's status card (/design-first git-calm, A · PIPE, 2026-11-19):
    the one step this branch is on, a headline that says the situation in plain
-   words, and three stops (this computer, committed, origin) with what sits at each.
+   words, and three stops (local, committed, origin) with what sits at each.
    Pure, so the panel only maps the step to its button; the step order is the
    ledger's NEXT STEP order: commit, then sync with origin, then push, then a
    pull request, then whatever the PR needs from you. */

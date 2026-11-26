@@ -28,7 +28,7 @@ import { diffColor } from "../../lib/resultfields";
 /* GIT — the right rail's one git tab, and the dashboard's only git status: a
    kicker (branch, how fresh, ⟳ fetch), then the STATUS CARD (/design-first
    git-calm, A · PIPE, 2026-11-19): a headline that says the situation, three
-   stops (this computer, committed, origin) with what sits at each, and the one move,
+   stops (local, committed, origin) with what sits at each, and the one move,
    amber when it needs you (lib/gitcard.ts decides which). The commit message
    sits in the card beside Commit, drafted up front from the diff; Commit and
    Push stay two presses (the user's pick). Under the card, plain lists: CHANGES
@@ -82,8 +82,9 @@ const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--txl)");
 const ROWS = 3;      // a list's commits before "N more"
 const IN_ROWS = 3;   // origin's incoming stays short: the buttons are the point
-// "This computer", not "This Mac": the bridge runs on Linux and Windows too, and the card is read from a phone.
-const STOPS = ["This computer", "Committed", "Origin"];
+// "Local", not "This Mac": the bridge runs on Linux and Windows too, and the card is read from a
+// phone. One word, as "This computer" wrapped to two lines at a big font and knocked the stops out of line.
+const STOPS = ["Local", "Committed", "Origin"];
 const STOP_IC: Record<Stop["icon"], typeof Check> = { laptop: Laptop, check: Check, up: ArrowUp, down: ArrowDown, cloud: Cloud, pr: GitPullRequest };
 const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
