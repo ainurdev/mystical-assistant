@@ -4555,6 +4555,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
 [data-fam] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
 [data-fam] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
+/* the composer's word list (MarkdownInput: CodeMirror's tooltip, on <body>, so it never matches the
+   popover rule above) is one of those popovers too: the family's panel, and its rows inset and
+   rounded like the context menu's. Its corner alone, round as PEBBLE's (20px), clipped the open
+   row's tint, cut into the scrollbar and halved the last row. AURORA keeps its square bar-led list. */
+[data-fam]:not([data-fam="aurora"]) .cm-tooltip.cm-mi-complete {
+  padding: 6px; border: 1px solid var(--line2) !important; border-radius: var(--f-rad) !important;
+  background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
+}
+[data-fam]:not([data-fam="aurora"]) .cm-tooltip.cm-tooltip-autocomplete.cm-mi-complete > ul > li {
+  border-left: 0 !important; border-radius: var(--f-rad-s); margin: 1px 0; font-family: var(--ui-font);
+}
+[data-fam="pebble"] .cm-tooltip.cm-mi-complete { background: var(--pb-pop) !important; border-color: color-mix(in oklab, var(--txl) 26%, var(--panel)) !important; }
 [data-fam] [data-ctxmenu] [style*="acc) 12%"] { background: var(--line) !important; }
 
 /* The HUD tracks every uppercase label 1.5–2.6px wide, inline. FLINT and CLAUDE keep the
