@@ -1,10 +1,18 @@
 {
   "name": "mystical-design",
   "version": "0.1.0",
-  "description": "Mystical's design skills: design a change before building it, and build one made in Claude Design.",
-  "license": "MIT",
+  "description": "Mystical's design skills: design a change before building it, and build one made in Claude Design, with the outside skills they load.",
+  "license": "MIT AND Apache-2.0",
   "skills": [
     "./skills/design-first",
-    "./skills/design-implement"
+    "./skills/design-implement",
+    "./skills/frontend-design",
+    "./skills/web-design-guidelines",
+    "./skills/break-ui",
+    "./skills/shadcn",
+    "./skills/expo-native-ui",
+    "./skills/expo-design-system",
+    "./skills/expo-animation",
+    "./skills/create-design-md"
   ]
 }

@@ -151,3 +151,53 @@ def test_design_pack_is_an_ai_feature_off_by_default():
     assert f["label"] == "DESIGN PACK" and not f.get("parent")
     with open(config.__file__, encoding="utf-8") as src:
         assert f'os.environ.get("{f["env"]}", "0")' in src.read()
+
+
+OUTSIDE = ["frontend-design", "web-design-guidelines", "break-ui", "shadcn",
+           "expo-native-ui", "expo-design-system", "expo-animation", "create-design-md"]
+
+
+def test_the_eight_outside_skills_are_in_the_pack_and_the_slash_list(switches):
+    assert set(OUTSIDE) <= set(_skills())
+    switches.add("designpack")
+    names = {c["name"] for c in commands.available(None)}
+    assert {f"mystical-design:{n}" for n in OUTSIDE} <= names
+
+
+def test_the_readme_gives_each_outside_skills_source_version_and_licence():
+    readme = open(os.path.join(PACK, "README.md"), encoding="utf-8").read()
+    for name in OUTSIDE:
+        row = next(r for r in readme.splitlines() if r.startswith(f"| {name} |"))
+        _, _skill, source, version, licence, _file, _ = row.split("|")
+        assert "github.com/" in source and re.search(r"\b[0-9a-f]{7}\b", version) and licence.strip(), row
+    assert "Impeccable" in readme and "Upstream edits" in readme
+
+
+def test_no_pack_file_names_an_outside_skill_by_its_bare_name():
+    """A cross-reference to a vendored skill uses /mystical-design:<name>; only its own
+    folder may name it bare."""
+    for name in OUTSIDE:
+        for root, _d, files in os.walk(os.path.join(PACK, "skills")):
+            if os.path.relpath(root, os.path.join(PACK, "skills")).split(os.sep)[0] == name:
+                continue
+            for fn in (f for f in files if f.endswith(".md")):
+                text = open(os.path.join(root, fn), encoding="utf-8").read()
+                assert not re.search(rf"(?<![/\w:-]){re.escape(name)}(?![\w-])", text), (fn, name)
+
+
+def test_web_design_guidelines_reads_its_bundled_rules_and_fetches_nothing():
+    import hashlib
+    skill = os.path.join(PACK, "skills", "web-design-guidelines")
+    md = open(os.path.join(skill, "SKILL.md"), encoding="utf-8").read()
+    rules = open(os.path.join(skill, "references", "command.md"), "rb").read()
+    assert 'version: "1.1.0"' in md and "Do not fetch rules from the network" in md
+    assert hashlib.sha256(rules).hexdigest() in md                 # the pinned snapshot, unedited
+    assert "WebFetch" not in md and "raw.githubusercontent" not in rules.decode()
+
+
+def test_the_judgement_pass_is_one_shared_reference_with_its_three_parts():
+    text = open(os.path.join(PACK, "references", "judgement-pass.md"), encoding="utf-8").read()
+    for part in ("Keyboard, focus, labels and announced state", "Empty, loading and error states", "Long content"):
+        assert re.search(rf"^## \d\. {part}$", text, re.M), part
+    for name in re.findall(r"/?mystical-design:([\w-]+)", text):
+        assert name in _skills(), name
