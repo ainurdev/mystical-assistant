@@ -7,12 +7,13 @@ import {
 import { saveView, sendFile, useRefSession } from "../lib/readapi";
 import { xlsx } from "../lib/viewexport";
 import { usePanZoom } from "../lib/panzoom";
+import { DiffView } from "./DiffView";
 import { Mark, NoteList } from "./ViewNotes";
 import { pdfOf } from "../lib/viewpdf";
 import { viewPng } from "../lib/viewpng";
 
-// A sheet, chart, board, diagram or row of figures an agent showed on the turn (show_data,
-// bridge/data_views.py). Hand-built SVG, as neither app has a chart library and these four
+// A sheet, chart, board, diagram, row of figures or diff an agent showed on the turn (show_data
+// and show_diff, bridge/data_views.py; the diff draws in components/DiffView). Hand-built SVG, as neither app has a chart library and these four
 // don't justify one. The same file is in both apps, styled by dataview.css: it needs no API,
 // only what's on the event, so a chat scrolled back to in a year still draws.
 //
@@ -693,6 +694,7 @@ function Body({ ev, sheet, st, full, asTable, print, notes }: { ev: DataEv; shee
   if (ev.view === "kanban") return <Board ev={ev} full={full} />;
   if (ev.view === "stats") return <Tiles ev={ev} />;
   if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} notes={notes} /> : <Timeline ev={ev} />;
+  if (ev.view === "diff") return <DiffView ev={ev} full={full} print={print} notes={notes} />;
   return null;
 }
 

@@ -104,6 +104,19 @@ def test_show_image_requires_a_caption_and_copies_into_uploads(tmp_path):
     assert ev["images"][0].startswith(str(tmp_path / "up")) and open(ev["images"][0], "rb").read() == PNG
 
 
+def test_show_diff_puts_a_diff_on_the_turn_and_says_what_it_holds(tmp_path):
+    s, _ = _session(tmp_path)
+    job = FakeJob(s["id"])
+    said = text(gt.call(s, job, "show_diff", {"title": "The retry fix", "path": "a.py", "language": "python",
+                                             "old": "x = 1\ny = 2\n", "new": "x = 1\ny = 3\nz = 4\n",
+                                             "comments": [{"at": "2:5", "text": "was 2"}]}))
+    ev = job.events[-1]
+    assert ev["type"] == "data" and ev["view"] == "diff" and ev["files"][0]["path"] == "a.py"
+    assert "a diff, The retry fix: 1 file, +2 −1, 1 comment" in said and "[[view:" in said
+    assert gt.call(s, job, "show_diff", {"title": "T"}).get("isError")
+    assert "show_diff" in {t["name"] for t in gt.CORE_ALL}
+
+
 def test_compare_keeps_both_in_order(tmp_path):
     s, r = _session(tmp_path)
     job = FakeJob(s["id"])

@@ -168,6 +168,8 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         return saved_views.listed(image_root(chat_id, _one(qs, "session"), _one(qs, "project")))
     if path == "chat-images":
         return {"mode": chat_images.mode(), "shown": chat_images.shown()}, 200
+    if path == "view-prefs":
+        return saved_views.prefs(), 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
                     "mcp-share", "skill-share", "agent-tools", "rules", "rules/log", "mystical-dir",
                     "mystical-dir/read", "chat-search", "chat-report", "hooks"):
@@ -260,6 +262,8 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             except ValueError as e:
                 return {"error": str(e)}, 400
         return experimental.state(), 200
+    if path == "view-prefs":
+        return saved_views.set_prefs(body)
     if path.startswith("chat-images") and not experimental.enabled():
         return _OFF
     if path == "chat-images":

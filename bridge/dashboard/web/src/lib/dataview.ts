@@ -2,6 +2,8 @@
 // already typed, cleaned and totalled everything), and the arithmetic of drawing it.
 // Pure, so dataview.check.ts can run it. The same file is in both apps.
 
+import type { DiffFile } from "./codediff.ts";
+
 export type Col = { key: string; label: string; type: "text" | "number" | "money" | "percent" | "progress" | "date" | "link"; currency?: string };
 export type Row = Record<string, string | number | null>;
 export type Card = { title: string; key?: string; assignee?: string; due?: string | null; priority?: string;
@@ -35,7 +37,9 @@ export type FlowNodeAt = FlowNode & { x: number; y: number; w: number; h: number
 export type FlowClusterAt = FlowCluster & { x: number; y: number; w: number; h: number };
 export type FlowArrow = { d: string; head: string; tail: string; label: string; lx: number; ly: number; back: boolean; dashed: boolean; from: string; to: string };
 export type FlowLayout = { nodes: FlowNodeAt[]; arrows: FlowArrow[]; clusters: FlowClusterAt[]; width: number; height: number };
-export type DataEv = TableEv | ChartEv | KanbanEv | StatsEv | FlowEv | TimelineEv;
+/** Code or a diff with comments (show_diff; lib/codediff works it out for the screen). */
+export type DiffEv = Head & { view: "diff"; files: DiffFile[]; added: number; removed: number; comments: number };
+export type DataEv = TableEv | ChartEv | KanbanEv | StatsEv | FlowEv | TimelineEv | DiffEv;
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
@@ -194,9 +198,10 @@ export const viewsNamed = (md: string): Set<string> =>
 // ---- diagrams -----------------------------------------------------------------------
 
 /** A sheet of any view, for Copy, CSV and Excel. */
-/** Whether a view has comments to export (a flow's steps and boxes). */
+/** Whether a view has comments to export (a flow's steps and boxes; a diff's lines). */
 export function hasComments(ev: DataEv): boolean {
   if (ev.view === "diagram" && ev.kind === "flow") return ev.nodes.some((n) => n.comment) || !!ev.clusters?.some((c) => c.comment);
+  if (ev.view === "diff") return ev.files.some((f) => f.comments.length);
   return false;
 }
 
@@ -220,6 +225,11 @@ export function flatten(ev: DataEv): { columns: Col[]; rows: Row[]; totals: Reco
       rows: ev.items.map((s) => ({ label: s.label, value: s.format === "text" ? String(s.value) : fmt(s.value, s.format, s.currency), delta: s.delta ?? null, note: s.note ?? "" })),
       totals: {},
     };
+  }
+  if (ev.view === "diff") {
+    const at = (c: DiffFile["comments"][number]) => `${c.from[0]}:${c.from[1]}-${c.to[0]}:${c.to[1]}`;
+    return { columns: [text("file", "File"), text("side", "Side"), text("at", "At"), text("comment", "Comment")],
+      rows: ev.files.flatMap((f) => f.comments.map((c) => ({ file: f.path, side: c.side, at: at(c), comment: c.text }))), totals: {} };
   }
   if (ev.kind === "timeline") {
     return { columns: [text("date", "Date"), text("label", "Event"), text("state", "State"), text("note", "Note")],

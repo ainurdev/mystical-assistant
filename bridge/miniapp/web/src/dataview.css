@@ -184,6 +184,72 @@
 .dv-time-what { margin-top: 1px; font-size: var(--t125, 12.5px); line-height: 1.4; color: var(--txb); overflow-wrap: anywhere; }
 .dv-time-note { margin-top: 2px; font-size: var(--t115, 11.5px); line-height: 1.45; color: var(--txm); overflow-wrap: anywhere; }
 
+/* code and diffs (components/DiffView) */
+.dv-diff { position: relative; }
+.dv-diff-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
+.dv-seg { display: inline-flex; }
+.dv-seg .dv-btn { border-radius: 0; margin-left: -1px; }
+.dv-seg .dv-btn:first-child { border-radius: var(--dv-r) 0 0 var(--dv-r); margin-left: 0; }
+.dv-seg .dv-btn:last-child { border-radius: 0 var(--dv-r) var(--dv-r) 0; }
+.dv-seg .dv-btn[aria-checked="true"] { color: var(--txb); border-color: var(--border-bright); background: var(--dv-hover); position: relative; }
+.dv-diff-count { font-size: var(--t11, 11px); font-variant-numeric: tabular-nums; }
+.dv-add { color: var(--ok, #8fd9a8); font-weight: 500; }
+.dv-del { color: var(--err, #e0897a); font-weight: 500; }
+.dv-diff-files { display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow: auto; overscroll-behavior: contain; }
+.dv[data-full] .dv-diff-files, .dv[data-print] .dv-diff-files { max-height: none; overflow: visible; }
+.dv-diff-file { border: 1px solid var(--dv-grid); border-radius: var(--dv-r); min-width: 0; }
+.dv-diff-path { display: flex; justify-content: space-between; gap: 8px; padding: 5px 9px; font-size: var(--t11, 11px); color: var(--txb);
+  border-bottom: 1px solid var(--dv-grid); background: color-mix(in srgb, var(--txl) 6%, transparent); overflow-wrap: anywhere; position: sticky; top: 0; z-index: 1; }
+.dv[data-print] .dv-diff-path { position: static; }
+.dv-diff-said { color: var(--txd); flex: none; }
+.dv-code-unified, .dv-code-split, .dv-code-pane { font-family: var(--mono, var(--font-mono, ui-monospace, monospace)); font-size: var(--t115, 11.5px); line-height: 1.55; }
+.dv-code-row { display: grid; grid-template-columns: auto auto 14px minmax(0, 1fr); align-items: start; }
+.dv-code-pane .dv-code-row { grid-template-columns: auto minmax(0, 1fr); }
+.dv-code-split .dv-code-row { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+.dv-code-split .dv-code-row > :nth-child(3) { border-left: 1px solid var(--dv-grid); }
+.dv-code-no { position: relative; min-width: 3.4em; padding: 0 8px 0 12px; text-align: right; color: var(--txl); user-select: none; font-variant-numeric: tabular-nums; }
+.dv-code-sign { color: var(--txl); user-select: none; text-align: center; }
+.dv-code-text, .dv-code-cell { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tx); padding-right: 8px; min-width: 0; }
+.dv-code-row[data-kind="add"], .dv-code-cell[data-kind="add"] { background: color-mix(in srgb, var(--ok, #8fd9a8) 11%, transparent); }
+.dv-code-row[data-kind="del"], .dv-code-cell[data-kind="del"] { background: color-mix(in srgb, var(--err, #e0897a) 11%, transparent); }
+.dv-code-cell[data-kind="none"] { background: repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--txl) 7%, transparent) 5px 6px); align-self: stretch; }
+.dv-code-row[data-kind="add"] .dv-code-sign { color: var(--ok, #8fd9a8); }
+.dv-code-row[data-kind="del"] .dv-code-sign { color: var(--err, #e0897a); }
+[data-kind="add"] .dv-word { background: color-mix(in srgb, var(--ok, #8fd9a8) 28%, transparent); border-radius: 2px; }
+[data-kind="del"] .dv-word { background: color-mix(in srgb, var(--err, #e0897a) 28%, transparent); border-radius: 2px; }
+.dv-code-gap { display: block; }
+.dv-code-gap button { appearance: none; width: 100%; text-align: left; border: 0; background: color-mix(in srgb, var(--txl) 7%, transparent); color: var(--txd);
+  font: inherit; font-size: var(--t105, 10.5px); padding: 2px 10px; cursor: pointer; }
+.dv-code-gap button:hover { color: var(--txb); }
+.dv-code-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.dv-code-panes > .dv-code-pane + .dv-code-pane { border-left: 1px solid var(--dv-grid); }
+.dv-code-side { font-family: var(--dv-face); font-size: var(--t10, 10px); letter-spacing: 0.08em; color: var(--txd); padding: 3px 8px; border-bottom: 1px solid var(--dv-grid); }
+@media (max-width: 560px) {
+  .dv-code-panes { grid-template-columns: minmax(0, 1fr); }
+  .dv-code-panes > .dv-code-pane + .dv-code-pane { border-left: 0; border-top: 1px solid var(--dv-grid); }
+  .dv-code-no { min-width: 2.6em; padding: 0 5px 0 10px; }
+}
+/* a comment: a quiet dotted underline on just what it's about, and a dot where it starts */
+.dv-said-at { text-decoration: underline dotted var(--acc); text-decoration-thickness: 1.5px; text-underline-offset: 3px;
+  background: color-mix(in srgb, var(--acc) 7%, transparent); cursor: help; border-radius: 2px; }
+.dv-said-at:hover { background: color-mix(in srgb, var(--acc) 16%, transparent); }
+.dv-code-dot { appearance: none; position: absolute; left: 2px; top: 0.775em; width: 7px; height: 7px; margin-top: -3.5px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--acc); cursor: help; }
+.dv-code-dot:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.dv-note-inline { display: inline-flex; vertical-align: 1px; margin: 0 2px; min-width: 15px; height: 15px; font-family: var(--dv-face); font-size: 9.5px; }
+.dv-diff-tip-text { color: var(--tx); line-height: 1.5; margin-top: 2px; white-space: pre-line; overflow-wrap: anywhere; }
+.dv-diff-tip-more { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.dv[data-print][data-view="diff"] { width: 1100px; }
+.dv[data-print] .dv-code-dot { display: none; }
+/* syntax colours (lib/hl's tok-* classes), as the Markdown's code blocks have them */
+.dv .tok-keyword { color: var(--purple); }
+.dv .tok-atom, .dv .tok-bool, .dv .tok-literal, .dv .tok-number, .dv .tok-typeName, .dv .tok-className, .dv .tok-namespace { color: var(--warn); }
+.dv .tok-string, .dv .tok-inserted { color: var(--ok); }
+.dv .tok-string2, .dv .tok-operator, .dv .tok-url, .dv .tok-link, .dv .tok-labelName { color: var(--acc); }
+.dv .tok-variableName, .dv .tok-variableName2, .dv .tok-propertyName, .dv .tok-macroName, .dv .tok-deleted { color: var(--txh); }
+.dv .tok-comment, .dv .tok-meta { color: var(--txd); font-style: italic; }
+.dv .tok-invalid { color: var(--err); }
+
 /* the off-screen copy a PNG is painted from: everything laid out, nothing scrolled away */
 .dv[data-print] { position: fixed; left: -30000px; top: 0; margin: 0; width: max-content; min-width: 640px; max-width: 2400px; }
 .dv[data-print][data-view="chart"] { width: 900px; }

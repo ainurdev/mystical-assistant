@@ -71,3 +71,8 @@ export const workRead = <T,>(session: string | null, project?: string | null) =>
 export const docsRead = <T,>(session: string) =>
   ({ ...rail.docs({ session }), queryFn: () => designCall<T>(session, "docs") }) as unknown as Read<T>;
 export const autoRead = <T,>() => rail.automations() as unknown as Read<T>;
+
+/** How views read, kept by the bridge for every surface (bridge/saved_views.py prefs). */
+export type ViewPrefs = { diff_mode: "unified" | "split" | "code" };
+export const getViewPrefs = () => req<ViewPrefs>("/local/view-prefs");
+export const setViewPrefs = (p: Partial<ViewPrefs>) => req<ViewPrefs>("/local/view-prefs", { method: "POST", body: p });

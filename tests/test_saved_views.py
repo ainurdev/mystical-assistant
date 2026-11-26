@@ -89,3 +89,13 @@ def test_the_routes_are_behind_the_switch_and_the_owner(tmp_path, monkeypatch):
     assert multi_api.get("saved-views", {"session": [s["id"]]}, chat)[0]["views"][0]["id"] == out["id"]
     assert multi_api.post("chat/view-save", {"session_id": s["id"], "view": VIEW}, 999999)[1] == 404
     assert multi_api.post("saved-views/delete", {"session_id": s["id"], "id": out["id"]}, chat)[1] == 200
+
+
+def test_the_diff_mode_is_kept_for_every_surface_and_refuses_a_stranger():
+    store.init()
+    assert multi_api.get("view-prefs", {}, 1)[0]["diff_mode"] in sv.DIFF_MODES
+    assert multi_api.post("view-prefs", {"diff_mode": "split"}, 1) == ({"diff_mode": "split"}, 200)
+    assert multi_api.get("view-prefs", {}, 2) == ({"diff_mode": "split"}, 200)
+    body, code = multi_api.post("view-prefs", {"diff_mode": "sideways"}, 1)
+    assert code == 400 and "unified, split, code" in body["error"]
+    assert multi_api.get("view-prefs", {}, 1)[0]["diff_mode"] == "split"

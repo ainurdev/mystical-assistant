@@ -18,7 +18,7 @@ import re
 import tempfile
 import time
 
-from bridge import config, data_views, devserver, telegram
+from bridge import config, data_views, devserver, store, telegram
 
 DIR = os.path.join(".mystical", "views")
 MAX_SAVED = 300
@@ -108,3 +108,28 @@ def send(body: dict, chat_id: int) -> "tuple[dict, int]":
     finally:
         os.unlink(path)
     return ({"ok": True}, 200) if ok else ({"error": "Telegram didn't take it."}, 502)
+
+
+# How views read, for every chat on every surface: the user's choice, so it lives in the bridge,
+# not in one browser. A diff opens in the mode last picked anywhere.
+DIFF_MODES = ("unified", "split", "code")
+_PREFS_KEY = "view_prefs"
+
+
+def prefs() -> dict:
+    """GET view-prefs"""
+    try:
+        saved = json.loads(store.get_setting(_PREFS_KEY) or "{}")
+    except ValueError:
+        saved = {}
+    mode = saved.get("diff_mode") if isinstance(saved, dict) else None
+    return {"diff_mode": mode if mode in DIFF_MODES else "unified"}
+
+
+def set_prefs(body: dict) -> "tuple[dict, int]":
+    """POST view-prefs: {diff_mode}"""
+    mode = (body or {}).get("diff_mode")
+    if mode not in DIFF_MODES:
+        return {"error": f"diff_mode is one of {', '.join(DIFF_MODES)}."}, 400
+    store.set_setting(_PREFS_KEY, json.dumps({**prefs(), "diff_mode": mode}))
+    return prefs(), 200

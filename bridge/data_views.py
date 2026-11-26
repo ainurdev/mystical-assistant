@@ -1,4 +1,5 @@
-"""What an agent can show in the transcript besides words: a sheet, a chart, a board.
+"""What an agent can show in the transcript besides words: a sheet, a chart, a board, a diagram,
+or code with its comments (show_diff, which lands here as the `diff` view).
 
 Plenty of answers have a shape, and a paragraph, a numbered list or a Markdown table loses it:
 tasks, finances, test coverage by folder, benchmarks, bundle sizes, options side by side, how a
@@ -25,11 +26,12 @@ Stdlib only. Pure: nothing here touches the disk or a job.
 """
 
 import datetime as dt
+import difflib
 import json
 import math
 import re
 
-VIEWS = ("table", "chart", "kanban", "stats", "diagram")
+VIEWS = ("table", "chart", "kanban", "stats", "diagram", "diff")
 CHARTS = ("bar", "bar_horizontal", "bar_stacked", "line", "step", "area", "donut", "burndown", "projection")
 _FLOWING = ("line", "step", "area", "burndown")
 COLUMN_TYPES = ("text", "number", "money", "percent", "progress", "date", "link")
@@ -541,7 +543,103 @@ def _diagram(spec: dict) -> "tuple[dict, list]":
     return _flow(spec) if kind == "flow" else _timeline(spec)
 
 
-_BUILD = {"table": _table, "chart": _chart, "kanban": _kanban, "stats": _stats, "diagram": _diagram}
+MAX_FILES, MAX_CODE_LINES, MAX_COMMENTS = 20, 4000, 100
+_AT = re.compile(r"^\s*(\d+)(?::(\d+))?\s*(?:(?:-|->|–|to)\s*(\d+)(?::(\d+))?)?\s*$")
+
+
+def _code(v) -> "list[str] | None":
+    """A side of a diff as its lines, newlines kept as they are (no _s here: code's spacing is the code)."""
+    if v is None:
+        return None
+    text = str(v).replace("\r\n", "\n").replace("\r", "\n")
+    if text.endswith("\n"):
+        text = text[:-1]
+    return text.split("\n")
+
+
+def _start(v) -> int:
+    try:
+        return max(1, int(v))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _comment(c, f: dict, where: str) -> dict:
+    """One comment on a range of code: `at` is "12", "12-14", "2:20" or "2:20-3:4", as line:char,
+    1-based, both ends included, in the numbers the view shows (old_start / new_start count)."""
+    c = c if isinstance(c, dict) else {"text": c}
+    text = " ".join(str(c.get("text") or c.get("comment") or "").split())[:_COMMENT]
+    if not text:
+        raise Refused(f"{where}: a comment needs text.")
+    side = c.get("side") if c.get("side") in ("old", "new") else ("new" if f["new"] is not None else "old")
+    if f[side] is None:
+        raise Refused(f"{where}: it's on the {side} side, and this file has no {side} code.")
+    m = _AT.match(str(c.get("at") or c.get("line") or ""))
+    if not m:
+        raise Refused(f"{where}: at is \"12\", \"12-14\", \"2:20\" or \"2:20-3:4\" (line:char, from 1), "
+                      f"not {str(c.get('at') or '')!r}.")
+    lines, first = f[side], f[f"{side}_start"]
+    last = first + len(lines) - 1
+    l1 = int(m.group(1))
+    l2 = int(m.group(3)) if m.group(3) else l1
+    if not (first <= l1 <= last and first <= l2 <= last):
+        raise Refused(f"{where}: {m.group(0).strip()} isn't inside the {side} code, which is lines {first} to {last}.")
+    # No char on the start means from the line's start; none on the end, to its end.
+    c1 = min(int(m.group(2)), len(lines[l1 - first]) + 1) if m.group(2) else 1
+    c2 = min(int(m.group(4)), len(lines[l2 - first])) if m.group(4) else len(lines[l2 - first])
+    if (l2, c2) < (l1, c1 - 1) or c1 < 1:
+        raise Refused(f"{where}: {m.group(0).strip()} ends before it starts.")
+    said = "-".join(":".join(g for g in pair if g) for pair in ((m.group(1), m.group(2)), (m.group(3), m.group(4))) if pair[0])
+    return {"side": side, "from": [l1, c1], "to": [l2, c2], "at": said, "text": text}
+
+
+def _diff(spec: dict) -> "tuple[dict, list]":
+    """Code an agent wants to explain: two versions of a file (a diff) or one (code), with comments
+    on lines or on a stretch within them. The clients work out the diff, so the event holds just
+    the text; the view (unified, side by side, the two versions side by side) is the user's
+    setting, not the agent's. ponytail: a char is a code point here and a UTF-16 unit in the
+    clients, so a comment after an emoji on its line lands one place off."""
+    raw = spec.get("files")
+    if not isinstance(raw, list):
+        one = {k: spec.get(k) for k in ("path", "language", "old", "new", "code", "old_start", "new_start", "start", "comments")}
+        raw = [one] if any(one.get(k) is not None for k in ("old", "new", "code")) else []
+    if not raw:
+        raise Refused("A diff needs old and new (or code, for code without a change), or files: [{path, old, new, comments}].")
+    if len(raw) > MAX_FILES:
+        raise Refused(f"At most {MAX_FILES} files in one view. Show the ones that matter, or several views.")
+    files, added, removed, said = [], 0, 0, 0
+    for i, f in enumerate(raw):
+        if not isinstance(f, dict):
+            raise Refused("Each file is an object: {path, old, new, comments}.")
+        name = _s(f.get("path"), 300) or f"file {i + 1}"
+        new = _code(f.get("new") if f.get("new") is not None else f.get("code"))
+        old = _code(f.get("old"))
+        if new is None and old is None:
+            raise Refused(f"{name}: give new (and old, for a diff), or code.")
+        if new is None:
+            new, old = old, None          # one version given as old: it's still just code
+        for side, lines in (("old", old), ("new", new)):
+            if lines is not None and len(lines) > MAX_CODE_LINES:
+                raise Refused(f"{name}: {len(lines)} lines on the {side} side, and a view holds {MAX_CODE_LINES}. Show the part that matters, with old_start/new_start.")
+        out = {"path": name, "language": _s(f.get("language") or f.get("lang"), 40), "old": None if old is None else "\n".join(old),
+               "new": "\n".join(new), "old_start": _start(f.get("old_start") or f.get("start")), "new_start": _start(f.get("new_start") or f.get("start")),
+               "old_lines": old, "new_lines": new}
+        rawc = f.get("comments") if isinstance(f.get("comments"), list) else []
+        if len(rawc) > MAX_COMMENTS:
+            raise Refused(f"{name}: at most {MAX_COMMENTS} comments.")
+        comments = [_comment(c, {**out, "old": old, "new": new}, f"{name}, comment {j + 1}") for j, c in enumerate(rawc)]
+        said += len(comments)
+        if old is not None:
+            for op in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+                if op[0] in ("replace", "delete"):
+                    removed += op[2] - op[1]
+                if op[0] in ("replace", "insert"):
+                    added += op[4] - op[3]
+        files.append({k: v for k, v in out.items() if k not in ("old_lines", "new_lines")} | {"comments": comments})
+    return {"files": files, "added": added, "removed": removed, "comments": said}, []
+
+
+_BUILD = {"table": _table, "chart": _chart, "kanban": _kanban, "stats": _stats, "diagram": _diagram, "diff": _diff}
 
 
 def build(spec: dict) -> "tuple[dict, list]":
@@ -585,4 +683,9 @@ def describe(ev: dict) -> str:
         if ev["kind"] == "flow":
             return f"a flow diagram, {ev['title']}: {len(ev['nodes'])} steps"
         return f"a timeline, {ev['title']}: {len(ev['items'])} events"
+    if v == "diff":
+        files = "1 file" if len(ev["files"]) == 1 else f"{len(ev['files'])} files"
+        change = f", +{ev['added']} −{ev['removed']}" if any(f["old"] is not None for f in ev["files"]) else ", code without a change"
+        notes = f", {ev['comments']} comment{'' if ev['comments'] == 1 else 's'}" if ev["comments"] else ""
+        return f"a diff, {ev['title']}: {files}{change}{notes}"
     return f"headline figures, {ev['title']}"

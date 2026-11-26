@@ -193,8 +193,31 @@ OPEN_SITE = _t("open_site", "Open a site for the user in the Mystical browser: a
                "here as a message naming each element, with a picture of it. Use it when they want to look at or comment "
                "on a site, staging or live, or when show_design's view can't load it (its sign-in or security blocks a frame).",
                {"url": {"type": "string", "description": "The address, like staging.example.com/planning."}}, ["url"])
+_COMMENTS = {"type": "array", "items": {"type": "object"}, "description":
+             "[{at, text, side}]. at is the line or stretch it's about, as line:char from 1, both ends included: \"12\", "
+             "\"12-14\", \"2:20\" (to the end of line 2) or \"2:20-3:4\". Numbers are the ones shown, so they count from "
+             "old_start/new_start. side is old or new; default new. It's underlined and shows on hover, so keep it to what "
+             "that code does or why it changed."}
+DIFF = {"name": "show_diff", "description": (
+    "Show the user code in the chat, as a diff or as plain code, with comments on lines or a stretch within them. Use it "
+    "instead of a code block when you're explaining code or a change: what a fix changed, how a function works, what to "
+    "edit. Give old and new for a diff, or just code. The user picks how a diff reads (unified, side by side, or the two "
+    "versions side by side); that's their setting, not yours. Send the real code, not a paraphrase."),
+    "inputSchema": {"type": "object", "required": ["title"], "properties": {
+        "title": {"type": "string", "description": "What this is, as you'd say it to the user."},
+        "caption": {"type": "string", "description": "Optional: one line on what stands out."},
+        "path": {"type": "string", "description": "One file: its path, shown as its name."},
+        "language": {"type": "string", "description": "For colouring: python, typescript, go..."},
+        "old": {"type": "string", "description": "One file: the code before. Leave out to show code without a change."},
+        "new": {"type": "string", "description": "One file: the code after."},
+        "code": {"type": "string", "description": "One file: code to show without a change (same as new with no old)."},
+        "old_start": {"type": "integer", "description": "The line number old starts at, when it's an excerpt. Default 1."},
+        "new_start": {"type": "integer", "description": "The line number new starts at, when it's an excerpt. Default 1."},
+        "comments": _COMMENTS,
+        "files": {"type": "array", "items": {"type": "object"}, "description":
+                  "Several files instead: [{path, language, old, new, code, old_start, new_start, comments}]. Up to 20."}}}}
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, DATA, DESIGN, OFFER, CHECKS, DRIVE, OPEN_SITE)
+CORE_ALL = (SHOW, DATA, DIFF, DESIGN, OFFER, CHECKS, DRIVE, OPEN_SITE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
@@ -331,6 +354,11 @@ def _show_data(s: dict, job, a: dict) -> dict:
     if notes:
         said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
     return _text(said)
+
+
+def _show_diff(s: dict, job, a: dict) -> dict:
+    """Code or a diff with comments on the turn (bridge/data_views.py _diff)."""
+    return _show_data(s, job, {**a, "view": "diff"})
 
 
 def _review_prompt(kind: str, focus: str, rounds: int) -> str:
@@ -882,7 +910,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "show_data": _show_data, "show_design": _show_design, "open_site": _open_site, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
+    "show_image": _show_image, "show_data": _show_data, "show_diff": _show_diff, "show_design": _show_design, "open_site": _open_site, "docs_outline": _docs_outline, "doc_page": _doc_page, "read_docs": _read_docs, "offer_review": _offer_review, "design_context": _design_context,
     "inspect_ui": _inspect_ui, "critique_design": _critique_design, "grab_style": _grab_style, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "message_chat": _message_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,
