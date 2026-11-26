@@ -3,7 +3,10 @@
 inspect runs the page in the headless browser at phone and desktop widths and reports things a
 browser knows and a model guesses at: overflow, contrast, small tap targets, broken images, the
 fonts really used, and colours typed by hand beside the page's own variables. They're facts, not
-taste, and cheap, because it's code rather than a model call.
+taste, and cheap, because it's code rather than a model call. At each width it also runs axe-core
+(vendored beside the driver, bridge/axe.md) for the WCAG 2.x A and AA rules. A clean axe run is
+never called "accessible": automated checks find only part of the problems. An axe that didn't
+run says so, never reads as clean.
 
 critique is the independent eye, after Anthropic's harness experiment: an agent grading its own
 work praises it, and a separate one can be tuned to be skeptical. It's a one-shot in plan mode that
@@ -102,6 +105,47 @@ _STYLE = r"""(() => {
   }
   return JSON.stringify({ title: document.title, fonts: top(fonts, 5), sizes: top(sizes, 8), text: top(fg, 6), backgrounds: top(bg, 6), radii: top(radii, 4), padding: top(gaps, 6) });
 })()"""
+
+
+_AXE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "axe.min.js")
+_AXE_MS = 8000     # one width's share of _BUDGET_S, with the audit and the picture
+_AXE_RUN = r"""
+;(async () => {
+  try {
+    const run = axe.run(__SCOPE__, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] }, resultTypes: ['violations'] });
+    const r = await Promise.race([run, new Promise((_, no) => setTimeout(() => no(new Error('it ran out of time')), __MS__))]);
+    return JSON.stringify({ axe: r.violations.map((v) => ({ id: v.id, impact: v.impact, count: v.nodes.length, targets: v.nodes.slice(0, 3).map((n) => n.target.join(' ')), help: v.help })) });
+  } catch (e) { return JSON.stringify({ axe_error: String((e && e.message) || e).slice(0, 200) }); }
+})()"""
+
+
+def _axe_step(selector: "str | None") -> "dict | None":
+    """The eval that loads axe and runs it, or None when the file can't be read."""
+    try:
+        with open(_AXE, encoding="utf-8") as f:
+            src = f.read()
+    except OSError:
+        return None
+    return {"eval": src + _AXE_RUN.replace("__SCOPE__", json.dumps(selector) if selector else "document").replace("__MS__", str(_AXE_MS))}
+
+
+def _axe_summary(value) -> str:
+    """One width's axe facts. Anything but a real answer is "didn't run", never clean."""
+    try:
+        got = json.loads(value) if isinstance(value, str) else None
+    except ValueError:
+        got = None
+    if not isinstance(got, dict) or not isinstance(got.get("axe"), list):
+        why = got.get("axe_error") if isinstance(got, dict) and got.get("axe_error") else "it failed to load"
+        return f"axe didn't run ({why}): this says nothing about its rules."
+    if not got["axe"]:
+        return "axe: no violations. Automated checks find only part of accessibility problems"
+    lines = [f"axe (WCAG 2.x A and AA), {len(got['axe'])} rule(s) broken:"]
+    for v in got["axe"]:
+        n = v.get("count", 0)
+        lines.append(f"- {v.get('id')} ({v.get('impact') or 'no impact given'}, {n} element{'' if n == 1 else 's'}: "
+                     f"{', '.join(v.get('targets') or [])}): {v.get('help')}")
+    return "\n".join(lines)
 
 
 def _run(url: str, width: int, height: int, steps: list, mobile: bool = False) -> dict:
@@ -218,12 +262,17 @@ def inspect(root: str, a: dict) -> "tuple[str, list]":
                 break
             audit = _AUDIT.replace("__TOUCH__", "true" if touch else "false").replace("__SCOPE__", json.dumps(selector))
             shot = {"shot": f"{w}px", "full": not selector, **({"selector": selector} if selector else {})}
-            got = _run(url, w, h, [{"wait": 500}, *steps, {"eval": audit}, shot], touch)
+            axe = _axe_step(selector)
+            # axe before the audit: the audit's is still the last eval, as _eval_result reads it.
+            got = _run(url, w, h, [{"wait": 500}, *steps, *([axe] if axe else []), {"eval": audit}, shot], touch)
             ran.append(got)
             if got.get("error"):
                 raise OSError(got["error"])
             r = _eval_result(got)
             parts.append(_summary(r, f"{w}px"))
+            if not r.get("missing"):
+                evals = got.get("evals") or []
+                parts.append(_axe_summary(evals[-2] if axe and len(evals) >= 2 else None))
             if touch and r.get("width", w) > w + 1:
                 parts.append(f"No viewport meta tag: on a real phone this lays out {r['width']}px wide and shrinks to fit. Add "
                              '<meta name="viewport" content="width=device-width, initial-scale=1">.')
