@@ -730,7 +730,7 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
                 _cache[session_id]["next"] = {"station": first, "turn_id": "", "started": False}
                 _save_locked()
             return NO_PATH + NO_BRANCH + prompt
-        return f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there. {prompt}"
+        return f"{_build_text(moved)} {prompt}"
     return f"/mattpocock-skills:{skill} {prompt}" if skill else NO_PATH + prompt
 
 
@@ -796,7 +796,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None, style=None)
         moved = _branch_off(session_id, sess, flow, chat_id if chat_id is not None else sess.get("chat_id"))
         if not moved:
             return False
-        texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
+        texts = [_build_text(moved)]
     if _eff(flow, "smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
@@ -838,10 +838,21 @@ def _go(session_id: str, chat_id=None, effort=None, style=None) -> bool:
     return False
 
 
+def _build_text(moved: tuple) -> str:
+    """The here build's first prompt. A designed build names its drafts and ends with the Polish pass."""
+    branch, co, drafts = moved
+    text = f"/mattpocock-skills:implement Work in {co} on branch {branch}, and commit there."
+    if drafts:
+        text += (f" The approved design is in {', '.join(drafts)}: the approved Direction there is the source of "
+                 "truth, and SPEC.md's Build section says which skills to load. When the build is done, run "
+                 "/mystical-design:polish (the skill mystical-design:polish).")
+    return text
+
+
 def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "") -> "tuple | None":
-    """(branch, checkout) the step works in: the feature branch in its own worktree, the
-    flow's own files carried there and committed, and the session moved in, so the
-    step's commits land there. The branch is the one the flow's agent named (StepDone),
+    """(branch, checkout, drafts) the step works in: the feature branch in its own worktree, the
+    flow's own files carried there and committed, the drafts it wrote copied there while the
+    DESIGN PACK gate is open, and the session moved in, so the step's commits land there. The branch is the one the flow's agent named (StepDone),
     else feat/ and the session's title, or `title` for a session too new to have one.
     None when the files couldn't move: they are back where they were, the user is told,
     and the step waits."""
@@ -852,7 +863,9 @@ def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "
                     or ("feat", flowbranch.title_slug(sess.get("title") or title)))
     branch = f"{prefix}/{slug}"
     try:
+        drafts = flowbranch.drafts(session_id, flow["at"]) if design_pack(session_id) else []
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)
+        flowbranch.copy_drafts(flowbranch._checkout(sess), co, drafts)  # noqa: SLF001
         flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
                                     flowbranch.flow_files(session_id, flow["at"]), slug,
                                     ours=flowbranch.added_lines(session_id, flow["at"]))
@@ -863,7 +876,7 @@ def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "
         return None
     store.set_cwd(session_id, co)
     store.set_work_cwd(session_id, None)   # the branch label reads the cwd from here (_session_brief)
-    return branch, co
+    return branch, co, drafts
 
 
 def continue_after_turn(job, effort=None) -> bool:

@@ -5,6 +5,7 @@ and the pack's own files. Run: python3 -m pytest tests/test_design_pack.py -q"""
 import json
 import os
 import re
+import subprocess
 
 import pytest
 
@@ -151,3 +152,80 @@ def test_design_pack_is_an_ai_feature_off_by_default():
     assert f["label"] == "DESIGN PACK" and not f.get("parent")
     with open(config.__file__, encoding="utf-8") as src:
         assert f'os.environ.get("{f["env"]}", "0")' in src.read()
+
+
+# --- Seam 1: the approved drafts reach every build -----------------------------
+
+from test_paths import _end, _git, _turn, repo_session  # noqa: E402,F401 — fixtures
+from test_tickets import make_set  # noqa: E402,F401 — fixture
+
+DRAFT = os.path.join(".mystical", "design-drafts", "calm-header")
+
+
+def _write_drafts(sid, t, root):
+    """The design step's writes: a Direction's page and SPEC.md, and the repo's first DESIGN.md."""
+    os.makedirs(os.path.join(root, DRAFT), exist_ok=True)
+    with open(os.path.join(root, ".mystical", ".gitignore"), "w") as f:
+        f.write("*\n")
+    for p in (os.path.join(root, DRAFT, "a.html"), os.path.join(root, DRAFT, "SPEC.md"), os.path.join(root, "DESIGN.md")):
+        with open(p, "w") as f:
+            f.write("flow\n")
+        store.append_event(sid, t, {"type": "tool", "name": "Write", "summary": p})
+
+
+def _clean(co):
+    return _git(co, "status", "--porcelain", "-uall") == ""
+
+
+def _here_build(sid, main, fake_queue, path="design-here"):  # noqa: F811
+    design = path == "design-here"
+    paths.set_path(sid, path, "a calmer header", "claude", done=["grill"] if design else None)
+    t = _turn(sid, "/mystical-design:design-first a calmer header" if design else "/mattpocock-skills:grill-with-docs x")
+    if design:
+        _write_drafts(sid, t, main)
+    paths.step_done(sid, t)
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    return store.get_session(sid)["cwd"], fake_queue.items[-1]["prompt"]
+
+
+def test_a_designed_here_build_gets_the_drafts_and_the_polish_pass(switches, repo_session, fake_queue):  # noqa: F811
+    switches.add("designpack")
+    sid, main = repo_session
+    co, prompt = _here_build(sid, main, fake_queue)
+    for root in (co, main):                                   # copied, never moved
+        assert os.path.isfile(os.path.join(root, DRAFT, "SPEC.md")) and _clean(root)
+    assert prompt == (f"/mattpocock-skills:implement Work in {co} on branch feat/my-feature, and commit there. "
+                      f"The approved design is in {DRAFT}: the approved Direction there is the source of truth, "
+                      "and SPEC.md's Build section says which skills to load. When the build is done, run "
+                      "/mystical-design:polish (the skill mystical-design:polish).")
+    assert _git(co, "show", "feat/my-feature:DESIGN.md") == "flow"      # DESIGN.md rode with the build
+    assert subprocess.run(["git", "-C", main, "cat-file", "-e", "master:DESIGN.md"]).returncode != 0
+
+
+@pytest.mark.parametrize("path", ["design-here", "build-here"])
+def test_a_closed_gate_or_a_build_flow_gets_none_of_it(switches, repo_session, fake_queue, path):  # noqa: F811
+    if path == "build-here":
+        switches.add("designpack")                            # open, but the flow wrote no drafts
+    sid, main = repo_session
+    co, prompt = _here_build(sid, main, fake_queue, path)
+    assert prompt == f"/mattpocock-skills:implement Work in {co} on branch feat/my-feature, and commit there."
+    assert not os.path.exists(os.path.join(co, DRAFT))
+
+
+@pytest.mark.parametrize("gate", [True, False])
+def test_a_designed_sets_tickets_and_merge_get_the_drafts(make_set, gate):  # noqa: F811
+    s = make_set({"01": None}, build=False)              # its flow's path is the set's
+    paths.set_option(s.flow, "designpack", gate)
+    t = _turn(s.flow, "/mystical-design:design-first a calmer header")
+    _write_drafts(s.flow, t, s.main)
+    assert s.build() == ""
+    wt, merge = s.state["tickets"]["01"]["worktree"], s.state["feature_checkout"]
+    first = s.starts[-1]["prompt"]
+    s.finish("01")
+    (m,) = [x for x in s.starts if x["origin"] == "ticket-merge"]
+    assert os.path.isdir(os.path.join(s.main, DRAFT)) and _clean(s.main)
+    for root in (wt, merge):
+        assert os.path.isdir(os.path.join(root, DRAFT)) is gate and _clean(root)
+    assert (f"The approved design is in {DRAFT}: build to it." in first) is gate
+    assert (f"run /mystical-design:polish (the skill mystical-design:polish) against the approved design in {DRAFT}. "
+            "Then call StepDone." in m["prompt"]) is gate
