@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/kinds.check.ts
-import { KINDS, KIND_ORDER, guessKind, kindFacts, lastCheckOf, nextKind, presetFor, sendPlan, shownKind } from "./kinds.ts";
+import { KINDS, KIND_ORDER, boldShows, guessKind, kindFacts, lastCheckOf, nextKind, presetFor, sendPlan, shownKind } from "./kinds.ts";
 import type { FactsCtx, LastCheck } from "./kinds.ts";
 import type { GitStatus } from "../api.ts";
 import type { Turn } from "../chat.ts";
@@ -112,6 +112,16 @@ const off = sendPlan({ ...o, kind: "build", flows: false });
 console.assert(off.flow === undefined && off.run === run, "SKILL PATHS off: the run, no flow");
 const esc = shownKind("plain", "add a digest", { start: true, design: true });
 console.assert(sendPlan({ ...o, kind: esc.kind, how: esc.how }).flow === undefined, "Esc on a lit flow sends no flow");
+
+// --- BOLD: beside DESIGN with the design pack on; it goes only with a DESIGN flow -------
+console.assert(boldShows("design", true, true), "BOLD shows beside DESIGN with the pack on");
+for (const [k, live, pack] of [["build", true, true], ["design", false, true], ["design", true, false], [null, true, true]] as const)
+  console.assert(!boldShows(k, live, pack), `no BOLD for ${k} live=${live} pack=${pack}`);
+console.assert(sendPlan({ ...o, kind: "design", bold: true }).bold === true, "a DESIGN send carries BOLD");
+console.assert(sendPlan({ ...o, kind: "design", how: "auto", bold: true }).bold === true, "a guessed DESIGN carries it too");
+console.assert(sendPlan({ ...o, kind: "design" }).bold === undefined, "unlit, no bold");
+console.assert(sendPlan({ ...o, kind: "build", bold: true }).bold === undefined, "never with another flow");
+console.assert(sendPlan({ ...o, kind: "design", how: "auto", running: "design", bold: true }).bold === undefined, "no flow started, no bold");
 
 // --- lastCheckOf -------------------------------------------------------------
 const chk = (ok: boolean, at?: number) => ({ type: "checks" as const, command: "t", ok, code: ok ? 0 : 1, ms: 1, passed: 3, failed: ok ? 0 : 1, skipped: 0, new: [], known: [], log: "", tail: "", at });

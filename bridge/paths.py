@@ -274,7 +274,7 @@ _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 # The SETTINGS switches one session may override: from the prompt box (AUTO NEXT STEPS, AUTO PICKS,
 # SMART ZONE), and DESIGN PACK through the API alone (the blind test's pack arm).
 OPTIONS = ("nextstep", "autopick", "smartzone", "designpack")
-_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch")
+_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch", "bold")
 # shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
 _PAST = 50
 
@@ -482,7 +482,7 @@ def get(session_id: str) -> "dict | None":
         if not f:
             return None
         return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "end": f.get("end"), "next": _next(f),
-                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}), "branch": f.get("branch"),
+                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}), "branch": f.get("branch"), "bold": bool(f.get("bold")),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
 
@@ -683,9 +683,12 @@ BY = {"you": "you picked", "guess": "the box guessed"}
 NO_BRANCH = "Change no files: this build couldn't move to a branch of its own, and waits for the user.\n\n"
 
 
-def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
-    """Why a send can't start `flow` ("" = it can): checked where the send comes in."""
+def flow_refusal(flow: str, by: str, prompt: str, agent: str, bold: bool = False) -> str:
+    """Why a send can't start `flow` ("" = it can): checked where the send comes in.
+    `bold` (the prompt box's BOLD) goes with DESIGN alone."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if bold and flow != "design":
+        return "bold goes with the DESIGN flow alone"
     if not on():
         return "flows are off: FLOWS is off in the prompt box's gear"
     if flow not in FLOWS:
@@ -701,27 +704,33 @@ def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
     return ""
 
 
-def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
+def start_flow(session_id: str, flow: str, by: str, prompt: str, bold: bool = False) -> str:
     """The prompt box's flow starts with this turn: recorded for the session in place of
     any running flow, and the prompt returned with its first step's command in front
     (SHIP and ASK: the no-path line, so Claude moves them into no other flow). The
     flow already running keeps it: nothing recorded, nothing in front. A prompt queued
     before FLOWS, or its flow, went off goes as typed. With its grill off, DESIGN starts
     at design and BUILD at the here build, which first moves the session onto a branch of
-    its own (as the here build after a grill does), never the default branch."""
+    its own (as the here build after a grill does), never the default branch. `bold`
+    (BOLD lit) is kept on the record, so the design step carries the Bold-run note
+    whether it runs now or after the grill."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if not on() or not flowsettings.flow_on(flow):
         return prompt
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
+        if bold:   # BOLD lit mid-flow (answering the grill): its design step still goes bold
+            _set_bold(session_id)
         return prompt
     here = flow in ("design", "build") and not flowsettings.steps(flow).get("grill", True)
     # The grill goes behind it, as claude_path has it: switched on later, it can't take this turn's step.
     rec = set_path(session_id, flow + "-here" if here else flow, f"{BY[by]} {flow.upper()}", by,
                    done=["grill"] if here else None)
+    if bold:
+        _set_bold(session_id)
     first, skill, _ = _stations(rec)[0]
     if first == "design":
-        return f"{design_cmd(session_id)} {prompt}\n\n{DESIGN_STEP}"
+        return f"{design_cmd(session_id)} {_bold(session_id)}{prompt}\n\n{DESIGN_STEP}"
     if first == "build-here":
         sess = store.get_session(session_id) or {}
         moved = _branch_off(session_id, sess, rec, sess.get("chat_id"), prompt)
@@ -747,6 +756,21 @@ DESIGN_STEP = ("This is a flow's design step: building is the next step's job, s
                "call StepDone instead of implementing.")
 DESIGN_ASK = f"the change the grill above settled. {DESIGN_STEP}"
 DESIGN_TEXT = f"/design-first {DESIGN_ASK}"   # with the design pack's gate closed (design_cmd)
+# BOLD lit for the send: the line design-first's Bold-run section reads (design-pack tickets 06
+# and 07), right after the command, since a / command has to open the message.
+BOLD_NOTE = "Bold run: you lit BOLD."
+
+
+def _set_bold(session_id: str) -> None:
+    with _lock:
+        _cache[session_id]["bold"] = True
+        _save_locked()
+
+
+def _bold(session_id: str) -> str:
+    """The Bold-run note and its line break when the session's flow was started with BOLD lit."""
+    with _lock:
+        return f"{BOLD_NOTE}\n" if (_cache.get(session_id) or {}).get("bold") else ""
 # The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
 _TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000
@@ -789,7 +813,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None, style=None)
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
     texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY
-             else f"{design_cmd(session_id)} {DESIGN_ASK}" if station == "design" else f"/mattpocock-skills:{skill}"]
+             else f"{design_cmd(session_id)} {_bold(session_id)}{DESIGN_ASK}" if station == "design" else f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
