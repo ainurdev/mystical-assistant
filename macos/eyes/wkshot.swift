@@ -15,9 +15,11 @@ app.setActivationPolicy(.prohibited)
 let win = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: w, height: h),
                    styleMask: [.borderless], backing: .buffered, defer: false)
 // PRELOAD=<js> runs at document start (localStorage seeding, like cdp.mjs).
+// A driven page says so, as headless Chrome does: the dashboard starts no reports for one (lib/reports.ts).
+let driven = "Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => true })"
 let cfg = WKWebViewConfiguration()
-if let pre = ProcessInfo.processInfo.environment["PRELOAD"], !pre.isEmpty {
-    cfg.userContentController.addUserScript(WKUserScript(source: pre, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+for src in [driven, ProcessInfo.processInfo.environment["PRELOAD"] ?? ""] where !src.isEmpty {
+    cfg.userContentController.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 }
 let web = WKWebView(frame: NSRect(x: 0, y: 0, width: w, height: h), configuration: cfg)
 win.contentView = web
