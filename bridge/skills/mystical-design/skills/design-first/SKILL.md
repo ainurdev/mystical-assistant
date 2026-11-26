@@ -13,6 +13,36 @@ any repo code changes.
 Walk the steps in order. Where a step loads a skill, load it by the name given, with
 the Skill tool. Never wait for a skill's own description to trigger it.
 
+## Bold runs
+
+A **Bold run** is for a screen that should be truly creative and unique. All three
+Directions leave the house look on purpose. The steps below hold, with the changes this
+section names. Decide before step 1 whether this run is bold. It is when any of these is
+true:
+
+- **BOLD was lit.** The prompt carries the line `Bold run: you lit BOLD.` right after
+  its command line.
+- **The ask says so:** "creative", "unique", "bold", "surprise me", or the same in
+  other words.
+- **A showpiece with nothing to fit.** You judge the screen one: a landing page, a
+  splash, onboarding, a set of info cards like the OBJECTS ones.
+- **The last card's answer said "Go bold".** The next round is a Bold run.
+
+On a Bold run:
+
+- **Concepts (step 5).** List about fifteen one-line concepts, and make them bold and
+  different. Keep the three farthest apart, each breaking a different convention:
+  layout, type, colour or motion. Name in SPEC.md which convention each one breaks. No
+  Direction stays in place, and none is labelled OFF-SYSTEM, since all three are
+  off-system.
+- **What stays.** The product's name, logo and real content.
+- **The Self-check (step 7)** is the same: axe, the judgement pass, and the critic's P0
+  and P1 problems. Every Bold-run page goes to `critique_design` with `bold: true`, which
+  adds the template-look check.
+- **The card (step 10).** Its question line says in one line why the run is bold: "Bold
+  run: you lit BOLD", "Bold run: your ask says 'unique'", "Bold run: a landing page has
+  nothing to fit", "Bold run: you said 'go bold'".
+
 ## 1. Find the linked design project
 
 Read `~/.bridge_state/project_config.json`. The key is the repo's trailing path (this
