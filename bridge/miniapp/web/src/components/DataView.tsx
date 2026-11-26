@@ -6,6 +6,7 @@ import {
 } from "../lib/dataview";
 import { saveView, sendFile, useRefSession } from "../lib/readapi";
 import { xlsx } from "../lib/viewexport";
+import { usePanZoom } from "../lib/panzoom";
 import { viewPng } from "../lib/viewpng";
 
 // A sheet, chart, board, diagram or row of figures an agent showed on the turn (show_data,
@@ -540,8 +541,11 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
     const down = layoutFlow(ev, "down");
     return down.width <= right.width ? down : right;
   }, [ev, w, full, print]);
-  // Shrink a little to fit rather than scroll, and past that scroll rather than go unreadable.
+  // Shrink a little to fit rather than pan, and past that pan rather than go unreadable. In a
+  // chat the frame is as tall as the drawing at that size, up to most of the screen.
   const scale = print || !w || layout.width <= w ? 1 : Math.max(0.8, w / layout.width);
+  const pz = usePanZoom(layout.width, layout.height, full, !!print, () => setTip(null));
+  const tall = Math.max(140, Math.min(layout.height * scale + 2, Math.round(window.innerHeight * 0.7)));
   const shown = (g: string) => (g ? series(ev.groups.indexOf(g)) : "var(--dv-zero)");
   // The wires that touch what's under the pointer stand out, so a step's paths read at a glance.
   const lit = useMemo(() => {
@@ -568,10 +572,13 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
   return (
     <div className="dv-chart dv-flow-host" ref={host}>
       {ev.groups.length > 1 ? <Legend items={ev.groups.map((g, i) => ({ label: g, color: series(i) }))} /> : null}
-      <div className="dv-flow" ref={ref} tabIndex={0} role="img" onScroll={tip ? close : undefined}
-        aria-label={`${ev.title}: ${ev.nodes.map((n) => n.label).join(", ")}`}>
+      <div className="dv-flow" ref={ref}>
         {w || print ? (
-          <svg width={layout.width * scale} height={layout.height * scale} viewBox={`0 0 ${layout.width} ${layout.height}`}>
+          <div className="dv-pan" ref={pz.ref} tabIndex={print ? undefined : 0} role="img" data-full={full || undefined} {...pz.handlers}
+            style={print ? undefined : full ? undefined : { height: tall }}
+            aria-label={`${ev.title}: ${ev.nodes.map((n) => n.label).join(", ")}. Drag to move, pinch or ctrl and scroll to zoom.`}>
+          <svg {...(print ? { width: layout.width, height: layout.height, viewBox: `0 0 ${layout.width} ${layout.height}` } : { width: "100%", height: "100%" })}>
+          <g transform={print || !pz.view ? undefined : `translate(${pz.view.x} ${pz.view.y}) scale(${pz.view.k})`} opacity={print || pz.view ? 1 : 0}>
             {layout.clusters.map((c) => (
               <g key={`c${c.id}`} {...(print ? {} : hoverable(true, () => ({ kind: "box", id: c.id, title: c.label, note: "", comment: c.comment ?? "", count: c.nodes.length })))}>
                 <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={4} className="dv-box" data-on={tip?.kind === "box" && tip.id === c.id ? "" : undefined} />
@@ -613,7 +620,17 @@ export function Flow({ ev, full, print }: { ev: FlowEv; full: boolean; print?: b
                 <text x={a.lx} y={a.ly + 3.5} textAnchor="middle" className="dv-tick">{a.label}</text>
               </g>
             ) : null))}
+          </g>
           </svg>
+          {print ? null : (
+            <div className="dv-zoom" onPointerDown={(e) => e.stopPropagation()}>
+              <button type="button" className="dv-btn" aria-label="Zoom out" onClick={() => pz.zoomBy(1 / 1.25)}>−</button>
+              <button type="button" className="dv-btn dv-zoom-k" aria-label="Back to where it started" title="Back to where it started" onClick={pz.reset}>{Math.round((pz.view?.k ?? 1) * 100)}%</button>
+              <button type="button" className="dv-btn" aria-label="Zoom in" onClick={() => pz.zoomBy(1.25)}>+</button>
+              <button type="button" className="dv-btn" onClick={pz.fit}>FIT</button>
+            </div>
+          )}
+          </div>
         ) : null}
       </div>
       {tip && !print ? (
