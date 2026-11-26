@@ -89,6 +89,7 @@ UNTIMED = (
     "POST /local/server",                                                     # waits for the dev server's URL
     "POST /local/rivendell/team/send",                                        # an upload
     "GET /local/storage",                                                     # a disk walk, on open
+    "GET /local/complete/symbols",         # every tracked source file read, once per change of the index
     "POST /local/git/worktree/remove",                                        # a checkout deleted, its scratch kept
 )
 

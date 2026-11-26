@@ -269,7 +269,7 @@ def test_a_long_poll_an_agents_tool_call_and_a_server_start_are_untimed(monkeypa
     monkeypatch.setattr(reports, "_slow", lambda name, *a, **k: sent.append(name))
     for method, path in [("GET", "/local/runs/0123456789abcdef?wait=25"), ("POST", "/local/gateway"),
                          ("POST", "/local/server"), ("POST", "/local/git/worktree/remove"),
-                         ("GET", "/local/runs")]:
+                         ("GET", "/local/complete/symbols?project=/x"), ("GET", "/local/runs")]:
         reports.bridge_call(method, path, 200, 30.0)
     assert sent == ["bridge call: GET /local/runs"]           # the list of runs waits on nothing
 
