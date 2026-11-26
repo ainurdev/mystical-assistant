@@ -12,7 +12,7 @@ with its licence file beside it.
 
 | Skills | Source | Version | Licence | File |
 |---|---|---|---|---|
-| design-first, design-implement | Mystical (this repo) | in-repo | MIT | `LICENSE` |
+| design-first, design-implement, polish | Mystical (this repo) | in-repo | MIT | `LICENSE` |
 | frontend-design | github.com/anthropics/skills, `skills/frontend-design` | e4bb5d9 (2026-11-16) | Apache-2.0 | `skills/frontend-design/LICENSE.txt` |
 | web-design-guidelines | github.com/vercel-labs/agent-skills, `skills/web-design-guidelines` | 1.1.0, 5a37a63 (2026-11-20) | MIT, declared in the repo README (the repo has no licence file) | `skills/web-design-guidelines/LICENSE` |
 | break-ui | github.com/emilkowalski/skills, `skills/break-ui` | 64eb3de (2026-11-15) | MIT | `skills/break-ui/LICENSE` |
