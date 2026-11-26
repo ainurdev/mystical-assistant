@@ -446,7 +446,7 @@ def _critic_prompt(title: str, shots: list, refs: list, facts: str, bold: bool =
 def _rank(fixes: list) -> list:
     """Most severe first, a problem with no known severity last, cut to the most the critic may list."""
     known = {s: i for i, s in enumerate(SEVERITIES)}
-    fixes = [f for f in fixes if isinstance(f, dict)]
+    fixes = [{**f, "severity": str(f["severity"]).strip().upper()} if f.get("severity") else f for f in fixes if isinstance(f, dict)]
     return sorted(fixes, key=lambda f: known.get(str(f.get("severity", "")).strip().upper(), len(SEVERITIES)))[:_MAX_PROBLEMS]
 
 
@@ -486,7 +486,7 @@ def _critique_job(key: str, root: str, a: dict, chat_id: int, title: str, bold: 
         got = _parse_critique(reply) if not failed else None
         if not got:
             print(f"[critic] {str(reply)[:200]}", file=sys.stderr)
-        result = {"state": "done", **got, "facts": facts} if got else {"state": "failed", "error": "The critic didn't give a usable answer."}
+        result = {"state": "done", **got, "facts": facts, "bold": bold} if got else {"state": "failed", "error": "The critic didn't give a usable answer."}
     except (OSError, design_board.Refused) as e:
         result = {"state": "failed", "error": str(e)}
     with _lock:
@@ -502,7 +502,8 @@ def critique(root: str, a: dict, chat_id: int) -> dict:
     key = f"{root}\n{board}\n{page}"
     with _lock:
         cur = _critics.get(key)
-        if cur and (cur["state"] == "running" or not a.get("fresh")):
+        # A bold ask never takes an answer that skipped the template-look check.
+        if cur and (cur["state"] == "running" or not (a.get("fresh") or a.get("bold") is True and not cur.get("bold"))):
             return cur
         _critics[key] = {"state": "running", "at": time.time()}
     threading.Thread(target=_critique_job, args=(key, root, {"board": board, "page": page}, chat_id, meta["title"], a.get("bold") is True), daemon=True).start()

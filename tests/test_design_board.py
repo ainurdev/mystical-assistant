@@ -196,7 +196,7 @@ def test_the_critic_reads_only_and_lists_problems_most_severe_first(repo, monkey
 
 def test_a_problem_with_no_known_severity_ranks_last():
     got = design_audit._parse_critique(json.dumps({"verdict": "v", "fixes": [{"where": "a", "fix": "x"}, {"severity": "p2", "where": "b", "fix": "y"}]}))
-    assert [f["where"] for f in got["fixes"]] == ["b", "a"]
+    assert [(f["where"], f.get("severity")) for f in got["fixes"]] == [("b", "P2"), ("a", None)]
 
 
 def test_an_answer_cached_before_problems_still_opens(session, repo, monkeypatch):
@@ -214,7 +214,8 @@ def test_an_answer_cached_before_problems_still_opens(session, repo, monkeypatch
 
 def test_bold_adds_the_template_look_and_expo_tells_in_an_expo_repo(repo, monkeypatch):
     reply = '{"verdict":"v","fixes":[]}'
-    _, seen = _critic_answer(repo, monkeypatch, reply, {"bold": True})
+    _, seen = _critic_answer(repo, monkeypatch, reply)
+    _, seen = _critic_answer(repo, monkeypatch, reply, {"bold": True})  # not fresh: the plain answer above doesn't do
     assert "Template look" in seen["prompt"] and "purple gradients" in seen["prompt"] and "native-slop" not in seen["prompt"]
     open(os.path.join(repo, "package.json"), "w").write(json.dumps({"dependencies": {"expo": "~53"}}))
     _, seen = _critic_answer(repo, monkeypatch, reply, {"bold": True, "fresh": True})
