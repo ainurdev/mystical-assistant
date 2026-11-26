@@ -306,6 +306,23 @@ def test_a_meter_read_inside_the_ask_is_not_the_bridges_own_time(meters, monkeyp
     assert reports.take_outside() < 0.1
 
 
+def test_the_accounts_asks_own_work_stays_in_its_time(meters, monkeypatch):
+    # The logins' rows are built side by side, and building one is the bridge's own work too:
+    # on a Mac has_token is a `security` read of the Keychain, 100 to 133 ms of every poll,
+    # with a 10 s ceiling. Only the read through the CLI is a wait outside the bridge.
+    def keychain(path):
+        time.sleep(0.4)
+        return True
+
+    _get("/local/accounts")
+    monkeypatch.setattr(usage, "has_token", keychain)
+    reports.take_outside()
+    _get("/local/accounts")                                 # nothing to read: 0.4 s, all its own
+    assert reports.take_outside() < 0.1
+    _get("/local/accounts", {"fresh": ["0"]})               # Check now: a 0.3 s read each, side by side
+    assert 0.3 <= reports.take_outside() < 0.6              # the longest read, not the 0.4 s beside it
+
+
 def test_picking_an_account_reads_an_expired_meter_anew(meters):
     now, spawns = meters
     _get("/local/accounts")                                 # login 1 has room

@@ -99,13 +99,19 @@ _out = threading.local()   # .secs: this thread's waits outside the bridge since
 def outside():
     """Around a wait on something that is not the bridge (the module docstring
     names them): its time leaves the request this thread is answering. Wrap the
-    wait itself, once. shortcut: a wait handed to other threads is the waiting
-    thread's to wrap (accounts.with_meters' pool)."""
+    wait itself, once: what runs beside it is the bridge's own work."""
     t = time.monotonic()
     try:
         yield
     finally:
-        _out.secs = getattr(_out, "secs", 0.0) + time.monotonic() - t
+        waited(time.monotonic() - t)
+
+
+def waited(secs: float) -> None:
+    """`secs` of this thread's time went to a wait outside the bridge. outside() says so
+    for a wait on this thread; a thread that waited on others' says what they measured
+    (accounts.with_meters: the longest of its pool's reads)."""
+    _out.secs = getattr(_out, "secs", 0.0) + secs
 
 
 def take_outside() -> float:
