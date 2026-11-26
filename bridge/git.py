@@ -940,6 +940,7 @@ def merged_branches(cwd: str, base: str = "") -> list[str]:
     return [b for b in (x.strip() for x in out.splitlines()) if b and b != base and not b.startswith("(")]
 
 
+DRY_RUNS = 12         # dry-run merges per branch_status read: the newest branches with work to land
 _answers: dict = {}   # (cwd, git args naming commits by id) -> git's answer
 
 
@@ -1037,11 +1038,15 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     files there, None without a checkout).
 
     One `for-each-ref` for the names, dates and upstreams, one read of every
-    reflog, a status per checkout (side by side), and per branch a rev-list and,
-    with work to land, a dry-run merge. Those two are asked by commit id, so git
-    answers once per pair of commits (_settled): the tab asks every 30 s, and 24
-    unmoved branches were 76 git runs and 0.76 s each time (Sentry MYSTICAL-T).
-    A branch that moved costs its own two runs again, not everyone's."""
+    reflog, a status per checkout, and per branch a rev-list and, with work to
+    land, a dry-run merge. Those two are asked by commit id, so git answers once
+    per pair of commits (_settled): the tab asks every 30 s, and 24 unmoved
+    branches were 76 git runs and 0.76 s each time (Sentry MYSTICAL-T). A branch
+    that moved costs its own two runs again. A base that moved costs every
+    branch's (60 runs, 461 ms one at a time), so the statuses and each branch's
+    asks run eight side by side. shortcut: a repo with hundreds of branches still
+    pays two or three runs a branch when its base moves; fold them into one
+    `for-each-ref --format=%(ahead-behind:<tip>)` (git 2.41) if that bites."""
     if not is_repo(cwd):
         return {"base": "", "branches": []}
     base = default_branch(cwd)
@@ -1060,6 +1065,7 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
            "%09%(objectname)%09%(subject)")
     rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
     heads = [(ln.split("\t", 5) + [""] * 6)[:6] for ln in (out.splitlines() if rc == 0 else [])]
+    heads = [h for h in heads if h[0]]
     local = {h[0] for h in heads}
     tips.update((h[0], h[4]) for h in heads)       # a local branch wins over a remote ref of its name
     logs = _reflogs(cwd)
@@ -1067,16 +1073,8 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     def known(t: str) -> str:      # a target as a ref git can read: local, else origin's copy
         return t if t in local else f"origin/{t}" if f"origin/{t}" in remote else t if t in remote else ""
 
-    paths = [w["path"] for w in trees if w["detached"] or w["branch"] in local]
-    with ThreadPoolExecutor(min(8, len(paths)) or 1) as pool:
-        dirt = dict(zip(paths, pool.map(dirty, paths)))
-    rows: list[dict] = []
-    dry = 12   # dry-run merges per read: the newest branches with work to land
-    for name, at, up, track, sha, subject in heads:
-        if not name:
-            continue
-        gone = track.strip() == "gone"
-        m = re.search(r"ahead (\d+)", track)
+    def measure(h: list) -> tuple:   # what one branch asks of git, apart from every other branch
+        name, sha = h[0], h[4]
         start, worked = _made_from(cwd, name, local, remote, base, logs, tips)
         target = "" if name == base else known(want[name]) if name in want else start or base
         if target == name:
@@ -1084,11 +1082,22 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
         # by commit id where the target's is known: the answer is kept
         run, tip = (_settled, tips[target]) if target in tips else (None, target)
         lr = _left_right(cwd, tip, sha, run) if target else None
+        return target, worked, run, tip, lr
+
+    paths = [w["path"] for w in trees if w["detached"] or w["branch"] in local]
+    with ThreadPoolExecutor(8) as pool:
+        dirt, asked = pool.map(dirty, paths), list(pool.map(measure, heads))
+        # the dry runs: the newest branches with work to land on a target that moved on
+        due = [i for i, a in enumerate(asked) if a[4] and a[4][0] and a[4][1]][:DRY_RUNS]
+        clashes = dict(zip(due, pool.map(lambda i: merge_check(cwd, asked[i][3], heads[i][4], asked[i][2]), due)))
+        dirt = dict(zip(paths, dirt))
+    rows: list[dict] = []
+    for i, (name, at, up, track, sha, subject) in enumerate(heads):
+        target, worked, _, _, lr = asked[i]
+        gone = track.strip() == "gone"
+        m = re.search(r"ahead (\d+)", track)
         ahead, behind = lr or (0, 0)
-        clash = None
-        if lr and ahead:
-            clash = [] if not behind else merge_check(cwd, tip, sha, run) if dry > 0 else None
-            dry -= 1 if behind else 0
+        clash = None if not (lr and ahead) else clashes.get(i) if behind else []
         w = held.get(name)
         rows.append({
             "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
