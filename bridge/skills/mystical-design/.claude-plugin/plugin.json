@@ -1,12 +1,13 @@
 {
   "name": "mystical-design",
   "version": "0.1.0",
-  "description": "Mystical's design skills: design a change before building it, and build one made in Claude Design, with the outside skills they load.",
+  "description": "Mystical's design skills: design a change before building it, build one made in Claude Design, and audit an existing screen, with the outside skills they load.",
   "license": "MIT AND Apache-2.0",
   "skills": [
     "./skills/design-first",
     "./skills/design-implement",
     "./skills/polish",
+    "./skills/screen-audit",
     "./skills/frontend-design",
     "./skills/web-design-guidelines",
     "./skills/break-ui",

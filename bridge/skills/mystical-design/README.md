@@ -12,7 +12,7 @@ with its licence file beside it.
 
 | Skills | Source | Version | Licence | File |
 |---|---|---|---|---|
-| design-first, design-implement, polish | Mystical (this repo) | in-repo | MIT | `LICENSE` |
+| design-first, design-implement, polish, screen-audit | Mystical (this repo) | in-repo | MIT | `LICENSE` |
 | frontend-design | github.com/anthropics/skills, `skills/frontend-design` | e4bb5d9 (2026-11-16) | Apache-2.0 | `skills/frontend-design/LICENSE.txt` |
 | web-design-guidelines | github.com/vercel-labs/agent-skills, `skills/web-design-guidelines` | 1.1.0, 5a37a63 (2026-11-20) | MIT, declared in the repo README (the repo has no licence file) | `skills/web-design-guidelines/LICENSE` |
 | break-ui | github.com/emilkowalski/skills, `skills/break-ui` | 64eb3de (2026-11-15) | MIT | `skills/break-ui/LICENSE` |
@@ -26,6 +26,7 @@ with its licence file beside it.
   (the one that ran before this pack) and the repo copy's design-board paragraph, then
   rewritten for three Directions and the Self-check.
 - `skills/design-implement/SKILL.md`: moved from `.claude/skills/design-implement`, unedited.
+- `skills/screen-audit/SKILL.md`: written for this pack.
 - web-design-guidelines 1.1.0 bundles its rules in `references/command.md` (pinned to
   vercel-labs/web-interface-guidelines 434b7f9, SHA-256 in its SKILL.md) and tells the
   model not to fetch them.

@@ -398,3 +398,15 @@ def test_the_polish_pass_names_its_steps_and_its_limits():
                  "/mystical-design:web-design-guidelines", "/mystical-design:break-ui",
                  "at most two rounds", "Never commit the drafts", "Run tool", "Native-only behaviour wasn't checked"):
         assert step in md, step
+
+
+def test_the_screen_audit_is_in_the_slash_list_and_names_only_real_tools(switches):
+    from bridge import gateway, gateway_tools
+    md = open(_skills()["screen-audit"], encoding="utf-8").read()
+    assert "user-invocable: true" in md
+    switches.add("designpack")
+    assert "mystical-design:screen-audit" in {c["name"] for c in commands.available(None)}
+    tools = gateway_tools.HANDLED | {gateway.WORK_LIST["name"]}
+    for name in ("show_design", "inspect_ui", "critique_design", "show_image", "compare_images", "work_list"):
+        assert name in md and name in tools, name
+    assert os.path.isfile(os.path.join(os.path.dirname(_skills()["screen-audit"]), "../../references/judgement-pass.md"))
