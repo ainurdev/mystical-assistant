@@ -203,5 +203,5 @@ An error the bridge or the dashboard page did not handle, or a turn that ended C
 _Avoid_: issue, exception, failure
 
 **Slow spot**:
-A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start.
+A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start. A bridge call counts the bridge's own time: its read of GitHub, Rivendell, the weather service or a login's meter is as slow as the network and is left out. A page an agent drives sends none.
 _Avoid_: performance issue, lag, jank
