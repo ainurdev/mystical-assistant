@@ -225,6 +225,9 @@ MERGE_REVIEW = os.environ.get("MERGE_REVIEW", "1").lower() \
     not in ("0", "false", "no", "")
 GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
     not in ("0", "false", "no", "")
+# DESIGN PACK (bridge/paths.py, design_pack): off until it wins the blind test.
+DESIGN_PACK_ENABLE = os.environ.get("DESIGN_PACK_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only
 # scout per changed repo. See the next-up-board design.

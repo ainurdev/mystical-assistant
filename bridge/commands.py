@@ -169,6 +169,8 @@ def available(abs_project: "str | None" = None) -> "list[dict]":
     roots = _plugin_roots(abs_project)
     if paths.on():  # the bundled copy stands in for any installed one
         roots = [r for r in roots if r[0] != "mattpocock-skills"] + [("mattpocock-skills", paths.PACK_DIR)]
+    if paths.design_pack(""):  # DESIGN PACK's switch: this list has no session, so no override
+        roots = [r for r in roots if r[0] != "mystical-design"] + [("mystical-design", paths.DESIGN_DIR)]
     for short, path in roots:
         found = (_skills(os.path.join(path, "skills")) + _manifest_skills(path)
                  + _commands(os.path.join(path, "commands")))

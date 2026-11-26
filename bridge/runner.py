@@ -703,6 +703,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                     disabled_tools = []
             if paths.pack_for(claude_session_id):   # the pack's gate: on, and an attended origin
                 cmd += ["--plugin-dir", paths.PACK_DIR]
+            if paths.design_pack_for(claude_session_id):   # DESIGN PACK's gate, beside Matt's or alone
+                cmd += ["--plugin-dir", paths.DESIGN_DIR]
     if model:
         cmd += ["--model", model]
     if effort:
