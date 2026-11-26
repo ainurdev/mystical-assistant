@@ -6616,7 +6616,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .rtile[aria-current="true"] .rtile-n { color: var(--acc); }
 .rtile-n[data-long] { font-size: var(--t7); letter-spacing: 0; }   /* RIVENDELL in the 38px label */
 .capdate { min-width: 0; border-left: 1px solid var(--line2); padding-left: 9px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; text-align: left; }
-.capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }   /* the clip box is a line: tall enough for caps and descenders, or overflow trims them */
 .rtile[data-tone="acc"] .rtile-v { color: color-mix(in srgb, var(--acc) 72%, var(--txb)); }
 .rtile[data-tone="warn"] .rtile-v { color: var(--warn); }
 .rtile[data-tone="ask"] { --tone: var(--ask, var(--warn)); }

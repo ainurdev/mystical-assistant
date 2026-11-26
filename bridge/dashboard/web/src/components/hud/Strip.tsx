@@ -320,7 +320,9 @@ export function Strip({ clock, weather, accounts, clocks, hideClock, openAlmanac
             {...toggle}
             title={`${[weather.cond, weather.loc].filter(Boolean).join(" · ") || "weather"} — the Almanac`}
             {...clockHov}
-            style={{ ...bare, flex: "0 1 auto", height: 26 }}
+            // At least 26px, not exactly: its two lines grow with the base font and a fixed
+            // height cut both at 14px and up (the cap's 41px holds them to 16px).
+            style={{ ...bare, flex: "0 1 auto", minHeight: 26 }}
           >
             <span style={{ fontSize: "var(--t9)", fontWeight: 800, letterSpacing: "1.4px", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{cap.date}</span>
             {cap.line2 && <span style={{ fontSize: "var(--t11)", color: "var(--txl)" }}>{cap.line2}</span>}
