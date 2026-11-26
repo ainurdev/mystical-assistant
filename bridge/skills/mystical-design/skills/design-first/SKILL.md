@@ -80,7 +80,8 @@ For each Direction, before the card:
    three parts for every state.
 3. **The critic, once.** `critique_design` on the Direction's page with `fresh: true`.
    For the OFF-SYSTEM Direction add `bold: true`. If it answers that it is still running,
-   call it again until the answer arrives: that is still the one run. Treat it as a
+   call it again without `fresh` (keep `bold`) until the answer arrives: that is still the
+   one run. Treat it as a
    defect finder. Check each problem against the page yourself, then fix the real P0
    and P1 problems, and P2 problems where the fix is cheap. Don't call the critic again
    after your fixes.
