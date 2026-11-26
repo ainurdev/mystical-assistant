@@ -122,6 +122,9 @@ _NO_GRILL = {
     "build": "Don't start a skill or build in this turn: call SetPath with path build and end your turn; "
              "the build starts on its own branch when the turn ends.",
 }
+# DESIGN with its grill off while the DESIGN PACK gate is open: the pack's design-first.
+_NO_GRILL_PACK_DESIGN = ("Start /mystical-design:design-first (the skill mystical-design:design-first), then call SetPath "
+                         "with path design; when the user approves the design, call StepDone instead of building.")
 _ONE = ("- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, "
         "code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a "
         "same-named skill from another plugin.")
@@ -166,8 +169,7 @@ def pack_text(design: bool = False) -> str:
         if fl in _NO_GRILL and not flowsettings.steps(fl)["grill"]:
             start, setpath = _NO_GRILL[fl], setpath or fl == "build"
             if design and fl == "design":
-                start = start.replace("the design-first skill (named just design-first, not mattpocock-skills:)",
-                                      "/mystical-design:design-first (the skill mystical-design:design-first)")
+                start = _NO_GRILL_PACK_DESIGN
         lines.append(f"- {fl}: {what}. {start}")
     return "\n".join([_INTRO, _ASK, *lines, _ONE, _FIRST + (_FIRST_SETPATH if setpath else ""),
                       *_ROUTE_TAIL, _STEPDONE])
@@ -520,7 +522,11 @@ def set_auto(session_id: str, on: bool) -> None:
 def reset(session_id: str) -> None:
     """The FLOW chip's switches follow SETTINGS again. DESIGN PACK's override, which the chip
     doesn't show, stays."""
-    _set(session_id, lambda own: [own.pop(k) for k in list(own) if k != "designpack"])
+    def keep_design(own: dict) -> None:
+        kept = {k: v for k, v in own.items() if k == "designpack"}
+        own.clear()
+        own.update(kept)
+    _set(session_id, keep_design)
 
 
 def _set(session_id: str, edit) -> None:
