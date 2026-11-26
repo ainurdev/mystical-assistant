@@ -1,6 +1,6 @@
 // node --experimental-strip-types src/lib/designframe.check.ts
 import assert from "node:assert/strict";
-import { commentsMessage, frameDoc, remixMessage, type DesignBoard, type DesignComment } from "./designframe.ts";
+import { commentsMessage, critiqueMessage, frameDoc, remixMessage, type DesignBoard, type DesignComment } from "./designframe.ts";
 
 const doc = frameDoc("<!doctype html><html><head><title>x</title></head><body><h1>Hi</h1></body></html>");
 assert.ok(doc.indexOf("Content-Security-Policy") < doc.indexOf("<title>"), "the CSP comes before anything it governs");
@@ -28,3 +28,9 @@ assert.doesNotMatch(msg, /old news/);
 assert.match(msg, /Page "B" \(b\.html\):\n1\. On at 10,20: and here/);
 assert.match(remixMessage(board, { Layout: "A", Colour: "B" }, "keep it calm"), /- Layout from "A"\n- Colour from "B"\nkeep it calm/);
 console.log("designframe ok");
+
+const sent = critiqueMessage("A", "home", "Tidy, no ideas.", [
+  { severity: "P0", heuristic: "Error prevention", where: "form", fix: "keep the input" },
+  { where: "h1", fix: "bigger" },
+]);
+assert.equal(sent, 'An independent review of "A" on board home said: Tidy, no ideas.\n1. [P0, Error prevention] form: keep the input\n2. h1: bigger\nFix the ones you agree with, and say which you skipped.');

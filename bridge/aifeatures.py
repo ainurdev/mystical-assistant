@@ -100,12 +100,12 @@ FEATURES = (
               "and nothing else, and the task only changes when you press Use this. Nothing "
               "runs unless you send a message. Part of the experimental chats."},
     {"key": "design_critic", "env": "DESIGN_CRITIC_ENABLE", "label": "DESIGN CRITIC",
-     "hint": "an independent review of a design, scored against your references",
+     "hint": "an independent review of a design that lists its problems, P0 to P3",
      "cost": "1 sonnet call per review",
      "tokens": "~50k tokens",
      "about": "Press Critique in the design view, or an agent asks for one. A separate "
               "model that can only read looks at the page at phone and desktop width and "
-              "scores it. Nothing runs unless asked. Part of the experimental chats."},
+              "lists its problems. Nothing runs unless asked. Part of the experimental chats."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",

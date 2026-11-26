@@ -162,7 +162,7 @@ def test_a_reference_can_be_a_picture_in_the_project(repo):
     assert design_audit.reference(repo, {"image": "/etc/passwd"})[1] == 404
 
 
-def test_the_critic_reads_only_and_keeps_its_answer(repo, monkeypatch):
+def _critic_answer(repo, monkeypatch, reply, a=None):
     db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": PAGE}]})
     monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
     monkeypatch.setattr(design_audit, "inspect", lambda root, a: ("facts", []))
@@ -170,16 +170,59 @@ def test_the_critic_reads_only_and_keeps_its_answer(repo, monkeypatch):
 
     def fake(chat_id, prompt, **kw):
         seen.update(kw, prompt=prompt)
-        return '```json\n{"scores":{"design":4},"verdict":"tidy, no ideas","fixes":[{"where":"h1","fix":"bigger"}]}\n```', None, None, False
+        return reply, None, None, False
     monkeypatch.setattr(design_audit.runner, "run_blocking", fake)
-    assert design_audit.critique(repo, {"board": "home", "page": "A"}, 1)["state"] == "running"
+    a = {"board": "home", "page": "A", **(a or {})}
+    assert design_audit.critique(repo, a, 1)["state"] == "running"
     for _ in range(100):
-        got = design_audit.critique(repo, {"board": "home", "page": "A"}, 1)
+        got = design_audit.critique(repo, a, 1)
         if got["state"] != "running":
             break
         time.sleep(0.02)
-    assert got["state"] == "done" and got["scores"]["design"] == 4 and got["fixes"][0]["fix"] == "bigger"
-    assert seen["permission_mode"] == "plan" and seen["skip_pack"] is True and "skeptical" in seen["prompt"]
+    return got, seen
+
+
+def test_the_critic_reads_only_and_lists_problems_most_severe_first(repo, monkeypatch):
+    fixes = [{"severity": s, "heuristic": "Consistency and standards", "where": f"w{i}", "fix": "f"}
+             for i, s in enumerate(["P3", "P1", "nope", "P0", "P2", "P1", "P3", "P2", "P3", "P0"])]
+    del fixes[2]["severity"]
+    reply = "```json\n" + json.dumps({"scores": {"design": 4}, "verdict": "tidy, no ideas", "fixes": fixes}) + "\n```"
+    got, seen = _critic_answer(repo, monkeypatch, reply)
+    assert got["state"] == "done" and got["verdict"] == "tidy, no ideas" and "scores" not in got
+    assert [f["severity"] for f in got["fixes"]] == ["P0", "P0", "P1", "P1", "P2", "P2", "P3", "P3"]
+    assert seen["permission_mode"] == "plan" and seen["skip_pack"] is True and seen["model"] == "sonnet"
+    assert "skeptical" in seen["prompt"] and "Nielsen" in seen["prompt"] and "Score 1-10" not in seen["prompt"]
+    assert "Template look" not in seen["prompt"]
+
+
+def test_a_problem_with_no_known_severity_ranks_last():
+    got = design_audit._parse_critique(json.dumps({"verdict": "v", "fixes": [{"where": "a", "fix": "x"}, {"severity": "p2", "where": "b", "fix": "y"}]}))
+    assert [(f["where"], f.get("severity")) for f in got["fixes"]] == [("b", "P2"), ("a", None)]
+
+
+def test_an_answer_cached_before_problems_still_opens(session, repo, monkeypatch):
+    """One kept in memory from before the change: scores, fixes with no severity."""
+    db.put(repo, repo, {"title": "Home", "pages": [{"name": "A", "html": PAGE}]})
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
+    key = f"{gt._design_root(session)}\nhome\nA"
+    design_audit._critics[key] = {"state": "done", "scores": {"design": 4}, "verdict": "old", "fixes": [{"where": "h1", "fix": "bigger"}], "at": time.time()}
+    try:
+        out = json.loads(gt._critique_design(session, Job(), {"board": "home", "page": "A"})["content"][0]["text"])
+    finally:
+        design_audit._critics.pop(key, None)
+    assert out == {"verdict": "old", "fixes": [{"where": "h1", "fix": "bigger"}]}
+
+
+def test_bold_adds_the_template_look_and_expo_tells_in_an_expo_repo(repo, monkeypatch):
+    reply = '{"verdict":"v","fixes":[]}'
+    _, seen = _critic_answer(repo, monkeypatch, reply)
+    _, seen = _critic_answer(repo, monkeypatch, reply, {"bold": True})  # not fresh: the plain answer above doesn't do
+    assert "Template look" in seen["prompt"] and "purple gradients" in seen["prompt"] and "native-slop" not in seen["prompt"]
+    open(os.path.join(repo, "package.json"), "w").write(json.dumps({"dependencies": {"expo": "~53"}}))
+    _, seen = _critic_answer(repo, monkeypatch, reply, {"bold": True, "fresh": True})
+    assert "native-slop" in seen["prompt"] and "Alert.alert" in seen["prompt"]
+    _, seen = _critic_answer(repo, monkeypatch, reply, {"fresh": True})
+    assert "Template look" not in seen["prompt"] and "native-slop" not in seen["prompt"]
 
 
 def test_the_critic_is_off_with_its_switch(repo, monkeypatch):

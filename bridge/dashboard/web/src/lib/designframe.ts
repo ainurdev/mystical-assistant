@@ -211,3 +211,12 @@ export function remixMessage(board: DesignBoard, picks: Record<string, string>, 
   const parts = ASPECTS.filter((a) => picks[a]).map((a) => `- ${a} from "${picks[a]}"`);
   return [`Remix the directions on "${board.title}" (board ${board.id}) into a new page on that board:`, ...parts, note.trim()].filter(Boolean).join("\n");
 }
+
+/** One problem the critic found. An answer cached before severities has none. */
+export type CriticProblem = { severity?: string; heuristic?: string; where: string; fix: string };
+
+/** The critic's answer as a request to the agent, each problem with its severity. */
+export function critiqueMessage(page: string, board: string, verdict: string, problems: CriticProblem[]): string {
+  const lines = problems.map((p, i) => `${i + 1}. ${p.severity ? `[${p.severity}${p.heuristic ? `, ${p.heuristic}` : ""}] ` : ""}${p.where}: ${p.fix}`);
+  return [`An independent review of "${page}" on board ${board} said: ${verdict}`, ...lines, "Fix the ones you agree with, and say which you skipped."].join("\n");
+}
