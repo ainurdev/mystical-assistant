@@ -8335,13 +8335,14 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 @container (max-width: 800px) { .tm-row[data-call] > .tm-c, .tm-row[data-call] > .tm-c + .tm-div { display: none; } }
 @container (max-width: 900px) { .tm-row[data-auto] > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
-@container (max-width: 540px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }   /* 520 left a call + its button 10px over in Nunito */
+@container (max-width: 700px) { .tm-row .tm-auto { display: none; } }   /* Approve & build over AUTO-START, which the FLOWS sheet also sets: with it a waiting set ran 110px over */
+@container (max-width: 560px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }   /* 520 left a call + its button 10px over in Nunito, 540 Approve & build's row 6px */
 .tm-auto { flex: none; margin-right: 6px; white-space: nowrap; text-transform: none; }   /* its .caps word carries the capitals */
 /* LIVE's bar has no container to ask: while a set waits its chips are every ticket, which its dots show. */
 .tl-bar[data-auto] > .tm-c, .tl-bar[data-auto] > .tl-chips { display: none; }
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
-.tm-call > span { overflow: hidden; text-overflow: ellipsis; }   /* free text (an error, a reply) sits in a span: an inline-flex box draws no ellipsis */
+.tm-call > span { overflow: hidden; text-overflow: ellipsis; }   /* a call's words sit in a span: an inline-flex box draws no ellipsis, so a cut call read "needs a f" */
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
 .tm-body-s { border-top: 1px solid var(--line); max-height: 221px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .tm-graph { display: block; width: 100%; height: auto; max-height: 220px; }
