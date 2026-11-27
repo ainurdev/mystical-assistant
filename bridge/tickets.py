@@ -65,7 +65,9 @@ on that session says it waits on you. Both prompts say to test in the foreground
 with that line no ticket stalled (7 of 7, 2026-11-11), without it the same set's
 merge did, and stayed `merging` until someone asked. They also send every full suite
 through bin/suite-slot, one at a time on the machine, and a ticket runs only the tests
-it touches until its one full run at the end: over 109 tickets (2026-11-27) a ticket ran
+it touches until its one full run at the end. The implement skill a ticket starts
+(bridge/skills/mattpocock/skills/engineering/implement/SKILL.md) already asks for that
+one run, yet over 109 tickets (2026-11-27) a ticket ran
 the full suite a median 4 times, and runs that overlapped two or more other tickets'
 tests ran 2-2.5x slower and failed 53% of the time, against 24% alone. That run gets the
 Bash tool's longest timeout, as the wait counts toward it and the CLI moves a call past
