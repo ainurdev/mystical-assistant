@@ -5,6 +5,7 @@
 // GIT; the group is only where the row is listed. The facts come from the session's
 // `job` (bridge/rivendell_jobs.py).
 import type { RivendellJob } from "../api";
+import { isOutside, OUTSIDE_REL } from "./outside.ts";
 import { isTeam, SHARED_REL } from "./team.ts";
 
 /** The group's key in the PROJECTS tree. Not a path (those start with "/"), so it
@@ -26,7 +27,7 @@ export const jobLabel = (job: RivendellJob | null | undefined): string =>
 // job even when it predates the origin tag, like a meeting draft run by hand.
 const RV_FOLDER = /^\/\.bridge_uploads\/(meetings|videos|video-[^/]+)(\/|$)/;
 
-type Listed = { origin?: string | null; project: string; job?: RivendellJob | null };
+type Listed = { origin?: string | null; project: string; cwd?: string | null; job?: RivendellJob | null };
 
 /** Did a Rivendell job start this session? Its origin says so, or the folder it
  *  ran in, or the bridge filed a job on it (an older run indexed as a terminal
@@ -35,8 +36,10 @@ export const isJob = (s: Listed): boolean =>
   s.origin === "rivendell" || !!s.origin?.startsWith("rivendell:") || RV_FOLDER.test(s.project) || !!s.job?.kind;
 
 /** The PROJECTS group a session lists under: Shared for one a teammate sent,
- *  Rivendell jobs, else its folder. */
-export const jobGroup = (s: Listed): string => (isTeam(s.origin) ? SHARED_REL : isJob(s) ? JOBS_REL : s.project);
+ *  Rivendell jobs, Outside projects for one found running outside your
+ *  projects root, else its folder. */
+export const jobGroup = (s: Listed): string =>
+  (isTeam(s.origin) ? SHARED_REL : isJob(s) ? JOBS_REL : isOutside(s) ? OUTSIDE_REL : s.project);
 
 /** A job whose answer is the whole point: it gets the job bar instead of the
  *  composer. IMPLEMENT is real work you carry on, so it keeps the composer, and

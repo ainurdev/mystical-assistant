@@ -51,6 +51,7 @@ import { ckId, turnRows } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
+import { isOutside, OUTSIDE_NAME, OUTSIDE_REL } from "./lib/outside";
 import { ago, fmtReset, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
@@ -2491,7 +2492,8 @@ export function App() {
     const byProj = new Map<string, SessionBrief[]>();
     // Every session a Rivendell job started lists under one group, wherever it
     // ran (lib/jobs), so a folder that only ever held jobs is no project. Every
-    // session a teammate sent lists under Shared the same way.
+    // session a teammate sent lists under Shared the same way, and every one
+    // found running outside your projects under Outside projects (lib/outside).
     for (const s of sessions) {
       if (isDeviceRun(s.origin)) continue;   // a teammate's run, in "/": no project of yours
       const key = jobGroup(s);
@@ -2499,8 +2501,10 @@ export function App() {
       arr.push(s);
       byProj.set(key, arr);
     }
-    // Opening a job selects the folder it ran in; that is no reason to list it.
-    if (activeProject && !byProj.has(activeProject) && !(selected && isJob(selected) && selected.project === activeProject))
+    // Opening a job, or a session from outside your projects, selects the folder
+    // it ran in; that is no reason to list it.
+    if (activeProject && !byProj.has(activeProject)
+        && !(selected && (isJob(selected) || isOutside(selected)) && selected.project === activeProject))
       byProj.set(activeProject, []);
     for (const rel of discovered) if (!byProj.has(rel)) byProj.set(rel, []);
     const groups: ProjectGroup[] = [];
@@ -2514,7 +2518,7 @@ export function App() {
         // The name you gave the project, else its basename — the PROJECTS panel
         // groups rows under a parent-path header, so the org context lives on
         // the group, not the row.
-        rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : projectName(rel),
+        rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : rel === OUTSIDE_REL ? OUTSIDE_NAME : projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
         missing: ss.length > 0 && ss.every((s) => s.missing),
       });

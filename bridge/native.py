@@ -76,9 +76,9 @@ def _index_running(owner: int) -> int:
     indexed; the disk scan stays base-scoped, so old transcripts from everywhere
     else don't flood the list.
 
-    ponytail: an out-of-base row has no matching project group, so it shows in
-    RECENT but not under BY PROJECT. Give it a group only if you actually want the
-    session list to browse outside your projects root."""
+    The dashboard lists every out-of-base row under one Outside projects group
+    (web lib/outside), known by that label: a group per folder made one odd group
+    per Claude app session, each of which gets its own scratch folder."""
     count = 0
     for r in machine.list_running():
         sid, short = r.get("session_id"), r.get("cwd") or ""

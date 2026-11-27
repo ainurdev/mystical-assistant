@@ -5,7 +5,7 @@ import { main } from "../../lib/queries";
 import { useMultiOn, useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, Hand, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
+import { BellRing, Folder, FolderTree, Hand, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NewProjectBody, NewProjectNote, SessionBrief, SessionStatus } from "../../api";
 import { NewProjectForm } from "./NewProjectForm";
@@ -17,6 +17,7 @@ import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
 import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
+import { isOutside, OUTSIDE_REL, outsideLabel } from "../../lib/outside";
 import { chatOpenedAt, markChatOpened, shotUnseen, useSeenShots } from "../../lib/seenshots";
 import { isOnlyMine, KINDS, kindsOf, offSay, onlyMine, sameShow, SHOW_ALL, shows } from "../../lib/sessionfilter";
 import type { Kind, Show } from "../../lib/sessionfilter";
@@ -139,6 +140,18 @@ const JOB_TINT: ProjectTint = {
   dim: "color-mix(in srgb, var(--purple) 55%, var(--txd))",
   faint: "color-mix(in srgb, var(--purple) 30%, var(--txd))",
 };
+
+/** Outside projects (lib/outside) is no project of yours: grey, not a project's hue. */
+const OUTSIDE_TINT: ProjectTint = {
+  color: "var(--txl)",
+  border: "color-mix(in srgb, var(--txl) 45%, transparent)",
+  dim: "var(--txl)",
+  faint: "color-mix(in srgb, var(--txl) 60%, var(--txd))",
+};
+
+function OutsideTile() {
+  return <b className="ptile" data-kind="icon" aria-hidden style={{ ["--pc" as string]: "var(--txl)" }}><Folder size={11} strokeWidth={2.2} /></b>;
+}
 
 /** The PLUGINS tab's rows, one entry per worker the bridge can run, so a second
  *  plugin lands as a new lane here, not a redesign. The tab itself exists while
@@ -308,7 +321,9 @@ function SessionRow({
   // A session a teammate sent: theirs, so it wears Shared's purple and says whose it is.
   const team = isTeam(s.origin) ? s.team : null;
   const theirProj = team ? shareFacts("session", team.meta).project : undefined;
-  const tint = job || team ? JOB_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
+  // Found running outside your projects: it says where instead of naming a project.
+  const outside = !job && !team && !dev && isOutside(s);
+  const tint = job || team ? JOB_TINT : outside ? OUTSIDE_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
   const now = Date.now() / 1000;
   const age = dev ? rowAge(s, pulse, now) : null;
   const fv = flag ? FLAG_VIEW[flag] : null;
@@ -329,7 +344,7 @@ function SessionRow({
   // worktree; a job's kind, a share's sender. State never takes a line — it is
   // the right edge — so a row keeps its height whatever its session does.
   const tiles = showProj && detail.proj;
-  const projShown = !job && !team && tiles;
+  const projShown = !job && !team && !outside && tiles;
   const branchShown = !job && !team && detail.branch && !!branch;
   const wtShown = !job && !team && detail.wt && inWorktree;
   const one = !dev && !tiles && !detail.branch && !detail.wt;
@@ -386,7 +401,7 @@ function SessionRow({
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       title={job ? `${s.title || "untitled session"} · ${jobLabel(s.job).toLowerCase()}${target ? ` ${target}` : ""} · from Rivendell · ${v.t}`
         : team ? `${s.title || "untitled session"} · from ${team.from.name}${theirProj ? ` · ${theirProj}` : ""} · read only`
-        : `${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
+        : [s.title || "untitled session", outside ? outsideLabel(s) : projectName(s.project), branch, v.t].filter(Boolean).join(" · ")}
       style={{
         // Two grid rows: the dot, title and state centre on line 1, line 2 and
         // the picture tag on line 2, so the tag sits under the time on any row.
@@ -434,11 +449,12 @@ function SessionRow({
           </div>
         ) : !one && (
           <div style={{ gridRow: 2, gridColumn: showDot ? 2 : 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
-            {(job || team) && (
+            {(job || team || outside) && (
               // a tile where the tab names projects, so this line stands as tall as theirs
               <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.dim }}>
                 {job ? <>{tiles && <JobsTile />}{jobLabel(s.job).toLowerCase()}{target ? ` ${target}` : ""}</>
-                  : team && <>{tiles && <TeamTile />}from {team.from.name}{theirProj ? ` · ${theirProj}` : ""}</>}
+                  : team ? <>{tiles && <TeamTile />}from {team.from.name}{theirProj ? ` · ${theirProj}` : ""}</>
+                  : <>{tiles && <OutsideTile />}{outsideLabel(s)}</>}
               </span>
             )}
             {projShown && (
@@ -781,7 +797,8 @@ export function SessionsPanel(props: Props) {
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
   // One resolution of "which branch is this session on", so the row label and
   // the search box can never disagree about it.
-  const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "main";
+  // Unknown is no branch: a folder outside git printed a made-up "main".
+  const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "";
 
   const sq = sessionQ.trim().toLowerCase();
   // A turn the bridge holds is a touch happening now: its row goes over the ones
@@ -910,7 +927,7 @@ export function SessionsPanel(props: Props) {
   // Shared lists what teammates sent, which `mine` keeps out of every other group.
   const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
   // The jobs and Shared groups aren't folders: with nothing left to list, they go.
-  const gs = groups.filter((g) => (g.rel !== JOBS_REL && g.rel !== SHARED_REL) || rowsOf(g).length > 0);
+  const gs = groups.filter((g) => (g.rel !== JOBS_REL && g.rel !== SHARED_REL && g.rel !== OUTSIDE_REL) || rowsOf(g).length > 0);
 
   // PROJECTS: the tree. By default a project ranks the way its rows do: one with
   // a turn the bridge holds over the ones at rest, then by your last prompt in it.
@@ -1135,7 +1152,7 @@ export function SessionsPanel(props: Props) {
       flyT.current = window.setTimeout(() => setFly(null), 220);
     };
     const tile = (g: ProjectGroup) =>
-      g.rel === JOBS_REL ? <JobsTile /> : g.rel === SHARED_REL ? <TeamTile /> : <ProjectTile project={g.rel} />;
+      g.rel === JOBS_REL ? <JobsTile /> : g.rel === SHARED_REL ? <TeamTile /> : g.rel === OUTSIDE_REL ? <OutsideTile /> : <ProjectTile project={g.rel} />;
     const flyG = fly && ps.find((g) => g.rel === fly.rel);
     const flyRows = flyG ? rowsOf(flyG) : [];
     const flyVis = capped(flyRows);
@@ -1431,7 +1448,8 @@ export function SessionsPanel(props: Props) {
             {tree.map(({ g, f, isShut, vis, rest, n }) => {
               const jobs = g.rel === JOBS_REL;
               const shared = g.rel === SHARED_REL;    // no folder of yours: no project menu, no New
-              const tint = jobs || shared ? JOB_TINT : projectTint(g.rel);
+              const outside = g.rel === OUTSIDE_REL;  // nor here: each session has its own
+              const tint = jobs || shared ? JOB_TINT : outside ? OUTSIDE_TINT : projectTint(g.rel);
               // The head's one action: + New opens this project's popover; Rivendell
               // started the jobs, so that head's All opens the whole log instead.
               // Open, either is the × that shuts it (like the + beside the search).
@@ -1442,7 +1460,7 @@ export function SessionsPanel(props: Props) {
                 <div
                   key={g.rel}
                   className="projgrp"
-                  data-ctx-type={jobs || shared ? undefined : "project"} data-ctx-id={g.rel} data-ctx-label={g.name}
+                  data-ctx-type={jobs || shared || outside ? undefined : "project"} data-ctx-id={g.rel} data-ctx-label={g.name}
                   onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
                   onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
                   style={{ marginBottom: isShut ? 4 : 13, opacity: dragRel === g.rel ? 0.4 : 1,
@@ -1473,7 +1491,7 @@ export function SessionsPanel(props: Props) {
                              background: isShut && n.ask ? "color-mix(in srgb, var(--warn) 9%, transparent)" : undefined }}
                   >
                     <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
-                    {jobs ? <JobsTile /> : shared ? <TeamTile /> : <ProjectTile project={g.rel} />}
+                    {jobs ? <JobsTile /> : shared ? <TeamTile /> : outside ? <OutsideTile /> : <ProjectTile project={g.rel} />}
                     {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
@@ -1487,8 +1505,8 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: 1, minWidth: 6 }} />
                     {/* shut, its rows can't say what they're doing; New's open form owns the spot */}
                     {isShut && !actOn && stateDots(n)}
-                    {/* A teammate started Shared's; there is nothing of yours to open or start there. */}
-                    {!shared && <button
+                    {/* A teammate started Shared's, and each outside session has its own folder: nothing to open or start there. */}
+                    {!shared && !outside && <button
                       onClick={(e) => { e.stopPropagation(); if (jobs) toggleLog(g.rel); else toggleNs(g.rel); }}
                       title={actTitle} aria-label={actTitle} aria-expanded={actOn}
                       aria-haspopup={jobs ? undefined : "dialog"} data-ns-anchor={jobs ? undefined : true}
