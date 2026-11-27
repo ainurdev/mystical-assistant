@@ -7881,7 +7881,18 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-ask .md, .ad-ask p { margin: 0; font: inherit; color: inherit; }
 .ad-ask b { font-weight: 800; }
 .ad-tail { margin: 3px 0 0; font-size: var(--t12); color: var(--txl); }
-.ad-ctx { margin: 0 0 8px; max-width: 72ch; font-size: var(--t14); line-height: 1.6; color: var(--txm); overflow-wrap: anywhere; white-space: pre-line; }
+/* the text around the ask (ask-dock-description-format, B · RAIL): a railed inset, lists one item a line */
+.ad-rail { margin: 0 0 10px; padding: 10px 14px; background: var(--panel2); border-left: 2px solid var(--rc);
+  border-radius: 0 max(3px, var(--rc-rs)) max(3px, var(--rc-rs)) 0; font-size: var(--t135); line-height: 1.55; color: var(--txb); overflow-wrap: anywhere; }
+.ad-ask ~ .ad-rail { margin: 10px 0 0; }
+.ad-rail p { margin: 0; white-space: pre-line; }
+.ad-rail ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 10px; align-items: baseline; }
+.ad-rail li { display: contents; }
+.ad-rail > * + * { margin-top: 8px; }
+.ad-dm { font: 600 var(--t12) var(--mono); color: var(--rc-ink); }
+.ad-code { font: var(--t12) var(--mono); color: var(--txh); background: var(--panel3, var(--panel)); border: 1px solid var(--rc-line); border-radius: 4px; padding: 0 5px; }
+.ad-cr { color: var(--txl); padding: 0 .25em; }
+.ad-gl { color: var(--txl); }
 .ad-hint, .ad-note { margin: 9px 0 0; font-size: var(--t115); color: var(--txl); }
 .ad-note { margin: 0; padding: 0 16px 12px; }
 .ad-err { margin: 9px 0 0; font-size: var(--t12); color: var(--err); }

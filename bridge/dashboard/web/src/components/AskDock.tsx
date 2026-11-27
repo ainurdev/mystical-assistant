@@ -4,7 +4,7 @@ import {
   KeyRound, Minimize2, MonitorCog, Plug, SquareTerminal, X,
 } from "lucide-react";
 import { api, SCOPE_WORD, scopeAnswer, type AllowScope, type AnswerSelection, type CardAnswer, type Question } from "../api";
-import { splitAsk, waited, type Docked } from "../lib/askdock";
+import { descBlocks, descInline, splitAsk, waited, type Docked } from "../lib/askdock";
 import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { hhmm as clock, useClock12 } from "../lib/surfaces";
@@ -95,12 +95,31 @@ function Head({ icon, kind, topic, children, at, word, line }: {
 /** Context, then the ask: in reading order, all of it (it scrolls in the dock when long). */
 function AskText({ text }: { text: string }) {
   const s = splitAsk(text);
+  // A one-line hint after the ask ("Pick any, or none.") stays a hint, not a panel.
+  const hint = s.tail.length <= 80 && !s.tail.includes("\n");
   return (
     <>
-      {s.ctx && <p className="ad-ctx">{s.ctx}</p>}
+      {s.ctx && <Rail text={s.ctx} />}
       <p className="ad-ask">{s.ask}</p>
-      {s.tail && <p className="ad-tail">{s.tail}</p>}
+      {s.tail && (hint ? <p className="ad-tail">{s.tail}</p> : <Rail text={s.tail} />)}
     </>
+  );
+}
+
+/** The text around the ask in a railed panel, lists one item a line (descBlocks). */
+function Rail({ text }: { text: string }) {
+  const line = (t: string) => descInline(t).map((x, i) =>
+    "code" in x ? <code key={i} className="ad-code">{x.code}</code>
+    : "b" in x ? <b key={i}>{x.b}</b>
+    : "crumb" in x ? <span key={i} className="ad-cr">›</span>
+    : "gloss" in x ? <span key={i} className="ad-gl">{x.gloss}</span>
+    : x.t);
+  return (
+    <div className="ad-rail">
+      {descBlocks(text).map((b, i) => "p" in b
+        ? <p key={i}>{line(b.p)}</p>
+        : <ul key={i}>{b.items.map((it, k) => <li key={k}><span className="ad-dm">{it.mark}</span><span>{line(it.text)}</span></li>)}</ul>)}
+    </div>
   );
 }
 

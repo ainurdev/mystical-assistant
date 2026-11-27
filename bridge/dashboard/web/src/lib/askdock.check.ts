@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/askdock.check.ts
-import { docked, splitAsk, waited } from "./askdock.ts";
+import { descBlocks, descInline, docked, splitAsk, waited } from "./askdock.ts";
 import type { Turn } from "../chat.ts";
 
 const q = { header: "Ship", question: "When?", options: [{ label: "Now", description: "" }] };
@@ -52,4 +52,38 @@ console.log("askdock ok");
   const answered = turn("running", [{ type: "secret_request", request_id: "gw-1", name: "K", why: "" }, { type: "secret_answered", request_id: "gw-1", given: true }], []);
   if (docked([answered], true) !== null) throw new Error("an answered secret doesn't");
   console.log("ok - a secret docks until it's answered");
+}
+
+// The text around the ask: "#38: … #18: …" run together becomes one item each,
+// prose becomes paragraphs (.mystical/design-drafts/ask-description, B · RAIL).
+{
+  const eq = (a: unknown, b: unknown, why: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${why}: ${JSON.stringify(a)}`);
+  eq(descBlocks("#38: the badge is muted. #18: Proces › Betalen gets the scheme back. #23: wraps in Firefox too."),
+    [{ items: [{ mark: "#38", text: "the badge is muted." }, { mark: "#18", text: "Proces › Betalen gets the scheme back." }, { mark: "#23", text: "wraps in Firefox too." }] }],
+    "inline #NN items");
+  eq(descBlocks("Four fixes. 1. Badge. 2) Button scheme. 3. Firefox wrap."),
+    [{ p: "Four fixes." }, { items: [{ mark: "1", text: "Badge." }, { mark: "2", text: "Button scheme." }, { mark: "3", text: "Firefox wrap." }] }],
+    "a lead, then numbered items");
+  eq(descBlocks("Two ways:\n- keep it\n- drop it\n  and the table"),
+    [{ p: "Two ways:" }, { items: [{ mark: "•", text: "keep it" }, { mark: "•", text: "drop it and the table" }] }],
+    "dash lines, a continuation joins its item");
+  eq(descBlocks("A: keep SQLite. B: move to Redis."),
+    [{ items: [{ mark: "A", text: "keep SQLite." }, { mark: "B", text: "move to Redis." }] }], "lettered items");
+  // One marker is no list, and numbers out of order are no list ("since 2. Then 7. done").
+  eq(descBlocks("Fixed #38: it reads right."), [{ p: "Fixed #38: it reads right." }], "a lone #NN");
+  eq(descBlocks("It shipped in v2. Then 7. Is fine."), [{ p: "It shipped in v2. Then 7. Is fine." }], "numbers out of order");
+  eq(descBlocks("One. Two. Three. Four. Five."), [{ p: "One. Two." }, { p: "Three. Four. Five." }], "prose: two sentences a paragraph, a lone last one joins");
+  eq(descBlocks("First para.\n\nSecond para."), [{ p: "First para." }, { p: "Second para." }], "blank line");
+
+  eq(descInline("reads `name · 1` with **the code** muted"),
+    [{ t: "reads " }, { code: "name · 1" }, { t: " with " }, { b: "the code" }, { t: " muted" }], "code and bold");
+  eq(descInline('reads "name · 18-01-4" now'), [{ t: "reads " }, { code: "name · 18-01-4" }, { t: " now" }], "a quoted literal");
+  eq(descInline("Proces › Betalen (process › payment) gets it (later)"),
+    [{ t: "Proces" }, { crumb: true }, { t: "Betalen " }, { gloss: "(process › payment)" }, { t: " gets it (later)" }], "crumb + gloss, a plain aside stays");
+  eq(descInline("Beheer › Producten (settings) warns"),
+    [{ t: "Beheer" }, { crumb: true }, { t: "Producten " }, { gloss: "(settings)" }, { t: " warns" }], "gloss right after a crumb path");
+  // A quoted sentence is prose and inch marks are no quotes: only a literal with a digit or symbol is a chip.
+  eq(descInline('He said "we should stop now" and left'), [{ t: 'He said "we should stop now" and left' }], "a quoted sentence");
+  eq(descInline('5" long and 6" wide'), [{ t: '5" long and 6" wide' }], "inch marks");
+  console.log("ok - the description formats");
 }
