@@ -85,11 +85,12 @@ UNTIMED = (
     "GET /local/graph/explain", "POST /local/git/commit-message",             # a model call
     "POST /local/wait",                                                       # waits by design
     "GET /local/runs/",                                                       # the run API's long poll
+    "POST /local/computer/app",                     # Mystical.app's long poll for orders (computer.PULL_WAIT)
     "POST /local/gateway",                 # an agent's tool call: a page drive, a suite, a wait of its own
     "POST /local/server",                                                     # waits for the dev server's URL
     "POST /local/rivendell/team/send",                                        # an upload
     "GET /local/storage",                                                     # a disk walk, on open
-    "POST /local/git/worktree/remove",                                        # a checkout deleted, its scratch kept
+    "POST /local/git/worktree",                         # a checkout made, or deleted with its scratch kept
 )
 
 _out = threading.local()   # .secs: this thread's waits outside the bridge since the last take
