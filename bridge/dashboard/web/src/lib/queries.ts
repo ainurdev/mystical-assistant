@@ -36,7 +36,7 @@ import type { Flow, FlowSet, PastFlow } from "./flowview.ts";
 import type { AgentRow, ChannelView, HelperConfig } from "./multi.ts";
 import type { HandoffPreview, SkillShareRow } from "./multistore.ts";
 import type { ProfilesInfo } from "./profiles.ts";
-import type { DesignBoard, DesignComment } from "./designframe.ts";
+import type { CriticProblem, DesignBoard, DesignComment } from "./designframe.ts";
 import type {
   CouncilBrief, InspectorState, LiveInfo, Meter, RivendellDevice, RivendellQueueItem, RivendellTaskDetail, RivendellTasks,
   RivendellTodolist, StyleCandidates, StyleRun, TaskState, TeamOverview, TodayWins, Weather, WeeklyReport,
@@ -94,8 +94,8 @@ export const prHints: { session?: string } = {};
 
 export type NoticesAnswer = { notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean };
 export type DesignRead = DesignBoard & { comments: DesignComment[]; page?: string; url?: string; html?: string; hash?: string; version?: number; versions?: number[]; missing?: boolean };
-export type DesignCritique = { state: string; error?: string; verdict?: string; scores?: Record<string, number>; fixes?: { where: string; fix: string }[] };
-export type FlowAnswer = { flow: Flow | null; past?: PastFlow[]; set: FlowSet | null };
+export type DesignCritique = { state: string; error?: string; verdict?: string; fixes?: CriticProblem[] };
+export type FlowAnswer = { flow: Flow | null; past?: PastFlow[]; set: FlowSet | null; pack?: boolean };   // pack: DESIGN PACK open for it
 
 /** The main column: the session list, the open session, its prompt box and what rides beside it. */
 export const main = {

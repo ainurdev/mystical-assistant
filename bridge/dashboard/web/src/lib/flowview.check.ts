@@ -74,6 +74,7 @@ console.assert(c.skipTo === "retro" && c.jumps.map((j) => j.key).join() === "ret
 console.assert(c.here === 0 && c.opts.autopick.on && !c.opts.autopick.here && c.opts.nextstep.on, "nothing set here: SETTINGS' values");
 const heldChip = flowChip({ ...here, auto: false, overrides: { nextstep: false, autopick: false } }, hv, { autopick: true, smartzone: true })!;
 console.assert(heldChip.mark === "held" && heldChip.here === 2 && heldChip.opts.nextstep.here && !heldChip.opts.autopick.on && heldChip.opts.autopick.global, `held: ${JSON.stringify(heldChip)}`);
+console.assert(flowChip({ ...here, overrides: { designpack: true } }, hv, {})!.here === 0, "DESIGN PACK's override isn't one the chip counts or resets");
 const busy = flowChip(here, flowView(here, [run]), {})!;
 console.assert(busy.next.label === "retro" && busy.skipTo === "audit", `a step running: the chip names the one after it (${busy.next.label})`);
 const last = flowChip({ ...here, done: ["grill", "build-here", "review", "retro"] }, flowView({ ...here, done: ["grill", "build-here", "review", "retro"] }, []), {})!;

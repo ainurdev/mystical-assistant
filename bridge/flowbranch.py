@@ -34,6 +34,7 @@ written too. A new file moves whole, as before.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -147,6 +148,34 @@ def written(session_id: str, since: int) -> list[str]:
             continue
         out += [p for p in ps if _inside(root, p) and p not in out]
     return out
+
+
+DRAFTS = os.path.join(".mystical", "design-drafts")   # where design-first puts a Direction's pages and SPEC.md
+
+
+def drafts(session_id: str, since: int) -> list[str]:
+    """The drafts folders (DRAFTS/<name>, relative to the checkout) the session's writes
+    since `since` went into, in the order first written, as _flow_folder finds tickets."""
+    base = os.path.join(os.path.realpath(_checkout(store.get_session(session_id) or {})), DRAFTS)
+    out: list[str] = []
+    for p in written(session_id, since):
+        parts = os.path.relpath(os.path.realpath(p), base).split(os.sep)
+        d = os.path.join(DRAFTS, parts[0])
+        if len(parts) > 1 and parts[0] != ".." and d not in out:   # a file loose in DRAFTS has no folder
+            out.append(d)
+    return out
+
+
+def copy_drafts(src: str, dst: str, folders: list[str]) -> None:
+    """Copy, never move, each drafts folder from checkout `src` to the same place in `dst`,
+    beside the env-file copy. .mystical ignores itself there too, so git never sees them."""
+    for rel in folders:
+        if os.path.isdir(os.path.join(src, rel)) and os.path.realpath(src) != os.path.realpath(dst):
+            shutil.copytree(os.path.join(src, rel), os.path.join(dst, rel), dirs_exist_ok=True)
+    ignore = os.path.join(dst, ".mystical", ".gitignore")
+    if folders and os.path.isdir(os.path.dirname(ignore)) and not os.path.exists(ignore):
+        with open(ignore, "w", encoding="utf-8") as f:
+            f.write("*\n")
 
 
 def added_lines(session_id: str, since: int) -> "dict[str, set[str]] | None":

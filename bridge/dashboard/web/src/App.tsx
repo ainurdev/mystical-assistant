@@ -277,7 +277,7 @@ function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
 // later — the session and project it was written in, not whichever is open when
 // the user finally answers the card.
 /** The flow a prompt starts, and who picked it (lib/kinds sendPlan). */
-type SendFlow = { id: string; by: "you" | "guess" };
+type SendFlow = { id: string; by: "you" | "guess"; bold?: boolean };
 
 interface HeldPrompt {
   sid: string;
@@ -693,7 +693,7 @@ export function App() {
   const active = activeOf(turns);
   const running = active !== null;
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
-  const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
+  const { flow: boxFlow, set: boxSet, pack: boxPack, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
     loadingSession ? null : `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
   // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
   const flowCfg = useFlowSettings();
@@ -1947,7 +1947,7 @@ export function App() {
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
         ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined, style: opts.style || undefined } : {}),
-        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by, bold: opts.flow.bold || undefined } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1967,7 +1967,7 @@ export function App() {
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
         pick_once: opts?.pickOnce || undefined,
         style: (opts?.pickOnce && !agentPick && knobs && opts.style) || undefined,
-        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by, bold: opts.flow.bold || undefined } : {}),
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -3811,7 +3811,7 @@ export function App() {
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
                       routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={boxChip?.opts.smartzone.on ?? ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
-                      flowChip={boxChip} runningFlow={runningFlow(boxFlow)} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
+                      flowChip={boxChip} runningFlow={runningFlow(boxFlow)} designPack={boxPack} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

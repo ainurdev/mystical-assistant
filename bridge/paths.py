@@ -24,7 +24,10 @@ The paths are the six Flows (ADR 0003): DESIGN, BUILD, REFACTOR, FIX, SHIP and A
 plus `one` for a single skill and for ticket and merge sessions. DESIGN and BUILD each
 come as tickets (the flow's id) or here (`-here`), and the grill's StepDone choice
 picks, as feature and feature-here did. DESIGN's design step is /design-first, told
-that building is the next step's job, so its Approve is a StepDone. SHIP and ASK are
+that building is the next step's job, so its Approve is a StepDone. While the DESIGN PACK
+gate is open (design_pack: the switch or the session's override, attended origins only)
+it is the vendored pack's /mystical-design:design-first instead, and the runner loads that
+pack (bridge/skills/mystical-design) beside Matt's. SHIP and ASK are
 one step, the turn itself, which ends at its clean end like a PONYTAIL step. Records
 and SetPath calls from before carry the old names (OLD); they load as their flow.
 
@@ -56,8 +59,8 @@ diff before its StepDone (tickets._prompt), and the REVIEW after MERGE is the co
 StepDone, so the clean end of a turn sent as their command, while the path is on that
 step, is the step's end (_end_pony_step); one that calls StepDone anyway moves once.
 
-A session may override three SETTINGS switches for itself, from the prompt box's FLOW
-chip: AUTO NEXT STEPS, AUTO PICKS and SMART ZONE (OPTIONS). The overrides live in the
+A session may override four SETTINGS switches for itself: from the prompt box's FLOW
+chip AUTO NEXT STEPS, AUTO PICKS and SMART ZONE, and through the same API DESIGN PACK (OPTIONS). The overrides live in the
 flow record and outlive a new path in the same session; a new session follows SETTINGS.
 A record from before them kept `auto`, True by default and False once held: a held one
 loads as an override of AUTO NEXT STEPS. skip_to marks the steps before a target done
@@ -89,6 +92,8 @@ from typing import NamedTuple
 from bridge import aifeatures, config, flowsettings, store
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "mattpocock")
+DESIGN_DIR = os.path.join(os.path.dirname(PACK_DIR), "mystical-design")
+_UNATTENDED = ("rivendell", "device-run")   # origins nobody attends: no pack, no design pack
 
 
 def on() -> bool:
@@ -117,6 +122,9 @@ _NO_GRILL = {
     "build": "Don't start a skill or build in this turn: call SetPath with path build and end your turn; "
              "the build starts on its own branch when the turn ends.",
 }
+# DESIGN with its grill off while the DESIGN PACK gate is open: the pack's design-first.
+_NO_GRILL_PACK_DESIGN = ("Start /mystical-design:design-first (the skill mystical-design:design-first), then call SetPath "
+                         "with path design; when the user approves the design, call StepDone instead of building.")
 _ONE = ("- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, "
         "code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a "
         "same-named skill from another plugin.")
@@ -146,10 +154,12 @@ _STEPDONE = ('When you finish a step of a path and need nothing more from the us
              'hasn\'t started takes its file\'s new Blocked by.')
 
 
-def pack_text() -> str:
+def pack_text(design: bool = False) -> str:
     """The routing text, from the FLOWS settings only: NO KIND, which of DESIGN, BUILD,
     REFACTOR and FIX are on, and their grills. Nothing per turn goes in, so the text, and
-    the cache write it costs, change only when a setting does. AS TYPED keeps the StepDone line."""
+    the cache write it costs, change only when a setting does (a session's DESIGN PACK
+    override is one: its text can differ from other sessions', and stays put turn to turn). AS TYPED keeps the StepDone line.
+    `design`: the DESIGN PACK gate is open, so DESIGN starts the pack's design-first."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if flowsettings.nokind() == "typed":
         return "\n".join([_INTRO, _STEPDONE])
@@ -159,6 +169,8 @@ def pack_text() -> str:
             continue
         if fl in _NO_GRILL and not flowsettings.steps(fl)["grill"]:
             start, setpath = _NO_GRILL[fl], setpath or fl == "build"
+            if design and fl == "design":
+                start = _NO_GRILL_PACK_DESIGN
         lines.append(f"- {fl}: {what}. {start}")
     return "\n".join([_INTRO, _ASK, *lines, _ONE, _FIRST + (_FIRST_SETPATH if setpath else ""),
                       *_ROUTE_TAIL, _STEPDONE])
@@ -178,8 +190,39 @@ def pack_for(claude_session_id: str) -> str:
             origin = str((store.get_by_claude_session_id(claude_session_id) or {}).get("origin") or "")
         except Exception:  # noqa: BLE001 — the pack never blocks a turn
             origin = ""
-        _pack_ok[claude_session_id] = not origin.startswith(("rivendell", "device-run"))
-    return pack_text() if _pack_ok[claude_session_id] else ""
+        _pack_ok[claude_session_id] = not origin.startswith(_UNATTENDED)
+    return pack_text(design_pack_for(claude_session_id)) if _pack_ok[claude_session_id] else ""
+
+
+def design_pack(session_id: str) -> bool:
+    """The DESIGN PACK gate: does this session's run get the design pack. The session's
+    own override, else the switch, and attended origins only, as with the skill pack.
+    Read on every run, so a change applies from the next turn."""
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        on = _eff(f, "designpack") if f else aifeatures.enabled("designpack")
+    if not on:
+        return False
+    try:
+        origin = str((store.get_session(session_id) or {}).get("origin") or "")
+    except Exception:  # noqa: BLE001 — the pack never blocks a turn
+        origin = ""
+    return not origin.startswith(_UNATTENDED)
+
+
+def design_pack_for(claude_session_id: str) -> bool:
+    """design_pack() for the session a claude session id belongs to (the switch alone with none)."""
+    try:
+        sid = str((store.get_by_claude_session_id(claude_session_id) or {}).get("id") or "")
+    except Exception:  # noqa: BLE001
+        sid = ""
+    return design_pack(sid)
+
+
+def design_cmd(session_id: str) -> str:
+    """The design step's command: the pack's design-first while its gate is open, else the personal one."""
+    return "/mystical-design:design-first" if design_pack(session_id) else "/design-first"
 
 
 class Step(NamedTuple):
@@ -229,9 +272,10 @@ _PONY = {"review": "the work on this path: this branch's commits since it left t
                    "and anything uncommitted",
          "audit": ""}
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
-# The SETTINGS switches one session may override from the prompt box (AUTO NEXT STEPS, AUTO PICKS, SMART ZONE).
-OPTIONS = ("nextstep", "autopick", "smartzone")
-_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch")
+# The SETTINGS switches one session may override: from the prompt box (AUTO NEXT STEPS, AUTO PICKS,
+# SMART ZONE), and DESIGN PACK through the API alone (the blind test's pack arm).
+OPTIONS = ("nextstep", "autopick", "smartzone", "designpack")
+_STORED = ("path", "skill", "by", "why", "at", "end", "done", "skipped", "next", "overrides", "branch", "bold")
 # shortcut: a session keeps its last 50 flows, oldest dropped; raise it if FLOWS should reach further back.
 _PAST = 50
 
@@ -439,7 +483,7 @@ def get(session_id: str) -> "dict | None":
         if not f:
             return None
         return {**{k: f[k] for k in ("path", "by", "why", "at", "done", "skill")}, "end": f.get("end"), "next": _next(f),
-                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}), "branch": f.get("branch"),
+                "auto": _eff(f, "nextstep"), "overrides": dict(f.get("overrides") or {}), "branch": f.get("branch"), "bold": bool(f.get("bold")),
                 "skipped": list(f.get("skipped") or []), "stations": [list(st) for st in _stations(f)]}
 
 
@@ -477,8 +521,13 @@ def set_auto(session_id: str, on: bool) -> None:
 
 
 def reset(session_id: str) -> None:
-    """Every switch follows SETTINGS again."""
-    _set(session_id, lambda own: own.clear())
+    """The FLOW chip's switches follow SETTINGS again. DESIGN PACK's override, which the chip
+    doesn't show, stays."""
+    def keep_design(own: dict) -> None:
+        kept = {k: v for k, v in own.items() if k == "designpack"}
+        own.clear()
+        own.update(kept)
+    _set(session_id, keep_design)
 
 
 def _set(session_id: str, edit) -> None:
@@ -635,9 +684,12 @@ BY = {"you": "you picked", "guess": "the box guessed"}
 NO_BRANCH = "Change no files: this build couldn't move to a branch of its own, and waits for the user.\n\n"
 
 
-def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
-    """Why a send can't start `flow` ("" = it can): checked where the send comes in."""
+def flow_refusal(flow: str, by: str, prompt: str, agent: str, bold: bool = False) -> str:
+    """Why a send can't start `flow` ("" = it can): checked where the send comes in.
+    `bold` (the prompt box's BOLD) goes with DESIGN alone."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
+    if bold and flow != "design":
+        return "bold goes with the DESIGN flow alone"
     if not on():
         return "flows are off: FLOWS is off in the prompt box's gear"
     if flow not in FLOWS:
@@ -653,27 +705,33 @@ def flow_refusal(flow: str, by: str, prompt: str, agent: str) -> str:
     return ""
 
 
-def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
+def start_flow(session_id: str, flow: str, by: str, prompt: str, bold: bool = False) -> str:
     """The prompt box's flow starts with this turn: recorded for the session in place of
     any running flow, and the prompt returned with its first step's command in front
     (SHIP and ASK: the no-path line, so Claude moves them into no other flow). The
     flow already running keeps it: nothing recorded, nothing in front. A prompt queued
     before FLOWS, or its flow, went off goes as typed. With its grill off, DESIGN starts
     at design and BUILD at the here build, which first moves the session onto a branch of
-    its own (as the here build after a grill does), never the default branch."""
+    its own (as the here build after a grill does), never the default branch. `bold`
+    (BOLD lit) is kept on the record, so the design step carries the Bold-run note
+    whether it runs now or after the grill."""
     from bridge import flowsettings   # local import: flowsettings reads PATHS
     if not on() or not flowsettings.flow_on(flow):
         return prompt
     f = get(session_id)
     if f and f["path"].removesuffix("-here") == flow and any(st[0] not in f["done"] for st in f["stations"]):
+        if bold:   # BOLD lit mid-flow (answering the grill): its design step still goes bold
+            _set_bold(session_id)
         return prompt
     here = flow in ("design", "build") and not flowsettings.steps(flow).get("grill", True)
     # The grill goes behind it, as claude_path has it: switched on later, it can't take this turn's step.
     rec = set_path(session_id, flow + "-here" if here else flow, f"{BY[by]} {flow.upper()}", by,
                    done=["grill"] if here else None)
+    if bold:
+        _set_bold(session_id)
     first, skill, _ = _stations(rec)[0]
     if first == "design":
-        return f"/design-first {prompt}\n\n{DESIGN_STEP}"
+        return f"{design_cmd(session_id)} {_bold(session_id)}{prompt}\n\n{DESIGN_STEP}"
     if first == "build-here":
         sess = store.get_session(session_id) or {}
         moved = _branch_off(session_id, sess, rec, sess.get("chat_id"), prompt)
@@ -682,7 +740,7 @@ def start_flow(session_id: str, flow: str, by: str, prompt: str) -> str:
                 _cache[session_id]["next"] = {"station": first, "turn_id": "", "started": False}
                 _save_locked()
             return NO_PATH + NO_BRANCH + prompt
-        return f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there. {prompt}"
+        return f"{_build_text(moved)} {prompt}"
     return f"/mattpocock-skills:{skill} {prompt}" if skill else NO_PATH + prompt
 
 
@@ -697,7 +755,25 @@ _AUTO_START = {"spec", "tickets", "retro", "build-here", "review", "audit", "des
 # The design step's turn: /design-first draws, and the build step builds (it may be switched off).
 DESIGN_STEP = ("This is a flow's design step: building is the next step's job, so when the user approves, "
                "call StepDone instead of implementing.")
-DESIGN_TEXT = f"/design-first the change the grill above settled. {DESIGN_STEP}"
+DESIGN_ASK = f"the change the grill above settled. {DESIGN_STEP}"
+DESIGN_TEXT = f"/design-first {DESIGN_ASK}"   # with the design pack's gate closed (design_cmd)
+# BOLD lit for the send: the line design-first's Bold-run section reads (design-pack tickets 06
+# and 07), right after the command, since a / command has to open the message.
+BOLD_NOTE = "Bold run: you lit BOLD."
+
+
+def _set_bold(session_id: str) -> None:
+    with _lock:
+        _cache[session_id]["bold"] = True
+        _save_locked()
+
+
+def _bold(session_id: str) -> str:
+    """The Bold-run note and its line break when the session's flow was started with BOLD lit
+    and the DESIGN PACK gate is open: the personal /design-first has no Bold-run section."""
+    with _lock:
+        lit = bool((_cache.get(session_id) or {}).get("bold"))
+    return f"{BOLD_NOTE}\n" if lit and design_pack(session_id) else ""
 # The steps that are the turn itself (SHIP, ASK): its clean end is the step's end.
 _TURN_STEPS = {"ship", "answer"}
 ZONE_TOKENS = 150_000
@@ -740,14 +816,14 @@ def _start(session_id: str, station: str, chat_id=None, effort=None, style=None)
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
     texts = [f"/{skill} {_PONY[station]}".strip() if station in _PONY
-             else DESIGN_TEXT if station == "design" else f"/mattpocock-skills:{skill}"]
+             else f"{design_cmd(session_id)} {_bold(session_id)}{DESIGN_ASK}" if station == "design" else f"/mattpocock-skills:{skill}"]
     # No auto step commits to the default branch: build-here always moves to a feature
     # worktree, and RETRO only writes notes.
     if station == "build-here":
         moved = _branch_off(session_id, sess, flow, chat_id if chat_id is not None else sess.get("chat_id"))
         if not moved:
             return False
-        texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
+        texts = [_build_text(moved)]
     if _eff(flow, "smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
@@ -789,10 +865,21 @@ def _go(session_id: str, chat_id=None, effort=None, style=None) -> bool:
     return False
 
 
+def _build_text(moved: tuple) -> str:
+    """The here build's first prompt. A designed build names its drafts and ends with the Polish pass."""
+    branch, co, drafts = moved
+    text = f"/mattpocock-skills:implement Work in {co} on branch {branch}, and commit there."
+    if drafts:
+        text += (f" The approved design is in {', '.join(drafts)}: the approved Direction there is the source of "
+                 "truth, and SPEC.md's Build section says which skills to load. When the build is done, run "
+                 "/mystical-design:polish (the skill mystical-design:polish).")
+    return text
+
+
 def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "") -> "tuple | None":
-    """(branch, checkout) the step works in: the feature branch in its own worktree, the
-    flow's own files carried there and committed, and the session moved in, so the
-    step's commits land there. The branch is the one the flow's agent named (StepDone),
+    """(branch, checkout, drafts) the step works in: the feature branch in its own worktree, the
+    flow's own files carried there and committed, the drafts it wrote copied there while the
+    DESIGN PACK gate is open, and the session moved in, so the step's commits land there. The branch is the one the flow's agent named (StepDone),
     else feat/ and the session's title, or `title` for a session too new to have one.
     None when the files couldn't move: they are back where they were, the user is told,
     and the step waits."""
@@ -803,7 +890,9 @@ def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "
                     or ("feat", flowbranch.title_slug(sess.get("title") or title)))
     branch = f"{prefix}/{slug}"
     try:
+        drafts = flowbranch.drafts(session_id, flow["at"]) if design_pack(session_id) else []
         branch, co = flowbranch.ensure_feature_branch(sess, slug, prefix)
+        flowbranch.copy_drafts(flowbranch._checkout(sess), co, drafts)  # noqa: SLF001
         flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
                                     flowbranch.flow_files(session_id, flow["at"]), slug,
                                     ours=flowbranch.added_lines(session_id, flow["at"]))
@@ -814,7 +903,7 @@ def _branch_off(session_id: str, sess: dict, flow: dict, chat_id, title: str = "
         return None
     store.set_cwd(session_id, co)
     store.set_work_cwd(session_id, None)   # the branch label reads the cwd from here (_session_brief)
-    return branch, co
+    return branch, co, drafts
 
 
 def continue_after_turn(job, effort=None) -> bool:

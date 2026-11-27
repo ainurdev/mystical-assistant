@@ -40,5 +40,5 @@ export function useFlow(sessionId: string | undefined, on: boolean, edge: string
       : a.kind === "reset" ? api.resetFlow(sessionId) : api.flowSkipTo(sessionId, a.to);
     return call.then((r) => flowChanged(sessionId, r.flow));
   }, [sessionId]);
-  return { flow: cur?.flow ?? null, set: cur?.set ?? null, act };
+  return { flow: cur?.flow ?? null, set: cur?.set ?? null, pack: live && !!got?.pack, act };
 }

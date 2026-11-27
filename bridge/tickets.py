@@ -531,9 +531,12 @@ def _refresh(folder: str, st: dict) -> None:
 
 def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
     """The feature branch, the one the flow's agent named else feat/<the ticket folder>,
-    and what the flow wrote so far carried onto it."""
+    and what the flow wrote so far carried onto it. A designed flow's drafts (DESIGN PACK
+    gate open) are copied there too, for the merge, and kept for each ticket's checkout."""
     prefix, name = flowbranch.branch_name(st.get("wanted_branch")) or ("feat", st["slug"])
+    st["drafts"] = flowbranch.drafts(flow_session_id, since) if paths.design_pack(flow_session_id) else []
     st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, name, prefix)
+    flowbranch.copy_drafts(st["checkout"], st["feature_checkout"], st["drafts"])
     flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
                                 flowbranch.flow_files(flow_session_id, since), name,
                                 ours=flowbranch.added_lines(flow_session_id, since))
@@ -613,11 +616,17 @@ def _done_line() -> str:
     return _WORK + "When it is done, " + _ONCE + _REPORT
 
 
+def _drafts_line(st: dict) -> str:
+    """A designed set's tickets build to its approved design."""
+    d = st.get("drafts")
+    return f"The approved design is in {', '.join(d)}: build to it. " if d else ""
+
+
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
     t = st["tickets"][n]
     return (f"/mattpocock-skills:implement {t['path']}\n\nThis is ticket #{n} of {st['slug']}. "
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            + _done_line() + _elsewhere(st, n)
+            + _drafts_line(st) + _done_line() + _elsewhere(st, n)
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
 
 
@@ -731,6 +740,7 @@ def _worktree(st: dict, t: dict, repo: str, home: str) -> tuple:
     if not ok:
         raise RuntimeError(f"worktree failed in {repo}: {out}")
     git.copy_env(repo, wt)
+    flowbranch.copy_drafts(st["checkout"], wt, st.get("drafts") or [])
     for i, b in enumerate(blockers[1:] if new else []):
         if git._run(wt, "merge", "--no-ff", "--no-edit", b, timeout=60)[0] != 0:  # noqa: SLF001
             return wt, blockers[1 + i:]   # left mid-merge; the rest come after it
@@ -815,6 +825,9 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
+            + (f" Once the merge is clean and the tests pass, run /mystical-design:polish (the skill "
+               f"mystical-design:polish) against the approved design in {', '.join(st['drafts'])}."
+               if st.get("drafts") else "")
             + " Then call StepDone." + _FOREGROUND + f" Run each full suite through {_SLOT}, in front of its command, "
                                          "with the longest timeout the Bash tool allows.")
 
