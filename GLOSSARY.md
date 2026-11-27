@@ -128,6 +128,14 @@ _Avoid_: forward, clip, paste
 Something promised at a meeting, owed by you to a person or by them to you.
 _Avoid_: action item, task, to-do
 
+**Live row**:
+The running box at the foot of a **Session**'s chat while a **Turn** runs. Its moving border is the chat's one light; nothing else in the chat moves to say the agent is working.
+_Avoid_: live node, orbit, spinner
+
+**Working indicator**:
+Your pick of what the chat adds while a **Turn** runs: STATUS (one quiet line) or NYAN CAT. ORBIT was retired on 2026-11-28 because the **Live row** carries the light.
+_Avoid_: orbit, equalizer, loader
+
 ## Dashboard header
 
 **Clock**:
