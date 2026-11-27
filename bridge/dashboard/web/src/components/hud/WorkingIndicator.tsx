@@ -16,11 +16,9 @@ const PHRASES = [
 ];
 
 /** The "agent is working" line for the HUD terminal. `hud.indicator` picks the
- *  form: a nyan.cat ride, or STATUS, which drops the cycling phrase for what
- *  the turn is actually doing (lib/workstate). ORBIT is the WORK card itself;
- *  with no card to carry it (before the first step, after a steer) it falls to
- *  the stock braille spinner + equalizer. All three share the tick and the
- *  elapsed count. */
+ *  form: a nyan.cat ride, or STATUS (also the form with no settings), which
+ *  says what the turn is actually doing (lib/workstate). Both share the tick
+ *  and the elapsed count. */
 export function WorkingIndicator({
   hud,
   events,
@@ -45,34 +43,10 @@ export function WorkingIndicator({
   const elapsed = Math.floor((tick * 90) / 1000);
   const phrase = PHRASES[Math.floor(tick / 20) % PHRASES.length];
 
-  if (hud?.indicator === "status") {
-    return <StatusLine frame={frame} state={state} elapsed={elapsed} />;
-  }
   if (hud?.indicator === "nyan") {
     return <NyanIndicator hud={hud} mode={hud.nyan} phrase={phrase} elapsed={elapsed} />;
   }
-
-  return (
-    <div className="my-2 ml-[18px] flex items-center gap-3 border border-border bg-[var(--ac-03)] px-3 py-2">
-      <span className="text-[length:var(--t14)] leading-none text-primary">{frame}</span>
-      <span className="glow text-[length:var(--t11)] tracking-[2.5px] text-primary">{phrase}</span>
-      <span className="text-[length:var(--t11)] tracking-[2px] text-muted-2">{".".repeat(1 + (tick % 3))}</span>
-      <span className="flex h-3 items-end gap-[2px]">
-        {[0, 1, 2, 3, 4].map((b) => (
-          <span
-            key={b}
-            className="w-[2px] origin-bottom bg-primary"
-            style={{ height: "100%", animation: `eqbar .9s ease-in-out ${b * 0.12}s infinite` }}
-          />
-        ))}
-      </span>
-      <span className="ml-auto font-mono text-[length:var(--t10)] tracking-[1px] text-muted-2">{elapsed}s</span>
-      <span
-        className="inline-block h-[12px] w-[7px] bg-primary"
-        style={{ animation: "caret 1.05s steps(1) infinite" }}
-      />
-    </div>
-  );
+  return <StatusLine frame={frame} state={state} elapsed={elapsed} />;
 }
 
 /** The STATUS form: one bare line, no box and no bars. With no turn to read

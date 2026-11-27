@@ -260,7 +260,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
   { tab: "appearance", sec: "CLOCK & WEATHER", terms: "clock time format 12h 24h am pm almanac calendar weather city location place celsius fahrenheit units temperature world clock time zone timezone header pin" },
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "HEADER", terms: "header island pill bar shape fade dissolve gradient glass frosted blur clear solid transparent hide scroll auto-hide last line search switch chat agents tickets" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
@@ -5260,10 +5260,10 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. ORBIT is the WORK card itself: a comet on its node while a tool runs, a ripple while the model thinks. Every form lives in the WORK card while a turn runs.">
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. Every form lives in the WORK card while a turn runs.">
                       <div style={{ width: 360 }}>
                         <Segmented
-                          options={[{ label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }, { label: "ORBIT", value: "orbit" }]}
+                          options={[{ label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />

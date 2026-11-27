@@ -861,10 +861,7 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  STEPS switch like a STEPS fold does. The last zone of a running turn is
  *  live: a third line says what it is doing right now (NowLine), open or shut,
  *  and folds away when the turn ends. It hosts the working indicator too: the
- *  ORBIT form is the node — a ripple while the model thinks, a comet on its
- *  ring while a tool runs (both inside the node's track, since the turn row's
- *  paint containment clips anything past the plate; off in the chat, where the
- *  live row's border is the one light, spine.css); the cat draws as a row
+ *  cat draws as a row
  *  inside the plate instead of under the turn; STATUS would only say what the
  *  line already does, so the line stands in for it. */
 function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, retried = 0, children, purposes, looked, filtered, filterCounts, reveal = 0 }: {
@@ -1054,7 +1051,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
-  const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
   // survives the zone remounting; the live line shows them.
   const mountAt = useRef(Date.now() / 1000);
@@ -1103,7 +1099,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-pinned={pinned ? "" : undefined}
       data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
-      data-ind={orbit ? "orbit" : undefined}
       data-now={line && !liveAt ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}

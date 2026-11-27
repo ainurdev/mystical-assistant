@@ -123,10 +123,6 @@
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-node { top: 4px; background: var(--sp-gnd); box-shadow: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node { color: var(--sp-you); border-color: var(--sp-you); background: var(--sp-gnd); }
-/* the live row's border is the chat's one light: the live node is a plain ring, without ORBIT's comet or ripple.
-   animation too: WebKit keeps a hidden pseudo-element's animation running (display or content none, 2026-11-28) */
-[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node::before,
-[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node::after { display: none; animation: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-shots="new"] .dwork-node { border-color: var(--acc); color: var(--acc); }
 [data-fam] [data-style="dossier"][data-isle] .dwork-l1 { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-lab {
