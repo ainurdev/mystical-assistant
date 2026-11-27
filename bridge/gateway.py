@@ -349,24 +349,32 @@ def _scope(answers: "list | None") -> str:
 
 
 def answer_card(job, entry: dict, answers: "list | None", behavior: str = "allow",
-                message: "str | None" = None) -> None:
-    """A click on a gateway card (Job.respond, AcpJob.respond)."""
+                message: "str | None" = None, images: "list | None" = None) -> None:
+    """A click on a gateway card (Job.respond, AcpJob.respond). `images`: files pasted
+    with a question's answer or a Deny's note, named to the agent the way Claude's are."""
     from bridge import runner
     rid = entry["request_id"]
     perm = entry.get("kind") == "permission"
     allow = behavior != "deny"
     scope = _scope(answers) if perm and allow else ""
+    shots = {"images": list(images)} if images and (not perm or not allow) else {}
     if entry.get("kind") == "question":
-        job.add({"type": "question_answered", "request_id": rid, "answers": answers or []})
+        job.add({"type": "question_answered", "request_id": rid, "answers": answers or [], **shots})
     elif perm:
         job.add({"type": "permission_resolved", "request_id": rid, "behavior": "allow" if allow else "deny",
-                 **({"scope": scope} if scope else {})})
+                 **({"scope": scope} if scope else {}), **shots})
     with _lock:
         row = _cards.get(rid)
     if row is None:
         return
     try:
-        text = row["on_answer"](allow, scope, (message or "").strip()) if perm else row["on_answer"](answers or [])
+        if perm:
+            note = (message or "").strip()
+            text = row["on_answer"](allow, scope, runner._answer_with(note, images, job.cwd) if shots else note)
+        else:
+            text = row["on_answer"](answers or [])
+            if shots and entry.get("kind") == "question":
+                text = runner._answer_with(text, images, job.cwd)
     except Exception as e:  # noqa: BLE001
         print(f"[gateway] card: {e!r}", file=sys.stderr)
         text = f"That answer couldn't be acted on: {e}"

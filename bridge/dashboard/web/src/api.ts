@@ -375,8 +375,9 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string; scopes?: AllowScope[] }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "computer_state"; state: "driving" | "stopped"; apps?: string[]; by?: string; actions?: number }
-  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // `images`: what went with the answer from the box's tray, as upload-dir paths.
+  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope; images?: string[] }
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[]; images?: string[] }
   // The CLI retrying a request (system/api_retry), one per try. `error` is its
   // class: overloaded, rate_limit, server_error, http_529, connection…
   | { type: "retry"; attempt: number; max: number; delay_ms: number; error: string }
@@ -2302,11 +2303,12 @@ export const api = {
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   // `message`: a Deny's reason, typed in the box under the docked card. `noted`
-  // says the bridge passed it to the model (an older bridge drops it). Every answer
+  // says the bridge passed it to the model (an older bridge drops it). `images`: the
+  // box's tray (data URLs), sent with a question's answer or a Deny. Every answer
   // box lands here, so the bell (Notifications) drops that ask's toast now.
   respond: (
     jobId: string,
-    body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string },
+    body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string; images?: string[] },
   ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }).then((r) => {
     window.dispatchEvent(new CustomEvent("hud:answered", { detail: body.request_id }));
     return r;

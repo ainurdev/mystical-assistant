@@ -2530,6 +2530,7 @@ export const RunStream = memo(function RunStream({
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
   const answeredAt = new Map<string, number | undefined>();
+  const answerShots = new Map<string, string[]>();   // the box's tray, sent with an answer
   const toolDone = new Map<string, Done>();
   const bgDone = new Map<string, string>();
   const bgNotify = new Map<string, boolean>();
@@ -2539,6 +2540,7 @@ export const RunStream = memo(function RunStream({
     if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") { permResolved.set(e.request_id, e.behavior); answeredAt.set(e.request_id, e.at); }
     if (e.type === "question_answered") { qAnswered.set(e.request_id, e.answers); answeredAt.set(e.request_id, e.at); }
+    if ((e.type === "permission_resolved" || e.type === "question_answered") && e.images?.length) answerShots.set(e.request_id, e.images);
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
     if (e.type === "background_done") bgDone.set(e.id, e.state);
     if (e.type === "background_set") {
@@ -2582,6 +2584,7 @@ export const RunStream = memo(function RunStream({
   };
   events.forEach((e, i) => {
     if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
+    else if ((e.type === "permission_resolved" || e.type === "question_answered") && e.images?.length) addShots(i, "ANSWER", "", e.images);
     else if (e.type === "tool" && !showAt(i)) { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
     else if (galleryOnly && e.type === "figure") {
       addShots(i, e.kind === "compare" ? "compare_images" : "show_image", "", e.images, undefined, e.at);
@@ -3099,12 +3102,15 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         if (!live) return (
-          <div key={i} className="dask ml-[var(--rail)]" data-k="permission">
-            <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
-              // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
-              resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
-              at={answeredAt.get(event.request_id) ?? event.at} />
-          </div>
+          <Fragment key={i}>
+            <div className="dask ml-[var(--rail)]" data-k="permission">
+              <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
+                // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
+                resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
+                at={answeredAt.get(event.request_id) ?? event.at} />
+            </div>
+            {answerShots.has(event.request_id) && <ToolImages paths={answerShots.get(event.request_id)!} all={galleryAt(i)} />}
+          </Fragment>
         );
         return (
           <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
@@ -3130,11 +3136,14 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         if (!live) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
-            <AskRecord kind="question" questions={event.questions}
-              answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
-              at={answeredAt.get(event.request_id) ?? event.at} />
-          </div>
+          <Fragment key={i}>
+            <div id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+              <AskRecord kind="question" questions={event.questions}
+                answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
+                at={answeredAt.get(event.request_id) ?? event.at} />
+            </div>
+            {answerShots.has(event.request_id) && <ToolImages paths={answerShots.get(event.request_id)!} all={galleryAt(i)} />}
+          </Fragment>
         );
         return (
           <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">

@@ -726,7 +726,7 @@ export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
 
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, style = "", onStyle, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
-  draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
+  draft, onDraft, images, onImages, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
   dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, designPack, onFlow, multi, git, lastCheck, designLinked, words,
 }: {
@@ -740,6 +740,10 @@ export function Composer({
   // the text rather than carrying it into the next one.
   draft: string;
   onDraft: (text: string) => void;
+  // The tray's files (data URLs), the session's like the text. `onImages` names the
+  // session: a file is still being read when you may have switched to another one.
+  images: string[];
+  onImages: (session: string, next: (files: string[]) => string[]) => void;
   project?: string | null;
   // Both clusters are switched off from SETTINGS · SESSION: no handler, no GRAPH.
   onOpenMap?: () => void;
@@ -807,7 +811,7 @@ export function Composer({
   pills?: ReactNode;
   // Pointed at addFiles, so a file dropped on the fresh session screen lands
   // here the way one dropped on the box does.
-  fileSink?: { current: ((files: FileList | File[]) => void) | null };
+  fileSink?: { current: ((files: FileList | File[], session?: string) => void) | null };
   /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
   placeholder?: string;
   /** What the session waits on you for (AskDock), hung on the box's top edge in every layout. */
@@ -848,7 +852,7 @@ export function Composer({
 }) {
   const text = draft;
   const setText = onDraft;
-  const [images, setImages] = useState<string[]>([]);
+  const setImages = (next: (files: string[]) => string[]) => { if (sessionId) onImages(sessionId, next); };
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "style" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
@@ -1389,15 +1393,16 @@ export function Composer({
     return uploadsRef.current > 0;
   }
 
-  function addFiles(files: FileList | File[] | null) {
-    if (!files) return;
-    const inline = chatImagesInline();
+  function addFiles(files: FileList | File[] | null, session = sessionRef.current) {
+    if (!files || !session) return;
+    // An image in the text goes in at the caret: only the open chat's box has one.
+    const inline = chatImagesInline() && session === sessionRef.current;
     Array.from(files).forEach((f) => {
       if (inline && isInlineImage(f.type)) { embedFile(f); return; }
       const r = new FileReader();
       // The name rides in the data URL, so a .csv reaches the upload dir as a
       // .csv instead of being guessed into a .png the model can't read.
-      r.onload = () => setImages((prev) => [...prev, withName(r.result as string, f.name)]);
+      r.onload = () => onImages(session, (prev) => [...prev, withName(r.result as string, f.name)]);
       r.readAsDataURL(f);
     });
   }
@@ -1420,7 +1425,8 @@ export function Composer({
     if (stillSaving()) return;
     const t = text.trim();
     if (ask?.send) {
-      // The ask clears the box itself: a stepper hands it the next page's note.
+      // The ask clears the box itself: a stepper hands it the next page's note. It reads
+      // the tray as it reads the text; what went with the answer leaves it (App.respond).
       if (t || (ask.ready && !ask.needsText)) ask.send(t);
       return;
     }
@@ -1432,7 +1438,7 @@ export function Composer({
       plan.flow && plan.by && { id: plan.flow, by: plan.by, bold: plan.bold });
     setBold(false);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   // Land the text — and anything in the attachment tray — in the turn that's
@@ -1443,7 +1449,7 @@ export function Composer({
     if (!t || !onSteer) return;
     onSteer(t, images);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   // A third destination for whatever is in the box, alongside submit() and
@@ -1456,7 +1462,7 @@ export function Composer({
     if (!t) return;
     onSend(`/design-first ${t}`, images);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   const ctx = contextTokens ?? 0;

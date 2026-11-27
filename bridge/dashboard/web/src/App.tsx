@@ -220,8 +220,9 @@ function loadDone(): Set<string> {
 
 // Composer text you typed but never sent, per session. Persisted so a reload
 // doesn't silently drop it — the DRAFT flags in the session list promise it's
-// still there. Image attachments stay in the composer and aren't part of this.
+// still there. The tray's files are per session too (App's trays), but not in here.
 const DRAFTS_KEY = "hud-session-drafts";
+const NO_FILES: string[] = [];
 
 function loadDrafts(): Record<string, string> {
   try {
@@ -379,6 +380,10 @@ export function App() {
   // Typed but not sent, per session. Lives here (not in the composer) so it
   // survives a session switch and the session list can flag it as a DRAFT.
   const [drafts, setDrafts] = useState<Record<string, string>>(loadDrafts);
+  // The tray's files (data URLs), per session the same way: a screenshot pasted in one
+  // chat never shows in another's box or goes with its prompt or answer.
+  // shortcut: memory only (a screenshot is ~1 MB of base64, past localStorage's quota), so a reload drops a tray; IndexedDB if that bites.
+  const [trays, setTrays] = useState<Record<string, string[]>>({});
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   // ?skipboot bypasses the intro (handy on revisits + for screenshots).
@@ -726,22 +731,27 @@ export function App() {
   const checking = sessionId ? checkingMap[sessionId] : undefined;
   const held = sessionId ? heldMap[sessionId] : undefined;
   const draft = (sessionId ? drafts[sessionId] : "") ?? "";
+  const tray = (sessionId && trays[sessionId]) || NO_FILES;
   // A draft in the box when a card docks is a prompt you were writing, not an
-  // answer: it's set aside until the card is answered, then comes back. Only
-  // for a card that arrives while you watch — one already waiting when you open
-  // the session may be what the draft is answering.
-  const stashedDrafts = useRef<Record<string, string>>({});
+  // answer: it's set aside until the card is answered, then comes back, its
+  // tray with it. Only for a card that arrives while you watch — one already
+  // waiting when you open the session may be what the draft is answering.
+  const stashedDrafts = useRef<Record<string, { text: string; files: string[] }>>({});
   const seenAsk = useRef<Record<string, string | null>>({});
   const askKey = dock && dock.kind !== "prose" ? dock.requestId : null;
   useEffect(() => {
     if (!sessionId) return;
     const before = seenAsk.current[sessionId];
     seenAsk.current[sessionId] = askKey;
-    if (askKey && before === null && draft.trim()) { stashedDrafts.current[sessionId] = draft; setDraft(""); }
-    else if (!askKey && sessionId in stashedDrafts.current) {
+    if (askKey && before === null && (draft.trim() || tray.length)) {
+      stashedDrafts.current[sessionId] = { text: draft, files: tray };
+      setDraft("");
+      setTray(sessionId, () => []);
+    } else if (!askKey && sessionId in stashedDrafts.current) {
       const back = stashedDrafts.current[sessionId];
       delete stashedDrafts.current[sessionId];
-      if (!draft.trim()) setDraft(back);
+      if (!draft.trim()) setDraft(back.text);
+      if (back.files.length) setTray(sessionId, (f) => [...back.files, ...f]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askKey, sessionId]);
@@ -2066,6 +2076,10 @@ export function App() {
     if (!sid) return;
     setDrafts((d) => (text ? { ...d, [sid]: text } : omit(d, sid)));
   }
+  /** Session `sid`'s tray: the chat a file was pasted in, whichever is open when it's read. */
+  function setTray(sid: string, next: (files: string[]) => string[]) {
+    setTrays((t) => { const f = next(t[sid] ?? NO_FILES); return f.length ? { ...t, [sid]: f } : omit(t, sid); });
+  }
 
   /** A path the model mentioned, opened in the editor — at the line it named,
    *  if it named one. Routed through the same call the file browser uses, so it
@@ -2121,10 +2135,14 @@ export function App() {
     toChat();
   }
 
-  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string }): Promise<false | { noted?: boolean }> {
+  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string; images?: string[] }): Promise<false | { noted?: boolean }> {
     if (!active) return false;
+    const sid = sessionId;
     let res: { noted?: boolean };
     try { res = await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
+    // The tray's files went with the answer; one pasted while it was on its way stays.
+    const sent = opts.images;
+    if (sid && sent?.length) setTray(sid, (f) => f.filter((x) => !sent.includes(x)));
     // Don't wait out the 1.5s poll to retire the card — the bridge has already
     // written the resolved event by the time the POST returns.
     void refetchTurns.current();
@@ -2561,10 +2579,11 @@ export function App() {
   const promptFlags = useMemo(() => {
     const m = new Map<string, PromptFlag>();
     for (const sid of Object.keys(drafts)) if (drafts[sid].trim()) m.set(sid, "draft");
+    for (const sid of Object.keys(trays)) m.set(sid, "draft");
     for (const sid of Object.keys(heldMap)) m.set(sid, "held");
     for (const sid of Object.keys(checkingMap)) m.set(sid, "checking");
     return m;
-  }, [drafts, heldMap, checkingMap]);
+  }, [drafts, trays, heldMap, checkingMap]);
 
   // What's new in the workspaces you aren't looking at: per workspace, its chats
   // the sidebar would flag (DONE, finished and unopened; ASK, waiting on you),
@@ -2640,7 +2659,7 @@ export function App() {
     [state, sessionProject]);
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
-  const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
+  const composerFiles = useRef<((files: FileList | File[], session?: string) => void) | null>(null);
   // CONTINUE HERE's attachments (the transcript as Markdown, the pictures): handed to
   // the composer once the session they were made for is open, and to no other.
   const [attachFor, setAttachFor] = useState<{ sid: string; files: { name: string; url: string }[] } | null>(null);
@@ -2659,7 +2678,7 @@ export function App() {
         if (!r.ok) throw new Error(a.name);
         const b = await r.blob();
         return new File([b], a.name, { type: b.type || "application/octet-stream" });
-      })).then((files) => sink(files), () => notify("error", "Some of what they sent couldn't be attached."));
+      })).then((files) => sink(files, want.sid), () => notify("error", "Some of what they sent couldn't be attached."));
     }, 50);
     return () => clearInterval(id);
   }, [attachFor, sessionId]);
@@ -3782,8 +3801,8 @@ export function App() {
                       }
                       disabled={!sessionId || (pendingCount > 0 && !askMode?.send)} running={running}
                       dock={dock ? (
-                        <AskDock d={dock} draft={draft} setDraft={setDraft} onRespond={respond} onAnswer={answerAsk}
-                          onSteer={(t) => void queue.steer(t, []).then((ok) => { if (!ok) void send(t, []); })}
+                        <AskDock d={dock} draft={draft} setDraft={setDraft} files={tray} onRespond={respond} onAnswer={answerAsk}
+                          onSteer={(t, f) => void queue.steer(t, f).then((ok) => { if (!ok) void send(t, f); })}
                           bind={setAskMode} stashed={!!sessionId && sessionId in stashedDrafts.current} />
                       ) : undefined}
                       ask={dock ? askMode : null} model={model} models={composerModels} usage={spentUsage} effort={effort}
@@ -3796,7 +3815,7 @@ export function App() {
                       defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
-                      draft={draft} onDraft={setDraft}
+                      draft={draft} onDraft={setDraft} images={tray} onImages={setTray}
                       contextTokens={contextTokens} contextWindow={selected?.ctx_window}
                       onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
