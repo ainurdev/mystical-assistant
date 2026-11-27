@@ -14,7 +14,8 @@ const LABELS: Record<string, string> = {
 };
 // A task's first turn starts its flow: the step's command (and a here build's order) is the bridge's, the title is the line.
 const TASK_KINDS = new Set(["work", "spinoff"]);
-const FLOW_HEAD = /^\/\S+\s+(?:Work in .+? on branch \S+, and commit there\.\s+)?/;
+// Only the commands bridge/paths.py start_flow puts in front: a title of yours may start with a slash too.
+const FLOW_HEAD = /^\/(?:design-first|mattpocock-skills:[\w-]+)\s+(?:Work in .+? on branch \S+, and commit there\.\s+)?/;
 
 /** line: the prompt's first line, its bridge tag dropped. */
 export interface MysticalNote { kind: string; label: string; line: string; why: string | null }
