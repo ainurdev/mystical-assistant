@@ -13,6 +13,7 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
+import functools
 import getpass
 import hmac
 import json
@@ -155,16 +156,18 @@ def _sessions_payload(chat, project) -> dict:
     # marked missing (browser.gone), for MOVE TO PROJECT.
     # Home is no project, but one started there lists: the sidebar files it under
     # Outside projects (web lib/outside), so it opens no phantom "~" group.
+    # Each project's folder is looked at once a build: per session it was half the build.
+    exists, gone = functools.cache(browser.project_exists), functools.cache(browser.gone)
     rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-            or browser.project_exists(r["project"]) or _rehome_moved(r)
-            or browser.gone(r["project"]) or r["project"] == "~"]
+            or exists(r["project"]) or _rehome_moved(r)
+            or gone(r["project"]) or r["project"] == "~"]
     # Ticket and merge sessions name their super session; that one carries its set's count.
     from bridge import tickets
     of, counts = tickets.owners()
     dt = store.default_disabled_tools()
     return {"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
                           **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
-                         for b in (_session_brief(r, dt) for r in rows)]}
+                         for b in (_session_brief(r, dt, gone) for r in rows)]}
 
 
 # After a restart the first ask is answered from the last run's list, saved beside
