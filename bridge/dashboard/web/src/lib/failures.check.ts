@@ -27,6 +27,13 @@ assert.deepEqual([...r.recovered], ["a"]);
 // a command's error is its last words: an && chain's earlier output doesn't bury it
 r = analyzeFailures([tool("a", "Bash", "cat a && ls b"), bad("a", `Exit code 1\n${"x".repeat(500)}\nl2\nl3\nls: b: No such file or directory`)]);
 assert.equal(r.unresolved[0].text, "l2\nl3\nls: b: No such file or directory");
+// blank lines don't take rows
+r = analyzeFailures([tool("a", "Bash", "cat a && ls b"), bad("a", "Exit code 1\nl1\n\nl2\n\nls: b: missing\n")]);
+assert.equal(r.unresolved[0].text, "l1\nl2\nls: b: missing");
+
+// a stat's reason is its first line: no tail
+r = analyzeFailures([tool("a", "mcp__x__y", ""), bad("a", undefined, "Tool isn't shared with this agent.\nhint one\nhint two\nhint three")]);
+assert.equal(r.unresolved[0].text, "Tool isn't shared with this agent.\nhint one\nhint two\nhint three");
 
 // the success has to come after
 r = analyzeFailures([tool("a", "Bash", "pytest"), ok("a"), tool("b", "Bash", "pytest"), bad("b", "Exit code 1\nx")]);
