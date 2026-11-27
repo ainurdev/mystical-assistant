@@ -213,3 +213,37 @@ _Avoid_: issue, exception, failure
 **Slow spot**:
 A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start. A bridge call counts the bridge's own time: its read of GitHub, Rivendell, the weather service or a login's meter is as slow as the network and is left out. A page an agent drives sends none.
 _Avoid_: performance issue, lag, jank
+
+## Design
+
+**Design pack**:
+The one set of design skills Mystical gives every session, whatever the repo or account: drafting **Directions** with their **Self-check**, the **Polish pass**, the **Screen audit**, and the outside skills they call on. Its commands start /mystical-design:.
+_Avoid_: design plugin, design kit, design skills
+
+**Direction**:
+One drafted answer to a design ask, lettered and named (A · TOKEN), offered as its own option on the approval card.
+_Avoid_: variant, option, concept, mockup
+
+**Design board**:
+The live set of pages a session puts up for a design, opened from PREVIEW DESIGN in the chat, where you point, draw and comment; each **Direction** is one page of it. The approval card still carries the pictures.
+_Avoid_: canvas, preview, design view, sheet
+
+**Off-system direction**:
+A **Direction** that steps outside the repo's own design system because a design skill argues it would work better. Outside a **Bold run**, a card offers at most one, labelled OFF-SYSTEM, after the in-system ones.
+_Avoid_: wild card, alternative, rebel direction
+
+**Bold run**:
+A design run whose three **Directions** all leave the repo's design system on purpose, each breaking a different convention (layout, type, colour or motion), and none of them in place. It runs when you light BOLD for the send, when your ask asks for it, or when Claude judges the screen a showpiece with nothing to fit; the card says which. The product's name, logo and real content stay, and the **Self-check** gates it as any other run.
+_Avoid_: creative mode, wild mode, open brief
+
+**Self-check**:
+The drafting session's own review of its **Directions**, from their screenshots, before you see them: it fixes what it finds, and each direction says what was checked and fixed. Not the **Council**, which reviews work about to be pushed.
+_Avoid_: critique, self-review, lint, QA
+
+**Polish pass**:
+The pass after a design is built that holds each built state against its approved **Direction** and fixes the drift in states, motion and accessibility; you see the approved mockup beside the build for each state.
+_Avoid_: QA, cleanup, final pass
+
+**Screen audit**:
+A review of one existing screen, asked for outside any **Flow**: a ranked list of what is wrong with it, each problem marked on a screenshot, after which you pick what gets fixed. Its problems are not **Findings**, which come from watches and retros.
+_Avoid_: design review, UI audit, critique
