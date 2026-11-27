@@ -1,9 +1,9 @@
 /** The page's still state. Scenes (HOME's sky and emblem ring, the fresh-session scene, the
  *  caption's ring, the rune spirit, the CRT sweep) pause under `:root[data-still]` (index.css);
- *  indicators are stepped and keep ticking. The page goes still after 20 s with no pointer, key or
+ *  indicators keep running. The page goes still after 20 s with no pointer, key or
  *  wheel input, or at once when the window loses focus or the page is hidden, and wakes on the
- *  next input or focus. Smooth loops make WebKit redraw 60 times a second, so a scene nobody is
- *  looking at is pure cost (2026-11-23 study). tools/loops.mjs keeps new loops honest.
+ *  next input or focus. A smooth loop that repaints makes WebKit redraw 60 times a second, so a
+ *  scene nobody is looking at is pure cost (2026-11-23 study). tools/loops.mjs keeps new loops honest.
  *
  *  Why not hasFocus() at start: headless and some app shells report false while in front, which
  *  would freeze the scenes until the first move; a page that opens behind gets `blur` soon enough. */

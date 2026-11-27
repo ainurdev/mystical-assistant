@@ -1,7 +1,7 @@
 /* ── C · SPINE (.mystical/design-drafts/session-one-feel): the session page in one feel ──
    One line runs down the session and every block hangs off it as a node: your prompt (a filled
    accent node and a bubble), a steer (an accent ring), the work (a neutral ring, live: an accent
-   ring with a halo), the answer and a question (ok rings). Every block opens with the same header
+   ring), the answer and a question (ok rings). Every block opens with the same header
    line: the node, a word (You, Steer, Answer, Question; the work: its tools' icons), its details in
    the light ink, the facts on the right. Words in the UI face, mono only for code, paths and
    clocks; colour only for meaning (accent = you, ask = waits on you, ok = done).
@@ -12,7 +12,7 @@
    spans, the work header's title and time spans and the prompt box rules are global.
    Geometry: the line is the turn's ::before at --sp-x; each block keeps its node inside its own
    box (a .vskip-card row is paint-contained, so a node drawn past its edge would be cut), so a
-   block is indented by --sp-in and draws its node in that margin, --sp-nx in so the live halo fits.
+   block is indented by --sp-in and draws its node in that margin, --sp-nx in.
    shortcut: the nodes' icons are CSS masks (inline SVG), not lucide components, so the markup
    stays as it was; a new block kind needs its own mask here. Nine now (session-chat-items added
    the waits' and the endings'); move them into the markup when a block needs a live icon. */
@@ -122,10 +122,11 @@
   left: calc(var(--sp-nx) - var(--sp-in)); top: 0; grid-column: auto; grid-row: auto; display: grid; place-items: center; color: var(--txl);
 }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-open] .dwork-node { top: 4px; background: var(--sp-gnd); box-shadow: none; }
-[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node {
-  color: var(--sp-you); border-color: var(--sp-you); background: var(--sp-gnd);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--acc) 16%, transparent);
-}
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node { color: var(--sp-you); border-color: var(--sp-you); background: var(--sp-gnd); }
+/* the live row's border is the chat's one light: the live node is a plain ring, without ORBIT's comet or ripple.
+   animation too: WebKit keeps a hidden pseudo-element's animation running (display or content none, 2026-11-28) */
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node::before,
+[data-fam] [data-style="dossier"][data-isle] .dwork[data-live] .dwork-node::after { display: none; animation: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork[data-shots="new"] .dwork-node { border-color: var(--acc); color: var(--acc); }
 [data-fam] [data-style="dossier"][data-isle] .dwork-l1 { display: none; }
 [data-fam] [data-style="dossier"][data-isle] .dwork-lab {
@@ -477,12 +478,13 @@
 .pb-rail, .pb-rail .pb-seg, .pb-rail .pb-seg * { white-space: nowrap; }
 
 /* ── the live row (LiveRow, .mystical/design-drafts/chat-notes-live): the running turn's current action as
-   the chat's last row, its node on the line; the host is sticky, so scrolled up the row stays at the
-   foot over a fade, with the way back down. The ring and the node turn smooth on transform (live-turn). ── */
+   the chat's last row, the line branching into it; the host is sticky, so scrolled up the row stays at the
+   foot over a fade, with the way back down. Its border is the chat's one light (A · COMET,
+   .mystical/design-drafts/live-row-border), turning smooth on transform (live-turn). ── */
 .live-host { position: sticky; bottom: 0; z-index: 5; }
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
-  --lr-in: var(--sp-in, 42px); --lr-n: var(--sp-n, 26px); --lr-gnd: var(--sp-gnd, var(--panel2));
+  --lr-in: var(--sp-in, 42px); --lr-x: var(--sp-x, 16px); --lr-gnd: var(--sp-gnd, var(--panel2));
   padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) backwards;
 }
 [data-style="dossier"] .live-row { position: relative; }
@@ -494,37 +496,37 @@
 }
 [data-style="dossier"] .live-ring {
   position: relative; isolation: isolate; border-radius: 12px; padding: 1.5px;
+  background: color-mix(in oklab, var(--acc) 22%, transparent);
   box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
 }
-/* The ring's light: a still gradient on a square that turns under the card, clipped to the ring. A turn of
-   transform runs in the compositor; turning the gradient's own angle restyled and repainted it every frame
-   (2026-11-24, off-screen WebKit: 12% of a core smooth, 4% stepped, 0% this way). Its own clip, not the
-   ring's: the node sits outside the ring. margin-top's % is of the width, so the square stays centred. */
+/* The ring's light: one comet with a long tail, a still gradient on a square that turns under the card,
+   clipped to the ring. A turn of transform runs in the compositor; turning the gradient's own angle restyled
+   and repainted it every frame (2026-11-24, off-screen WebKit: 12% of a core smooth, 4% stepped, 0% this
+   way). margin-top's % is of the width, so the square stays centred. */
 [data-style="dossier"] .live-spin { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
 [data-style="dossier"] .live-spin::before {
   content: ""; position: absolute; left: -32px; top: 50%; margin-top: calc(-50% - 32px); width: calc(100% + 64px); aspect-ratio: 1;
-  background: conic-gradient(color-mix(in oklab, var(--acc) 18%, transparent), var(--acc) 16%, color-mix(in oklab, var(--acc) 18%, transparent) 34% 60%,
-    var(--acc) 72%, color-mix(in oklab, var(--acc) 18%, transparent) 88%);
-  animation: live-turn 3.2s linear infinite;
+  background: conic-gradient(transparent 0 76%, color-mix(in oklab, var(--acc) 30%, transparent) 88%, var(--acc) 97%,
+    color-mix(in oklab, var(--acc) 35%, var(--txh)) 99.2%, transparent 99.7%);
+  animation: live-turn 3s linear infinite;
 }
 @keyframes live-turn { to { transform: rotate(1turn); } }
 [data-style="dossier"] .live-card {
   display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
   background: color-mix(in oklab, var(--acc) 6%, var(--panel2));
 }
-/* the node on the line: a comet on its ring, a lit core */
-[data-style="dossier"] .live-node {
-  position: absolute; z-index: 1; left: calc(var(--sp-nx, 4px) - var(--lr-in)); top: 50%; translate: 0 -50%;
-  width: var(--lr-n); height: var(--lr-n); border-radius: 50%; background: var(--lr-gnd); display: grid; place-items: center;
+/* the line into the box: from the row's top it curves off the line into the ring's left edge, its 2px foot
+   centred on the ring's middle (6px + 43px / 2 = 27.5px), grey turning to the accent; the turn's line runs on
+   below. Drawn whole, so it reaches the box where the turn's line doesn't (scrolled up, under the row's ground;
+   a working card last in the chat); over that line it paints the same colour (--line2 is solid in the chat). */
+[data-style="dossier"] .live-branch {
+  position: absolute; left: var(--lr-x); top: 0; width: calc(var(--lr-in) - var(--lr-x)); height: 28.5px;
+  border: solid var(--sp-line, var(--line2)); border-width: 0 0 2px 2px; border-bottom-left-radius: 12px;
 }
-[data-style="dossier"] .live-node::before {
-  content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2px;
-  background: conic-gradient(transparent 0 55%, var(--acc) 85%, transparent);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: live-turn 1.4s linear infinite;
-  box-sizing: border-box;
+[data-style="dossier"] .live-branch::after {
+  content: ""; position: absolute; left: 6px; right: 0; bottom: -2px; height: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--acc) 70%, transparent));
 }
-[data-style="dossier"] .live-node > i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
 /* the zone's NowLine, as the card's line */
 [data-style="dossier"] .live-row .live-card > .dwork-now {
   flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; height: 32px; border: 0; background: none;
@@ -552,7 +554,7 @@
 .pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
 .pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }
 body[data-liverow] .pb-hold { display: none; }
-@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-spin::before, [data-style="dossier"] .live-node::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-spin::before { animation: none; } }
 
 /* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the
    line with a small ring in the Mystical colour, no bubble ── */

@@ -236,9 +236,6 @@
      left alone so gaps don't move when the base font does. */
   --text-xs: var(--t12);
   --text-sm: var(--t14);
-  /* the shared spinner and skeletons tick ~8 a second, like every indicator (tools/loops.mjs) */
-  --animate-spin: spin 1s steps(8) infinite;
-  --animate-pulse: pulse 2s steps(16) infinite;
 
   --radius-sm: 0px;
   --radius-md: 0px;
@@ -594,10 +591,15 @@ body {
 .fresh-row:hover { background: var(--ac-06) !important; }
 /* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting
    on you and already shouts with colour — a pulse there would be four things
-   blinking at once. This one says "churning, leave it alone". */
-.sessdot[data-work="true"] {
-  animation: workpulse 1.8s steps(14) infinite;
-}
+   blinking at once. This one says "churning, leave it alone". The ring ripples out on
+   its own layer (::before, scaled + faded: the compositor runs it, where a box-shadow
+   ring repaints every frame); ::after, a copy of the dot, keeps its middle covered. */
+.sessdot[data-work="true"] { position: relative; box-shadow: 0 0 8px var(--ok) !important; }
+.sessdot[data-work="true"]::before,
+.sessdot[data-work="true"]::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; }
+.sessdot[data-work="true"]::before { inset: -6px; background: color-mix(in srgb, var(--ok) 55%, transparent); opacity: 0;
+  animation: workpulse 1.8s ease-out infinite; }
+.sessdot[data-work="true"]::after { inset: 0; background: inherit; }
 /* an answered row's background tasks (SessionsPanel bgTag), in line 2's tag cell beside the picture tag */
 .sess-bg { display: inline-flex; align-items: center; gap: 4px; height: 15px; font-size: var(--t85); font-weight: 700; line-height: 1;
   color: var(--ok); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -680,7 +682,7 @@ body {
 
 @keyframes sweepmove { 0% { transform: translateY(-200px); } 100% { transform: translateY(100vh); } }
 /* The scenes pause when the page is still (lib/still.ts: 20 s without input, or the window not in
-   front). Indicators are stepped and keep ticking. A scene with an inline animation carries
+   front). Indicators keep running (tools/loops.mjs). A scene with an inline animation carries
    .still-scene; tools/loops.mjs checks every listed scene is named here. */
 :root[data-still] .sweep,
 :root[data-still] .home-emblem .ring,
@@ -690,8 +692,8 @@ body {
 @keyframes flicker { 0% { filter: brightness(0.35); } 9% { filter: brightness(2.2); } 13% { filter: brightness(0.6); } 22% { filter: brightness(1.5); } 100% { filter: none; } }
 @keyframes drawline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
-/* mpulse, but keeping the dot's own glow under the ring so it never reads as flat between beats, and themed off --ok rather than a baked-in green. */
-@keyframes workpulse { 0% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 8px var(--ok), 0 0 0 6px transparent; } 100% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 transparent; } }
+/* mpulse's ring on a layer (.sessdot[data-work]::before, -6px all round): from the dot's size out to 6px past it, fading by 70%. */
+@keyframes workpulse { from { transform: scale(.4); opacity: 1; } 70%, to { transform: none; opacity: 0; } }
 @keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
 /* the fresh screen lifting off as the first turn lands under it (Terminal FreshState) */
 @keyframes freshleave { to { opacity: 0; transform: translateY(-10px) scale(.985); } }
@@ -1459,7 +1461,7 @@ input {
 .ctrl-meter { display: inline-flex; gap: 6px; }
 /* a login's meter a running turn is reporting (Composer chip, PROFILE menu): a breathing green dot */
 .meter-live { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s steps(16) infinite; }
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .meter-live { animation: none; } }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
@@ -1757,7 +1759,7 @@ input {
   transform: translateX(-100%);
 }
 .swapwrap[data-swapping] .swapline::after {
-  animation: swapsweep 1.05s steps(8) 0.14s infinite;
+  animation: swapsweep 1.05s cubic-bezier(0.5, 0, 0.5, 1) 0.14s infinite;
 }
 /* -100% clears the left edge; 360% carries a 28%-wide gleam past the right one. */
 @keyframes swapsweep {
@@ -1768,7 +1770,7 @@ input {
    motion — dropping it here would flicker the scrim on every switch. Only the
    fade and the sweep go. */
 @media (prefers-reduced-motion: reduce) {
-  .sessdot[data-work="true"] { animation: none; }
+  .sessdot[data-work="true"]::before { animation: none; }
   .hudgrid { transition: none; }
   [data-tabswap] > * { animation: none; }
   .swapscrim,
@@ -2280,7 +2282,7 @@ input {
   box-sizing: border-box; }
 .jobbar-orb::after { content: ""; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px;
   border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple);
-  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s steps(13) infinite; }
+  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s linear infinite; }
 @keyframes jobbar-orbit { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .jobbar-orb::after { animation: none; } }
 .jobbar-w1 { font-size: var(--t10); font-weight: 600; letter-spacing: .07em; color: var(--txh); white-space: nowrap; }
@@ -3060,7 +3062,7 @@ input {
    track. Working: a comet runs the track. */
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="think"] .dwork-node::before {
   content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
-  animation: dwripple 2.2s steps(18) infinite;
+  animation: dwripple 2.2s ease-out infinite;
   box-sizing: border-box;
 }
 [data-style="dossier"] .dwork[data-ind="orbit"][data-live="work"] .dwork-node::after {
@@ -3069,7 +3071,7 @@ input {
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   filter: drop-shadow(0 0 2px color-mix(in oklab, var(--acc) 70%, transparent));
-  animation: dworbit 1.1s steps(9) infinite;
+  animation: dworbit 1.1s linear infinite;
 }
 @keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
@@ -3162,20 +3164,22 @@ input {
   content: ""; position: absolute; left: 50%; bottom: 100%; width: 1px; height: var(--now-reach, 23px); translate: -.5px 0;
   background: linear-gradient(transparent, var(--zline) 6px); z-index: -1;
 }
-/* the bead runs the spine's own length (a background in a box as tall as the
-   reach, so the keyframes need no var(), which WebKit resolves late) */
+/* the bead runs the spine's own length: a box as tall as the reach with the bead
+   at its top, moved down by its own height less the bead's (a % of itself, so the
+   keyframes need no var(), which WebKit resolves late). A transform, so the
+   compositor runs it. */
 [data-style="dossier"] .dwork-now[data-st="work"] > .now-ic::after {
   content: ""; position: absolute; left: 50%; bottom: 100%; width: 3px; height: var(--now-reach, 23px); translate: -1.5px 0; z-index: -1;
   background: linear-gradient(transparent, var(--mc)) 0 0 / 3px 7px no-repeat;
   filter: drop-shadow(0 0 3px var(--mc));
-  animation: nowbead 1.5s steps(12) infinite;
+  animation: nowbead 1.5s cubic-bezier(.5,0,.75,1) infinite;
 }
-@keyframes nowbead { 0% { background-position: 0 0%; opacity: 0; } 25%, 85% { opacity: 1; } 100% { background-position: 0 100%; opacity: 0; } }
+@keyframes nowbead { 0% { transform: none; opacity: 0; } 25%, 85% { opacity: 1; } 100% { transform: translateY(calc(100% - 7px)); opacity: 0; } }
 /* thinking: the thought node's ring, breathing out */
 [data-style="dossier"] .now-ring { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 1.6px solid currentColor; }
 [data-style="dossier"] .now-ring::after {
   content: ""; position: absolute; inset: -1.6px; border-radius: 50%; border: 1.4px solid currentColor;
-  animation: nowripple 2s steps(16) infinite;
+  animation: nowripple 2s ease-out infinite;
   box-sizing: border-box;
 }
 @keyframes nowripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.3); opacity: 0; } }
@@ -3428,7 +3432,7 @@ input {
   color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--zg));
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
     0 0 12px color-mix(in oklab, var(--d-you) 45%, transparent);
-  animation: agbpulse 1.4s steps(11) infinite;
+  animation: agbpulse 1.4s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg { animation: none; }
@@ -5741,14 +5745,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: linear-gradient(var(--panel2), var(--panel2)) padding-box,
     conic-gradient(from var(--st-a), color-mix(in oklab, var(--acc) 8%, transparent), var(--acc) 18%, color-mix(in oklab, var(--acc) 30%, white) 24%, color-mix(in oklab, var(--acc) 8%, transparent) 48%) border-box; }
 .st-spin { width: 13px; height: 13px; flex: none; border-radius: 50%; border: 2px solid color-mix(in oklab, var(--acc) 22%, transparent);
-  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s steps(6) infinite; }
+  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s linear infinite; }
 .prj .ps-riv.st-strip { position: relative; overflow: hidden; animation: st-fade .35s ease-out backwards; }
 .prj .ps-riv.st-strip[data-err] { border-color: color-mix(in oklab, var(--err) 40%, var(--l)); }
 .st-strip small b { display: inline; font: inherit; font-weight: 700; color: var(--txm); }
 .st-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in oklab, var(--acc) 12%, transparent); }
 .st-bar > i { display: block; height: 100%; border-radius: 0 3px 3px 0; transition: width .45s cubic-bezier(.2, .8, .2, 1);
   background: linear-gradient(90deg, var(--acc), color-mix(in oklab, var(--acc) 45%, white)); box-shadow: 0 0 10px var(--acc); }
-.st-bar-run > i { width: 30%; animation: st-run 1.2s steps(10) infinite; }
+.st-bar-run > i { width: 30%; animation: st-run 1.2s ease-in-out infinite; }
 .st-sum { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .st-sum span { display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; color: var(--acc);
   border: 1px solid color-mix(in oklab, var(--acc) 35%, var(--l)); background: color-mix(in oklab, var(--acc) 9%, var(--panel2)); }
@@ -5757,9 +5761,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-scan { position: sticky; top: 0; z-index: 2; display: block; height: 0; pointer-events: none; }
 .st-scan::after { content: ""; position: absolute; left: 6px; right: 6px; top: 0; height: 2px; border-radius: 2px; --h: 520px;
   background: linear-gradient(90deg, transparent, var(--acc) 30%, color-mix(in oklab, var(--acc) 40%, white) 50%, var(--acc) 70%, transparent);
-  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s steps(10) infinite; }
+  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s ease-in-out infinite; }
 .prj-row[data-st] .prj-end { display: none; }
-.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s steps(12) infinite; }
+.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s ease-in-out infinite; }
 .prj-row[data-st="wait"] .prj-nm { color: var(--txl); }
 .prj-row[data-st="now"] { box-shadow: inset 2px 0 0 var(--acc);
   background: linear-gradient(90deg, color-mix(in oklab, var(--acc) 5%, transparent), color-mix(in oklab, var(--acc) 17%, transparent) 70%, color-mix(in oklab, var(--acc) 6%, transparent)); }
@@ -5794,7 +5798,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-why { margin: 0; font-style: italic; color: var(--tx); font-size: 14px; line-height: 1.5; min-height: 21px; }
 .st-why[data-typing]::after { content: ""; display: inline-block; width: 2px; height: 16px; margin-left: 3px; background: var(--acc); vertical-align: -3px; animation: st-caret 1s steps(1) infinite; }
 .st-sheet { display: flex; flex-wrap: wrap; gap: 5px; }
-.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s steps(12) infinite; }
+.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s ease-in-out infinite; }
 .st-dec { display: flex; flex-wrap: wrap; gap: 6px; }
 .st-dec span { display: inline-flex; gap: 7px; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--l); font-size: 12px; color: var(--txd); }
 .st-dec span b { color: var(--txb); font-weight: 600; }
@@ -6438,7 +6442,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
 @keyframes gl-spin { to { transform: rotate(360deg); } }
 @keyframes gl-bar { from { transform: translateX(-100%); } to { transform: translateX(333.33%); } }
-.gl-spin { animation: gl-spin 1s steps(8) infinite; }
+.gl-spin { animation: gl-spin 1s linear infinite; }
 .gl-ic { position: relative; }
 .gl-pill { position: absolute; right: 3px; top: 1px; height: 15px; min-width: 15px; padding: 0 3px; border-radius: 999px; text-align: center;
   font: 600 var(--t7)/15px var(--ui-font); background: var(--acc); color: var(--acc-on); }
@@ -6468,7 +6472,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gl-step.now .d { color: var(--acc); }
 .gl-step.bad .d { color: var(--err); }
 .gl-step .bar { grid-column: 2 / 4; position: relative; height: 2px; margin-top: 8px; overflow: hidden; background: color-mix(in oklab, var(--acc) 16%, transparent); }
-.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s steps(11) infinite; }
+.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s ease-in-out infinite; }
 .gl-err { margin-top: 14px; padding: 9px 11px; border-radius: var(--f-rad-s, 0);
   border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 7%, transparent); }
 .gl-err .h { margin-bottom: 6px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--err); }
@@ -6583,7 +6587,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
 .gp-ib:disabled { opacity: .4; cursor: not-allowed; }
 .gp-ib.spin { color: var(--acc); }
-.gp-ib.spin svg { animation: gpspin 1s steps(8) infinite; }
+.gp-ib.spin svg { animation: gpspin 1s linear infinite; }
 /* under the GIT hero: the task line, a sync op's outcome, and (on a failed
    auto-fetch) git's words. The hero's one move is the panel's only solid button:
    agents commit, you push. */
@@ -6638,7 +6642,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 /* something runs for the tab unasked (GIT's auto-fetch): an orbit, the working indicator's shape */
 .rail-orbit { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s steps(19) infinite; pointer-events: none; }
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s linear infinite; pointer-events: none; }
 .rail-orbit::after { content: ""; position: absolute; left: 50%; top: -3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
   background: var(--acc); box-shadow: 0 0 6px var(--acc); }
 @media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
@@ -6671,7 +6675,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-pb:hover:not(:disabled) { filter: brightness(1.08); }
 .gp-pb:disabled { cursor: not-allowed; }
 .gp-pb.busy { background: color-mix(in srgb, var(--acc) 34%, var(--panel)); color: var(--txb); box-shadow: none; cursor: progress; }
-.gp-pb.busy svg { animation: gpspin 1s steps(8) infinite; }
+.gp-pb.busy svg { animation: gpspin 1s linear infinite; }
 .gp-pb.tint { border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 15%, transparent);
   color: var(--txb); letter-spacing: .05em; box-shadow: none; }
 .gp-pb.tint:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--acc) 24%, transparent); }
@@ -6849,7 +6853,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
 .tn-cnt { display: inline-grid; place-items: center; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px;
   border: 1px solid var(--l2); font: 700 var(--t105)/1 var(--f); color: var(--txm); }
-.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s steps(11) infinite; }
+.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
 @keyframes tnpulse { 50% { opacity: .35; } }
 /* the now bar: --c is the ask hue while the turn waits on you, the accent while it works */
 .tn-now { --c: var(--acc); display: flex; align-items: center; gap: 9px; flex: none; margin: 2px 12px 6px; padding: 9px 10px 9px 12px; border-radius: 11px;
@@ -7063,7 +7067,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-hi { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; color: var(--purple);
   background: color-mix(in srgb, var(--purple) 13%, transparent); }
 .ss-hi.run::after { content: ""; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
-  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s steps(11) infinite; }
+  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s ease-in-out infinite; }
 .ss-ht { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ss-h > small { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
 .ss-h > em { flex: none; width: 40px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
@@ -7079,7 +7083,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-t.on { box-shadow: inset 2px 0 0 var(--acc); }
 .ss-n { flex: none; width: 20px; text-align: right; font: normal 600 var(--t10)/1 var(--m); color: var(--txg); }
 .ss-t.on .ss-n { color: var(--acc); }
-.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s steps(11) infinite; }
+.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s ease-in-out infinite; }
 .ss-t.ask .ss-n { color: var(--askc); font-weight: 800; }
 .ss-t.err .ss-n { color: var(--err); }
 .ss-t.err .ss-p { color: var(--txl); }
@@ -7132,7 +7136,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
 .cn-pill.ask { color: var(--ask); background: color-mix(in srgb, var(--ask) 14%, transparent); }
 .cn-pill svg { flex: none; }
-.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s steps(13) infinite;
+.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s ease-in-out infinite;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-acc2) 20%, transparent), 0 0 8px currentColor; }
 /* the scoreboard: one height in every state, so nothing under it moves */
 .cn-sb { flex: none; height: 230px; box-sizing: border-box; margin: 2px 12px 0; padding: 12px 12px 10px; display: flex; flex-direction: column;
@@ -7195,7 +7199,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cr-coin .cn-spin { width: 13px; height: 13px; }
 .cr-why { flex: none; height: 16px; margin: 6px 14px 0; font: 600 var(--t105)/16px var(--f); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-why b { color: var(--txm); }
-.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s steps(8) infinite;
+.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s linear infinite;
   border: 2px solid color-mix(in srgb, var(--cn-acc2) 20%, transparent); border-top-color: var(--cn-acc2); }
 /* every agent wears Codex's neutral plate; Claude keeps the accent */
 .cn-mk { flex: none; width: 22px; height: 22px; border-radius: var(--f-rad-s, 7px); display: inline-flex; align-items: center; justify-content: center;
@@ -7865,7 +7869,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-more { font-size: var(--t11); color: var(--txl); }
 .ad-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t115); color: var(--txm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ad-beacon { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rc); }
-.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s steps(19) infinite; box-sizing: border-box; }
+.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s ease-out infinite; box-sizing: border-box; }
 @keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
 /* the fold (ask-dock-readable): one line, the ask itself, so the session above can be read; the body is hidden, not gone */
@@ -8273,7 +8277,7 @@ button.gl-c:hover > span { color: var(--txb); }
 .wr-dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t10); color: var(--txl); }
 .wr-k { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.2px; color: var(--txl); }
 .wr-k.live { color: var(--acc); }
-.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s steps(11) infinite; }
+.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s ease-in-out infinite; }
 .wr-pre { margin: 0; padding: 6px 0 7px; font: 500 var(--t10)/1.6 var(--mono); color: var(--txm); background: color-mix(in srgb, var(--txb) 5%, transparent); }
 .wr-pre span { display: block; padding: 0 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .wr-pre .ad { background: color-mix(in srgb, var(--ok) 11%, transparent); color: var(--txb); }
@@ -8337,7 +8341,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-wv { display: inline-flex; gap: 3px; padding: 3px 4px; border: 1px solid transparent; border-radius: var(--f-rad-s, 4px); }
 .tm-wv.now { border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
 .tm-wv i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--txl) 45%, transparent); }
-.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s steps(13) infinite; }
+.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s ease-in-out infinite; }
 .tm-wv i.m { border-radius: 1px; transform: rotate(45deg); background: none; box-shadow: inset 0 0 0 1.5px var(--txl); animation: none; }
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
 .tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 1 40%; max-width: max-content; color: var(--txd); }
@@ -8369,7 +8373,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-node:hover > circle:not(.tm-live), .tm-node:focus-visible > circle:not(.tm-live) { stroke: var(--txb); }
 .tm-lab { font-size: 11.5px; fill: var(--txd); }
 .tm-lab2 { font-size: 10.5px; fill: var(--txl); }
-.tm-live { animation: tmpulse 1.6s steps(13) infinite; }
+.tm-live { animation: tmpulse 1.6s ease-in-out infinite; }
 .tm-flow { animation: tmflow .9s steps(7) infinite; }
 @keyframes tmpulse { 50% { opacity: .35; } }
 @keyframes tmflow { to { stroke-dashoffset: -10; } }
@@ -8851,7 +8855,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .home-now, .home-away { height: 22px; cursor: default; }
 .home-now { font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--acc); }
 .home-now .mid::before { top: 50%; }
-.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s steps(13) infinite; }
+.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s ease-in-out infinite; }
 .home-away { font-size: var(--t105); font-style: italic; font-weight: 600; color: var(--txg); }
 .home-away .mid::before { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--txl) 70%, transparent) 0 3px, transparent 3px 6px); opacity: 1; }
 .home-none { margin-top: 14px; font-size: var(--t15); font-weight: 800; color: var(--txb); }
@@ -9004,7 +9008,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .upd-fix.ok { --k: var(--ok); } .upd-fix.warn { --k: var(--warn); } .upd-fix.bad { --k: var(--err); }
 .upd-fix .top { display: flex; align-items: center; gap: 8px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .14em; color: var(--k); }
 .upd-fix .dot { flex: none; width: 7px; height: 7px; border-radius: 9px; background: var(--k); box-shadow: 0 0 8px var(--k); }
-.upd-fix .dot.pulse { animation: tnpulse 1.4s steps(11) infinite; }
+.upd-fix .dot.pulse { animation: tnpulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .upd-fix .dot.pulse { animation: none; } }
 .upd-fix .go { margin-left: auto; font: 500 var(--t95) var(--mono); letter-spacing: 0; }
 .upd-fix b { font: 600 var(--t125)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
