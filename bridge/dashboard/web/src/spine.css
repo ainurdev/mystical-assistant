@@ -477,14 +477,15 @@
 .pb-rail, .pb-rail .pb-seg, .pb-rail .pb-seg * { white-space: nowrap; }
 
 /* ── the live row (LiveRow, .mystical/design-drafts/chat-notes-live): the running turn's current action as
-   the chat's last row, the line branching into it; the host is sticky, so scrolled up the row stays at the
-   foot over a fade, with the way back down. Its border is the chat's one light (A · COMET,
-   .mystical/design-drafts/live-row-border), turning smooth on transform (live-turn). ── */
+   the chat's last row, a station on the line (B · STATION, .mystical/design-drafts/live-row-join): the box
+   reaches back over the line, its icon in the node column, its words in the blocks'. The host is sticky, so
+   scrolled up the row stays at the foot over a fade, with the way back down. Its border is the chat's one
+   light, breathing on opacity (A · BREATHE, live-breathe). ── */
 .live-host { position: sticky; bottom: 0; z-index: 5; }
 .live-host:empty { display: none; }
 [data-style="dossier"] .live-row {
-  --lr-in: var(--sp-in, 42px); --lr-x: var(--sp-x, 16px); --lr-gnd: var(--sp-gnd, var(--panel2));
-  padding: 6px 0 12px var(--lr-in); animation: streamIn .34s cubic-bezier(.2,.8,.2,1) backwards;
+  --lr-x: var(--sp-x, 16px); --lr-gnd: var(--sp-gnd, var(--panel2));
+  padding: 6px 0 12px; animation: streamIn .34s cubic-bezier(.2,.8,.2,1) backwards;
 }
 [data-style="dossier"] .live-row { position: relative; }
 [data-style="dossier"] .live-row[data-away] { background: var(--lr-gnd); }
@@ -495,41 +496,42 @@
 }
 [data-style="dossier"] .live-ring {
   position: relative; isolation: isolate; border-radius: 12px; padding: 1.5px;
-  background: color-mix(in oklab, var(--acc) 22%, transparent);
-  box-shadow: 0 0 24px -8px color-mix(in oklab, var(--acc) 60%, transparent);
+  background: color-mix(in oklab, var(--acc) 28%, transparent);
 }
-/* The ring's light: one comet with a long tail, a still gradient on a square that turns under the card,
-   clipped to the ring. A turn of transform runs in the compositor; turning the gradient's own angle restyled
-   and repainted it every frame (2026-11-24, off-screen WebKit: 12% of a core smooth, 4% stepped, 0% this
-   way). margin-top's % is of the width, so the square stays centred. */
-[data-style="dossier"] .live-spin { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
-[data-style="dossier"] .live-spin::before {
-  content: ""; position: absolute; left: -32px; top: 50%; margin-top: calc(-50% - 32px); width: calc(100% + 64px); aspect-ratio: 1;
-  background: conic-gradient(transparent 0 76%, color-mix(in oklab, var(--acc) 30%, transparent) 88%, var(--acc) 97%,
-    color-mix(in oklab, var(--acc) 35%, var(--txh)) 99.2%, transparent 99.7%);
-  animation: live-turn 3s linear infinite;
+/* The ring's light breathes: a lit copy of the border (::before, masked to the ring) and a glow behind the card
+   (::after) fade in and out together. Only opacity moves, so the compositor runs it; the comet that ran the
+   border before read as sudden (2026-11-28), and 3.2 s from 12% read as too calm. */
+[data-style="dossier"] .live-ring::before,
+[data-style="dossier"] .live-ring::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  animation: live-breathe 2.4s ease-in-out infinite;
 }
-@keyframes live-turn { to { transform: rotate(1turn); } }
+[data-style="dossier"] .live-ring::before {
+  z-index: 1; padding: 1.5px;
+  background: linear-gradient(90deg, var(--acc), color-mix(in oklab, var(--acc) 45%, var(--txh)), var(--acc));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+[data-style="dossier"] .live-ring::after {
+  z-index: -1;
+  box-shadow: 0 0 30px -2px color-mix(in oklab, var(--acc) 85%, transparent), 0 0 8px -2px var(--acc);
+}
+@keyframes live-breathe { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
+/* the card's left padding puts the icon's centre on the line (1.5px ring + 6.5px + 18px / 2 = 17px, --sp-x + 1) */
 [data-style="dossier"] .live-card {
-  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 10px; border-radius: 10.5px;
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 6px 4px 6.5px; border-radius: 10.5px;
   background: color-mix(in oklab, var(--acc) 6%, var(--panel2));
 }
-/* the line into the box: from the row's top it curves off the line into the ring's left edge, its 2px foot
-   centred on the ring's middle (6px + 43px / 2 = 27.5px), grey turning to the accent; the turn's line runs on
-   below. Drawn whole, so it reaches the box where the turn's line doesn't (scrolled up, under the row's ground;
-   a working card last in the chat); over that line it paints the same colour (--line2 is solid in the chat). */
-[data-style="dossier"] .live-branch {
-  position: absolute; left: var(--lr-x); top: 0; width: calc(var(--lr-in) - var(--lr-x)); height: 28.5px;
-  border: solid var(--sp-line, var(--line2)); border-width: 0 0 2px 2px; border-bottom-left-radius: 12px;
+/* the line through the station: the turn's line runs on under the opaque card, but the row's own ground hides
+   it when scrolled up (and a working card last in the chat ends it short), so the row draws its stretch too,
+   the same colour over it (--line2 is solid in the chat), before the ring so the card covers it */
+[data-style="dossier"] .live-line {
+  position: absolute; left: var(--lr-x); top: 0; bottom: 0; width: 2px; background: var(--sp-line, var(--line2)); pointer-events: none;
 }
-[data-style="dossier"] .live-branch::after {
-  content: ""; position: absolute; left: 6px; right: 0; bottom: -2px; height: 2px;
-  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--acc) 70%, transparent));
-}
-/* the zone's NowLine, as the card's line */
+/* the zone's NowLine, as the card's line: the icon in the node column, the words from the blocks' column
+   (1.5px + 6.5px + 18px + 16px = 42px, --sp-in) */
 [data-style="dossier"] .live-row .live-card > .dwork-now {
   flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; height: 32px; border: 0; background: none;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 16px;
 }
 [data-fam] [data-style="dossier"] .live-row .live-card > .dwork-now { background: none; border: 0; padding: 0; margin: 0; }
 [data-style="dossier"] .live-row .live-card > .dwork-now > .now-ic::before,
@@ -553,7 +555,9 @@
 .pb-hold > .act-glyph { width: 24px; height: 24px; border-radius: 50%; }
 .pb-hold > .act-glyph[data-wide] { width: auto; padding: 0 9px; }
 body[data-liverow] .pb-hold { display: none; }
-@media (prefers-reduced-motion: reduce) { [data-style="dossier"] .live-spin::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-style="dossier"] .live-ring::before, [data-style="dossier"] .live-ring::after { animation: none; opacity: .6; }
+}
 
 /* ── a note: Claude's words between steps, out of the work and in the chat (chat-notes-live): prose on the
    line with a small ring in the Mystical colour, no bubble ── */
