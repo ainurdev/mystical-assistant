@@ -51,3 +51,22 @@ def test_it_refuses_to_write_over_the_live_state_folder(tmp_path):
     assert r.returncode != 0 and "live" in r.stderr
     assert sqlite3.connect(db).execute("SELECT x FROM t").fetchall() == [(42,)]
     con.close()
+
+
+def test_a_missing_source_leaves_the_old_snapshot_alone(tmp_path):
+    db, con = _live(tmp_path)
+    out = tmp_path / "snap"
+    assert _run(db, out).returncode == 0
+    r = _run(tmp_path / "gone" / "bridge.db", out)
+    assert r.returncode != 0 and "no database" in r.stderr
+    assert (out / "bridge.db").exists()
+    con.close()
+
+
+def test_an_existing_dir_keeps_its_mode(tmp_path):
+    db, con = _live(tmp_path)
+    out = tmp_path / "mine"
+    out.mkdir(mode=0o755)
+    assert _run(db, out).returncode == 0
+    assert stat.S_IMODE(os.stat(out).st_mode) == 0o755
+    con.close()

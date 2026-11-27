@@ -28,11 +28,14 @@ state = os.path.dirname(live)
 out = os.path.realpath(sys.argv[1])
 if out == state:
     sys.exit(f"bridge-snapshot: {out} is the live state folder")
+if not os.path.isfile(live):
+    sys.exit(f"bridge-snapshot: no database at {live}")
 
-os.makedirs(out, mode=0o700, exist_ok=True)
-os.chmod(out, 0o700)  # chat contents and tokens live in here
+if not os.path.isdir(out):
+    os.makedirs(out)
+    os.chmod(out, 0o700)  # chat contents and tokens live in here; a DIR you made keeps its mode
 dest = os.path.join(out, "bridge.db")
-for stale in (dest, dest + "-wal", dest + "-shm"):
+for stale in (dest, dest + "-wal", dest + "-shm", dest + "-journal"):
     if os.path.exists(stale):
         os.remove(stale)
 src = sqlite3.connect(f"file:{live}?mode=ro", uri=True)
