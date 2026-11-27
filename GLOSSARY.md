@@ -8,6 +8,10 @@ A bridge that runs coding agents on this machine and lets you drive them from th
 One ongoing conversation between you and an agent, tied to one project folder or worktree; a row in the sidebar.
 _Avoid_: chat, thread, conversation
 
+**Outside projects**:
+The one sidebar group that lists every **Session** whose folder is outside your projects root, whoever started it (the Claude app, a terminal, VS Code). It only lists them; each still runs in its own folder.
+_Avoid_: elsewhere, other folders, scratch group
+
 **Turn**:
 One prompt and everything the agent does in answer to it, until it stops.
 _Avoid_: run, job
