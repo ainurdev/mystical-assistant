@@ -451,13 +451,19 @@ def test_cycle_stops_the_set_with_a_notice(make_set):
     assert s.state["status"] == "stopped" and not s.starts
 
 
+_DONE = ("While you work, run only the tests for the code you touch. When it is done, run the project's full "
+         f"suite once, through {tickets._SLOT} (in front of its command, as `{tickets._SLOT} npm test`): it waits "
+         "while another session's suite runs, so suites don't slow down or fail each other. After a fix, rerun "
+         "only what failed, then call StepDone.")
+
+
 def test_first_prompt_title_and_path(make_set):
     s = make_set({"01": None})
     t = s.state["tickets"]["01"]
     assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
                          f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
-                         "tk/x/01-x in this checkout and commit there. When it is done and the tests pass, "
-                         "call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01")}]
+                         "tk/x/01-x in this checkout and commit there. " + _DONE + tickets._REPORT
+                         + tickets._elsewhere(s.state, "01")}]
     sess = store.get_session(t["session_id"])
     assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
     assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x/01-x"
@@ -482,8 +488,8 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     tickets.retry(s.folder, "01")
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
     assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
-                                      "Work on branch tk/x/01-x in this checkout and commit there. When it is done "
-                                      "and the tests pass, call StepDone." + tickets._REPORT + tickets._elsewhere(s.state, "01"))
+                                      "Work on branch tk/x/01-x in this checkout and commit there. " + _DONE
+                                      + tickets._REPORT + tickets._elsewhere(s.state, "01"))
     s.finish("01")
     assert s.status("01") == "done"
 
@@ -664,7 +670,8 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
                            "tk/x/02-x, tk/x/03-x, tk/x/01-x\nResolve any clash so both tickets' work survives, run the "
                            "project's full test suite, fix what breaks, and commit. End your final reply with what "
                            "failed before the merge and what fails after it. Then call StepDone. "
-                           "Run tests in the foreground.")
+                           f"Run tests in the foreground. Run each full suite through {tickets._SLOT}, in front of its "
+                           "command.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
     assert (s.state["status"], s.state["merge_session"]) == ("merging", m["sid"])
@@ -1455,11 +1462,12 @@ def test_with_ponytail_on_a_ticket_reviews_its_diff_before_step_done(make_set, m
     _reseed()
     assert s.build() == ""
     assert (
-        "When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
-        "fix what it finds and commit, then call StepDone." in s.starts[0]["prompt"])
+        "While you work, run only the tests for the code you touch. When it is done, review your branch's diff "
+        "with the ponytail-review skill, fix what it finds and commit. Then run the project's full suite once, "
+        f"through {tickets._SLOT}" in s.starts[0]["prompt"])
     s.finish("01", commit=False)
     tickets.retry(s.folder, "01")
-    assert "fix what it finds and commit, then call StepDone." in s.starts[-1]["prompt"]
+    assert "fix what it finds and commit. Then run the project's full suite once" in s.starts[-1]["prompt"]
 
 
 # --- REVIEW: the council reads the merged work ---------------------------------

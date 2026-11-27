@@ -63,7 +63,11 @@ StepDone gets a carry-on, at most NUDGES per run, before the slot is left waitin
 The merge session gets the same, and once the carry-ons are spent a `tickets` notice
 on that session says it waits on you. Both prompts say to test in the foreground:
 with that line no ticket stalled (7 of 7, 2026-11-11), without it the same set's
-merge did, and stayed `merging` until someone asked.
+merge did, and stayed `merging` until someone asked. They also send every full suite
+through bin/suite-slot, one at a time on the machine, and a ticket runs only the tests
+it touches until its one full run at the end: over 109 tickets (2026-11-27) a ticket ran
+the full suite a median 4 times, and runs that overlapped two or more other tickets'
+tests ran 2-2.5x slower and failed 53% of the time, against 24% alone.
 
 A ticket's `Repos:` line names the repos it builds in (default: the set's own); BUILD
 makes its worktree in each, the first holding its session, and makes none at home when
@@ -373,6 +377,7 @@ def summary_for(session_id: str):
 
 # The bridge's own copy: a ticket's worktree can predate it, or be another repo's.
 _STATUS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "ticket-status")
+_SLOT = os.path.join(os.path.dirname(_STATUS), "suite-slot")
 _build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
 
 
@@ -587,13 +592,20 @@ _REPORT = (" End your final reply with two short lists, headed exactly \"Decisio
            "saying \"none\" if so.")
 
 
+_WORK = "While you work, run only the tests for the code you touch. "
+_ONCE = (f"run the project's full suite once, through {_SLOT} (in front of its command, as `{_SLOT} npm test`): it "
+         "waits while another session's suite runs, so suites don't slow down or fail each other. After a fix, "
+         "rerun only what failed, then call StepDone.")
+
+
 def _done_line() -> str:
-    """How a ticket ends. With PONYTAIL on it reviews its own diff first: a ticket path
-    has no REVIEW station, since MERGE is what joins the branches (bridge/paths.py)."""
+    """How a ticket ends: its one full suite last (module docstring). With PONYTAIL on it
+    reviews its own diff before that run: a ticket path has no REVIEW station, since MERGE
+    is what joins the branches (bridge/paths.py)."""
     if aifeatures.enabled("ponytail"):
-        return ("When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
-                "fix what it finds and commit, then call StepDone." + _REPORT)
-    return "When it is done and the tests pass, call StepDone." + _REPORT
+        return (_WORK + "When it is done, review your branch's diff with the ponytail-review skill, fix what it "
+                "finds and commit. Then " + _ONCE + _REPORT)
+    return _WORK + "When it is done, " + _ONCE + _REPORT
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
@@ -798,7 +810,7 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
-            + " Then call StepDone." + _FOREGROUND)
+            + " Then call StepDone." + _FOREGROUND + f" Run each full suite through {_SLOT}, in front of its command.")
 
 
 def _home_branches(st: dict, tks: dict) -> list:
