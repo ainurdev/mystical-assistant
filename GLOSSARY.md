@@ -9,7 +9,7 @@ One ongoing conversation between you and an agent, tied to one project folder or
 _Avoid_: chat, thread, conversation
 
 **Outside projects**:
-The one sidebar group that lists every **Session** whose folder is outside your projects root, whoever started it (the Claude app, a terminal, VS Code). It only lists them; each still runs in its own folder.
+The one sidebar group for every **Session** started outside Mystical (the Claude app, a terminal, VS Code) in a folder outside your projects root that you haven't added as a project, your home folder included. It only lists them; each still runs in its own folder.
 _Avoid_: elsewhere, other folders, scratch group
 
 **Turn**:

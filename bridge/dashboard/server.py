@@ -153,9 +153,11 @@ def _sessions_payload(chat, project) -> dict:
     # tab exists to show must not be filtered into invisibility.
     # A real project that moved or was deleted keeps its sessions listed,
     # marked missing (browser.gone), for MOVE TO PROJECT.
+    # Home is no project, but one started there lists: the sidebar files it under
+    # Outside projects (web lib/outside), so it opens no phantom "~" group.
     rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
             or browser.project_exists(r["project"]) or _rehome_moved(r)
-            or browser.gone(r["project"])]
+            or browser.gone(r["project"]) or r["project"] == "~"]
     # Ticket and merge sessions name their super session; that one carries its set's count.
     from bridge import tickets
     of, counts = tickets.owners()

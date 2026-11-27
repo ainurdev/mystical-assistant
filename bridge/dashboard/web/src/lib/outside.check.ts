@@ -21,4 +21,6 @@ console.assert(jobGroup({ origin: "rivendell:a", project: "~/Downloads/x", cwd: 
 console.assert(outsideLabel(app) === "Claude app", "a Claude app session says so: its scratch folder's name means nothing");
 console.assert(outsideLabel({ project: "~/Downloads/probe", cwd: "/Users/me/Downloads/probe" }) === "~/Downloads/probe", "anything else shows its path");
 console.assert(outsideLabel({ project: "/tmp/probe", cwd: "/tmp/probe" }) === "/tmp/probe", "outside your home too");
+console.assert(jobGroup({ origin: "terminal", project: "~", cwd: "/Users/me" }) === OUTSIDE_REL && outsideLabel({ project: "~" }) === "~",
+  "a session started in your home folder lists there too, as ~");
 console.log("outside.check: done");

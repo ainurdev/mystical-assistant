@@ -60,7 +60,8 @@ def project_exists(rel_path: str) -> bool:
     The two container dirs are never projects: BASE_PATH itself ('/') and your
     home ('~') hold projects instead of being one, so a `claude` started in either
     stops opening a phantom project group in the session lists. Those sessions are
-    still resumable and their transcripts still viewable by id."""
+    still resumable and their transcripts still viewable by id; the dashboard lists
+    home's under Outside projects (dashboard/server.py _sessions_payload)."""
     p = os.path.realpath(os.path.join(config.BASE_PATH, (rel_path or "").lstrip("/")))
     if within_base(p) and os.path.isdir(p):
         return p != config.BASE_PATH

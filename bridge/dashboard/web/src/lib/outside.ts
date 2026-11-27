@@ -18,8 +18,8 @@ type Listed = { project: string; cwd?: string | null };
 export const isOutside = (s: Listed): boolean => s.project.startsWith("~") || (!!s.cwd && s.project === s.cwd);
 
 // The Claude desktop app's folder for a session started in no project.
-const CLAUDE_APP = /\/Claude\/scratch-workspaces\//;
+const CLAUDE_APP_FOLDER = /\/Claude\/scratch-workspaces\//;
 
 /** Where an outside session ran, on its row: "Claude app" for the desktop app's
  *  scratch sessions, else its path. */
-export const outsideLabel = (s: Listed): string => (CLAUDE_APP.test(s.project) ? "Claude app" : s.project);
+export const outsideLabel = (s: Listed): string => (CLAUDE_APP_FOLDER.test(s.project) ? "Claude app" : s.project);

@@ -149,6 +149,7 @@ const OUTSIDE_TINT: ProjectTint = {
   faint: "color-mix(in srgb, var(--txl) 60%, var(--txd))",
 };
 
+/** Outside projects' tile: a folder, in grey, where a project shows its mark. */
 function OutsideTile() {
   return <b className="ptile" data-kind="icon" aria-hidden style={{ ["--pc" as string]: "var(--txl)" }}><Folder size={11} strokeWidth={2.2} /></b>;
 }
@@ -448,7 +449,8 @@ function SessionRow({
             {dev.pr != null && <span style={{ flex: "none", marginLeft: -2, fontFamily: "var(--mono)", color: "var(--txl)" }}>#{dev.pr}</span>}
           </div>
         ) : !one && (
-          <div style={{ gridRow: 2, gridColumn: showDot ? 2 : 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+          // A row with no branch known prints nothing here and still keeps the line's height.
+          <div style={{ gridRow: 2, gridColumn: showDot ? 2 : 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0, minHeight: "1em", fontSize: "var(--t95)", lineHeight: 1 }}>
             {(job || team || outside) && (
               // a tile where the tab names projects, so this line stands as tall as theirs
               <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.dim }}>
@@ -944,11 +946,13 @@ export function SessionsPanel(props: Props) {
   // CUSTOM: dragged positions first (sort is stable, so anything you never
   // dragged keeps its most-recent order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
-  const ps =
+  // Outside projects is no project of yours: it closes the list, unless you dragged it somewhere.
+  const last = (g: ProjectGroup) => Number(g.rel === OUTSIDE_REL && !(order === "custom" && customOrder.includes(g.rel)));
+  const ps = (
     order === "alpha" ? [...gs].sort((a, b) => a.name.localeCompare(b.name))
       : order === "biggest" ? [...gs].sort((a, b) => b.sessionCount - a.sessionCount)
         : order === "custom" ? [...byRecent].sort((a, b) => rank(a.rel) - rank(b.rel))
-          : byRecent;
+          : [...byRecent]).sort((a, b) => last(a) - last(b));
   // A capped project lists every session that is doing something (WORK/WAIT/
   // ASK/DONE), holding a prompt of yours, pinned, open right now, or holding
   // pictures you haven't opened (a folded row's tag is no tag) — hiding the
