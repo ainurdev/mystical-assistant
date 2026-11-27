@@ -500,7 +500,7 @@
 }
 /* The ring's light breathes: a lit copy of the border (::before, masked to the ring) and a glow behind the card
    (::after) fade in and out together. Only opacity moves, so the compositor runs it; the comet that ran the
-   border before read as sudden (2026-11-28), and 3.2 s from 12% read as too calm. */
+   border before read as sudden (2026-11-28), and 3.2 s from opacity .12 read as too calm. */
 [data-style="dossier"] .live-ring::before,
 [data-style="dossier"] .live-ring::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;

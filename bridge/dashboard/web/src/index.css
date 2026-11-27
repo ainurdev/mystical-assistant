@@ -5348,7 +5348,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the warning gives way first, down to its own ellipsis: the pill is the header */
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
-/* mid-turn what the turn is doing, and the circling light, are the chat's live row (LiveRow) */
+/* mid-turn what the turn is doing, and the breathing light, are the chat's live row (LiveRow) */
 .pb-tabs[data-live] > .pb-work:not([data-paused]):not([data-q]) { display: none !important; }
 .pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
