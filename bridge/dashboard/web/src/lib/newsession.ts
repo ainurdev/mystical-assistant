@@ -3,13 +3,14 @@
  *  a start becomes. */
 import type { SessionBrief } from "../api";
 import { jobGroup, JOBS_REL } from "./jobs.ts";
+import { OUTSIDE_REL } from "./outside.ts";
 import { SHARED_REL } from "./team.ts";
 
 /** Projects you can start a session in: the one you're in first, then by your
  *  newest session there. The inline form this replaced listed them in path
  *  order, which put Rivendell (170 of 396 sessions one month) behind SHOW ALL.
- *  The Rivendell jobs and Shared groups are not folders of yours, and a job's
- *  start says nothing about where you work, so neither counts. */
+ *  The Rivendell jobs, Shared and Outside projects groups are not folders of
+ *  yours, and a job's start says nothing about where you work, so none counts. */
 export function rankProjects<G extends { rel: string }>(
   groups: G[], sessions: Pick<SessionBrief, "project" | "origin" | "job" | "created" | "updated">[], here: string | null,
 ): { list: G[]; started: Map<string, number> } {
@@ -19,7 +20,7 @@ export function rankProjects<G extends { rel: string }>(
     if (t > (started.get(g) ?? 0)) started.set(g, t);
   }
   const list = groups
-    .filter((g) => g.rel !== JOBS_REL && g.rel !== SHARED_REL)
+    .filter((g) => g.rel !== JOBS_REL && g.rel !== SHARED_REL && g.rel !== OUTSIDE_REL)
     .sort((a, b) => Number(b.rel === here) - Number(a.rel === here) || (started.get(b.rel) ?? 0) - (started.get(a.rel) ?? 0));
   return { list, started };
 }
