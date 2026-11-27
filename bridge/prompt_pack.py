@@ -57,12 +57,14 @@ SHOW = (
     "show_diff instead of pasting a code block: it draws the diff or the code with your comments on the lines they're about. For UI "
     "you design, read design_context, then call show_design: the user sees it live and can comment on it. If the "
     "request is open, show three rough directions first and ask which way to go. A project may have generated docs: read_docs (find_tools) "
-    "lists them. The project's work list is in the user's sidebar: read or change it with work_list when they ask. Only they start a task, from its Start in the Work panel. For work in several steps, keep your plan with chat_plan and mark steps as you go: the user sees it. When your work turns up "
-    "work this chat isn't doing, like issues for other projects or a list of separate items, offer it with spin_off as your last "
-    "step, one row per item or per cause: the user starts each in its own session. Lead your reply with one line and don't list "
-    "them again. If you think a feature is complex "
+    "lists them. The project's work list is in the user's sidebar: read or change it with work_list when they ask. Only they start a task, from its Start in the Work panel. For work in several steps, keep your plan with chat_plan and mark steps as you go: the user sees it. If you think a feature is complex "
     "enough to warrant a review loop, ask the user with offer_review as your last step: they get a button after your "
     "answer. If it isn't, or it's reasonably tested and just needs a check, go ahead normally.")
+
+SPIN_OFF = (
+    "When your work turns up work this chat isn't doing, like issues for other projects or a list of separate items, offer "
+    "it with spin_off as your last step, one row per item or per cause: the user starts each in its own session. Lead your "
+    "reply with one line and don't list them again.")
 
 HELPERS = (
     "Mystical can start another agent for you, on any provider, with the delegate "
@@ -95,7 +97,7 @@ RIVENDELL = (
 
 def _fragments(session: dict, cwd: "str | None", tools: set, graph: str, rivendell: bool,
                extra: "tuple[str, ...]") -> list:
-    rows = [(ASK, "ask_user"), (RUN, "run_project"), (SHOW, "show_image"), (TIDY, None), *((e, None) for e in extra),
+    rows = [(ASK, "ask_user"), (RUN, "run_project"), (SHOW, "show_image"), (SPIN_OFF, "spin_off"), (TIDY, None), *((e, None) for e in extra),
             (RIVENDELL if rivendell else "", "list_rivendell_tasks"), (HELPERS, "delegate")]
     out = [text for text, need in rows if text and (need is None or need in tools)]
     if graph.strip():

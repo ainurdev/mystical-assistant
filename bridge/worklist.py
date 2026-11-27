@@ -181,9 +181,10 @@ def add(root: str, rows: list, session: "str | None" = None) -> list:
 
 
 def _same_source(a: dict, b: dict) -> bool:
-    """One source: the same link, or the same ref of the same kind (or of no kind said)."""
-    if a.get("url") and a["url"] == b.get("url"):
-        return True
+    """One source: the same link, or, when either has no link, the same ref of the same kind (or of no
+    kind said). Two links that differ are two sources: #12 of one repo isn't #12 of another."""
+    if a.get("url") and b.get("url"):
+        return a["url"] == b["url"]
     kinds = {a.get("kind") or "", b.get("kind") or ""} - {""}
     return bool(a.get("ref")) and a["ref"] == b.get("ref") and len(kinds) < 2
 

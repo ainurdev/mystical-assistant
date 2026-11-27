@@ -19,13 +19,15 @@ the row starts unticked, and Telegram's Start all never clones.
 A chain across repos (`after`) starts its later rows by themselves once the earlier one is done:
 worklist's armed Tasks, with the blocker in another project's list. The blocker is the earlier row's
 Task, or the Task its repeat links to; a row after one that is still to be cloned waits for that
-clone, and the phone's Start all leaves it, as it leaves its blocker.
+clone, and the phone's Start all leaves it, as it leaves its blocker. A later row is never started
+unchained: ticked without its earlier row (one that hasn't gone), the tap is refused, and when the
+earlier one fails to go, the later one stays on the card saying so.
 
 Kept in the bridge's state folder, one file per chat that offered cards (spinoffs/<session>.json): a chat
 with no project has cards too. A row keeps only which Task it became; that Task's own list says what
 became of it (view). A clone runs in a thread of this process, so one a restart cut off reads as failed
 and can be tried again. Stdlib only.
-shortcut: the card files are never pruned; they are small, one per chat that offered any.
+shortcut: the card files and their locks are never pruned; they are small, one per chat that offered any.
 """
 
 import json
@@ -45,7 +47,7 @@ _OWNERS_TTL = 600.0
 _GITHUB = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", re.I)
 _SLUG = re.compile(r"^([\w.-]+)/([\w.-]+)$")
 _BOOT = uuid.uuid4().hex   # this process: a clone marked by another one was cut off by a restart
-_lock = threading.RLock()
+_locks: dict = {}   # one per chat: a tap launching sessions holds up no other chat's turn (pop_line)
 _owners_cache: "tuple[float, set] | None" = None
 
 
@@ -75,9 +77,13 @@ def _load(sid: str) -> dict:
     return {"next": int(data.get("next") or 1), "cards": list(data.get("cards") or []), "told": list(data.get("told") or [])}
 
 
+def _lock(sid: str):
+    return _locks.setdefault(sid, threading.RLock())
+
+
 def _mutate(sid: str, fn):
     """Read, change, write, as one step. `fn` raising leaves the file alone."""
-    with _lock:
+    with _lock(sid):
         data = _load(sid)
         out = fn(data)
         path = _path(sid)
@@ -250,10 +256,22 @@ def _cloning(row: dict) -> bool:
     return row.get("state") == "cloning" and row.get("boot") == _BOOT
 
 
-def _blocker(card: dict, row: dict) -> "dict | None":
-    """{root, id} of the Task the row waits on: the earlier row's own, or the one its repeat links to."""
+def _task(ref: "dict | None", lists: dict) -> "dict | None":
+    """The Task a row's `task` or `repeat` names, read off its list now: None once it's gone from it.
+    `lists` keeps each list read for the rest of the card."""
+    if not ref:
+        return None
+    if ref["root"] not in lists:
+        lists[ref["root"]] = {i["id"]: i for i in worklist.load(ref["root"])["items"]}
+    return lists[ref["root"]].get(ref["id"])
+
+
+def _blocker(card: dict, row: dict, lists: "dict | None" = None) -> "dict | None":
+    """{root, id} of the Task the row waits on: the earlier row's own, or the one its repeat links to,
+    while it is on its list."""
     before = _row(card, row.get("after")) if row.get("after") else None
-    ref = before and (before.get("task") or before.get("repeat"))
+    lists = {} if lists is None else lists
+    ref = before and next((r for r in (before.get("task"), before.get("repeat")) if _task(r, lists)), None)
     return {"root": ref["root"], "id": ref["id"]} if ref else None
 
 
@@ -263,44 +281,63 @@ def _keys(row: dict) -> list:
 
 def _file(s: dict, card: dict, row: dict, rel: str, root: str, flow: str, start: bool) -> str:
     """The row filed as a Task on `rel`'s list, waiting on its blocker, and started there on `flow`
-    when `start`. Returns how it went: started, waiting or parked."""
+    when `start`. A row filed already (a start that failed) is started again on its Task. Returns how
+    it went: started, waiting, parked or failed (filed, but its session didn't open)."""
     sources = row.get("sources") or []
-    item = worklist.file(root, {"title": row["title"], "detail": row.get("brief") or "", "source": sources[0] if sources else None},
-                         s["id"], {"session": s["id"], "keys": _keys(row)}, sources, _blocker(card, row))
-    row.update(task={"root": root, "id": item["id"], "project": rel}, flow=flow, note="")
+    if not row.get("task"):
+        item = worklist.file(root, {"title": row["title"], "detail": row.get("brief") or "", "source": sources[0] if sources else None},
+                             s["id"], {"session": s["id"], "keys": _keys(row)}, sources, _blocker(card, row))
+        row["task"] = {"root": root, "id": item["id"], "project": rel}
+    row.update(flow=flow, note="", start=start)
     row.pop("state", None)
     if not start:
         return "parked"
-    return "waiting" if worklist.start(root, item["id"], flow, s["id"]).get("armed") else "started"
+    try:
+        got = worklist.start(root, row["task"]["id"], flow, s["id"])
+    except Exception as e:  # noqa: BLE001 — filed already: the row keeps its Task and says why it didn't start
+        row["note"] = f"Didn't start: {e}"
+        return "failed"
+    return "waiting" if got.get("armed") else "started" if got.get("session_id") else "failed"
 
 
 def _tell(data: dict, row: dict, rel: str, how: str) -> None:
     data["told"].append({"title": row["title"], "project": rel, "flow": row["flow"], "how": how})
 
 
-def tap(s: dict, cid: str, picks: list, start: bool) -> None:
+def tap(s: dict, cid: str, picks: list, start: bool) -> int:
     """START (start) or PARK the rows you ticked, each on the project and flow you left it on. A row
-    goes once. One whose source reached a work list since the card was offered is a repeat now: it
-    is passed by and links there. One that can't go refuses the whole tap before anything is filed."""
+    goes once; one whose Task left its list since is open again, and one whose start failed is tried
+    again on its Task. One whose source reached a work list since the card was offered is a repeat
+    now: it is passed by and links there. One that can't go refuses the whole tap before anything is
+    filed, as does a row after one that neither went nor is ticked with it. A row after one that
+    didn't go stays on the card. Returns how many started or wait for the one before."""
     if not isinstance(picks, list) or not picks:
         raise Refused("Tick at least one row.")
+    went = []
 
     def go(data: dict) -> list:
-        card, roots, plan, clones = _card(data, cid), _roots(), [], set()
+        card, roots, plan, clones, lists = _card(data, cid), _roots(), [], set(), {}
         for p in sorted((p for p in picks if isinstance(p, dict)), key=lambda p: _n(p.get("n"))):
             row = _row(card, p.get("n"))
             if not row:
                 raise Refused(f"The card has no item {p.get('n')}.")
-            if row.get("task") or _cloning(row):
+            if row.get("task") and not _task(row["task"], lists):
+                row.pop("task")       # removed from its list by hand or by a replace: open again
+            if (row.get("task") and _row_view(row, lists)["state"] != "failed") or _cloning(row):
                 raise Refused(f"Item {row['n']} has gone to its project already.")
-            row["repeat"] = row.get("repeat") or _repeat(row.get("sources") or [], roots)
-            if row["repeat"]:
-                continue
             flow = p.get("flow") or row["flow"]
             if flow not in FLOWS:
                 raise Refused("Start it as fix, build or design.")
+            if row.get("task"):      # its start failed: tried again where its Task is
+                plan.append((row, row["task"]["project"], row["task"]["root"], flow))
+                continue
+            row["repeat"] = _repeat(row.get("sources") or [], roots)
+            if row["repeat"]:
+                continue
             if row.get("after") in clones or _cloning(_row(card, row.get("after")) or {}):
                 raise Refused(f"Item {row['n']} comes after item {row['after']}, which is cloned first: start it once item {row['after']} has started.")
+            if row.get("after") and row["after"] not in {r["n"] for r, *_ in plan} and not _blocker(card, row):
+                raise Refused(f"Item {row['n']} comes after item {row['after']}: tick item {row['after']} too.")
             rel = str(p.get("project") or row.get("project") or ("clone" if row.get("clone") else ""))
             if rel == "clone" and row.get("clone"):
                 if not start:
@@ -316,13 +353,22 @@ def tap(s: dict, cid: str, picks: list, start: bool) -> None:
             if rel == "clone":
                 row.update(state="cloning", boot=_BOOT, flow=flow, note="")
                 continue
+            if row.get("after") and not row.get("task") and not _blocker(card, row):
+                row["note"] = f"Didn't go: item {row['after']}, which it comes after, didn't."
+                continue
             try:
-                _tell(data, row, rel, _file(s, card, row, rel, root, flow, start))
-            except (OSError, worklist.Refused) as e:    # the others still go; this one says why
+                how = _file(s, card, row, rel, root, flow, start)
+            except Exception as e:  # noqa: BLE001 — the others still go, this one says why, and the card keeps what went
+                print(f"[spinoffs] item {row['n']}: {e!r}", file=sys.stderr)
                 row["note"] = f"Didn't go: {e}"
+                continue
+            _tell(data, row, rel, how)
+            if how in ("started", "waiting"):
+                went.append(row["n"])
         return [(row["n"], row["clone"], flow) for row, rel, _, flow in plan if rel == "clone"]
     for n, url, flow in _mutate(s["id"], go):
         threading.Thread(target=_clone_then, args=(s, cid, n, url, flow), daemon=True).start()
+    return len(went)
 
 
 def _clone_then(s: dict, cid: str, n: int, url: str, flow: str) -> None:
@@ -357,18 +403,21 @@ def _startable(card: dict) -> list:
     for r in card["rows"]:
         v = _row_view(r, lists)
         if (r.get("project") and v["state"] == "open" and not v["repeat"]
-                and (not r.get("after") or r["after"] in went or _blocker(card, r))):
+                and (not r.get("after") or r["after"] in went or _blocker(card, r, lists))):
             went.append(r["n"])
     return went
 
 
 def start_all(s: dict, cid: str) -> int:
-    """The phone's Start all, on each row's guessed flow. Returns how many went."""
+    """The phone's Start all, on each row's guessed flow. Returns how many started or wait for the one
+    before; none raises, as a row that turned into a repeat since or failed to start says so on the card."""
     picks = [{"n": n} for n in _startable(_card(_load(s["id"]), cid))]
     if not picks:
         raise Refused("Nothing on the card is left to start.")
-    tap(s, cid, picks, True)
-    return len(picks)
+    n = tap(s, cid, picks, True)
+    if not n:
+        raise Refused("None of them started: the card says why.")
+    return n
 
 
 def phone(sid: str, cid: str) -> "tuple[str, int]":
@@ -396,11 +445,12 @@ def pop_line(sid: str) -> str:
     def take(data: dict) -> list:
         told, data["told"] = data["told"], []
         return told
-    with _lock:
+    with _lock(sid):
         if not _load(sid)["told"]:
             return ""
         told = _mutate(sid, take)
-    how = {"started": "started", "waiting": "waiting for the one before it", "parked": "parked on its work list"}
+    how = {"started": "started", "waiting": "waiting for the one before it", "parked": "parked on its work list",
+           "failed": "filed on its work list, but its session didn't start"}
     said = "; ".join(f"“{t['title']}” in {worklist.name_of(t['project'])} ({t['flow']}, {how.get(t['how'], t['how'])})" for t in told)
     return f"[mystical] Since your last turn the user spun off from this chat: {said}. Each runs in its own session: don't do it here."
 
@@ -408,28 +458,26 @@ def pop_line(sid: str) -> str:
 # ------- what the surfaces read ----------------------------------------------------
 
 def _row_view(row: dict, lists: dict) -> dict:
-    """A row as the card draws it: what it became read off its Task's list now."""
-    def task(ref: "dict | None") -> "dict | None":
-        if not ref:
-            return None
-        if ref["root"] not in lists:
-            lists[ref["root"]] = {i["id"]: i for i in worklist.load(ref["root"])["items"]}
-        return lists[ref["root"]].get(ref["id"])
+    """A row as the card draws it: what it became read off its Task's list now. One you started whose
+    Task is back to todo, neither armed nor in a session, failed to start: its Task's note says why."""
     out = {k: row.get(k) for k in ("n", "title", "brief", "flow", "sources", "after", "project", "clone")}
     out.update(state="open", session="", note=row.get("note") or "", repeat=None)
-    rep = task(row.get("repeat"))
+    rep = _task(row.get("repeat"), lists)
     if rep:
         sess = store.get_session(rep["session_id"]) if rep.get("session_id") else None
         out["repeat"] = {"project": row["repeat"]["project"], "task": rep["id"], "session": rep.get("session_id") or "",
                          "title": (sess or {}).get("title") or rep["title"], "at": rep.get("created")}
-    item = task(row.get("task"))
+    item = _task(row.get("task"), lists)
     if row.get("state") == "cloning" and not _cloning(row):
         out.update(state="failed", note="The clone stopped when the bridge restarted: try again.")
     elif row.get("state") in ("cloning", "failed"):
         out["state"] = row["state"]
     elif item:
         out.update(project=row["task"]["project"], session=item.get("session_id") or "",
-                   state="started" if item.get("session_id") else "waiting" if item.get("armed") else "parked")
+                   state="started" if item.get("session_id") else "waiting" if item.get("armed")
+                   else "failed" if row.get("start") and item["state"] == "todo" else "parked")
+        if out["state"] == "failed":
+            out["note"] = out["note"] or item.get("note") or "Its session didn't start."
     return out
 
 

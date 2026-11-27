@@ -1,6 +1,8 @@
 """Spin-offs: work a chat turned up, each item started in its own project's session from the card."""
 import os
+import sqlite3
 import subprocess
+import threading
 import time
 from types import SimpleNamespace
 
@@ -295,7 +297,7 @@ def test_the_line_rides_on_the_run_not_on_the_prompt_you_see(world, monkeypatch)
 
 def test_agents_are_told_to_offer_found_work_as_their_last_step():
     from bridge import prompt_pack, runner
-    for text in (prompt_pack.SHOW, runner._EXPERIMENTAL_NOTE):
+    for text in (prompt_pack.SPIN_OFF, runner._EXPERIMENTAL_NOTE):
         assert "spin_off" in text and "last step" in text and "don't list them again" in text
 
 
@@ -405,3 +407,148 @@ def test_your_accounts_count_even_when_one_login_is_broken(monkeypatch):
 
 def test_a_chat_with_no_cards_or_an_odd_id_gets_no_line():
     assert spinoffs.pop_line("f" * 32) == "" and spinoffs.pop_line("device:abc/../x") == ""
+
+
+# --- found in the second review ----------------------------------------------------------
+
+def test_the_same_ref_in_another_repo_is_not_a_repeat(world, runs):
+    riv12 = {"kind": "github", "ref": "#12", "url": "https://github.com/ainurdev/rivendell/issues/12"}
+    shop12 = {"kind": "github", "ref": "#12", "url": "https://github.com/acme/shop/issues/12"}
+    wl.add(world.riv, [{"title": "Board loses focus", "source": riv12}])
+    offer(world, [{"title": "Voucher field clears", "project": "shop", "flow": "build", "sources": [shop12]}])
+    assert rows(world)[0]["repeat"] is None
+    assert tap(world, "start", [{"n": 1}])[1] == 200 and len(runs) == 1
+
+
+def test_a_row_whose_task_was_removed_since_is_open_again_and_goes(world, runs):
+    offer(world, ISSUES)
+    tap(world, "park", [{"n": 3}])
+    wl.remove(world.shop, [wl.load(world.shop)["items"][0]["id"]])        # by hand, or by work_list replace
+    assert rows(world)[2]["state"] == "open"
+    assert spinoffs.start_all(world.s, "c1") == 3 and len(runs) == 3
+    assert [r["state"] for r in rows(world)] == ["started", "started", "started"]
+
+
+def test_a_repeat_whose_task_was_removed_since_goes_as_its_own(world, runs):
+    wl.add(world.riv, [{"title": "Board sync null", "source": {"kind": "sentry", "ref": "RIVENDELL-4Q2"}}])
+    offer(world, [{"title": "Board sync", "project": "ainurdev/rivendell", "sources": [SENTRY]}])
+    wl.remove(world.riv, ["w1"])
+    body, status = tap(world, "start", [{"n": 1}])
+    assert status == 200 and len(runs) == 1 and body["cards"][0]["rows"][0]["state"] == "started"
+
+
+def test_start_all_counts_only_what_went(world, runs):
+    offer(world, [ISSUES[0]])
+    wl.add(world.riv, [{"title": "Board sync null", "source": SENTRY}])     # a repeat since the offer: passed by
+    with pytest.raises(spinoffs.Refused):
+        spinoffs.start_all(world.s, "c1")
+    assert not runs and rows(world)[0]["repeat"]["task"] == "w1"
+
+
+CHAIN = [ISSUES[0], {"title": "Retry board sync on 5xx", "project": "shop", "flow": "build", "after": 1}]
+
+
+def test_a_row_after_one_that_didnt_go_doesnt_go_either(world, runs, monkeypatch):
+    offer(world, CHAIN)
+    real = wl.file
+
+    def full(root, *a, **k):
+        if root == world.riv:
+            raise wl.Refused("The list holds 500 items. Remove some first.")
+        return real(root, *a, **k)
+    monkeypatch.setattr(wl, "file", full)
+    body, status = tap(world, "start", [{"n": 1}, {"n": 2}])
+    first, second = body["cards"][0]["rows"]
+    assert status == 200 and not runs and not wl.load(world.shop)["items"]
+    assert (first["state"], second["state"]) == ("open", "open") and "500 items" in first["note"] and "item 1" in second["note"]
+
+
+def test_a_row_after_one_left_unticked_is_refused(world, runs):
+    offer(world, CHAIN)
+    for how in ("start", "park"):
+        body, status = tap(world, how, [{"n": 2}])
+        assert status == 400 and "item 1" in body["error"]
+    assert not runs and not wl.load(world.shop)["items"]
+
+
+def _blow_up_on(fn, nth, err):
+    calls = []
+
+    def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == nth:
+            raise err
+        return fn(*a, **k)
+    return flaky
+
+
+def test_an_unexpected_error_filing_a_row_keeps_the_rows_that_went(world, runs, monkeypatch):
+    offer(world, ISSUES)
+    monkeypatch.setattr(wl, "file", _blow_up_on(wl.file, 2, sqlite3.OperationalError("database is locked")))
+    body, status = tap(world, "start", [{"n": 2}, {"n": 3}])
+    second, third = body["cards"][0]["rows"][1:]
+    assert status == 200 and len(runs) == 1 and second["state"] == "started"
+    assert third["state"] == "open" and "database is locked" in third["note"]
+    assert tap(world, "start", [{"n": 2}])[1] == 400 and len(runs) == 1      # no twin on a retry
+
+
+def test_an_unexpected_error_starting_a_filed_row_says_it_failed(world, runs, monkeypatch):
+    offer(world, ISSUES)
+    monkeypatch.setattr(wl, "start", _blow_up_on(wl.start, 2, sqlite3.OperationalError("database is locked")))
+    body, status = tap(world, "start", [{"n": 2}, {"n": 3}])
+    second, third = body["cards"][0]["rows"][1:]
+    assert status == 200 and len(runs) == 1 and second["state"] == "started"
+    assert third["state"] == "failed" and "database is locked" in third["note"]
+    assert [i["state"] for i in wl.load(world.shop)["items"]] == ["doing", "todo"]
+
+
+def test_a_slow_launch_holds_up_no_other_chats_turn(world, runs, monkeypatch):
+    from bridge import runner
+    other = store.create_session(CHAT, "/shop", cwd=world.shop)
+    spinoffs._mutate(other["id"], lambda d: d["told"].append({"title": "Elsewhere", "project": "/shop", "flow": "fix", "how": "parked"}))
+    entered, gate, fake = threading.Event(), threading.Event(), runner.start_streaming_job
+
+    def slow(*a, **k):      # a `git worktree add` that takes its time
+        entered.set()
+        gate.wait(10)
+        return fake(*a, **k)
+    monkeypatch.setattr(runner, "start_streaming_job", slow)
+    offer(world, ISSUES)
+    t = threading.Thread(target=tap, args=(world, "start", [{"n": 2}]), daemon=True)
+    t.start()
+    try:
+        assert entered.wait(5)
+        got = []
+        p = threading.Thread(target=lambda: got.append(spinoffs.pop_line(other["id"])), daemon=True)
+        p.start()
+        p.join(2)
+        assert got and "Elsewhere" in got[0]
+    finally:
+        gate.set()
+        t.join(10)
+    assert len(runs) == 1
+
+
+def test_a_start_whose_session_doesnt_open_says_so_on_the_row_and_to_the_chat(world, runs, monkeypatch):
+    from bridge import flowbranch
+    real = flowbranch.ensure_feature_branch
+
+    def boom(*a, **k):
+        raise RuntimeError("feature worktree failed: fatal: invalid reference: HEAD")
+    monkeypatch.setattr(flowbranch, "ensure_feature_branch", boom)
+    offer(world, ISSUES)
+    body, status = tap(world, "start", [{"n": 3}])
+    third = body["cards"][0]["rows"][2]
+    assert status == 200 and not runs and third["state"] == "failed" and "invalid reference" in third["note"]
+    line = spinoffs.pop_line(world.s["id"])
+    assert "“Lesson plan 500” in shop (fix, filed on its work list, but its session didn't start)" in line
+    monkeypatch.setattr(flowbranch, "ensure_feature_branch", real)
+    body, status = tap(world, "start", [{"n": 3}])                            # tried again: the same Task, no twin
+    assert status == 200 and len(runs) == 1 and len(wl.load(world.shop)["items"]) == 1
+    assert body["cards"][0]["rows"][2]["state"] == "started"
+
+
+def test_an_agent_without_the_tool_isnt_told_of_it():
+    from bridge import prompt_pack
+    assert "spin_off" not in prompt_pack.agent_pack({}, None, {"show_image"})
+    assert "spin_off" in prompt_pack.agent_pack({}, None, {"show_image", "spin_off"})
