@@ -5351,6 +5351,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] {
   color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-color: transparent !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] > span:first-child { color: var(--txh) !important; }
+/* The same lean, a tenth, where a label fell just under 4.5:1 on the island: RUNNING outside AURORA (4.34-4.49),
+   CHANGES in MIDDLE-EARTH (4.21 on shire-light), CLOSED in AURORA (4.46 on magenta). The ⇡ #n keeps its own colour */
+[data-fam]:not([data-fam="aurora"]) .pb-tabs .np-pr[data-status="running"] { color: color-mix(in srgb, var(--acc) 90%, var(--txb)) !important; }
+[data-fam="middle-earth"] .pb-tabs .np-pr[data-status="changes"] { color: color-mix(in srgb, var(--warn) 90%, var(--txb)) !important; }
+[data-fam="aurora"] .pb-tabs .np-pr[data-status="closed"] { color: color-mix(in srgb, var(--txl) 90%, var(--txb)) !important; }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
 .pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-left: 0 !important; }
 .pb-tabs .np-tile + .np-title-btn { padding-left: 6px !important; border-left: 0 !important; }
