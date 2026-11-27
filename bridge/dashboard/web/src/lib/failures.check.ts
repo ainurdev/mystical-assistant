@@ -24,6 +24,10 @@ assert.equal(r.unresolved[0].text, "3 failed");
 r = analyzeFailures([...t, tool("c", "Bash", "cd x && python3 -m pytest -q"), ok("c")]);
 assert.deepEqual([...r.recovered], ["a"]);
 
+// a command's error is its last words: an && chain's earlier output doesn't bury it
+r = analyzeFailures([tool("a", "Bash", "cat a && ls b"), bad("a", `Exit code 1\n${"x".repeat(500)}\nl2\nl3\nls: b: No such file or directory`)]);
+assert.equal(r.unresolved[0].text, "l2\nl3\nls: b: No such file or directory");
+
 // the success has to come after
 r = analyzeFailures([tool("a", "Bash", "pytest"), ok("a"), tool("b", "Bash", "pytest"), bad("b", "Exit code 1\nx")]);
 assert.equal(r.unresolved[0].id, "b");

@@ -41,7 +41,8 @@ const EXIT = /^(?:Error: )?Exit code \d+\n?/;
 
 function errorText(d: Ev): string {
   const raw = (d.output ?? "").trimEnd().replace(EXIT, "") || (d.stat ?? "");
-  const t = raw.trim();
+  // A command's error is its last words (an && chain stops there), and the row shows three lines.
+  const t = raw.trim().split("\n").slice(-3).join("\n");
   return t.length > 400 ? `${t.slice(0, 399)}…` : t;
 }
 
