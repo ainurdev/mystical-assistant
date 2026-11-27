@@ -2698,11 +2698,8 @@ export function App() {
   useEffect(() => { if (gitNonce) void reread([code.git.route]); }, [gitNonce]);
 
   // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
-  // status above: the session's newest check, and whether its project is linked to Claude
-  // Design, read by project (null until the first answer).
+  // status above: the session's newest check.
   const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
-  const projectSettingsQ = useQuery({ ...main.projectSettings({ project: sessionProject ?? undefined }), enabled: !!sessionProject });
-  const designLinked = projectSettingsQ.data ? !!projectSettingsQ.data.design_project : null;
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
@@ -3825,7 +3822,6 @@ export function App() {
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, style: run.style, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
-                      designLinked={sessionProject ? designLinked : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental): SEND queues instead.
                       onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}

@@ -134,7 +134,7 @@ console.assert(lastCheckOf([]) === null, "no turns, null");
 
 // --- kindFacts ---------------------------------------------------------------
 const git = (p: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...p });
-const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, askPerm: "plan", ...p });
+const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, mapBuiltAt: null, askPerm: "plan", ...p });
 const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => (f.lead ?? "") + f.text).join(" · ");
 console.assert(text("ship", ctx({ git: git({ ahead: 3 }) })) === "3 to push · 0 to pull", "ship push/pull");
 const dirty = kindFacts("ship", ctx({ git: git({ dirty: 2, ahead: 1 }) }));
@@ -148,9 +148,7 @@ const timed = ctx({ lastCheck: { ...bad, at: 1_700_000_000 } });
 console.assert(text("fix", timed) === `last check 1 failed · ${hhmm(1_700_000_000)}`, "fix copy with its time");
 console.assert(kindFacts("fix", timed)[0].lead === "last check " && kindFacts("fix", timed)[1].tone === undefined, "only the result is red: the words and the time stay plain");
 console.assert(text("fix", ctx()) === "no checks run in this session yet", "fix no checks");
-console.assert(same(kindFacts("design", ctx()), []), "design: link not known yet is no fact");
-console.assert(text("design", ctx({ designLinked: false })) === "no Claude Design project linked", "design unlinked");
-console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claude Design", "design linked");
+console.assert(same(kindFacts("design", ctx()), []), "design: no facts, its drafts stay local");
 console.assert(same(kindFacts("ask", ctx()), [{ text: "read-only, changes nothing" }]), "ask, no map");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits", mapBuiltAt: Date.now() / 1000 })).map((f) => f.text), ["map built just now"]), "ask: no read-only claim once its mode edits");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits" })), []), "ask: editing mode, no map, no facts");

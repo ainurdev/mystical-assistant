@@ -728,7 +728,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, style = "", onStyle, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, images, onImages, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, designPack, onFlow, multi, git, lastCheck, designLinked, words,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, designPack, onFlow, multi, git, lastCheck, words,
 }: {
   /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
   words?: string[];
@@ -842,11 +842,9 @@ export function Composer({
   designPack?: boolean;
   /** The FLOW chip's switches, Reset and skips (lib/useFlow). */
   onFlow?: (act: FlowAct) => void;
-  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
-   *  check, and whether its project is linked to Claude Design (null: not known yet). */
+  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status and its newest check. */
   git?: GitStatus | null;
   lastCheck?: LastCheck | null;
-  designLinked?: boolean | null;
   /** The open session is a helper: its next turn runs on its own picks, so the kinds dim like an agent's. */
   helper?: boolean;
 }) {
@@ -1746,7 +1744,7 @@ export function Composer({
   );
   const designBtn = plugins.design && !onAgent && (
     <button className="act-alt neutral caps" onClick={design} disabled={disabled || !text.trim()}
-      title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
+      title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, and waits for your approval before implementing.\n\nNeeds text in the box."}>
       Design <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
   );
   /* Exactly one primary. STOP and PAUSE are rare and modal and one of
@@ -2246,7 +2244,7 @@ export function Composer({
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
     : ask?.send ? ask.hint && <span data-tone="dim" className="kc-hover">{ask.hint}</span>
     : kind && <span>{[...(steps ? [{ text: steps } as Fact] : []), ...kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null,
-        designLinked: designLinked ?? null, mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
+        mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   // PRESET's "Save as <Flow>'s preset": the flow's bridge default, so the sheet shows it at once.
   const saveFlowRun = async (fl: string, r: KindRun) => {

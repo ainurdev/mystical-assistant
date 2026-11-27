@@ -130,7 +130,7 @@ export function lastCheckOf(turns: Turn[]): LastCheck | null {
   return null;
 }
 
-export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; designLinked: boolean | null; mapBuiltAt: number | null;
+export interface FactsCtx { git: GitStatus | null; lastCheck: LastCheck | null; mapBuiltAt: number | null;
   /** The perm ASK will run with: it is read-only only in plan. */ askPerm: string }
 /** `lead`: plain words before the text, so a state colour lands on the state alone ("last check" stays plain). */
 export type Fact = { text: string; tone?: "ok" | "warn" | "err"; lead?: string };
@@ -142,7 +142,7 @@ export function kindFacts(kind: KindId, c: FactsCtx): Fact[] {
   const g = c.git;
   switch (kind) {
     case "design":
-      return c.designLinked === null ? [] : [{ text: c.designLinked ? "drafts → Claude Design" : "no Claude Design project linked" }];
+      return [];
     case "build":
       return tree(g);   // the steps lead the facts (lib/flowsteps)
     case "refactor":

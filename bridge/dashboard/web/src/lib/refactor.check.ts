@@ -56,7 +56,7 @@ console.assert(p.flow === "refactor" && p.by === "you" && p.text === "do it", "a
 
 // Its facts beside the row are BUILD's tree fact.
 const git = (x: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...x });
-const ctx = (x: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, askPerm: "plan", ...x });
+const ctx = (x: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, mapBuiltAt: null, askPerm: "plan", ...x });
 console.assert(same(kindFacts("refactor", ctx({ git: git({ dirty: 3 }) })), [{ text: "3 uncommitted", tone: "warn" }]), "dirty tree");
 console.assert(same(kindFacts("refactor", ctx()), [{ text: "working tree clean" }]), "clean tree");
 console.assert(same(kindFacts("refactor", ctx({ git: null })), []), "git unknown: nothing");
