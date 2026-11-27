@@ -1054,7 +1054,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
-  const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
   // survives the zone remounting; the live line shows them.
   const mountAt = useRef(Date.now() / 1000);
@@ -1103,7 +1102,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-pinned={pinned ? "" : undefined}
       data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
-      data-ind={orbit ? "orbit" : undefined}
       data-now={line && !liveAt ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
