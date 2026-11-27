@@ -63,7 +63,9 @@ def test_the_retro_scan_counts_a_transcripts_calls(tmp_path):
     """One local file (README): retro's step 2 names scan.py, which reads a transcript.
     Lines without a timestamp repeat the calls (api-request-blob) and are skipped."""
     retro = _skill_md("retro")
-    assert "`scan.py` in this skill's folder" in open(retro).read()
+    text = open(retro).read()
+    assert "`python3 <base dir>/scan.py <transcript.jsonl> stats`" in text  # full path: a cd would move the session
+    assert "`python3 scan.py" not in text
     t = tmp_path / "s.jsonl"
     t.write_text("\n".join(json.dumps(r) for r in [
         {"timestamp": "2026-11-12T10:00:00Z", "message": {"role": "assistant", "content": [
