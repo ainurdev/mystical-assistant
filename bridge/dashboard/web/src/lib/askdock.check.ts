@@ -82,5 +82,8 @@ console.log("askdock ok");
     [{ t: "Proces" }, { crumb: true }, { t: "Betalen " }, { gloss: "(process › payment)" }, { t: " gets it (later)" }], "crumb + gloss, a plain aside stays");
   eq(descInline("Beheer › Producten (settings) warns"),
     [{ t: "Beheer" }, { crumb: true }, { t: "Producten " }, { gloss: "(settings)" }, { t: " warns" }], "gloss right after a crumb path");
+  // A quoted sentence is prose and inch marks are no quotes: only a literal with a digit or symbol is a chip.
+  eq(descInline('He said "we should stop now" and left'), [{ t: 'He said "we should stop now" and left' }], "a quoted sentence");
+  eq(descInline('5" long and 6" wide'), [{ t: '5" long and 6" wide' }], "inch marks");
   console.log("ok - the description formats");
 }

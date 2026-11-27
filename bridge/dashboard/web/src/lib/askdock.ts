@@ -39,12 +39,12 @@ export function docked(turns: Turn[], prose: boolean): Docked | null {
   return ask ? { kind: "prose", turnId: last.id, ask, at: res.at } : null;
 }
 
-/** A question as the dock reads it: the last sentence ending in "?" is the ask,
- *  what comes before it is context, what follows it a hint ("Pick any, or
- *  none."). Claude front-loads context, so the ask was the line people missed. */
 // A sentence ends at . ! ? then the end or a space and a word that isn't lower case: "8.4", "index.ts" and "e.g. the" go on.
 const sentences = (q: string) => q.match(/(?:[^.!?\n]|[.!?](?![.!?]*["')\]]*(?:\s+[^a-z\s]|\s*$)))+(?:[.!?]+["')\]]*|\n+|$)\s*/g) ?? [q];
 
+/** A question as the dock reads it: the last sentence ending in "?" is the ask,
+ *  what comes before it is context, what follows it a hint ("Pick any, or
+ *  none."). Claude front-loads context, so the ask was the line people missed. */
 export function splitAsk(q: string): { ctx: string; ask: string; tail: string } {
   const parts = sentences(q);
   let at = -1;
@@ -94,19 +94,21 @@ export function descBlocks(text: string): DescBlock[] {
 
 export type DescBit = { t: string } | { code: string } | { b: string } | { crumb: true } | { gloss: string };
 
-/** One line of the rail: `code` and short quoted literals as chips, **bold**,
+/** One line of the rail: `code` and short quoted literals (a digit or symbol in
+ *  them: "name · 18-01-4", never a quoted sentence) as chips, **bold**,
  *  a "›" crumb, and the English gloss after a crumb path ("Proces › Betalen
  *  (process › payment)") dimmed. Any other "(…)" is the sentence's own. */
 export function descInline(s: string): DescBit[] {
   const out: DescBit[] = [];
   const text = (t: string) => { const l = out[out.length - 1]; if (l && "t" in l) l.t += t; else out.push({ t }); };
   let at = 0;
-  for (const m of s.matchAll(/`([^`\n]+)`|\*\*([^*\n]+)\*\*|"([^"\n]{1,40})"|“([^”\n]{1,40})”|\s*›\s*|\([^()\n]*\)/g)) {
+  for (const m of s.matchAll(/`([^`\n]+)`|\*\*([^*\n]+)\*\*|(?<=^|[\s(])"([^"\n]{1,40})"(?!\w)|(?<=^|[\s(])“([^”\n]{1,40})”|\s*›\s*|\([^()\n]*\)/g)) {
     if (m.index! > at) text(s.slice(at, m.index));
     at = m.index! + m[0].length;
     const [w, code, b, q1, q2] = m;
     const l = out[out.length - 1], l2 = out[out.length - 2];
-    if (code ?? q1 ?? q2) out.push({ code: (code ?? q1 ?? q2)! });
+    const quoted = q1 ?? q2;
+    if (code || (quoted && /[^\p{L}\s'’,.!?]/u.test(quoted))) out.push({ code: (code ?? quoted)! });
     else if (b) out.push({ b });
     else if (w.trim() === "›") out.push({ crumb: true });
     else if (w.includes("›") || (l && "t" in l && /^\S+\s*$/.test(l.t) && l2 && "crumb" in l2)) out.push({ gloss: w });
