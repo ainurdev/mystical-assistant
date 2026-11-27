@@ -260,7 +260,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
   { tab: "appearance", sec: "CLOCK & WEATHER", terms: "clock time format 12h 24h am pm almanac calendar weather city location place celsius fahrenheit units temperature world clock time zone timezone header pin" },
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "HEADER", terms: "header island pill bar shape fade dissolve gradient glass frosted blur clear solid transparent hide scroll auto-hide last line search switch chat agents tickets" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
