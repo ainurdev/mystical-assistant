@@ -47,7 +47,10 @@ damages the thing the user is working in *right now*.
   file before config is imported.
 - **Any manual script or REPL:** `BRIDGE_DB=/tmp/wt-x.db python3 …`. In the
   environment, before the process starts — `bridge/config.py` freezes the value
-  at import, so setting it afterwards does nothing.
+  at import, so setting it afterwards does nothing. To probe on live data, copy it
+  with `bin/bridge-snapshot DIR` and use the `BRIDGE_DB=` line it prints: it takes
+  the settings JSONs beside the DB too (a DB alone runs on default settings), and
+  Apple's `sqlite3` CLI can't open the live DB from a session's shell.
 - **Schema changes** stay in `bridge/store.py`: a line in `_SCHEMA` plus an
   idempotent `ALTER TABLE` in `init()`, like every column already there. Additive
   only — master's code keeps reading that DB.
