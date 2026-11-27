@@ -5342,9 +5342,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs .np-pr { background: var(--tone-bg, transparent) !important; }
 /* READY is a green fill under dark ink. In MIDDLE-EARTH and PEBBLE READY is a tint instead, green ink over a
    green wash with the ⇡ #n in --txh. The ink leans a fifth toward --txb: plain --ok over its own wash fell
-   under 4.5:1 (4.1 on MIDDLE-EARTH's daylight) */
+   under 4.5:1 (4.1 on MIDDLE-EARTH's daylight). The fill above is a background-color, so the tint clears it:
+   left on, the green ink sat on solid green (1.1:1) */
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] {
-  color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
+  color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-color: transparent !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] > span:first-child { color: var(--txh) !important; }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
 .pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-left: 0 !important; }
