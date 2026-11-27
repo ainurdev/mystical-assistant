@@ -10,8 +10,12 @@ import { limitNudge } from "./limit.ts";
 const LABELS: Record<string, string> = {
   mcp: "MCP loaded", nudge: "Nudge", wait: "Wait over", resume: "Resumed", automation: "Automation",
   chat: "From a chat", step: "Next step", device: "Device run", ticket: "Ticket", work: "Work list",
-  job: "Rivendell", api: "Run API",
+  job: "Rivendell", api: "Run API", spinoff: "Spin-off",
 };
+// A task's first turn starts its flow: the step's command (and a here build's order) is the bridge's, the title is the line.
+const TASK_KINDS = new Set(["work", "spinoff"]);
+// Only the commands bridge/paths.py start_flow puts in front: a title of yours may start with a slash too.
+const FLOW_HEAD = /^\/(?:design-first|mattpocock-skills:[\w-]+)\s+(?:Work in .+? on branch \S+, and commit there\.\s+)?/;
 
 /** line: the prompt's first line, its bridge tag dropped. */
 export interface MysticalNote { kind: string; label: string; line: string; why: string | null }
@@ -35,7 +39,8 @@ export function mysticalNote(t: { prompt: string; sent_by?: string | null; sent_
   const p = t.prompt.replace(/^No path for this message\.\s*/, "");
   const kind = t.sent_by ? (t.sent_by.startsWith("mystical:") ? t.sent_by.slice(9) : null) : sniff(p);
   if (!kind) return null;
-  const line = p.replace(/^(\[mystical\]|⧖|⏮)\s+/, "").split("\n")[0];
+  const first = p.replace(/^(\[mystical\]|⧖|⏮)\s+/, "").split("\n")[0];
+  const line = TASK_KINDS.has(kind) ? first.replace(FLOW_HEAD, "") : first;
   return { kind, label: LABELS[kind] ?? "Mystical", line, why: t.sent_why || null };
 }
 

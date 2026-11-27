@@ -88,6 +88,14 @@ _Avoid_: gateway, goals server, verify server, mystical-ux, bridge MCPs
 An agent a session starts to take one task inside that session; it reports back as a message and shows under that session, not as its own row in the sidebar. A session that another session starts is a normal **Session**, not a helper.
 _Avoid_: subagent, child session, worker
 
+**Spin-off**:
+A **Session** started by your tap on another session's card, to do one **Task** in that task's own project, which needn't be the project of the session it came from. It lists under its own project, not folded under the session it came from as a **Part** is, and the two sessions link to each other.
+_Avoid_: parent session, child session, sub-session, offshoot
+
+**Spin-off card**:
+The card a session leaves in its chat after a turn that turned up work it isn't doing: one row per item, or per cause when several share one, each with its project, **Flow** and brief, to START as **Spin-offs** or PARK on their projects' work lists. It is an offer that stays in the chat, not an **Ask**, and never part of **Needs you**.
+_Avoid_: fan-out card, triage card, offer
+
 **To-do**:
 Something only you can do, that no session can do for you: turn a setting on, add a file, give someone what their message asked for. A reply lists its to-dos in one box at its very top, and a reply with none has no box; a choice the session needs from you is an **Ask**, not a to-do.
 _Avoid_: action item, task, highlight, important part

@@ -182,6 +182,23 @@ WORK_LIST = _t("work_list", "The project's work list, which the user sees in the
                     "source": {"type": "object", "description": "Where it came from: {kind, ref, url}."}}}},
                 "ids": {"type": "array", "items": {"type": "string"}, "description": "For remove and reorder."},
                 "clear_done": {"type": "boolean"}}, ["action"])
+SPIN_OFF = _t("spin_off", "Offer work this chat isn't doing as spin-offs: a card under your reply, one row per item or per "
+              "cause, that the user taps to start each in its own session in its own project, or to park on that project's work "
+              "list. Use it as your last step when your work turned up items for other projects (issues across repos, a bug in "
+              "another repo, a plan across repos) or a list of separate items. Lead your reply with one line and don't list the "
+              "items again: the card is the list. Nothing starts until the user taps.",
+              {"items": {"type": "array", "items": {"type": "object", "required": ["title"], "properties": {
+                  "title": {"type": "string", "description": "What the work is, as its session's title."},
+                  "brief": {"type": "string", "description": "What its session needs to know, with what you found: it sees only this."},
+                  "project": {"type": "string", "description": "Where it goes: the project's folder, its GitHub owner/repo or URL, or "
+                              "its name. Leave out if you can't tell: the user picks."},
+                  "flow": {"type": "string", "enum": ["fix", "build", "design"], "description": "fix for something broken, design "
+                           "for how something looks, build for the rest."},
+                  "sources": {"type": "array", "items": {"type": "object"}, "description": "Where it came from: [{kind, ref, url}], "
+                              "like {kind: sentry, ref: SHOP-4Q2, url}. One row can cover several with one cause."},
+                  "after": {"type": "integer", "description": "The number of an earlier item (1 is the first) that must be done "
+                            "before this one starts, for a change across repos."}}}}},
+              ["items"])
 CHAT_PLAN = _t("chat_plan", "Your plan for this chat's work, which the user sees in the Work list as a timeline. For work in several "
                "steps, set it before you start, then mark each step as you go with update: it keeps you on track, and they see "
                "\"step 5 of 10\" without reading back. A step can have a Markdown description, sub-steps and a note on what you "
@@ -236,7 +253,7 @@ def tools_for(s: dict) -> list:
     if not s.get("parent_session") and channel.refusal(s) is None:
         out += [DELEGATE, REVIEW, MERGE, DISCARD]
     if not s.get("parent_session"):
-        out += [WORK_LIST, CHAT_PLAN]
+        out += [WORK_LIST, CHAT_PLAN] + ([SPIN_OFF] if experimental.enabled() else [])   # its card's taps are experimental
     if caps["system_prompt"]:              # Claude: the only runtime with background tasks to wait on
         out += [BG_WAIT]
     if not caps["system_prompt"]:          # an agent: what Claude has natively
@@ -465,6 +482,9 @@ def _call(s: dict, name: str, a: dict) -> dict:
             return _text("No turn is running here to set it for.", error=True)
         got = job.set_bg_cap(mins * 60)
         return _text(f"This turn now waits up to {got // 60} min of silence on background work.")
+    if name == "spin_off":
+        from bridge import spinoffs
+        return spinoffs.offer(s, job, a)
     if name == "chat_plan":
         from bridge import chatplan
         try:

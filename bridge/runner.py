@@ -246,6 +246,9 @@ _EXPERIMENTAL_NOTE = (
     "they ask, filling it from whatever they name. Only they start a task: its Start in the Work panel opens the task's own session. "
     "For work in several steps, keep your plan with chat_plan: set it before you start and mark steps as you go. The user sees it "
     "beside the work list and may change it, which reaches you as a message.\n\n"
+    "When your work turns up work this chat isn't doing, like issues for other projects or a list of separate items, offer "
+    "it with spin_off from the mystical MCP server as your last step: one row per item, or per cause when several share "
+    "one. The user starts each in its own session from the card. Lead your reply with one line and don't list them again.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
     "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
     "tested and just needs a check, go ahead normally.")
@@ -3895,6 +3898,15 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             note, extra = team.seed(session["id"], job.id)
             if note:
                 run_prompt, image_paths = f"{prompt}\n\n{note}", list(image_paths) + extra
+        if not refusal:
+            try:
+                from bridge import spinoffs   # what you spun off from here since: its agent leaves it alone
+                told = spinoffs.pop_line(session["id"])
+            except Exception as e:  # noqa: BLE001 — never holds a turn up
+                print(f"[runner] spin-offs line: {e!r}", file=sys.stderr)
+                told = ""
+            if told:
+                run_prompt = f"{run_prompt}\n\n{told}"
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd),

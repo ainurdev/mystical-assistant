@@ -232,6 +232,28 @@ def _ask_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     edit(chat_id, msg_id, html, kb, html=True)
 
 
+def _spinoff_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """▶ Start all under a reply that offered spin-offs (bridge/spinoffs.py): every open row with a
+    project starts on its guessed flow, and the button goes. Only an allowed user, in the chat the
+    session is in."""
+    from bridge import experimental, spinoffs
+    parts = data.split(":")
+    s = store.get_session(parts[1]) if len(parts) == 3 else None
+    if not s or s["chat_id"] != chat_id or (cb.get("from") or {}).get("id") not in config.ALLOWED_CHAT_IDS:
+        answer_cb(cb["id"])
+        return
+    if not experimental.enabled():
+        answer_cb(cb["id"], "Spin-offs are experimental. Turn them on in the dashboard's Settings.")
+        return
+    try:
+        n = spinoffs.start_all(s, parts[2])
+    except spinoffs.Refused as e:
+        answer_cb(cb["id"], str(e))
+    else:
+        answer_cb(cb["id"], f"Spun off {n}: each in its own session.")
+    edit_markup(chat_id, msg_id, panel_kb(chat_id, s["id"], s.get("project"), "Open session ↗"))
+
+
 def on_stop(update: dict) -> None:
     """Telegram's Stop under a live answer (stopped_message_generation)."""
     chat_id = (update.get("chat") or {}).get("id")
@@ -763,6 +785,10 @@ def handle_callback(cb: dict):
 
     elif data.startswith("ta:"):
         threading.Thread(target=_ask_callback,
+                         args=(cb, chat_id, msg_id, data), daemon=True).start()
+
+    elif data.startswith("so:"):
+        threading.Thread(target=_spinoff_callback,
                          args=(cb, chat_id, msg_id, data), daemon=True).start()
 
     else:

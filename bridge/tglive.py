@@ -180,6 +180,22 @@ def _resumed(job) -> "object | None":
     return None
 
 
+def _spun(job, chat_id: int, body: str, kb: "dict | None") -> "tuple[str, dict | None]":
+    """A reply that offered spin-offs (bridge/spinoffs.py): the card is the dashboard's, so the phone
+    gets one line, ▶ Start all for the rows it can start, and the session's button."""
+    from bridge import spinoffs
+    if not experimental.enabled():   # its routes and taps are experimental: no button that can't act
+        return body, kb
+    with job._lock:   # noqa: SLF001 — the job's own event list
+        cid = next((e.get("card") for e in reversed(job.events) if e.get("type") == "spinoffs"), None)
+    line, n = spinoffs.phone(job.store_session_id, cid) if cid else ("", 0)
+    if not line:
+        return body, kb
+    rows = [[{"text": f"▶ Start all {n}", "callback_data": f"so:{job.store_session_id}:{cid}"}]] if n else []
+    rows += (runner._session_kb(chat_id, job.store_session_id, "Open session ↗") or {}).get("inline_keyboard", [])   # noqa: SLF001
+    return f"{body}\n\n⑂ {line}", ({"inline_keyboard": rows} if rows else None)
+
+
 def _finish(job, chat_id: int, msg_id: "int | None", thread: "int | None") -> None:
     if state.shutting_down:
         return    # a restart killed it: boot recovery resumes it, and says so
@@ -204,6 +220,8 @@ def _finish(job, chat_id: int, msg_id: "int | None", thread: "int | None") -> No
     # too long to read in a chat bubble, it's the way out.
     kb = (runner._session_kb(chat_id, job.store_session_id, "🛠 Open session")   # noqa: SLF001
           if job.status == "error" or len(body) > config.TG_MAX - 512 else None)
+    if emoji == "👌":
+        body, kb = _spun(job, chat_id, body, kb)
     sent = telegram.send(chat_id, f"{body}\n\n— {elapsed}s", kb, rich=True, thread=thread)
     if msg_id:
         telegram.react(chat_id, msg_id, emoji if sent else "😢")

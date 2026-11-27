@@ -253,6 +253,8 @@ def _session_brief(s: dict, default_tools: "list | None" = None) -> dict:
             "device": store.parse_device(s.get("device")),
             # A session a teammate sent: who, when, their note (None = not one).
             "team": store.parse_team(s.get("team")),
+            # A spin-off's way back: the chat whose card started it, and the keys it came with (None = not one).
+            "spun_from": store.parse_json(s.get("spun_from")) or None,
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),

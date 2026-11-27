@@ -9,6 +9,7 @@ import { stickToBottom } from "../lib/stick";
 import { useLoadingPhase } from "../lib/loadingPhase";
 import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
 import { RunStream, ToolImage, TURN_TAIL } from "../components/RunStream";
+import { SpinOffBar } from "../components/SpinOffBar";
 import { SelectionPop } from "../components/SelectionPop";
 import { DesignPane } from "../components/DesignPane";
 import { createPortal } from "react-dom";
@@ -550,6 +551,9 @@ function RunPage({ barKey }: { barKey: string }) {
                   agent={experimental ? agentOfTurn(turn.runtime ?? undefined, isActive, sessionAgent) : undefined}
                   onOpenAgent={experimental ? openAgent : undefined}
                 />
+                {experimental && sessionId && turn.status !== "running"
+                  ? [...new Set(turn.events.flatMap((e) => (e.type === "spinoffs" ? [e.card] : [])))].map((c) => <SpinOffBar key={c} session={sessionId} card={c} />)
+                  : null}
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
               </div>
             )}

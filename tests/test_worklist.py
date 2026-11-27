@@ -135,6 +135,15 @@ def test_start_opens_the_tasks_own_session_on_its_flow(world, started):
         wl.start(r, wl.add(r, [{"title": "y"}])[0]["id"], "ship", world["session"]["id"])
 
 
+def test_a_tasks_session_files_under_its_project_and_takes_its_profile(world, started, monkeypatch):
+    from bridge import profiles
+    asked = []
+    monkeypatch.setattr(profiles, "claude_default", lambda project: asked.append(project) or None)
+    r = world["root"]
+    got = wl.start(r, wl.add(r, [{"title": "x"}])[0]["id"], "build", world["session"]["id"])
+    assert store.get_session(got["session_id"])["project"] == "/shop" and asked == ["/shop"]
+
+
 def test_a_fix_starts_on_its_own_branch_never_the_default_one(world, started):
     r = world["root"]
     got = wl.start(r, wl.add(r, [{"title": "Login loops"}])[0]["id"], "fix", world["session"]["id"])

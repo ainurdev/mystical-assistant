@@ -5352,6 +5352,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* COMPACT: a ticket's (or a helper's) way back in the chat header, its part count after the name */
 [data-layout="compact"] .isle .ma-crumb { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; font-size: var(--t12); font-weight: 700; }
 .ma-crumb-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* a spin-off's way back names the chat's project too, when it's another one */
+.ma-crumb-p { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; font-weight: 400; color: var(--txd); white-space: nowrap; }
+.ma-crumb-p .ptile { margin-right: 0; }
 .ma-crumb-n { flex: none; font-family: var(--mono, monospace); font-size: var(--t9); font-weight: 400; color: var(--txl); }
 /* the branch gives way only once the title has: a sliver of the shrink */
 .pb-tabs .np-branch { flex: 0 0.12 auto !important; }

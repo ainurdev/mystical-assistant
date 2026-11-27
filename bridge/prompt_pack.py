@@ -61,6 +61,11 @@ SHOW = (
     "enough to warrant a review loop, ask the user with offer_review as your last step: they get a button after your "
     "answer. If it isn't, or it's reasonably tested and just needs a check, go ahead normally.")
 
+SPIN_OFF = (
+    "When your work turns up work this chat isn't doing, like issues for other projects or a list of separate items, offer "
+    "it with spin_off as your last step, one row per item or per cause: the user starts each in its own session. Lead your "
+    "reply with one line and don't list them again.")
+
 HELPERS = (
     "Mystical can start another agent for you, on any provider, with the delegate "
     "tool from the mystical MCP server. Use it only when the human asks for a helper. "
@@ -92,7 +97,7 @@ RIVENDELL = (
 
 def _fragments(session: dict, cwd: "str | None", tools: set, graph: str, rivendell: bool,
                extra: "tuple[str, ...]") -> list:
-    rows = [(ASK, "ask_user"), (RUN, "run_project"), (SHOW, "show_image"), (TIDY, None), *((e, None) for e in extra),
+    rows = [(ASK, "ask_user"), (RUN, "run_project"), (SHOW, "show_image"), (SPIN_OFF, "spin_off"), (TIDY, None), *((e, None) for e in extra),
             (RIVENDELL if rivendell else "", "list_rivendell_tasks"), (HELPERS, "delegate")]
     out = [text for text, need in rows if text and (need is None or need in tools)]
     if graph.strip():

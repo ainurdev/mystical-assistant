@@ -46,3 +46,15 @@ eq(viaTag(null), null, "the dashboard says nothing");
 eq(viaTag("mystical:mcp"), null, "Mystical's notes aren't via anything");
 eq(viaTag("browser"), "via Mystical browser", "comments sent from the Mystical browser are yours, tagged where from");
 eq(mysticalNote({ prompt: "2 comments from the Mystical browser on https://x", sent_by: "browser" }), null, "and they draw as your bubble, not a note");
+
+// --- a task's first turn: the flow's command in front is the bridge's, the title is the line -------------
+eq(mysticalNote({ prompt: "/mattpocock-skills:diagnosing-bugs Checkout loses the voucher\n\nThe brief", sent_by: "mystical:spinoff", sent_why: "you started it from the chat “Check Sentry issues”" }),
+  { kind: "spinoff", label: "Spin-off", line: "Checkout loses the voucher", why: "you started it from the chat “Check Sentry issues”" },
+  "a spin-off's line is its title, under its own label");
+eq(mysticalNote({ prompt: "/mattpocock-skills:implement Work in /w/shop on branch feat/retry, and commit there. Retry on 5xx\n\nx", sent_by: "mystical:spinoff" })?.line,
+  "Retry on 5xx", "a BUILD with its grill off drops the here build's order too");
+eq(mysticalNote({ prompt: "/design-first Board look\n\nx", sent_by: "mystical:work" })?.line, "Board look", "a work-list task's line is its title as well");
+eq(mysticalNote({ prompt: "/api returns 500 on save\n\nx", sent_by: "mystical:work" })?.line,
+  "/api returns 500 on save", "a title that starts with a slash keeps it when no flow's command is in front (FLOWS off)");
+eq(mysticalNote({ prompt: "/mattpocock-skills:implement Work in /x on branch b, and commit there.", sent_by: "mystical:step" })?.line,
+  "/mattpocock-skills:implement Work in /x on branch b, and commit there.", "a next step keeps its words: they are the step");
