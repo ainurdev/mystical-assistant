@@ -67,7 +67,9 @@ merge did, and stayed `merging` until someone asked. They also send every full s
 through bin/suite-slot, one at a time on the machine, and a ticket runs only the tests
 it touches until its one full run at the end: over 109 tickets (2026-11-27) a ticket ran
 the full suite a median 4 times, and runs that overlapped two or more other tickets'
-tests ran 2-2.5x slower and failed 53% of the time, against 24% alone.
+tests ran 2-2.5x slower and failed 53% of the time, against 24% alone. That run gets the
+Bash tool's longest timeout, as the wait counts toward it and the CLI moves a call past
+its timeout to the background (2 of the 17 moved in tickets were suites at the 2 min default).
 
 A ticket's `Repos:` line names the repos it builds in (default: the set's own); BUILD
 makes its worktree in each, the first holding its session, and makes none at home when
@@ -593,9 +595,10 @@ _REPORT = (" End your final reply with two short lists, headed exactly \"Decisio
 
 
 _WORK = "While you work, run only the tests for the code you touch. "
-_ONCE = (f"run the project's full suite once, through {_SLOT} (in front of its command, as `{_SLOT} npm test`): it "
-         "waits while another session's suite runs, so suites don't slow down or fail each other. After a fix, "
-         "rerun only what failed, then call StepDone.")
+_ONCE = (f"run the project's full suite once, through {_SLOT} (in front of its command, as `{_SLOT} npm test`) and "
+         "with the longest timeout the Bash tool allows: it waits while another session's suite runs, so suites "
+         "don't slow down or fail each other, and the wait counts toward the timeout. After a fix, rerun only what "
+         "failed, then call StepDone.")
 
 
 def _done_line() -> str:
@@ -810,7 +813,8 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
-            + " Then call StepDone." + _FOREGROUND + f" Run each full suite through {_SLOT}, in front of its command.")
+            + " Then call StepDone." + _FOREGROUND + f" Run each full suite through {_SLOT}, in front of its command, "
+                                         "with the longest timeout the Bash tool allows.")
 
 
 def _home_branches(st: dict, tks: dict) -> list:

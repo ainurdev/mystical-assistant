@@ -452,9 +452,10 @@ def test_cycle_stops_the_set_with_a_notice(make_set):
 
 
 _DONE = ("While you work, run only the tests for the code you touch. When it is done, run the project's full "
-         f"suite once, through {tickets._SLOT} (in front of its command, as `{tickets._SLOT} npm test`): it waits "
-         "while another session's suite runs, so suites don't slow down or fail each other. After a fix, rerun "
-         "only what failed, then call StepDone.")
+         f"suite once, through {tickets._SLOT} (in front of its command, as `{tickets._SLOT} npm test`) and with the "
+         "longest timeout the Bash tool allows: it waits while another session's suite runs, so suites don't slow "
+         "down or fail each other, and the wait counts toward the timeout. After a fix, rerun only what failed, "
+         "then call StepDone.")
 
 
 def test_first_prompt_title_and_path(make_set):
@@ -671,7 +672,7 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
                            "project's full test suite, fix what breaks, and commit. End your final reply with what "
                            "failed before the merge and what fails after it. Then call StepDone. "
                            f"Run tests in the foreground. Run each full suite through {tickets._SLOT}, in front of its "
-                           "command.")
+                           "command, with the longest timeout the Bash tool allows.")
     sess = store.get_session(m["sid"])
     assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
     assert (s.state["status"], s.state["merge_session"]) == ("merging", m["sid"])

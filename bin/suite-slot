@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """One full test suite at a time on this machine. `suite-slot <command> [args...]` waits while
-another suite holds the slot, saying what it waits for, then becomes the command (exec), so the
-slot is held while the command runs and freed when it exits, even when it is killed.
+another suite holds the slot, saying what it waits for, then runs the command and holds the slot
+until it exits or is killed, passing on its exit code.
 
 Ticket and merge sessions put it in front of their full suite (bridge/tickets.py): over 109
 tickets (2026-11-27), suites that overlapped two or more other tickets' tests ran 2-2.5x slower
 and failed 53% of the time, against 24% alone, and failures drove the re-runs. A flock, not a
-lock directory, so a dead holder can't leave a stale lock. Imports none of the bridge; the lock
-sits beside the bridge DB, so a test's pinned BRIDGE_DB gets a slot of its own.
+lock directory, so a dead holder can't leave a stale lock. The command runs as a child that never
+gets the lock's file, not exec'd with it, which let a helper a shell-run suite left running
+(`server &`) keep the slot after the suite ended. Killing suite-slot alone frees the slot while its
+command runs on: an overlap, never a stuck slot. Imports none of the bridge; the lock sits beside
+the bridge DB, so a test's pinned BRIDGE_DB gets a slot of its own.
 
 usage: bin/suite-slot <command> [args...]      as: bin/suite-slot npm test"""
 import fcntl
 import os
+import subprocess
 import sys
 import time
 
@@ -32,11 +36,11 @@ def main(argv: list) -> None:
         fcntl.flock(fd, fcntl.LOCK_EX)
     os.ftruncate(fd, 0)
     os.pwrite(fd, f"`{' '.join(argv)[:160]}` in {os.getcwd()}, since {time.strftime('%H:%M')}".encode(), 0)
-    os.set_inheritable(fd, True)   # the command holds the lock from here
     try:
-        os.execvp(argv[0], argv)
+        rc = subprocess.call(argv)
     except OSError as e:
         sys.exit(f"suite-slot: {argv[0]}: {e.strerror}")
+    sys.exit(rc if rc >= 0 else 128 - rc)   # killed by a signal: 128 + its number, as a shell says
 
 
 if __name__ == "__main__":
