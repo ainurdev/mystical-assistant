@@ -863,7 +863,8 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  and folds away when the turn ends. It hosts the working indicator too: the
  *  ORBIT form is the node — a ripple while the model thinks, a comet on its
  *  ring while a tool runs (both inside the node's track, since the turn row's
- *  paint containment clips anything past the plate); the cat draws as a row
+ *  paint containment clips anything past the plate; off in the chat, where the
+ *  live row's border is the one light, spine.css); the cat draws as a row
  *  inside the plate instead of under the turn; STATUS would only say what the
  *  line already does, so the line stands in for it. */
 function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, retried = 0, children, purposes, looked, filtered, filterCounts, reveal = 0 }: {
