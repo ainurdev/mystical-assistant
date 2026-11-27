@@ -34,7 +34,7 @@ export function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
   return rows;
 }
 
-/* Every directory that appears in the path list — the expand/collapse-all set. */
+/* Every directory that appears in the path list — the collapse-all set. */
 export function dirsOf(paths: string[]): string[] {
   const out = new Set<string>();
   for (const p of paths) {
