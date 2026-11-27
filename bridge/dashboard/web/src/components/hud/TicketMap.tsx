@@ -206,9 +206,9 @@ function useSetView(set: TicketSet | null, status: Map<string, SessionStatus>, o
   };
   const first = urgent(set, ns, kinds);
   const t = first && first !== "merge" ? set.tickets[first] : null;
-  const call = note ? <span className="tm-call">{note}</span>
+  const call = note ? <span className="tm-call"><span>{note}</span></span>
     : set.status === "stopped" && set.error !== undefined   // Not now leaves no error: set aside, nothing failed
-      ? <span className="tm-call err" title={set.error}>{set.error || "BUILD could not start"}</span>
+      ? <span className="tm-call err" title={set.error}><span>{set.error || "BUILD could not start"}</span></span>
     : t && kinds[first] === "ask" ? <span className="tm-call warn" title={status.get(t.session_id)?.label ?? undefined}><Hand size={13} aria-hidden /><b>#{first}</b> asks you</span>
     : t && kinds[first] === "you" ? <span className="tm-call warn" title={t.title}><Hand size={13} aria-hidden /><b>#{first}</b> is yours</span>
     : t && kinds[first] === "fix" ? <span className="tm-call err" title={t.why}><b>#{first}</b> needs a fix</span>

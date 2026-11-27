@@ -8321,24 +8321,27 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-k { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; color: var(--acc2, var(--acc)); flex: none; }
 .tm-card .tm-nm { font-size: var(--t13); font-weight: 700; color: var(--txb); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 14ch; }   /* scoped: team.css's Agents-view .tm-nm (min-width: 0) loads later and cut the name to "St…" */
 .tm-div { width: 1px; height: 18px; background: var(--line2); flex: none; }
-.tm-dots { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.tm-dots { display: inline-flex; align-items: center; gap: 6px; flex: 0 6 auto; min-width: 0; flex-wrap: wrap; height: 15px; overflow: hidden; }   /* gives way like the facts, a whole wave at a time: groups that don't fit wrap onto a hidden 2nd line (a group is 15px tall) */
 .tm-wv { display: inline-flex; gap: 3px; padding: 3px 4px; border: 1px solid transparent; border-radius: var(--f-rad-s, 4px); }
 .tm-wv.now { border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
 .tm-wv i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--txl) 45%, transparent); }
 .tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s steps(13) infinite; }
 .tm-wv i.m { border-radius: 1px; transform: rotate(45deg); background: none; box-shadow: inset 0 0 0 1.5px var(--txl); animation: none; }
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
-.tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
-/* A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
+.tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 1 40%; max-width: max-content; color: var(--txd); }
+/* .tm-call: a 40% basis capped at its own width keeps a short call whole while the rest gives way (the wider basis soaks up its share
+   of the shrink); only once the rest is at its floor does it shrink, so a long error ellipsizes instead of pushing the buttons off the card.
+   A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
 @container (max-width: 800px) { .tm-row[data-call] > .tm-c, .tm-row[data-call] > .tm-c + .tm-div { display: none; } }
 @container (max-width: 900px) { .tm-row[data-auto] > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
-@container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
+@container (max-width: 540px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }   /* 520 left a call + its button 10px over in Nunito */
 .tm-auto { flex: none; margin-right: 6px; white-space: nowrap; text-transform: none; }   /* its .caps word carries the capitals */
 /* LIVE's bar has no container to ask: while a set waits its chips are every ticket, which its dots show. */
 .tl-bar[data-auto] > .tm-c, .tl-bar[data-auto] > .tl-chips { display: none; }
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
+.tm-call > span { overflow: hidden; text-overflow: ellipsis; }   /* free text (an error, a reply) sits in a span: an inline-flex box draws no ellipsis */
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
 .tm-body-s { border-top: 1px solid var(--line); max-height: 221px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .tm-graph { display: block; width: 100%; height: auto; max-height: 220px; }
