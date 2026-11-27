@@ -230,12 +230,22 @@ def test_every_pack_name_a_skill_mentions_is_in_the_pack():
 def test_design_first_names_each_skill_it_loads_by_its_pack_name():
     text = open(_skills()["design-first"], encoding="utf-8").read()
     steps = re.findall(r"^## (\d+)\. ", text, re.M)
-    assert steps == [str(n) for n in range(1, 12)]
+    assert steps == [str(n) for n in range(1, 10)]
     for name in ("create-design-md", "frontend-design", "expo-native-ui", "expo-design-system",
                  "shadcn", "expo-animation", "polish"):
         assert f"/mystical-design:{name}" in text, name
     assert os.path.isfile(os.path.join(PACK, "references", "judgement-pass.md"))
     assert "judgement-pass.md" in text and "critique_design" in text and "inspect_ui" in text
+
+
+def test_no_design_first_pushes_to_claude_design():
+    """The push asked for /design-login in most design runs: the logins the bridge runs first
+    held no design grant, and the one that did got a 404 for the linked project (2026-11-28)."""
+    repo_copy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             ".claude", "skills", "design-first", "SKILL.md")
+    for md in (_skills()["design-first"], repo_copy):
+        text = open(md, encoding="utf-8").read()
+        assert not re.search(r"DesignSync|design-login|claude\.ai|design_project", text), md
 
 
 def test_design_pack_is_an_ai_feature_off_by_default():
@@ -309,13 +319,13 @@ def test_design_first_reads_the_bold_note_ticket_07_sends():
 
 
 def test_the_bold_section_stands_alone():
-    """Taking it out leaves design-first's eleven steps whole, with nothing naming it."""
+    """Taking it out leaves design-first's nine steps whole, with nothing naming it."""
     text = open(_skills()["design-first"], encoding="utf-8").read()
     bold = _bold_section(text)
     for part in ("fifteen", "critique_design", "bold: true", "Go bold", "OFF-SYSTEM"):
         assert part in bold, part
     rest = text.replace(bold, "")
-    assert re.findall(r"^## (\d+)\. ", rest, re.M) == [str(n) for n in range(1, 12)]
+    assert re.findall(r"^## (\d+)\. ", rest, re.M) == [str(n) for n in range(1, 10)]
     assert not re.search(r"bold run|go bold|Bold runs", rest, re.I)
 
 
