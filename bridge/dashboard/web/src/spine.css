@@ -39,6 +39,9 @@
 }
 /* the last turn's line runs on down to the prompt box: its island's emblem is the last node */
 [data-fam] [data-style="dossier"][data-isle] .dturn[data-last]::before { bottom: -60px; }
+/* under the live row it runs past the row (61px) to the content's foot, which is the scroller's at the bottom; any
+   further would overflow the content and add scroll room under the row */
+[data-fam] .swapwrap[data-liverow] [data-style="dossier"][data-isle] .dturn[data-last]::before { bottom: -89px; }
 [data-fam] [data-style="dossier"][data-isle] .agent-rail { display: none; }
 
 /* every block's node: a ring in the ground's colour, so it cuts the line (a plain list: :is() takes no pseudo-elements) */
