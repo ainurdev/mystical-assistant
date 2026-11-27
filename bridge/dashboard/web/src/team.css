@@ -30,7 +30,7 @@
 .tm-st[data-s="waiting"] { color: var(--info, var(--ask)); }
 .tm-st[data-s="failed"] { color: var(--warn); }
 .tm-st[data-s="done"] { color: var(--txd); }
-.tm-st[data-s="running"] svg { animation: tm-spin 1.6s steps(13) infinite; }
+.tm-st[data-s="running"] svg { animation: tm-spin 1.6s linear infinite; }
 @keyframes tm-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tm-st svg { animation: none !important; } }
 .tm-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex: none; }

@@ -252,7 +252,7 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
           <Spinner className="h-[11px] w-[11px] border" />
         </span>
-        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s steps(10) infinite" }}>
+        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
           CHECKING CONTEXT…
         </span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: "var(--txd)" }}>

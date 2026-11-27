@@ -236,7 +236,7 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .wl-top b { font-weight: 600; color: var(--txb); overflow-wrap: anywhere; }
 .wl-top b span { font-weight: 400; color: var(--txd); }
 .wl-err { margin: 6px 12px !important; }
-.wl-think svg { animation: wl-spin 1.6s steps(13) infinite; }
+.wl-think svg { animation: wl-spin 1.6s linear infinite; }
 @keyframes wl-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .wl-think svg { animation: none !important; } }
 .wl-body { flex: 1; padding: 0 0 10px; }

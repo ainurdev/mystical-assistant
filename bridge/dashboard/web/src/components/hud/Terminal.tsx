@@ -194,7 +194,7 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
 function ChannelTuning({ step }: { step?: string | null }) {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease backwards" }}>
-      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s steps(9) infinite" }} />
+      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
       <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s steps(19) infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
     </div>
   );
@@ -220,7 +220,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
         appearance: "none", background: "transparent", cursor: onClick ? "pointer" : "default",
         color: hov ? "var(--txb)" : c,
       }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "caretbreath 2s steps(16) infinite" : "none" }} />
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "twinkle 2s ease-in-out infinite" : "none" }} />
       {live ? (run.port ? `:${run.port}` : "RUNNING") : "EXITED"}
     </button>
   );
