@@ -27,7 +27,7 @@ import type {
   DashState, EnrichedSession, EnvSetting, FileContent, FlowSettings, GitBadge, GitCommit, GitLedger, GitStatus,
   GraphInstall, GraphState, GrepHit, HostStats, Integration, Lesson, McpInfo, MoveFile, MoveJob, MovePlan, MoveRead,
   NextBoard, Notice, NoticePrefs, Place, PluginsInfo, PrStatus, ProjectSettings, ProjectsListing, QueueSnapshot,
-  RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, StartupState,
+  RepoImages, RivendellInstance, RunningInfo, Saver, SessionBrief, SkillsInfo, SlashCommand, SpinCard, StartupState,
   StorageScan, TermInfo, Transcript, UpdateInfo, UsageInfo, VideoTools, WorkspaceSet, Worktree,
 } from "../api.ts";
 import type { AgentDetail, Team } from "./agentteam.ts";
@@ -114,6 +114,8 @@ export const main = {
   flow: read<FlowAnswer, { session: string }>("/local/flow", { ms: 4000 }),
   // Listed at 2.5 s so readWith's half-interval skip never eats WORK's 1.5 s refine poll; readers set their own rate.
   worklist: read<unknown, { session: string; project: string }>("/local/worklist", { ms: 2500 }),
+  // A chat's Spin-off cards: polled only while a row is on its way (a clone, a chain's wait); a tap re-reads it.
+  spinoffs: read<{ cards: SpinCard[]; here: string }, { session: string }>("/local/spinoffs", { ms: 5000 }),
   commands: read<{ commands: SlashCommand[] }, { project?: string }>("/local/commands"),
   accounts: read<AccountsInfo, { fresh?: number }>("/local/accounts", { ms: 60000 }),
   usage: read<UsageInfo>("/local/usage", { ms: 60000 }),
@@ -316,6 +318,7 @@ export const CHANGES: Record<string, string[]> = {
   "/local/project-mark/pick": [main.projects.route],
   "/local/roots/remove": [main.projects.route],
   "/local/worklist/*": [main.worklist.route],
+  "/local/spinoffs/*": [main.spinoffs.route, main.worklist.route],
   "/local/graph/*": [code.graphState.route, settings.graphInstall.route],
   "/local/git/*": GIT,
   "/local/git/checkout": FILES,

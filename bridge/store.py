@@ -271,6 +271,10 @@ def init() -> None:
         # {share, instance, kind, from, note, sent, meta}. NULL = not one.
         if "team" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN team TEXT")
+        # A spin-off's way back (bridge/spinoffs.py): the chat whose card started it and the
+        # source keys it came with, as JSON {session, keys}. NULL = not one.
+        if "spun_from" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN spun_from TEXT")
         # Its topic in a Telegram private chat with threads (bridge/tgtopics.py):
         # what the session sends goes there, what is written there runs in it.
         # NULL = none (threads off, or nothing sent about it yet).
@@ -721,6 +725,12 @@ def set_team(session_id: str, meta: dict) -> None:
 def parse_team(raw: "str | None") -> dict | None:
     """A received share's stored facts (set_team), or None for any other session."""
     return parse_goal(raw)
+
+
+def set_spun_from(session_id: str, meta: dict) -> None:
+    """File the chat a spin-off came from on it (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET spun_from=? WHERE id=?", (json.dumps(meta), session_id))
 
 
 def delete_session(session_id: str) -> None:

@@ -14,7 +14,7 @@ import os
 import urllib.parse
 
 from bridge import (acp_agents, agent_tools, agent_tree, automations, channel, chat_files, chat_images, chat_aside, chat_search, config, design_audit, design_board, design_system, project_docs, experimental,
-                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
+                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, spinoffs, store,
                     tool_policy, worklist)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
@@ -162,6 +162,11 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         root, chat = _work_root(chat_id, _one(qs, "session"), _one(qs, "project"))
         from bridge import chatplan
         return ({**worklist.view(root), "plan": chatplan.view(root, chat)}, 200) if root else ({"error": "No project here."}, 404)
+    if path == "spinoffs":
+        if not experimental.enabled():
+            return _OFF
+        s = _owned(chat_id, _one(qs, "session"))
+        return (spinoffs.view(s["id"]), 200) if s else ({"error": "No such chat."}, 404)
     if path == "saved-views":
         if not experimental.enabled():
             return _OFF
@@ -297,6 +302,10 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             from bridge import workrefine
             return workrefine.api(path, body, root, chat, chat_id)
         return worklist.api(path, body, root, chat)
+    if path.startswith("spinoffs/"):
+        if not experimental.enabled():
+            return _OFF
+        return spinoffs.api(path, body, _owned(chat_id, str(body.get("session_id") or "")))
     if path == "design-theme":
         return design_board.save_theme(body) if experimental.enabled() else _OFF
     if path.startswith("saved-views"):

@@ -2531,6 +2531,13 @@ export function App() {
   // rather than by HIDE, which PLUGINS deliberately ignores.
   const ws = useWorkspaces();
   const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
+  // A spin-off's way back: the chat whose card started it (bridge/spinoffs.py), as the sessions list has it now.
+  const spunFrom = useMemo(() => {
+    const from = selected?.spun_from;
+    if (!from?.session) return null;
+    const chat = sessions.find((x) => x.id === from.session);
+    return { id: from.session, title: chat?.title || "its chat", project: chat?.project ?? "", keys: from.keys ?? [] };
+  }, [selected?.spun_from, sessions]);
   const sidebarSessions = useMemo(() => sessions.filter((s) => !s.parent_session && !s.ticket_of && inWs(jobGroup(s))), [sessions, inWs]);
   // Ticket and merge sessions fold under their super session's row instead of listing on their own.
   const ticketKids = useMemo(() => {
@@ -3656,6 +3663,7 @@ export function App() {
                 }}
                 gridMain={gridMain}
                 statusAll={statusMap} superTitle={selected?.ticket_of ? sessions.find((x) => x.id === selected.ticket_of)?.title ?? undefined : undefined}
+                spunFrom={spunFrom}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}

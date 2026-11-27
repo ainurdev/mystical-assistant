@@ -38,6 +38,8 @@ import { ProofBlock } from "./Proof";
 import { AnswerParts, DataView } from "./DataView";
 import { BrowserCard, DesignCard } from "./DesignPane";
 import { OfferCard, offerOf } from "./OfferCard";
+import { SpinOffCard } from "./SpinOffCard";
+import { spinCardsOf } from "../lib/spinoffs";
 import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
@@ -2634,7 +2636,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "browser" && t !== "offer" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "browser" && t !== "offer" && t !== "spinoffs" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -3000,6 +3002,7 @@ export const RunStream = memo(function RunStream({
       case "rule":
         return mx ? <RuleRow key={i} ev={event} /> : null;
       case "offer":
+      case "spinoffs":
         return null;       // drawn after the answer, once the turn is over
       case "data":
         return mx && !ended ? <DataView key={i} ev={event} /> : null;
@@ -3527,6 +3530,10 @@ export const RunStream = memo(function RunStream({
         z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : z.kind === "said" ? said(z, i)
           : workZone(z.segs, i === zones.length - 1, i === zones.map((x) => x.kind).lastIndexOf("work")))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  // Work it turned up for other chats (spin_off): a card under the answer that stays, on every turn that offered one.
+  const spins = multiOn && ended && !unfinished && sessionId
+    ? spinCardsOf(events).map((c) => <SpinOffCard key={`so${c}`} session={sessionId} card={c} />) : [];
+  if (spins.length && !mx) rows.push(<Fragment key="turn-spins">{spins}</Fragment>);
   // What a finished turn did, around its answer: what it showed you above it, its receipt below.
   if (mx && ended) {
     const receipt = unfinished ? null : receiptOf(events, { elapsed, tokens, runtime, started: turnStarted });
@@ -3538,6 +3545,7 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {reports}
+        {spins}
         {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? (
           <div className="dask" data-k="review" data-wait=""><OfferCard offer={offerOf(events)!} onStart={onAnswer} /></div>
         ) : null}

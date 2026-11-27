@@ -336,6 +336,11 @@
   border-top: 1px solid color-mix(in oklab, var(--sp-my) 12%, transparent); font-size: var(--t12); color: var(--txl);
 }
 .pmy-why b { font-weight: 700; color: var(--txm); }
+/* a spin-off's way back, under its line: from <its chat> in <that chat's project> · the keys it came with */
+.pmy-from { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: var(--t12); color: var(--txl); }
+.pmy-from .ptile { margin-right: 0; }
+.pmy .pmy-link { all: unset; color: var(--acc); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--acc) 45%, transparent); cursor: pointer; }
+.pmy .pmy-link:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
 .pmy-r { margin-left: auto; }
 [data-fam] [data-style="dossier"][data-isle] .pmy-node {
   display: block; position: absolute; z-index: 1; left: calc(var(--sp-nx) - var(--sp-in) + 4px); top: 4px; width: 18px; height: 18px;
