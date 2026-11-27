@@ -221,3 +221,31 @@ def test_off_with_the_experimental_switch(tmp_path):
     assert keep == ["/tmp/x.png"] and prompt == "hi"
     experimental.set_enabled(True)
     assert chat_images.mode() == "inline"       # the choice waits for it
+
+
+def test_an_image_in_a_questions_answer_reaches_the_model_by_its_real_path(tmp_path):
+    """Pasted while answering a question (In the chat), the image's markdown is in the answer's
+    note: the tool result names where it really is, as a prompt's note does."""
+    class _Stdin(list):
+        def write(self, s):
+            self.append(s)
+
+        def flush(self):
+            pass
+
+    class _Proc:
+        stdin = _Stdin()
+
+        def poll(self):
+            return None
+
+    r = _repo(tmp_path)
+    rel = chat_images.save_data_url(URL, str(r))
+    job = runner.Job("ci-answer", CHAT)
+    job.cwd, job.proc = str(r), _Proc()
+    runner._handle_control_request(job, {"request_id": "q", "request": {
+        "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": {"questions": [{
+            "question": "Which?", "header": "Pick", "multiSelect": False, "options": [{"label": "A", "description": ""}]}]}}})
+    assert job.respond("q", answers=[{"header": "Pick", "labels": [], "notes": f"like this ![image]({rel})"}])
+    msg = json.loads(job.proc.stdin[-1])["response"]["response"]["message"]
+    assert "open them before responding" in msg and os.path.basename(rel) in msg.split("\n\n")[0]

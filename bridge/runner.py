@@ -1121,8 +1121,12 @@ class Job:
     takes_notes = True
 
     def respond(self, request_id: str, *, behavior: str = "allow",
-                message: str | None = None, answers: list | None = None) -> bool:
+                message: str | None = None, answers: list | None = None,
+                images: list | None = None) -> bool:
         """Answer a pending can_use_tool request. Returns False if unknown.
+
+        `images`: files pasted with a question's answer or a Deny's note (upload-dir
+        paths), named to the model with it and kept on the answer's event.
 
         A background command's card answers through here too, as `bg:<task id>`
         (the route and both clients already carry a respond): deny stops the
@@ -1139,13 +1143,15 @@ class Job:
 
         if entry.get("gateway"):
             from bridge import gateway          # a Mystical tool's card: nothing of Claude's waits on it
-            gateway.answer_card(self, entry, answers, behavior, message)
+            gateway.answer_card(self, entry, answers, behavior, message, images)
             return True
+        shots = {"images": list(images)} if images else {}
         if entry["kind"] == "question":
             resp = {"behavior": "deny",
-                    "message": _format_answers(entry.get("questions", []), answers or [])}
+                    "message": _answer_with(_format_answers(entry.get("questions", []), answers or []),
+                                            images, self.cwd)}
             self.add({"type": "question_answered", "request_id": request_id,
-                      "answers": answers or []})
+                      "answers": answers or [], **shots})
             _record_task_answer(self.work_cwd or self.cwd, entry.get("questions", []), answers or [])
         elif behavior == "allow":
             resp = {"behavior": "allow", "updatedInput": entry.get("input", {})}
@@ -1153,9 +1159,9 @@ class Job:
                       "behavior": "allow"})
         else:
             resp = {"behavior": "deny",
-                    "message": message or "The user declined this action."}
+                    "message": _answer_with(message or "The user declined this action.", images, self.cwd)}
             self.add({"type": "permission_resolved", "request_id": request_id,
-                      "behavior": "deny"})
+                      "behavior": "deny", **shots})
 
         self._write_stdin({"type": "control_response", "response": {
             "subtype": "success", "request_id": request_id, "response": resp}})
@@ -1361,13 +1367,13 @@ class AcpJob(Job):
     # ACP's permission answer is allow/deny only: a deny's note can't ride it.
     takes_notes = False
 
-    def respond(self, request_id, *, behavior="allow", message=None, answers=None):
+    def respond(self, request_id, *, behavior="allow", message=None, answers=None, images=None):
         card = next((p for p in list(self.pending) if p.get("request_id") == request_id), None)
         if card is not None and card.get("gateway"):
             from bridge import gateway
             # Answered before the card goes: the paused turn watches for it to go,
             # and must find the answer waiting.
-            gateway.answer_card(self, card, answers, behavior, message)
+            gateway.answer_card(self, card, answers, behavior, message, images)
             with self._lock:
                 self.pending = [p for p in self.pending if p.get("request_id") != request_id]
             return True
@@ -1418,6 +1424,16 @@ def stop_children() -> None:
         t.join(max(0.0, end - time.monotonic()))
 
 
+_FILES_NOTE = "The user attached file(s); open them before responding: "
+
+
+def _answer_with(text: str, paths: "list | None", cwd: "str | None") -> str:
+    """An answer the model reads as a tool result (a question's, a Deny's note), with
+    what was pasted alongside it: the attached files, and in-the-chat images by their
+    real paths. Not _with_images: a note that starts with /word is no command."""
+    return chat_images.note(text, cwd) + (f"{_FILES_NOTE}{', '.join(paths)}\n\n{text}" if paths else text)
+
+
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     """Point the model at what it was sent. Attachments stay on disk (the upload
     dir) rather than going inline: a screenshot is a megabyte of base64, and the
@@ -1430,7 +1446,7 @@ def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     start of the prompt, so the note goes after that one token, not before it."""
     if not image_paths:
         return prompt
-    note = "The user attached file(s); open them before responding: " + ", ".join(image_paths)
+    note = _FILES_NOTE + ", ".join(image_paths)
     if not prompt.startswith("/"):
         return note + "\n\n" + prompt
     cmd, *args = prompt.split(None, 1)

@@ -25,9 +25,9 @@ import { Keys, useAskKeys } from "./ui/Keys";
    ones too.
 
    The box is the answer: what you type goes back as your own answer (a
-   question) or as the reason with a Deny (a permission), and its button names
-   what goes back. The dock reports that to the composer through `bind`
-   (AskMode) instead of drawing a second input.
+   question) or as the reason with a Deny (a permission), the files in its
+   tray with it, and its button names what goes back. The dock reports that
+   to the composer through `bind` (AskMode) instead of drawing a second input.
 
    Colour is the theme's `--ask`, the hue that already means "waits on you" in
    the sidebar and the notifications. Tokens only, so every family and every
@@ -41,7 +41,7 @@ export interface AskMode {
   ready?: boolean;
   /** The button needs text: a Deny's note. */
   needsText?: boolean;
-  /** Where the box's text goes instead of a new prompt. The dock clears the box. */
+  /** Where the box's text goes instead of a new prompt (the dock reads its tray itself). The dock clears the box. */
   send?: (text: string) => void;
   /** The box's footer while it answers this: the ⌘1–N keys, named once instead of on every row. */
   hint?: ReactNode;
@@ -123,15 +123,17 @@ function Rail({ text }: { text: string }) {
   );
 }
 
-export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind, stashed }: {
+export function AskDock({ d, draft, setDraft, files, onRespond, onAnswer, onSteer, bind, stashed }: {
   d: Docked;
   draft: string;
   setDraft: (text: string) => void;
+  /** The box's tray (data URLs): it goes with a question's answer or a Deny, as the text does. */
+  files: string[];
   onRespond: Respond;
   /** A reply to a question asked in prose ("No" drops it). */
   onAnswer: (text: string) => void;
   /** A Deny's note the bridge couldn't carry (an older bridge, an ACP agent). */
-  onSteer: (text: string) => void;
+  onSteer: (text: string, files: string[]) => void;
   bind: (mode: AskMode | null) => void;
   /** The box held a draft when this docked; it's set aside until you answer. */
   stashed: boolean;
@@ -154,9 +156,9 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
       {d.kind === "question" && d.questions[0]?.computer
         ? <ComputerDock key={key} d={d} onRespond={onRespond} bind={bind} />
         : d.kind === "question"
-        ? <QuestionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} bind={bind} />
+        ? <QuestionDock key={key} d={d} draft={draft} setDraft={setDraft} files={files} onRespond={onRespond} bind={bind} />
         : d.kind === "permission"
-          ? <PermissionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} onSteer={onSteer} bind={bind} />
+          ? <PermissionDock key={key} d={d} draft={draft} setDraft={setDraft} files={files} onRespond={onRespond} onSteer={onSteer} bind={bind} />
           : d.kind === "secret"
             ? <SecretDock key={key} d={d} onRespond={onRespond} bind={bind} />
             : <ProseDock key={key} d={d} onAnswer={onAnswer} bind={bind} />}
@@ -168,10 +170,11 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
 
 /* ── a question (AskUserQuestion): one or several, one pick or many, pictures ── */
 
-function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
+function QuestionDock({ d, draft, setDraft, files, onRespond, bind }: {
   d: Extract<Docked, { kind: "question" }>;
   draft: string;
   setDraft: (text: string) => void;
+  files: string[];
   onRespond: Respond;
   bind: (mode: AskMode | null) => void;
 }) {
@@ -218,6 +221,7 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
     setFailed(false);
     const ok = await onRespond(rid, {
       answers: qs.map((x, qi) => ({ header: x.header, labels: sel[qi] ?? [], notes: (all[qi] ?? "").trim() || undefined })),
+      ...(files.length ? { images: files } : {}),
     });
     if (ok === false) { setSending(false); setFailed(true); return; }
     clearDraft(rid);
@@ -228,7 +232,9 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
 
   // What the box's button says. Strings key the memo; the node follows them.
   const pick = !q.multiSelect && picked[0] ? optionKey(picked[0], q.options.findIndex((o) => o.label === picked[0])) : null;
-  const typed = draft.trim() !== "";
+  // The tray goes with the whole answer, so it counts where Send is: the last page.
+  const shots = last && files.length > 0;
+  const typed = draft.trim() !== "" || shots;
   const verb = task ? taskVerb(q, picked[0]) : null;
   const openN = qs.filter((_, qi) => !answered(qi)).length;
   const state = sending ? "sending"
@@ -256,11 +262,11 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
       placeholder: picked.length ? "Add a note, or just send…" : "Or type your own answer…",
       label,
       hint: n > 0 ? <>{n > 1 ? <><Keys k="Ctrl+1" />{" – "}<Keys k={`Ctrl+${n}`} /></> : <Keys k="Ctrl+1" />} picks {reach}</> : undefined,
-      ready: !sending && (state === "all" || /^(next:|one:|many:|verb:)/.test(state) || (state === "next" && picked.length > 0)),
+      ready: !sending && (state === "all" || /^(next:|one:|many:|verb:)/.test(state) || (state === "next" && picked.length > 0) || shots),
       send: (t: string) => { void sendRef.current(t); },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, picked.length > 0, page]);
+  }, [state, picked.length > 0, page, shots]);
   useEffect(() => { bind(mode); }, [mode, bind]);
   // ⌘1–9 pick on this page and a pick-one question then moves on by itself (the
   // last one waits); ⌘↵ is the box's button: Next, or Send on the last (ui/Keys).
@@ -536,12 +542,13 @@ function KvValue({ v }: { v: string }) {
   return <>{v}</>;
 }
 
-function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
+function PermissionDock({ d, draft, setDraft, files, onRespond, onSteer, bind }: {
   d: Extract<Docked, { kind: "permission" }>;
   draft: string;
   setDraft: (text: string) => void;
+  files: string[];
   onRespond: Respond;
-  onSteer: (text: string) => void;
+  onSteer: (text: string, files: string[]) => void;
   bind: (mode: AskMode | null) => void;
 }) {
   const [sending, setSending] = useState<"allow" | "deny" | AllowScope | null>(null);
@@ -555,23 +562,29 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
     if (sending) return;
     setSending(scope ?? behavior);
     setFailed(false);
-    const res = await onRespond(d.requestId, scope ? { behavior, answers: scopeAnswer(scope) } : note ? { behavior, message: note } : { behavior });
+    // A Deny's note is the box: its text and the files in its tray. An Allow leaves both there.
+    const shots = behavior === "deny" ? files : [];
+    const res = await onRespond(d.requestId, scope ? { behavior, answers: scopeAnswer(scope) }
+      : note || shots.length ? { behavior, ...(note ? { message: note } : {}), ...(shots.length ? { images: shots } : {}) } : { behavior });
     if (res === false) { setSending(null); setFailed(true); return; }
-    if (note) {
+    if (note || shots.length) {
       setDraft("");
       // An older bridge drops the note: it still reaches the turn, right behind the Deny.
-      if (!res.noted) onSteer(note);
+      if (!res.noted) onSteer(note, shots);
     }
   }
   const sendRef = useRef(answer);
   sendRef.current = answer;
-  const typed = draft.trim() !== "";
+  const shots = files.length > 0;
+  const typed = draft.trim() !== "" || shots;
   const mode = useMemo<AskMode>(() => ({
     placeholder: plan ? "Type what to change, and it goes back with Keep planning…" : "Type to deny it and say what to do instead…",
     label: sending === "deny" ? <><Spinner className="h-3 w-3 border" /> Sending…</> : plan ? "Keep planning with note" : "Deny with note",
-    needsText: true,
+    // A screenshot alone is a note too.
+    needsText: !shots,
+    ready: shots,
     send: (t: string) => { void sendRef.current("deny", t); },
-  }), [plan, sending]);
+  }), [plan, sending, shots]);
   useEffect(() => { bind(mode); }, [mode, bind]);
   // ⌘1 allows, ⌘2 denies (with the box's note, as the button does) — ui/Keys.
   const mark = useAskKeys((k) => {

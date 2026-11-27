@@ -102,3 +102,89 @@ def test_an_allow_never_carries_a_note():
     obj, code = _route(object.__new__(Dash), job, {"request_id": "r6", "behavior": "allow", "message": "x"})
     assert code == 200 and obj["noted"] is False
     assert json.loads(job.proc.stdin.data[-1])["response"]["response"]["behavior"] == "allow"
+
+
+# A screenshot pasted in the prompt box goes with the answer it was pasted for
+# (a question's, a Deny's note): the model is told where it is, the transcript keeps it.
+
+def _question(job, rid):
+    runner._handle_control_request(job, {"request_id": rid, "request": {
+        "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": {"questions": [{
+            "question": "Which layout?", "header": "Layout", "multiSelect": False,
+            "options": [{"label": "List", "description": ""}, {"label": "Grid", "description": ""}]}]}}})
+
+
+def test_a_question_answer_points_the_model_at_its_files():
+    job = _job("rc-qimg")
+    _question(job, "q1")
+    assert job.respond("q1", answers=[{"header": "Layout", "labels": ["Grid"]}], images=["/up/a/1-shot.png"])
+    msg = json.loads(job.proc.stdin.data[-1])["response"]["response"]["message"]
+    assert "/up/a/1-shot.png" in msg and "Grid" in msg
+    ev = [e for e in job.events if e["type"] == "question_answered"][-1]
+    assert ev["images"] == ["/up/a/1-shot.png"]
+
+
+def test_a_deny_note_carries_its_files():
+    job = _job("rc-dimg")
+    _ask(job, "r7", "Bash", {"command": "git push origin master"})
+    assert job.respond("r7", behavior="deny", message="push to staging", images=["/up/b/1-shot.png"])
+    msg = json.loads(job.proc.stdin.data[-1])["response"]["response"]["message"]
+    assert "/up/b/1-shot.png" in msg and "push to staging" in msg
+    ev = [e for e in job.events if e["type"] == "permission_resolved"][-1]
+    assert ev["images"] == ["/up/b/1-shot.png"]
+
+
+PNG = "data:image/png;name=shot.png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+def test_the_route_saves_an_answers_screenshot(monkeypatch, tmp_path):
+    from bridge import config
+    from bridge.dashboard.server import Handler as Dash
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path))
+    job = _job("rc-route-img")
+    _question(job, "q2")
+    obj, code = _route(object.__new__(Dash), job, {"request_id": "q2", "images": [PNG],
+                                                   "answers": [{"header": "Layout", "labels": []}]})
+    assert code == 200
+    saved = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert [p.name for p in saved] == ["1-shot.png"]
+    assert str(saved[0]) in json.loads(job.proc.stdin.data[-1])["response"]["response"]["message"]
+
+
+def test_a_screenshot_alone_is_a_deny_note(monkeypatch, tmp_path):
+    from bridge import config
+    from bridge.dashboard.server import Handler as Dash
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path))
+    job = _job("rc-route-deny")
+    _ask(job, "r8", "Bash", {"command": "rm -rf dist"})
+    obj, code = _route(object.__new__(Dash), job, {"request_id": "r8", "behavior": "deny", "images": [PNG]})
+    assert code == 200 and obj["noted"] is True
+
+
+def test_a_late_answer_leaves_no_files(monkeypatch, tmp_path):
+    from bridge import config
+    from bridge.dashboard.server import Handler as Dash
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path))
+    obj, code = _route(object.__new__(Dash), _job("rc-route-gone"), {"request_id": "gone", "images": [PNG]})
+    assert code == 409 and not [p for p in tmp_path.rglob("*") if p.is_file()]
+
+
+def test_an_agents_own_question_card_names_its_files_too():
+    import threading
+    from bridge import gateway
+
+    class J:   # enough of a job for answer_card
+        cwd = None
+        events: list = []
+        add = events.append
+    rid = "gw-rc-img"
+    gateway._cards[rid] = {"done": threading.Event(), "answers": None, "text": None,
+                           "on_answer": lambda answers: "The user answered your card: " + answers[0]["labels"][0]}
+    try:
+        gateway.answer_card(J(), {"request_id": rid, "kind": "question"}, [{"header": "Pick", "labels": ["B"]}],
+                            images=["/up/c/1-shot.png"])
+        text = gateway._cards[rid]["text"]
+        assert "/up/c/1-shot.png" in text and text.endswith("The user answered your card: B")
+        assert J.events[-1]["images"] == ["/up/c/1-shot.png"]
+    finally:
+        gateway._cards.pop(rid, None)

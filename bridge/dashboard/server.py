@@ -2861,9 +2861,21 @@ class Handler(BaseHTTPRequestHandler):
         # A deny can say what to do instead (the prompt box under the card);
         # `noted` tells the client the words reached the model with it.
         note = (body.get("message") or "").strip()[:4000] if behavior == "deny" else ""
-        if not job.respond(rid, behavior=behavior, answers=body.get("answers"), message=note or None):
+        # Files pasted in the box go with the answer, saved the way a steer's are.
+        images = body.get("images") or []
+        if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+            return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
+        shot_id = uuid.uuid4().hex
+        try:
+            paths = _save_images(shot_id, images) if images else []
+        except ValueError as e:
+            runner._cleanup_uploads(shot_id)
+            return self._json({"error": str(e)}, 413)
+        if not job.respond(rid, behavior=behavior, answers=body.get("answers"), message=note or None,
+                           images=paths or None):
+            runner._cleanup_uploads(shot_id)
             return self._json({"error": "no such pending request"}, 409)
-        self._json({**job.snapshot(_cursor(body)), "noted": bool(note) and job.takes_notes})
+        self._json({**job.snapshot(_cursor(body)), "noted": bool(note or paths) and job.takes_notes})
 
     def _interrupt(self, job_id, body):
         job = runner.get_job(job_id)
