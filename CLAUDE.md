@@ -52,8 +52,8 @@ preamble — put it in conftest, above the first bridge import.
 
 ## Conventions
 
-- **`ponytail:` comments are load-bearing.** They mark a deliberate shortcut and
-  name its ceiling. Don't "fix" one without reading what it defers; `/ponytail-debt`
+- **`shortcut:` comments (older ones say `ponytail:`) are load-bearing.** They mark a
+  deliberate shortcut and name its ceiling. Don't "fix" one without reading what it defers; `/ponytail-debt`
   harvests them.
 - **Module docstrings carry the design rationale** — the *why not* as much as the
   what. Read the docstring before changing a module; write one for a new one.

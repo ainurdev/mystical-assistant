@@ -268,8 +268,9 @@ FLOWS = ("design", "build", "refactor", "fix", "ship", "ask")
 # Names from before the six flows: records still carry them, and runs in flight across the update.
 OLD = {"feature": "build", "feature-here": "build-here", "bug": "fix"}
 # Stations that are the ponytail plugin's (PONYTAIL on only): the argument each one's turn gets.
+# Review's names CODING_STANDARDS.md: ponytail-review never opens it, and a fix path runs no code-review.
 _PONY = {"review": "the work on this path: this branch's commits since it left the default branch, "
-                   "and anything uncommitted",
+                   "and anything uncommitted; hold it to the repo's CODING_STANDARDS.md too, if it has one",
          "audit": ""}
 _PONY_RE = re.compile(r"\s*/(?:ponytail:)?ponytail-(review|audit)\b")
 # The SETTINGS switches one session may override: from the prompt box (AUTO NEXT STEPS, AUTO PICKS,
