@@ -2429,14 +2429,52 @@ def _bypass_still_asks(card: dict) -> bool:
                 or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
 
 
+def _own_memory_write(job: Job, req: dict) -> bool:
+    """Is this ask Claude writing its own memory notes? Plain Claude writes them
+    unasked in every mode, but every login past the first keeps projects/ as a
+    symlink into ~/.claude/projects (bridge/accounts.py), and claude 2.1.329's
+    safety check asks about a write that resolves through a symlink in every
+    mode but Bypass (probed: Manual, Accept Edits, Auto). Only a file tool's
+    safetyCheck on a path in this project's memory folder (the checkout's: a
+    worktree shares it, as Claude's own folder naming does) that still lands
+    inside that folder once resolved; anything else keeps its card, an ask rule
+    matched beside the safety check too (2.1.329 still names the check; plain
+    Claude asks). tests/test_real_cli_asks.py re-checks it on the real CLI (opt-in)."""
+    slot = job.account_slot
+    if (req.get("tool_name") not in ("Write", "Edit", "MultiEdit")
+            or req.get("decision_reason_type") != "safetyCheck"
+            or req.get("matched_ask_rule") is not None
+            or not job.cwd or not slot or int(slot) == accounts.DEFAULT_SLOT):
+        return False
+    path = (req.get("input") or {}).get("file_path")
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return False
+    cwd = os.path.realpath(job.cwd)
+    # shortcut: a root past 200 characters (Claude cuts and hashes its folder name) and a cwd
+    # below its repo root aren't matched, so those notes still ask; fold them in if one shows up.
+    for root in {cwd, git.main_checkout(cwd)}:
+        mem = os.path.join(accounts.profile_dir(int(slot)), "projects",
+                           re.sub(r"[^A-Za-z0-9]", "-", root), "memory")   # Claude's folder name for root
+        if (os.path.normpath(path).startswith(mem + os.sep)
+                and os.path.realpath(path).startswith(os.path.realpath(mem) + os.sep)):
+            return True
+    return False
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
-    event (a permission card, or a question card for AskUserQuestion)."""
+    event (a permission card, or a question card for AskUserQuestion), or allow
+    it at once when it is Claude writing its own memory notes (_own_memory_write)."""
     req = obj.get("request", {})
     if req.get("subtype") != "can_use_tool":
         return  # other control subtypes need no response from us
     rid = obj.get("request_id")
     tool = req.get("tool_name", "tool")
+    if _own_memory_write(job, req):
+        job._write_stdin({"type": "control_response", "response": {
+            "subtype": "success", "request_id": rid,
+            "response": {"behavior": "allow", "updatedInput": req.get("input", {})}}})
+        return
     if tool == "AskUserQuestion":
         questions = _adopt_preview_images(job.id, rid, (req.get("input") or {}).get("questions", []))
         job.add_pending({"request_id": rid, "kind": "question",
