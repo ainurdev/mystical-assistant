@@ -120,6 +120,8 @@ export interface SessionBrief {
   // A ticket or merge session names its super session (tickets.owners); that one carries its set's count.
   ticket_of?: string;
   tickets?: { done: number; total: number; status: string; yours?: string[] };
+  // A spin-off names the chat whose card started it and the source keys it came with (bridge/spinoffs.py).
+  spun_from?: { session: string; keys: string[] } | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the
@@ -349,6 +351,8 @@ export type RunEvent =
   | { type: "browser"; url: string; profile: string }
   // offer_review: a review the agent offers, with a button after its final answer (OfferCard).
   | { type: "offer"; kind: string; title: string; detail: string; rounds: number; prompt: string }
+  // spin_off: the card of found work under the answer (SpinOffCard); its rows are read live (main.spinoffs).
+  | { type: "spinoffs"; card: string }
   // run_checks. A count the runner's output didn't show is null. `new`: failures not on
   // the project's known list; `known`: the ones that are. `log` is relative to the project.
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number; passed: number | null;
@@ -371,8 +375,9 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string; scopes?: AllowScope[] }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "computer_state"; state: "driving" | "stopped"; apps?: string[]; by?: string; actions?: number }
-  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // `images`: what went with the answer from the box's tray, as upload-dir paths.
+  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny"; scope?: AllowScope; images?: string[] }
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[]; images?: string[] }
   // The CLI retrying a request (system/api_retry), one per try. `error` is its
   // class: overloaded, rate_limit, server_error, http_529, connection…
   | { type: "retry"; attempt: number; max: number; delay_ms: number; error: string }
@@ -1796,6 +1801,7 @@ export interface RunBody {
   no_path?: boolean; // Esc took the auto-applied skill out of this prompt: the run is told there is no path
   flow?: string; // the flow this prompt starts; the bridge puts its first step in front (bridge/paths.py start_flow)
   by?: "you" | "guess"; // a tap or Tab, or the box's guess
+  bold?: boolean; // BOLD lit with DESIGN: the flow's design step is a Bold run (refused with any other flow)
 }
 
 // /local/run either starts a job or holds the prompt because it looks unrelated to
@@ -2028,6 +2034,18 @@ export interface CouncilSettings {
 /** One row of + Add a reviewer: `status` is why it can't sit now (ok false), else how it
  *  signs in; `signin`, that signing in fixes it. */
 export interface CouncilAccount { key: string; agent: string; label: string; status: string; ok: boolean; signin: boolean }
+
+/** A row of a Spin-off card as it stands (bridge/spinoffs.py view): what the agent offered, where it was
+ *  placed, and what became of it. `project` is a rel, "" when nothing here matched; `clone` a GitHub URL
+ *  offered for Clone & start; `repeat` the Task some work list already has for its source. */
+export interface SpinRow {
+  n: number; title: string; brief: string; flow: "fix" | "build" | "design";
+  sources: { kind: string; ref: string; url: string }[]; after: number; project: string; clone: string;
+  state: "open" | "started" | "waiting" | "parked" | "cloning" | "failed"; session: string; note: string;
+  repeat: { project: string; task: string; session: string; title: string; at: number | null } | null;
+}
+/** `startable`: how many rows the phone's Start all would start (the bridge's one rule for it). */
+export interface SpinCard { id: string; rows: SpinRow[]; startable: number }
 
 export const api = {
   state: () => req<DashState>("/local/state"),
@@ -2285,11 +2303,12 @@ export const api = {
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   // `message`: a Deny's reason, typed in the box under the docked card. `noted`
-  // says the bridge passed it to the model (an older bridge drops it). Every answer
+  // says the bridge passed it to the model (an older bridge drops it). `images`: the
+  // box's tray (data URLs), sent with a question's answer or a Deny. Every answer
   // box lands here, so the bell (Notifications) drops that ask's toast now.
   respond: (
     jobId: string,
-    body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string },
+    body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string; images?: string[] },
   ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }).then((r) => {
     window.dispatchEvent(new CustomEvent("hud:answered", { detail: body.request_id }));
     return r;
@@ -2513,6 +2532,9 @@ export const api = {
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
       method: "POST", body: { instance_id, task_id, note },
     }),
+  /** START or PARK the rows you ticked on a Spin-off card, each with the project and flow you left it on. */
+  spinoffTap: (session_id: string, card: string, how: "start" | "park", rows: { n: number; project?: string; flow?: string }[]) =>
+    req<{ cards: SpinCard[]; here: string }>(`/local/spinoffs/${how}`, { method: "POST", body: { session_id, card, rows } }),
   /** RUN AGAIN on a failed job's bar (bridge rivendell.rerun). A bridge from
    *  before the route 404s, which the bar reads as "restart the bridge". */
   rivendellAgain: (session_id: string) =>

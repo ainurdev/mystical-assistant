@@ -7,6 +7,7 @@ import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
 import { useMultiOn, useTreeRows } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
+import { SpunFrom, type SpunFromInfo } from "../SpinOffCard";
 import { type AccountInfo, type CardAnswer, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief, type SessionStatus } from "../../api";
 import type { Turn } from "../../chat";
 import type { Anchor } from "../../lib/scrollmem";
@@ -193,7 +194,7 @@ function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onL
 function ChannelTuning({ step }: { step?: string | null }) {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease backwards" }}>
-      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s steps(9) infinite" }} />
+      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
       <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s steps(19) infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
     </div>
   );
@@ -219,7 +220,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
         appearance: "none", background: "transparent", cursor: onClick ? "pointer" : "default",
         color: hov ? "var(--txb)" : c,
       }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "caretbreath 2s steps(16) infinite" : "none" }} />
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "twinkle 2s ease-in-out infinite" : "none" }} />
       {live ? (run.port ? `:${run.port}` : "RUNNING") : "EXITED"}
     </button>
   );
@@ -232,8 +233,10 @@ export function Terminal({
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
   run, onOpenRun, onDropFiles, chrome, onSendText, onSteerText, onStopTurn, onArchive, onStartHere, teamMe, paused, onTogglePause,
-  limit, logins, status, savers, gridMain, statusAll, superTitle,
+  limit, logins, status, savers, gridMain, statusAll, superTitle, spunFrom,
 }: {
+  /** The open spin-off's chat, for its way back (SpinOffCard SpunFrom). */
+  spunFrom?: SpunFromInfo | null;
   /** Every session's status: TICKETS colours a super session's ticket rows from it. */
   statusAll?: Map<string, SessionStatus>;
   /** The open ticket session's super session, for its way back. */
@@ -484,7 +487,7 @@ export function Terminal({
   // A helper's or a ticket's way back. DEFAULT keeps it in the nameplate; COMPACT puts it in the
   // header, never in the prompt box (.mystical/design-drafts/ticket-back-in-header, A · OWN PILL):
   // its own pill on the left, or the bar's left end.
-  const crumbs = helperChat || selected?.ticket_of ? (
+  const crumbs = helperChat || selected?.ticket_of || spunFrom ? (
     <>
       {helperChat && (
         <button type="button" className="ma-crumb" title={`Back to ${gridMain?.title || "its chat"}`} onClick={() => openAgentSession(helperChat)}>
@@ -495,6 +498,14 @@ export function Terminal({
         <button type="button" className="ma-crumb" title={`Back to ${superTitle || "the session it is a part of"}`} onClick={() => openAgentSession(selected.ticket_of!)}>
           <span aria-hidden>‹</span> <span className="ma-crumb-t">{superTitle || "its session"}</span>
           {sessionId && <TicketPart superId={selected.ticket_of} sessionId={sessionId} />}
+        </button>
+      )}
+      {spunFrom && (
+        // A spin-off's way back: the chat whose card started it, and that chat's project when it isn't this one's.
+        <button type="button" className="ma-crumb" title={`Back to ${spunFrom.title}, where it was spun off`} onClick={() => openAgentSession(spunFrom.id)}>
+          <span aria-hidden>‹</span> <span className="ma-crumb-t">{spunFrom.title}</span>
+          {spunFrom.project && spunFrom.project !== selected?.project
+            ? <span className="ma-crumb-p">· <ProjectTile project={spunFrom.project} />{projectName(spunFrom.project)}</span> : null}
         </button>
       )}
     </>
@@ -632,6 +643,7 @@ export function Terminal({
             {multiOn ? <SelectionPop root="[data-chat-read]" onQuote={theirs ? undefined : onQuote} canTranslate={aiFeatures.translate !== false} canExplain={aiFeatures.explain !== false} /> : null}
             <div data-chat-read="" style={{ display: "contents" }}>
             <LiveHostCtx.Provider value={live}>
+            <SpunFrom.Provider value={spunFrom ?? null}>
             <Transcript agentSession={!!selected?.agent && selected.agent !== "claude"} turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
@@ -640,6 +652,7 @@ export function Terminal({
               unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
               limit={theirs ? null : limit} logins={logins}
               status={status} onSend={theirs ? undefined : onSendText} savers={savers} />
+            </SpunFrom.Provider>
             </LiveHostCtx.Provider>
             </div>
             </ChatImagesScope>

@@ -4,7 +4,10 @@ import type { Breadcrumb, BreadcrumbHint, BrowserOptions, ErrorEvent, EventHint 
  * and the gate). The page asks GET /local/reports at start; only a team
  * install answers on, and only then does @sentry/browser load, as its own
  * chunk, the way lib/usage.ts loads PostHog after a yes. Everywhere else
- * Sentry's code never reaches the page.
+ * Sentry's code never reaches the page. A page under automation
+ * (navigator.webdriver: headless Chrome, a driven browser, macos/eyes' WebKit
+ * kit) doesn't ask at all: an agent's screenshots are no one's start-ups, and
+ * 60 of a teammate's 76 on 2026-11-26 were theirs.
  *
  * What the SDK may do is catch crashes: window errors, failed promises (its
  * global handlers), React's root callbacks and route errors (main.tsx, through
@@ -111,9 +114,16 @@ export function tagsFor(ua: string, bridgeOs: string): Record<string, string> {
   return { side: "page", os: /\bWindows\b/.test(ua) ? "windows" : bridgeOs, app };
 }
 
-/** before_send: missing chunks dropped, everything else scrubbed and stamped. */
+/** The engine's own notice that a ResizeObserver's callback resized what it observes:
+ *  the sizes it could not deliver go out with the next frame, and nothing broke. It
+ *  reaches window.onerror with no error object, so it is read off the report. */
+function isResizeNotice(e: ErrorEvent): boolean {
+  return /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/.test(e.exception?.values?.at(-1)?.value ?? e.message ?? "");
+}
+
+/** before_send: missing chunks and the resize notice dropped, everything else scrubbed and stamped. */
 export function scrubReport(event: ErrorEvent, hint: EventHint | undefined, held: string[]): ErrorEvent | null {
-  if (isMissingChunk(hint?.originalException)) return null;
+  if (isMissingChunk(hint?.originalException) || isResizeNotice(event)) return null;
   // the crumbs were cut by keepBreadcrumb as they were left; any other kind goes here
   const breadcrumbs = event.breadcrumbs?.filter((b) => KEPT.has(b.category ?? ""));
   return scrub({ ...event, breadcrumbs }, held) as ErrorEvent;
@@ -166,6 +176,7 @@ export function options(s: ReportsStatus, token: string, ua: string, origin: str
 /** At start: ask the bridge, and load Sentry only on a team install. `settle`
  *  is lib/crash.ts's, handed in so this module stays importable under node. */
 export async function startReports(settle: (sink: ((err: unknown) => void) | null) => void): Promise<void> {
+  if (navigator.webdriver) return settle(null);   // an agent's look at the page (a screenshot kit, a driven check)
   let s: ReportsStatus = { on: false };
   try {
     const res = await fetch("/local/reports");

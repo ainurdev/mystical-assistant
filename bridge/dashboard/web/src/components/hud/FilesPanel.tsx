@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { code, reread } from "../../lib/queries";
-import { AtSign, ChevronRight, Copy, Diff, Folder, FolderOpen, FoldVertical, RotateCw, Sparkle, UnfoldVertical } from "lucide-react";
+import { AtSign, ChevronRight, Copy, Diff, Folder, FolderOpen, FoldVertical, RotateCw, Sparkle } from "lucide-react";
 import { api, type GitFile } from "../../api";
 import { buildRows, dirsOf } from "../../lib/filetree";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
@@ -29,7 +29,11 @@ import { revealItems } from "../../lib/revealfile";
    What the session wrote wears a ✦ (lib/sessionedits), and a closed folder
    counts both kinds of mark inside it: ✦ edited this session, ● uncommitted.
    The file a running turn wrote last pulses. No section of its own — the
-   marks live in the tree (.mystical/design-drafts/files-tab, option C). */
+   marks live in the tree (.mystical/design-drafts/files-tab, option C).
+
+   No expand-all, here or in the EDITOR explorer: the tree lists git-ignored
+   files too, and every folder of this repo open is ~90k rows. Collapse-all
+   stays, dimmed while no folder is open. */
 
 // ⌘P asks for the find field from anywhere, sometimes before this panel has
 // mounted (the rail was on another tab): the request waits here until it has.
@@ -154,7 +158,8 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   const live = editing && mine.has(editing) ? editing : null;
   const liveDirs = useMemo(() => countAbove(live ? [live] : []), [live]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
-  const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
+  // Checked against the folders that exist now: `collapsed` keeps deleted ones, so its size can't tell.
+  const allCollapsed = useMemo(() => dirs.every((d) => collapsed.has(d)), [dirs, collapsed]);
 
   const toggleDir = (p: string) =>
     setCollapsed((c) => { const n = new Set(c); if (n.has(p)) n.delete(p); else n.add(p); return n; });
@@ -226,10 +231,9 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   // placeholder on and off inside one frame budget.
   const skel = useLoadingPhase(!treeReady);
 
-  const tools: { k: string; g: React.ReactNode; t: string; on: () => void }[] = [
+  const tools: { k: string; g: React.ReactNode; t: string; on: () => void; off?: boolean }[] = [
     { k: "chg", g: <Diff size={13} />, t: "open the folders with changes", on: revealChanges },
-    { k: "col", g: allCollapsed ? <UnfoldVertical size={13} /> : <FoldVertical size={13} />, t: allCollapsed ? "expand all" : "collapse all",
-      on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
+    { k: "col", g: <FoldVertical size={13} />, t: "collapse all", off: allCollapsed, on: () => setCollapsed(new Set(dirs)) },
     { k: "ref", g: <RotateCw size={13} />, t: "refresh", on: () => void loadTree() },
   ];
 
@@ -302,7 +306,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
       <TabKick name="FILES"
         chip={branch ? <span className="gp-branch" title={branch}><i>⎇</i><span>{branch}</span></span> : undefined}
         tools={tools.map((t) => (
-          <button key={t.k} className="gp-ib" onClick={t.on} title={t.t} aria-label={t.t}>{t.g}</button>
+          <button key={t.k} className="gp-ib" onClick={t.on} disabled={t.off} title={t.t} aria-label={t.t}>{t.g}</button>
         ))} />
       {project && turns && <WritingCard turns={turns} root={cwd} onOpen={(p, line) => onOpenFile(p, false, line)} />}
 

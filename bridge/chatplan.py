@@ -181,18 +181,23 @@ def _write(root: str, chat: str, rows: list, source: str, keep_rich: bool = Fals
         if keep_rich and data["source"] == "tool":
             return None
         old, steps, taken = data["steps"], [], set()
+        given = {_text(r.get("id"), MAX_TITLE) for r in rows if isinstance(r, dict)}
         for row in rows[:MAX_STEPS]:
             row = row if isinstance(row, dict) else {"title": row}
             title = " ".join(_text(row.get("title") or row.get("content"), MAX_TITLE).split())
             if not title:
                 continue
             prev = _match(old, row, taken)
-            step = {"id": prev["id"] if prev else f"s{data['next']}", "title": title, "status": _status(row.get("status")),
+            sid = prev["id"] if prev else _text(row.get("id"), MAX_TITLE)
+            if not sid or sid in taken:
+                while f"s{data['next']}" in taken | given:  # a made-up id never takes one an agent gave
+                    data["next"] += 1
+                sid = f"s{data['next']}"
+                data["next"] += 1
+            step = {"id": sid, "title": title, "status": _status(row.get("status")),
                     "detail": _text(row.get("detail"), MAX_DETAIL) if "detail" in row else (prev or {}).get("detail", ""),
                     "note": _text(row.get("note"), MAX_NOTE) if "note" in row else (prev or {}).get("note", ""),
                     "substeps": _substeps(row.get("substeps")) if "substeps" in row else (prev or {}).get("substeps", [])}
-            if not prev:
-                data["next"] += 1
             taken.add(step["id"])
             _times(step, prev, now)
             steps.append(step)

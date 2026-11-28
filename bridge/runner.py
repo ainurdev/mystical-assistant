@@ -246,6 +246,9 @@ _EXPERIMENTAL_NOTE = (
     "they ask, filling it from whatever they name. Only they start a task: its Start in the Work panel opens the task's own session. "
     "For work in several steps, keep your plan with chat_plan: set it before you start and mark steps as you go. The user sees it "
     "beside the work list and may change it, which reaches you as a message.\n\n"
+    "When your work turns up work this chat isn't doing, like issues for other projects or a list of separate items, offer "
+    "it with spin_off from the mystical MCP server as your last step: one row per item, or per cause when several share "
+    "one. The user starts each in its own session from the card. Lead your reply with one line and don't list them again.\n\n"
     "If you think a feature is complex enough to warrant a review loop, ask the user with offer_review from the mystical MCP "
     "server as your last step: they get a Start review button after your final answer. If it isn't, or it's reasonably "
     "tested and just needs a check, go ahead normally.")
@@ -703,6 +706,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                     disabled_tools = []
             if paths.pack_for(claude_session_id):   # the pack's gate: on, and an attended origin
                 cmd += ["--plugin-dir", paths.PACK_DIR]
+            if paths.design_pack_for(claude_session_id):   # DESIGN PACK's gate, beside Matt's or alone
+                cmd += ["--plugin-dir", paths.DESIGN_DIR]
     if model:
         cmd += ["--model", model]
     if effort:
@@ -1116,8 +1121,12 @@ class Job:
     takes_notes = True
 
     def respond(self, request_id: str, *, behavior: str = "allow",
-                message: str | None = None, answers: list | None = None) -> bool:
+                message: str | None = None, answers: list | None = None,
+                images: list | None = None) -> bool:
         """Answer a pending can_use_tool request. Returns False if unknown.
+
+        `images`: files pasted with a question's answer or a Deny's note (upload-dir
+        paths), named to the model with it and kept on the answer's event.
 
         A background command's card answers through here too, as `bg:<task id>`
         (the route and both clients already carry a respond): deny stops the
@@ -1134,13 +1143,15 @@ class Job:
 
         if entry.get("gateway"):
             from bridge import gateway          # a Mystical tool's card: nothing of Claude's waits on it
-            gateway.answer_card(self, entry, answers, behavior, message)
+            gateway.answer_card(self, entry, answers, behavior, message, images)
             return True
+        shots = {"images": list(images)} if images else {}
         if entry["kind"] == "question":
             resp = {"behavior": "deny",
-                    "message": _format_answers(entry.get("questions", []), answers or [])}
+                    "message": _answer_with(_format_answers(entry.get("questions", []), answers or []),
+                                            images, self.cwd)}
             self.add({"type": "question_answered", "request_id": request_id,
-                      "answers": answers or []})
+                      "answers": answers or [], **shots})
             _record_task_answer(self.work_cwd or self.cwd, entry.get("questions", []), answers or [])
         elif behavior == "allow":
             resp = {"behavior": "allow", "updatedInput": entry.get("input", {})}
@@ -1148,9 +1159,9 @@ class Job:
                       "behavior": "allow"})
         else:
             resp = {"behavior": "deny",
-                    "message": message or "The user declined this action."}
+                    "message": _answer_with(message or "The user declined this action.", images, self.cwd)}
             self.add({"type": "permission_resolved", "request_id": request_id,
-                      "behavior": "deny"})
+                      "behavior": "deny", **shots})
 
         self._write_stdin({"type": "control_response", "response": {
             "subtype": "success", "request_id": request_id, "response": resp}})
@@ -1356,13 +1367,13 @@ class AcpJob(Job):
     # ACP's permission answer is allow/deny only: a deny's note can't ride it.
     takes_notes = False
 
-    def respond(self, request_id, *, behavior="allow", message=None, answers=None):
+    def respond(self, request_id, *, behavior="allow", message=None, answers=None, images=None):
         card = next((p for p in list(self.pending) if p.get("request_id") == request_id), None)
         if card is not None and card.get("gateway"):
             from bridge import gateway
             # Answered before the card goes: the paused turn watches for it to go,
             # and must find the answer waiting.
-            gateway.answer_card(self, card, answers, behavior, message)
+            gateway.answer_card(self, card, answers, behavior, message, images)
             with self._lock:
                 self.pending = [p for p in self.pending if p.get("request_id") != request_id]
             return True
@@ -1413,6 +1424,16 @@ def stop_children() -> None:
         t.join(max(0.0, end - time.monotonic()))
 
 
+_FILES_NOTE = "The user attached file(s); open them before responding: "
+
+
+def _answer_with(text: str, paths: "list | None", cwd: "str | None") -> str:
+    """An answer the model reads as a tool result (a question's, a Deny's note), with
+    what was pasted alongside it: the attached files, and in-the-chat images by their
+    real paths. Not _with_images: a note that starts with /word is no command."""
+    return chat_images.note(text, cwd) + (f"{_FILES_NOTE}{', '.join(paths)}\n\n{text}" if paths else text)
+
+
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     """Point the model at what it was sent. Attachments stay on disk (the upload
     dir) rather than going inline: a screenshot is a megabyte of base64, and the
@@ -1425,7 +1446,7 @@ def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     start of the prompt, so the note goes after that one token, not before it."""
     if not image_paths:
         return prompt
-    note = "The user attached file(s); open them before responding: " + ", ".join(image_paths)
+    note = _FILES_NOTE + ", ".join(image_paths)
     if not prompt.startswith("/"):
         return note + "\n\n" + prompt
     cmd, *args = prompt.split(None, 1)
@@ -2424,14 +2445,52 @@ def _bypass_still_asks(card: dict) -> bool:
                 or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
 
 
+def _own_memory_write(job: Job, req: dict) -> bool:
+    """Is this ask Claude writing its own memory notes? Plain Claude writes them
+    unasked in every mode, but every login past the first keeps projects/ as a
+    symlink into ~/.claude/projects (bridge/accounts.py), and claude 2.1.329's
+    safety check asks about a write that resolves through a symlink in every
+    mode but Bypass (probed: Manual, Accept Edits, Auto). Only a file tool's
+    safetyCheck on a path in this project's memory folder (the checkout's: a
+    worktree shares it, as Claude's own folder naming does) that still lands
+    inside that folder once resolved; anything else keeps its card, an ask rule
+    matched beside the safety check too (2.1.329 still names the check; plain
+    Claude asks). tests/test_real_cli_asks.py re-checks it on the real CLI (opt-in)."""
+    slot = job.account_slot
+    if (req.get("tool_name") not in ("Write", "Edit", "MultiEdit")
+            or req.get("decision_reason_type") != "safetyCheck"
+            or req.get("matched_ask_rule") is not None
+            or not job.cwd or not slot or int(slot) == accounts.DEFAULT_SLOT):
+        return False
+    path = (req.get("input") or {}).get("file_path")
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return False
+    cwd = os.path.realpath(job.cwd)
+    # shortcut: a root past 200 characters (Claude cuts and hashes its folder name) and a cwd
+    # below its repo root aren't matched, so those notes still ask; fold them in if one shows up.
+    for root in {cwd, git.main_checkout(cwd)}:
+        mem = os.path.join(accounts.profile_dir(int(slot)), "projects",
+                           re.sub(r"[^A-Za-z0-9]", "-", root), "memory")   # Claude's folder name for root
+        if (os.path.normpath(path).startswith(mem + os.sep)
+                and os.path.realpath(path).startswith(os.path.realpath(mem) + os.sep)):
+            return True
+    return False
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
-    event (a permission card, or a question card for AskUserQuestion)."""
+    event (a permission card, or a question card for AskUserQuestion), or allow
+    it at once when it is Claude writing its own memory notes (_own_memory_write)."""
     req = obj.get("request", {})
     if req.get("subtype") != "can_use_tool":
         return  # other control subtypes need no response from us
     rid = obj.get("request_id")
     tool = req.get("tool_name", "tool")
+    if _own_memory_write(job, req):
+        job._write_stdin({"type": "control_response", "response": {
+            "subtype": "success", "request_id": rid,
+            "response": {"behavior": "allow", "updatedInput": req.get("input", {})}}})
+        return
     if tool == "AskUserQuestion":
         questions = _adopt_preview_images(job.id, rid, (req.get("input") or {}).get("questions", []))
         job.add_pending({"request_id": rid, "kind": "question",
@@ -3767,7 +3826,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         hang_timeout: float | None = None,
                         skip_pack: bool = False,
                         native_resume: bool = False,
-                        flow: str | None = None, flow_by: str | None = None,
+                        flow: str | None = None, flow_by: str | None = None, bold: bool = False,
                         sent_by: str | None = None, sent_why: str | None = None,
                         style: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
@@ -3881,7 +3940,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.hang_timeout = hang_timeout
         _register(job)
         if flow and not refusal and not is_acp:   # the box's flow starts with this turn, queued or not
-            prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt)
+            prompt = paths.start_flow(session["id"], flow, flow_by or "you", prompt, bold)
             # BUILD with its grill off moved the session onto a branch of its own: this turn runs there.
             moved = (store.get_session(session["id"]) or {}).get("cwd")
             if moved and moved != cwd and os.path.isdir(moved):
@@ -3893,6 +3952,15 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             note, extra = team.seed(session["id"], job.id)
             if note:
                 run_prompt, image_paths = f"{prompt}\n\n{note}", list(image_paths) + extra
+        if not refusal:
+            try:
+                from bridge import spinoffs   # what you spun off from here since: its agent leaves it alone
+                told = spinoffs.pop_line(session["id"])
+            except Exception as e:  # noqa: BLE001 — never holds a turn up
+                print(f"[runner] spin-offs line: {e!r}", file=sys.stderr)
+                told = ""
+            if told:
+                run_prompt = f"{run_prompt}\n\n{told}"
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd),

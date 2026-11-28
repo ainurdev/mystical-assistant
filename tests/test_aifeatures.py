@@ -74,7 +74,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
     here is spend they can't see or stop. If a new one is added, register it —
     don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
-                         "learn", "dream", "ponytail", "graph",
+                         "learn", "dream", "ponytail", "designpack", "graph",
                          "rvtrack", "changelog", "logostyle",
                          "router", "autopick", "nextstep",
                          "smartzone", "grillcards", "ticketruns", "ticketapprove", "mergereview",
@@ -104,7 +104,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
     shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
                "PREVIEW_DETECT_AI": "0", "TRANSLATE_ENABLE": "1", "EXPLAIN_ENABLE": "1", "REFINE_ENABLE": "1", "DESIGN_CRITIC_ENABLE": "1", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
                "DREAM_ENABLE": "0",
-               "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1",
+               "PONYTAIL_ENABLE": "1", "DESIGN_PACK_ENABLE": "0", "GRAPH_ENABLE": "1",
                "RIVENDELL_TRACK": "1", "CHANGELOG_ENABLE": "1",
                "LOGO_STYLE_AI": "1",
                "ROUTER_ENABLE": "0", "ROUTER_AUTO": "1",

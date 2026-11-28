@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { ArrowRight, Bot, ChevronDown, ChevronRight, Clock, Cpu, Flag, Leaf, ListTodo, MessageSquare, Plug, RotateCw, Send, Ticket, Webhook, Zap, type LucideIcon } from "lucide-react";
+import { useContext, useState, type ReactNode } from "react";
+import { ArrowRight, Bot, ChevronDown, ChevronRight, Clock, Cpu, Flag, Leaf, ListTodo, MessageSquare, Plug, RotateCw, Send, Split, Ticket, Webhook, Zap, type LucideIcon } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { EFFORTS, PERMS } from "./Composer";
 import type { SlashCommand } from "../api";
@@ -11,10 +11,15 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { saverTag } from "../lib/savers";
 import { parseCouncilPrompt, sevCount } from "../lib/council";
 import type { MysticalNote as Note } from "../lib/sender";
+import { SpunFrom } from "./SpinOffCard";
+import { ProjectTile } from "./ui/ProjectTile";
+import { openSession } from "../lib/devicerun";
+import { projectName } from "../lib/surfaces";
+import { shortKeys } from "../lib/spinoffs";
 
 const KIND_ICON: Record<string, LucideIcon> = {
   mcp: Plug, nudge: Flag, wait: Clock, resume: RotateCw, automation: Zap, chat: MessageSquare,
-  step: ArrowRight, device: Cpu, ticket: Ticket, work: ListTodo, job: Leaf, api: Webhook,
+  step: ArrowRight, device: Cpu, ticket: Ticket, work: ListTodo, job: Leaf, api: Webhook, spinoff: Split,
 };
 
 /** A prompt the bridge sent, not you (lib/sender): a diamond node on the spine,
@@ -25,6 +30,8 @@ export function MysticalNote({ note, text, at }: { note: Note; text: string; at?
   const h12 = useClock12();
   const [open, setOpen] = useState(false);
   const Icon = KIND_ICON[note.kind] ?? Bot;
+  // A spin-off's first line says where it came from, the way back as a link (bridge/spinoffs.py).
+  const from = useContext(SpunFrom);
   return (
     <div className="pmy" data-open={open || undefined}>
       <svg className="pmy-node" viewBox="0 0 24 24" aria-hidden>
@@ -37,6 +44,14 @@ export function MysticalNote({ note, text, at }: { note: Note; text: string; at?
         {at != null && <span className="pmy-t">{hhmm(at, h12)}</span>}
         {open ? <ChevronDown size={13} aria-hidden className="pmy-chev" /> : <ChevronRight size={13} aria-hidden className="pmy-chev" />}
       </button>
+      {note.kind === "spinoff" && from ? (
+        <div className="pmy-from">
+          <Split size={13} aria-hidden />from
+          <button type="button" className="pmy-link" onClick={() => openSession(from.id)}>{from.title}</button>
+          {from.project ? <>in <ProjectTile project={from.project} />{projectName(from.project)}</> : null}
+          {from.keys.length ? <span>· {shortKeys(from.keys).join(" · ")}</span> : null}
+        </div>
+      ) : null}
       {open && (
         <div className="pmy-sent">
           <div className="pmy-q">{text}</div>

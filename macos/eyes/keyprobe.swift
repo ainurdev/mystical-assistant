@@ -55,9 +55,11 @@ addEventListener("keydown", (e) => {
   __keys.push(r); setTimeout(() => { r.prevented = e.defaultPrevented; });
 }, true);
 """
+// A driven page says so, as headless Chrome does: the dashboard starts no reports for one (lib/reports.ts).
+let driven = "Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => true })"
 let cfg = WKWebViewConfiguration()
 cfg.websiteDataStore = .nonPersistent()   // never the user's own WebKit data
-for src in [ProcessInfo.processInfo.environment["PRELOAD"] ?? "", spy] where !src.isEmpty {
+for src in [driven, ProcessInfo.processInfo.environment["PRELOAD"] ?? "", spy] where !src.isEmpty {
     cfg.userContentController.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 }
 let frame = NSRect(x: 0, y: 0, width: 1425, height: 743)

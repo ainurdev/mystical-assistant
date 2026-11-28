@@ -4,6 +4,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -710,6 +712,93 @@ def test_branch_status_lists_a_detached_checkout_by_its_commit():
     assert det[0]["head"] and det[0]["main"] is True and det[0]["behind"] == 1
     assert det[0]["subject"] == "init" and det[0]["at"] > 0
     assert [r["name"] for r in rows if r["name"]] == [base]
+
+
+def test_branch_status_asks_git_once_about_what_two_commits_have_between_them(monkeypatch):
+    # The BRANCHES tab polls every 30 s. A reflog, a rev-list and a dry-run merge per
+    # branch, with nothing moved, were 76 git runs and 0.76 s for 24 branches (Sentry MYSTICAL-T).
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    wt = tempfile.mkdtemp()
+    os.rmdir(wt)
+    _run(d, "worktree", "add", "-q", "-b", "feat", wt)   # "Created from HEAD", as the dashboard's are
+    _write(wt, "b.txt", "b")
+    _run(wt, "add", "-A")
+    _run(wt, "commit", "-qm", "feat work")
+    _commit_on_branch(d, "other")
+    _run(d, "checkout", "-q", base)
+    _write(d, "m.txt", "m")                       # the base moves on: both are ahead and behind
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base moves on")
+    first = g.branch_status(d)
+    feat = {r["name"]: r for r in first["branches"]}["feat"]
+    assert (feat["target"], feat["ahead"], feat["behind"], feat["clash"], feat["dirty"]) == (base, 1, 1, [], 0)
+
+    ran, real = [], g._run
+    monkeypatch.setattr(g, "_run", lambda cwd, *a, **k: (ran.append(a[2] if a[0] == "-c" else a[0]),
+                                                         real(cwd, *a, **k))[1])
+    assert g.branch_status(d) == first
+    assert not {"reflog", "rev-list", "merge-tree", "merge-base"} & set(ran)
+
+    def row(targets=None):
+        return {r["name"]: r for r in g.branch_status(d, targets)["branches"]}["feat"]
+    _write(wt, "new.txt", "x")                    # an uncommitted file moves no ref, and still shows
+    assert row()["dirty"] == 1
+    assert row({"feat": ""})["target"] == "" and row()["target"] == base   # a pick is read at once
+    ran.clear()
+    _run(wt, "add", "-A")
+    _run(wt, "commit", "-qm", "more")             # feat moved: git is asked about feat, not about other
+    assert (row()["ahead"], row()["worked"]) == (2, True)
+    assert (ran.count("rev-list"), ran.count("merge-tree"), ran.count("reflog")) == (1, 1, 0)
+
+
+def test_branch_status_asks_git_about_the_branches_side_by_side(monkeypatch):
+    # A base that moved leaves every branch to ask again, against its new tip. One at a
+    # time that was 60 git runs and 461 ms for 24 branches: as slow as before the answers
+    # were kept, and past the limit on a slower machine (review of MYSTICAL-T's fix).
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    for name in ("one", "two", "three"):
+        _run(d, "checkout", "-q", "-b", name, base)
+        _write(d, f"{name}.txt", name)
+        _run(d, "add", "-A")
+        _run(d, "commit", "-qm", f"{name} work")
+    _run(d, "checkout", "-q", base)
+    _write(d, "m.txt", "m")                       # the base moves on: all three are ahead and behind
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base moves on")
+    first = g.branch_status(d)
+    assert [(r["ahead"], r["behind"], r["clash"]) for r in first["branches"] if r["name"] != base] == [(1, 1, [])] * 3
+
+    asking, most, lock, real = [0], [0], threading.Lock(), g._run
+
+    def slow(cwd, *a, **k):                       # what a branch asks of git takes a while
+        if a[0] not in ("rev-list", "merge-tree"):
+            return real(cwd, *a, **k)
+        with lock:
+            asking[0] += 1
+            most[0] = max(most[0], asking[0])
+        try:
+            time.sleep(0.05)
+            return real(cwd, *a, **k)
+        finally:
+            with lock:
+                asking[0] -= 1
+
+    monkeypatch.setattr(g, "_run", slow)
+    g._answers.clear()                            # as after a restart, or a base that moved
+    assert g.branch_status(d) == first            # the same rows in the same order
+    assert most[0] > 1
+
+    monkeypatch.setattr(g, "DRY_RUNS", 2)         # the dry runs are still the newest few with work to land
+    g._answers.clear()
+    assert [r["clash"] for r in g.branch_status(d)["branches"] if r["name"] != base] == [[], [], None]
 
 
 def test_current_branch_detached_names_something_useful():

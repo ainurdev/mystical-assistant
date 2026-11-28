@@ -2,7 +2,7 @@
 // The slow-spot rules (lib/slow.ts): the limits, and the caps (lib/reports.ts).
 import assert from "node:assert/strict";
 import type { ErrorEvent } from "@sentry/browser";
-import { frameSpot, inputSpot, startupSpot } from "./slow.ts";
+import { frameSpot, inputSpot, startupSpot, watchSlowSpots, type Spot } from "./slow.ts";
 import { options } from "./reports.ts";
 
 // input: over 100 ms to the next paint, a click or a key only, named by its control and never its text
@@ -62,5 +62,38 @@ try {
   now += 3_600_000;
   assert.ok(send("one too many"));
 } finally { Date.now = realNow; }
+
+// The frame watch after an input (an engine with no long frames: WebKit) ends when the window
+// loses focus. A Linux window switched away by a key stopped drawing with no visibilitychange,
+// and the 3 to 48 s until it was back came in as one frame (Sentry MYSTICAL-7).
+{
+  const on: Record<string, ((e: unknown) => void)[]> = {};
+  let frames: ((now: number) => void)[] = [];
+  let clock = 1000;
+  const realPerfNow = performance.now;
+  performance.now = () => clock;
+  Object.assign(globalThis, {
+    document: { hidden: false },
+    addEventListener: (type: string, fn: (e: unknown) => void) => { (on[type] ??= []).push(fn); },
+    requestAnimationFrame: (fn: (now: number) => void) => frames.push(fn),
+  });
+  try {
+    const sent: Spot[] = [];
+    watchSlowSpots((s) => sent.push(s));
+    const fire = (type: string) => on[type]?.forEach((fn) => fn({ type, timeStamp: clock, target: null }));
+    const draw = () => { const due = frames; frames = []; due.forEach((fn) => fn(clock)); };
+    const frameCount = () => sent.filter((s) => s.name === "frame").length;
+    fire("keydown"); draw();
+    clock += 200; draw();                      // in front, a 200 ms gap is a frame
+    assert.equal(frameCount(), 1);
+    assert.equal(sent[0].context.after, "keydown on unknown");
+    fire("keydown"); draw();
+    fire("blur"); clock += 48_000; draw();     // switched away: 48 s with nothing drawn is none
+    assert.equal(frameCount(), 1);
+    fire("keydown"); draw();
+    clock += 200; draw();                      // back in front, the watch works as before
+    assert.equal(frameCount(), 2);
+  } finally { performance.now = realPerfNow; }
+}
 
 console.log("slow.check: ok");

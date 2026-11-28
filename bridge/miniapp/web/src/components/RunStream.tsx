@@ -687,7 +687,7 @@ const MULTI_ROW = new Set(["switch", "delegation", "merge", "plan"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
-const EVIDENCE_ROW = new Set(["figure", "data", "design", "browser", "offer", "checks", "report", "secret_request", "rule"]);
+const EVIDENCE_ROW = new Set(["figure", "data", "design", "browser", "offer", "spinoffs", "checks", "report", "secret_request", "rule"]);
 const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
 
 /** Tool kinds that draw a block of their own, so they never fold into a
@@ -1468,6 +1468,7 @@ export const RunStream = memo(function RunStream({
         return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
       }
       case "offer":
+      case "spinoffs":
         return null;       // drawn after the answer, once the turn is over
       case "data":
         return multiOn && lastResult < 0 ? <DataView key={i} ev={event} /> : null;

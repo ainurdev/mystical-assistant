@@ -63,7 +63,15 @@ StepDone gets a carry-on, at most NUDGES per run, before the slot is left waitin
 The merge session gets the same, and once the carry-ons are spent a `tickets` notice
 on that session says it waits on you. Both prompts say to test in the foreground:
 with that line no ticket stalled (7 of 7, 2026-11-11), without it the same set's
-merge did, and stayed `merging` until someone asked.
+merge did, and stayed `merging` until someone asked. They also send every full suite
+through bin/suite-slot, one at a time on the machine, and a ticket runs only the tests
+it touches until its one full run at the end. The implement skill a ticket starts
+(bridge/skills/mattpocock/skills/engineering/implement/SKILL.md) already asks for that
+one run, yet over 109 tickets (2026-11-27) a ticket ran
+the full suite a median 4 times, and runs that overlapped two or more other tickets'
+tests ran 2-2.5x slower and failed 53% of the time, against 24% alone. That run gets the
+Bash tool's longest timeout, as the wait counts toward it and the CLI moves a call past
+its timeout to the background (2 of the 17 moved in tickets were suites at the 2 min default).
 
 A ticket's `Repos:` line names the repos it builds in (default: the set's own); BUILD
 makes its worktree in each, the first holding its session, and makes none at home when
@@ -373,6 +381,7 @@ def summary_for(session_id: str):
 
 # The bridge's own copy: a ticket's worktree can predate it, or be another repo's.
 _STATUS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "ticket-status")
+_SLOT = os.path.join(os.path.dirname(_STATUS), "suite-slot")
 _build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
 
 
@@ -522,9 +531,12 @@ def _refresh(folder: str, st: dict) -> None:
 
 def _branch(st: dict, sess: dict, flow_session_id: str, since) -> None:
     """The feature branch, the one the flow's agent named else feat/<the ticket folder>,
-    and what the flow wrote so far carried onto it."""
+    and what the flow wrote so far carried onto it. A designed flow's drafts (DESIGN PACK
+    gate open) are copied there too, for the merge, and kept for each ticket's checkout."""
     prefix, name = flowbranch.branch_name(st.get("wanted_branch")) or ("feat", st["slug"])
+    st["drafts"] = flowbranch.drafts(flow_session_id, since) if paths.design_pack(flow_session_id) else []
     st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, name, prefix)
+    flowbranch.copy_drafts(st["checkout"], st["feature_checkout"], st["drafts"])
     flowbranch.carry_and_commit(st["checkout"], st["feature_checkout"],
                                 flowbranch.flow_files(flow_session_id, since), name,
                                 ours=flowbranch.added_lines(flow_session_id, since))
@@ -587,20 +599,34 @@ _REPORT = (" End your final reply with two short lists, headed exactly \"Decisio
            "saying \"none\" if so.")
 
 
+_WORK = "While you work, run only the tests for the code you touch. "
+_ONCE = (f"run the project's full suite once, through {_SLOT} (in front of its command, as `{_SLOT} npm test`) and "
+         "with the longest timeout the Bash tool allows: it waits while another session's suite runs, so suites "
+         "don't slow down or fail each other, and the wait counts toward the timeout. After a fix, rerun only what "
+         "failed, then call StepDone.")
+
+
 def _done_line() -> str:
-    """How a ticket ends. With PONYTAIL on it reviews its own diff first: a ticket path
-    has no REVIEW station, since MERGE is what joins the branches (bridge/paths.py)."""
+    """How a ticket ends: its one full suite last (module docstring). With PONYTAIL on it
+    reviews its own diff before that run: a ticket path has no REVIEW station, since MERGE
+    is what joins the branches (bridge/paths.py)."""
     if aifeatures.enabled("ponytail"):
-        return ("When it is done and the tests pass, review your branch's diff with the ponytail-review skill, "
-                "fix what it finds and commit, then call StepDone." + _REPORT)
-    return "When it is done and the tests pass, call StepDone." + _REPORT
+        return (_WORK + "When it is done, review your branch's diff with the ponytail-review skill, fix what it "
+                "finds and commit. Then " + _ONCE + _REPORT)
+    return _WORK + "When it is done, " + _ONCE + _REPORT
+
+
+def _drafts_line(st: dict) -> str:
+    """A designed set's tickets build to its approved design."""
+    d = st.get("drafts")
+    return f"The approved design is in {', '.join(d)}: build to it. " if d else ""
 
 
 def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
     t = st["tickets"][n]
     return (f"/mattpocock-skills:implement {t['path']}\n\nThis is ticket #{n} of {st['slug']}. "
             f"Work on branch {t['branch']} in this checkout and commit there. "
-            + _done_line() + _elsewhere(st, n)
+            + _drafts_line(st) + _done_line() + _elsewhere(st, n)
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
 
 
@@ -714,6 +740,7 @@ def _worktree(st: dict, t: dict, repo: str, home: str) -> tuple:
     if not ok:
         raise RuntimeError(f"worktree failed in {repo}: {out}")
     git.copy_env(repo, wt)
+    flowbranch.copy_drafts(st["checkout"], wt, st.get("drafts") or [])
     for i, b in enumerate(blockers[1:] if new else []):
         if git._run(wt, "merge", "--no-ff", "--no-edit", b, timeout=60)[0] != 0:  # noqa: SLF001
             return wt, blockers[1 + i:]   # left mid-merge; the rest come after it
@@ -798,7 +825,11 @@ def _merge_prompt(st: dict, tks: dict) -> str:
                       f"in a worktree on {st['feature_branch']} (start it from that repo's up-to-date main if it "
                       "doesn't exist), and run that repo's tests."
                       for repo, bs in _other_branches(st).items())
-            + " Then call StepDone." + _FOREGROUND)
+            + (f" Once the merge is clean and the tests pass, run /mystical-design:polish (the skill "
+               f"mystical-design:polish) against the approved design in {', '.join(st['drafts'])}."
+               if st.get("drafts") else "")
+            + " Then call StepDone." + _FOREGROUND + f" Run each full suite through {_SLOT}, in front of its command, "
+                                         "with the longest timeout the Bash tool allows.")
 
 
 def _home_branches(st: dict, tks: dict) -> list:

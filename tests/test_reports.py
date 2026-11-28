@@ -249,6 +249,68 @@ def test_the_same_slow_spot_twice_in_ten_minutes_sends_one(receiver):
     assert len(_slow_spots(receiver)) == 1
 
 
+def test_a_wait_outside_the_bridge_leaves_the_requests_time(receiver):
+    # GitHub through gh, Rivendell, the weather service, a login's meter through the CLI:
+    # about 110 of the reports of 2026-11-25 and 26 were such reads, as slow as the network.
+    out = _start(["GET /local/waits/7f3a9c01?outside=0.7",
+                  "GET /local/both/7f3a9c01?outside=0.4&sleep=0.6",
+                  "GET /local/after/7f3a9c01?sleep=0.3"], receiver.dsn)
+    assert [c for c, _ in out["calls"]] == [200, 200, 200]
+    [ev] = _slow_spots(receiver)
+    assert _name(ev) == "bridge call: GET /local/both/:id"
+    assert 600 <= ev["contexts"]["slow"]["ms"] < 900          # its own time, the 0.4 s outside left out
+
+
+def test_a_long_poll_an_agents_tool_call_and_a_server_start_are_untimed(monkeypatch):
+    # In this process, off the rule itself: the child can slow only GET routes of the page.
+    from bridge import reports
+    sent = []
+    monkeypatch.setattr(reports, "_sdk", object())
+    monkeypatch.setattr(reports, "_slow", lambda name, *a, **k: sent.append(name))
+    for method, path in [("GET", "/local/runs/0123456789abcdef?wait=25"), ("POST", "/local/gateway"),
+                         ("POST", "/local/server"), ("POST", "/local/git/worktree/remove"),
+                         ("POST", "/local/git/worktree"), ("POST", "/local/computer/app"),
+                         ("GET", "/local/complete/symbols?project=/x"), ("GET", "/local/runs")]:
+        reports.bridge_call(method, path, 200, 30.0)
+    # The list of runs waits on nothing. The composer's symbol scan is no wait either: a regex
+    # over every source file on the bridge's own CPU (232 of its 246 ms here), which slows the
+    # calls beside it; 8 of its 13 reports sat in the same seconds as other slow calls.
+    assert sent == ["bridge call: GET /local/complete/symbols", "bridge call: GET /local/runs"]
+
+
+def test_gh_rivendell_and_the_weather_service_are_waits_outside_the_bridge(monkeypatch):
+    import types
+    import urllib.request
+    from bridge import github, reports, rivendell, weather
+
+    def run(*a, **k):
+        time.sleep(0.05)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    class Answer:
+        def __enter__(self):
+            time.sleep(0.05)
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Answer())
+    reports.take_outside()
+    github._run("git", "status")
+    assert reports.take_outside() == 0                        # git is the bridge's own work
+    github._run("gh", "pr", "view")
+    assert reports.take_outside() >= 0.05
+    weather._get_json("https://weather.test/now")
+    assert reports.take_outside() >= 0.05
+    rivendell.Worker._api(types.SimpleNamespace(api_url="https://rivendell.test", token="t"), "/plugin/x")
+    assert reports.take_outside() >= 0.05
+
+
 def _cli(tmp_path, wait):
     cli = tmp_path / "claude"
     cli.write_text("#!/bin/sh\n"

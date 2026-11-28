@@ -411,6 +411,8 @@ export type RunEvent =
   | { type: "browser"; url: string; profile: string }
   // offer_review: a review the agent offers, with a button after its final answer (OfferCard).
   | { type: "offer"; kind: string; title: string; detail: string; rounds: number; prompt: string }
+  // spin_off: work for other chats, a bar under the answer here (SpinOffBar), the full card on the dashboard.
+  | { type: "spinoffs"; card: string }
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
       passed: number | null; failed: number | null; skipped: number | null;
       new: string[]; known: string[]; log: string; tail: string }

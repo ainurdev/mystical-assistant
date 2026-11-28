@@ -33,9 +33,9 @@ export function LiveRow({ live, line, turnSecs }: { live: LiveHost & { host: HTM
   useLayoutEffect(() => { onRow?.(1); return () => onRow?.(-1); }, [onRow]);
   return createPortal(
     <div className="live-row" data-away={live.atBottom ? undefined : ""}>
+      {/* the spine through the station: before the ring, so the card covers it */}
+      <span className="live-line" aria-hidden />
       <div className="live-ring">
-        <span className="live-spin" aria-hidden />
-        <span className="live-node" aria-hidden><i /></span>
         {/* scrolled up, the card itself is the way back down too */}
         <div className="live-card" onClick={(e) => { if (!live.atBottom && !(e.target as Element).closest("button")) live.onJump(); }}>
           {line}

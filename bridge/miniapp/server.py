@@ -7,6 +7,7 @@ user in ALLOWED_CHAT_IDS — the same trust boundary as the bot's chat-id gate.
 
 import base64
 import binascii
+import functools
 import hashlib
 import hmac
 import json
@@ -213,8 +214,9 @@ def _multi_brief(s: dict, run: dict) -> dict:
             "member": store.parse_member(s.get("member"))}
 
 
-def _session_brief(s: dict, default_tools: "list | None" = None) -> dict:
+def _session_brief(s: dict, default_tools: "list | None" = None, gone=None) -> dict:
     # A list passes default_tools, read once: per session it was a SQLite connection each.
+    # And its browser.gone, which looks at each project's folder once.
     cwd = s.get("cwd")
     # The branch the session is *working* on: the worktree its shell moved into
     # (runner._note_work_cwd) before its own checkout. A recorded worktree that
@@ -231,7 +233,7 @@ def _session_brief(s: dict, default_tools: "list | None" = None) -> dict:
     run = profiles.brief(s, default_tools)
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             # Its project's folder is gone (moved, renamed, deleted): MOVE TO PROJECT puts it in one of yours.
-            "missing": browser.gone(s["project"]),
+            "missing": (gone or browser.gone)(s["project"]),
             "created": s.get("created"), "updated": s["updated"], "archived": s["archived"],
             "asked": s.get("asked"),           # its last prompt's time; None before the first
             "origin": s.get("origin"), "cwd": cwd,
@@ -253,6 +255,8 @@ def _session_brief(s: dict, default_tools: "list | None" = None) -> dict:
             "device": store.parse_device(s.get("device")),
             # A session a teammate sent: who, when, their note (None = not one).
             "team": store.parse_team(s.get("team")),
+            # A spin-off's way back: the chat whose card started it, and the keys it came with (None = not one).
+            "spun_from": store.parse_json(s.get("spun_from")) or None,
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),
@@ -723,10 +727,11 @@ class Handler(BaseHTTPRequestHandler):
         # stay out of the lists; their transcripts remain viewable by id.
         # Plugin-worker sessions are exempt (their workdir may be BASE_PATH
         # itself, whose rel "/" is never a project) — see dashboard/server.py.
+        exists, gone = functools.cache(browser.project_exists), functools.cache(browser.gone)
         rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                or browser.project_exists(r["project"]) or browser.gone(r["project"])]
+                or exists(r["project"]) or gone(r["project"])]
         dt = store.default_disabled_tools()
-        self._json({"sessions": [_session_brief(s, dt) for s in rows]})
+        self._json({"sessions": [_session_brief(s, dt, gone) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):
         project = (body.get("project") or "").strip()

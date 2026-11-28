@@ -51,6 +51,7 @@ import { ckId, turnRows } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
+import { isOutside, OUTSIDE_NAME, OUTSIDE_REL } from "./lib/outside";
 import { ago, fmtReset, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
@@ -219,8 +220,9 @@ function loadDone(): Set<string> {
 
 // Composer text you typed but never sent, per session. Persisted so a reload
 // doesn't silently drop it — the DRAFT flags in the session list promise it's
-// still there. Image attachments stay in the composer and aren't part of this.
+// still there. The tray's files are per session too (App's trays), but not in here.
 const DRAFTS_KEY = "hud-session-drafts";
+const NO_FILES: string[] = [];
 
 function loadDrafts(): Record<string, string> {
   try {
@@ -251,7 +253,7 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
           <Spinner className="h-[11px] w-[11px] border" />
         </span>
-        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s steps(10) infinite" }}>
+        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
           CHECKING CONTEXT…
         </span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: "var(--txd)" }}>
@@ -277,7 +279,7 @@ function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
 // later — the session and project it was written in, not whichever is open when
 // the user finally answers the card.
 /** The flow a prompt starts, and who picked it (lib/kinds sendPlan). */
-type SendFlow = { id: string; by: "you" | "guess" };
+type SendFlow = { id: string; by: "you" | "guess"; bold?: boolean };
 
 interface HeldPrompt {
   sid: string;
@@ -378,6 +380,10 @@ export function App() {
   // Typed but not sent, per session. Lives here (not in the composer) so it
   // survives a session switch and the session list can flag it as a DRAFT.
   const [drafts, setDrafts] = useState<Record<string, string>>(loadDrafts);
+  // The tray's files (data URLs), per session the same way: a screenshot pasted in one
+  // chat never shows in another's box or goes with its prompt or answer.
+  // shortcut: memory only (a screenshot is ~1 MB of base64, past localStorage's quota), so a reload drops a tray; IndexedDB if that bites.
+  const [trays, setTrays] = useState<Record<string, string[]>>({});
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   // ?skipboot bypasses the intro (handy on revisits + for screenshots).
@@ -693,7 +699,7 @@ export function App() {
   const active = activeOf(turns);
   const running = active !== null;
   // The prompt box's FLOW chip: this session's path, read on the turn's edges (lib/useFlow).
-  const { flow: boxFlow, set: boxSet, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
+  const { flow: boxFlow, set: boxSet, pack: boxPack, act: flowAct } = useFlow(sessionId ?? undefined, !!ai.router,
     loadingSession ? null : `${turns.length}:${turns.at(-1)?.status ?? ""}`, running);
   // The chip's SETTINGS values are the session's flow's NEXT and TICKETS (the FLOWS sheet).
   const flowCfg = useFlowSettings();
@@ -725,22 +731,27 @@ export function App() {
   const checking = sessionId ? checkingMap[sessionId] : undefined;
   const held = sessionId ? heldMap[sessionId] : undefined;
   const draft = (sessionId ? drafts[sessionId] : "") ?? "";
+  const tray = (sessionId && trays[sessionId]) || NO_FILES;
   // A draft in the box when a card docks is a prompt you were writing, not an
-  // answer: it's set aside until the card is answered, then comes back. Only
-  // for a card that arrives while you watch — one already waiting when you open
-  // the session may be what the draft is answering.
-  const stashedDrafts = useRef<Record<string, string>>({});
+  // answer: it's set aside until the card is answered, then comes back, its
+  // tray with it. Only for a card that arrives while you watch — one already
+  // waiting when you open the session may be what the draft is answering.
+  const stashedDrafts = useRef<Record<string, { text: string; files: string[] }>>({});
   const seenAsk = useRef<Record<string, string | null>>({});
   const askKey = dock && dock.kind !== "prose" ? dock.requestId : null;
   useEffect(() => {
     if (!sessionId) return;
     const before = seenAsk.current[sessionId];
     seenAsk.current[sessionId] = askKey;
-    if (askKey && before === null && draft.trim()) { stashedDrafts.current[sessionId] = draft; setDraft(""); }
-    else if (!askKey && sessionId in stashedDrafts.current) {
+    if (askKey && before === null && (draft.trim() || tray.length)) {
+      stashedDrafts.current[sessionId] = { text: draft, files: tray };
+      setDraft("");
+      setTray(sessionId, () => []);
+    } else if (!askKey && sessionId in stashedDrafts.current) {
       const back = stashedDrafts.current[sessionId];
       delete stashedDrafts.current[sessionId];
-      if (!draft.trim()) setDraft(back);
+      if (!draft.trim()) setDraft(back.text);
+      if (back.files.length) setTray(sessionId, (f) => [...back.files, ...f]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askKey, sessionId]);
@@ -1947,7 +1958,7 @@ export function App() {
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
         text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
         ...(opts?.pickOnce && !agentPick && knobs ? { model: pk.model, permission_mode: pk.perm || undefined, style: opts.style || undefined } : {}),
-        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by, bold: opts.flow.bold || undefined } : {}),
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1967,7 +1978,7 @@ export function App() {
         force: opts?.force || undefined, no_path: opts?.noPath || undefined,
         pick_once: opts?.pickOnce || undefined,
         style: (opts?.pickOnce && !agentPick && knobs && opts.style) || undefined,
-        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by } : {}),
+        ...(opts?.flow ? { flow: opts.flow.id, by: opts.flow.by, bold: opts.flow.bold || undefined } : {}),
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -2065,6 +2076,10 @@ export function App() {
     if (!sid) return;
     setDrafts((d) => (text ? { ...d, [sid]: text } : omit(d, sid)));
   }
+  /** Session `sid`'s tray: the chat a file was pasted in, whichever is open when it's read. */
+  function setTray(sid: string, next: (files: string[]) => string[]) {
+    setTrays((t) => { const f = next(t[sid] ?? NO_FILES); return f.length ? { ...t, [sid]: f } : omit(t, sid); });
+  }
 
   /** A path the model mentioned, opened in the editor — at the line it named,
    *  if it named one. Routed through the same call the file browser uses, so it
@@ -2120,10 +2135,14 @@ export function App() {
     toChat();
   }
 
-  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string }): Promise<false | { noted?: boolean }> {
+  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string; images?: string[] }): Promise<false | { noted?: boolean }> {
     if (!active) return false;
+    const sid = sessionId;
     let res: { noted?: boolean };
     try { res = await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
+    // The tray's files went with the answer; one pasted while it was on its way stays.
+    const sent = opts.images;
+    if (sid && sent?.length) setTray(sid, (f) => f.filter((x) => !sent.includes(x)));
     // Don't wait out the 1.5s poll to retire the card — the bridge has already
     // written the resolved event by the time the POST returns.
     void refetchTurns.current();
@@ -2491,7 +2510,8 @@ export function App() {
     const byProj = new Map<string, SessionBrief[]>();
     // Every session a Rivendell job started lists under one group, wherever it
     // ran (lib/jobs), so a folder that only ever held jobs is no project. Every
-    // session a teammate sent lists under Shared the same way.
+    // session a teammate sent lists under Shared the same way, and every one
+    // found running outside your projects under Outside projects (lib/outside).
     for (const s of sessions) {
       if (isDeviceRun(s.origin)) continue;   // a teammate's run, in "/": no project of yours
       const key = jobGroup(s);
@@ -2499,8 +2519,10 @@ export function App() {
       arr.push(s);
       byProj.set(key, arr);
     }
-    // Opening a job selects the folder it ran in; that is no reason to list it.
-    if (activeProject && !byProj.has(activeProject) && !(selected && isJob(selected) && selected.project === activeProject))
+    // Opening a job, or a session from outside your projects, selects the folder
+    // it ran in; that is no reason to list it.
+    if (activeProject && !byProj.has(activeProject)
+        && !(selected && (isJob(selected) || isOutside(selected)) && selected.project === activeProject))
       byProj.set(activeProject, []);
     for (const rel of discovered) if (!byProj.has(rel)) byProj.set(rel, []);
     const groups: ProjectGroup[] = [];
@@ -2514,7 +2536,7 @@ export function App() {
         // The name you gave the project, else its basename — the PROJECTS panel
         // groups rows under a parent-path header, so the org context lives on
         // the group, not the row.
-        rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : projectName(rel),
+        rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : rel === OUTSIDE_REL ? OUTSIDE_NAME : projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
         missing: ss.length > 0 && ss.every((s) => s.missing),
       });
@@ -2531,6 +2553,13 @@ export function App() {
   // rather than by HIDE, which PLUGINS deliberately ignores.
   const ws = useWorkspaces();
   const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
+  // A spin-off's way back: the chat whose card started it (bridge/spinoffs.py), as the sessions list has it now.
+  const spunFrom = useMemo(() => {
+    const from = selected?.spun_from;
+    if (!from?.session) return null;
+    const chat = sessions.find((x) => x.id === from.session);
+    return { id: from.session, title: chat?.title || "its chat", project: chat?.project ?? "", keys: from.keys ?? [] };
+  }, [selected?.spun_from, sessions]);
   const sidebarSessions = useMemo(() => sessions.filter((s) => !s.parent_session && !s.ticket_of && inWs(jobGroup(s))), [sessions, inWs]);
   // Ticket and merge sessions fold under their super session's row instead of listing on their own.
   const ticketKids = useMemo(() => {
@@ -2550,10 +2579,11 @@ export function App() {
   const promptFlags = useMemo(() => {
     const m = new Map<string, PromptFlag>();
     for (const sid of Object.keys(drafts)) if (drafts[sid].trim()) m.set(sid, "draft");
+    for (const sid of Object.keys(trays)) m.set(sid, "draft");
     for (const sid of Object.keys(heldMap)) m.set(sid, "held");
     for (const sid of Object.keys(checkingMap)) m.set(sid, "checking");
     return m;
-  }, [drafts, heldMap, checkingMap]);
+  }, [drafts, trays, heldMap, checkingMap]);
 
   // What's going on in the workspaces you aren't looking at: per workspace, its
   // chats the sidebar would flag (ASK, waiting on you; DONE, finished and
@@ -2634,7 +2664,7 @@ export function App() {
     [state, sessionProject]);
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
-  const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
+  const composerFiles = useRef<((files: FileList | File[], session?: string) => void) | null>(null);
   // CONTINUE HERE's attachments (the transcript as Markdown, the pictures): handed to
   // the composer once the session they were made for is open, and to no other.
   const [attachFor, setAttachFor] = useState<{ sid: string; files: { name: string; url: string }[] } | null>(null);
@@ -2653,7 +2683,7 @@ export function App() {
         if (!r.ok) throw new Error(a.name);
         const b = await r.blob();
         return new File([b], a.name, { type: b.type || "application/octet-stream" });
-      })).then((files) => sink(files), () => notify("error", "Some of what they sent couldn't be attached."));
+      })).then((files) => sink(files, want.sid), () => notify("error", "Some of what they sent couldn't be attached."));
     }, 50);
     return () => clearInterval(id);
   }, [attachFor, sessionId]);
@@ -2673,11 +2703,8 @@ export function App() {
   useEffect(() => { if (gitNonce) void reread([code.git.route]); }, [gitNonce]);
 
   // What the prompt box's kinds say on their rail (lib/kinds kindFacts), besides the git
-  // status above: the session's newest check, and whether its project is linked to Claude
-  // Design, read by project (null until the first answer).
+  // status above: the session's newest check.
   const lastCheck = useMemo(() => lastCheckOf(turns), [turns]);
-  const projectSettingsQ = useQuery({ ...main.projectSettings({ project: sessionProject ?? undefined }), enabled: !!sessionProject });
-  const designLinked = projectSettingsQ.data ? !!projectSettingsQ.data.design_project : null;
 
   // The open session's council run, for the COUNCIL tile (lib/council railTile):
   // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
@@ -3661,6 +3688,7 @@ export function App() {
                 }}
                 gridMain={gridMain}
                 statusAll={statusMap} superTitle={selected?.ticket_of ? sessions.find((x) => x.id === selected.ticket_of)?.title ?? undefined : undefined}
+                spunFrom={spunFrom}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
@@ -3775,8 +3803,8 @@ export function App() {
                       }
                       disabled={!sessionId || (pendingCount > 0 && !askMode?.send)} running={running}
                       dock={dock ? (
-                        <AskDock d={dock} draft={draft} setDraft={setDraft} onRespond={respond} onAnswer={answerAsk}
-                          onSteer={(t) => void queue.steer(t, []).then((ok) => { if (!ok) void send(t, []); })}
+                        <AskDock d={dock} draft={draft} setDraft={setDraft} files={tray} onRespond={respond} onAnswer={answerAsk}
+                          onSteer={(t, f) => void queue.steer(t, f).then((ok) => { if (!ok) void send(t, f); })}
                           bind={setAskMode} stashed={!!sessionId && sessionId in stashedDrafts.current} />
                       ) : undefined}
                       ask={dock ? askMode : null} model={model} models={composerModels} usage={spentUsage} effort={effort}
@@ -3789,7 +3817,7 @@ export function App() {
                       defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
-                      draft={draft} onDraft={setDraft}
+                      draft={draft} onDraft={setDraft} images={tray} onImages={setTray}
                       contextTokens={contextTokens} contextWindow={selected?.ctx_window}
                       onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
@@ -3799,7 +3827,6 @@ export function App() {
                         ...(run ? { picks: { model: snapModel(run.model, state?.models) ?? run.model, perm: run.perm, effort: run.effort }, ponytail: run.ponytail, style: run.style, pickOnce: true } : {}) })}
                       onStop={() => void stop()}
                       git={sessionGit?.is_repo ? sessionGit : null} lastCheck={lastCheck}
-                      designLinked={sessionProject ? designLinked : null}
                       // An agent turn can't be steered unless the bridge says this one can
                       // (caps.steer, Settings ▸ Experimental): SEND queues instead.
                       onSteer={!steerable ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
@@ -3816,7 +3843,7 @@ export function App() {
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
                       routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={boxChip?.opts.smartzone.on ?? ai.smartzone} routeCtx={routeCtx} helper={!!selected?.parent_session}
-                      flowChip={boxChip} runningFlow={runningFlow(boxFlow)} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
+                      flowChip={boxChip} runningFlow={runningFlow(boxFlow)} designPack={boxPack} onFlow={(a) => void flowAct(a).catch((e) => notify("error", (e as Error).message))}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

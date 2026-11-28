@@ -38,6 +38,8 @@ import { ProofBlock } from "./Proof";
 import { AnswerParts, DataView } from "./DataView";
 import { BrowserCard, DesignCard } from "./DesignPane";
 import { OfferCard, offerOf } from "./OfferCard";
+import { SpinOffCard } from "./SpinOffCard";
+import { spinCardsOf } from "../lib/spinoffs";
 import { stripViews, viewsNamed } from "../lib/dataview";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
@@ -859,9 +861,7 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  STEPS switch like a STEPS fold does. The last zone of a running turn is
  *  live: a third line says what it is doing right now (NowLine), open or shut,
  *  and folds away when the turn ends. It hosts the working indicator too: the
- *  ORBIT form is the node — a ripple while the model thinks, a comet on its
- *  ring while a tool runs (both inside the node's track, since the turn row's
- *  paint containment clips anything past the plate); the cat draws as a row
+ *  cat draws as a row
  *  inside the plate instead of under the turn; STATUS would only say what the
  *  line already does, so the line stands in for it. */
 function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, retried = 0, children, purposes, looked, filtered, filterCounts, reveal = 0 }: {
@@ -1051,7 +1051,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = usePic(gallery.map((s) => s.src));
-  const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
   // survives the zone remounting; the live line shows them.
   const mountAt = useRef(Date.now() / 1000);
@@ -1100,7 +1099,6 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-pinned={pinned ? "" : undefined}
       data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
-      data-ind={orbit ? "orbit" : undefined}
       data-now={line && !liveAt ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
@@ -2527,6 +2525,7 @@ export const RunStream = memo(function RunStream({
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
   const answeredAt = new Map<string, number | undefined>();
+  const answerShots = new Map<string, string[]>();   // the box's tray, sent with an answer
   const toolDone = new Map<string, Done>();
   const bgDone = new Map<string, string>();
   const bgNotify = new Map<string, boolean>();
@@ -2536,6 +2535,7 @@ export const RunStream = memo(function RunStream({
     if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") { permResolved.set(e.request_id, e.behavior); answeredAt.set(e.request_id, e.at); }
     if (e.type === "question_answered") { qAnswered.set(e.request_id, e.answers); answeredAt.set(e.request_id, e.at); }
+    if ((e.type === "permission_resolved" || e.type === "question_answered") && e.images?.length) answerShots.set(e.request_id, e.images);
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
     if (e.type === "background_done") bgDone.set(e.id, e.state);
     if (e.type === "background_set") {
@@ -2579,6 +2579,7 @@ export const RunStream = memo(function RunStream({
   };
   events.forEach((e, i) => {
     if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
+    else if ((e.type === "permission_resolved" || e.type === "question_answered") && e.images?.length) addShots(i, "ANSWER", "", e.images);
     else if (e.type === "tool" && !showAt(i)) { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
     else if (galleryOnly && e.type === "figure") {
       addShots(i, e.kind === "compare" ? "compare_images" : "show_image", "", e.images, undefined, e.at);
@@ -2634,7 +2635,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "browser" && t !== "offer" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && t !== "design" && t !== "browser" && t !== "offer" && t !== "spinoffs" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -3000,6 +3001,7 @@ export const RunStream = memo(function RunStream({
       case "rule":
         return mx ? <RuleRow key={i} ev={event} /> : null;
       case "offer":
+      case "spinoffs":
         return null;       // drawn after the answer, once the turn is over
       case "data":
         return mx && !ended ? <DataView key={i} ev={event} /> : null;
@@ -3095,12 +3097,15 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         if (!live) return (
-          <div key={i} className="dask ml-[var(--rail)]" data-k="permission">
-            <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
-              // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
-              resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
-              at={answeredAt.get(event.request_id) ?? event.at} />
-          </div>
+          <Fragment key={i}>
+            <div className="dask ml-[var(--rail)]" data-k="permission">
+              <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
+                // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
+                resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
+                at={answeredAt.get(event.request_id) ?? event.at} />
+            </div>
+            {answerShots.has(event.request_id) && <ToolImages paths={answerShots.get(event.request_id)!} all={galleryAt(i)} />}
+          </Fragment>
         );
         return (
           <div key={i} className="dask ml-[var(--rail)]" data-k="permission" data-wait="">
@@ -3126,11 +3131,14 @@ export const RunStream = memo(function RunStream({
           </div>
         );
         if (!live) return (
-          <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
-            <AskRecord kind="question" questions={event.questions}
-              answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
-              at={answeredAt.get(event.request_id) ?? event.at} />
-          </div>
+          <Fragment key={i}>
+            <div id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]">
+              <AskRecord kind="question" questions={event.questions}
+                answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
+                at={answeredAt.get(event.request_id) ?? event.at} />
+            </div>
+            {answerShots.has(event.request_id) && <ToolImages paths={answerShots.get(event.request_id)!} all={galleryAt(i)} />}
+          </Fragment>
         );
         return (
           <div key={i} id={ckId(turnId, event.request_id)} className="dask ml-[var(--rail)] scroll-mt-[94px]" data-wait="">
@@ -3527,6 +3535,10 @@ export const RunStream = memo(function RunStream({
         z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : z.kind === "said" ? said(z, i)
           : workZone(z.segs, i === zones.length - 1, i === zones.map((x) => x.kind).lastIndexOf("work")))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  // Work it turned up for other chats (spin_off): a card under the answer that stays, on every turn that offered one.
+  const spins = multiOn && ended && !unfinished && sessionId
+    ? spinCardsOf(events).map((c) => <SpinOffCard key={`so${c}`} session={sessionId} card={c} />) : [];
+  if (spins.length && !mx) rows.push(<Fragment key="turn-spins">{spins}</Fragment>);
   // What a finished turn did, around its answer: what it showed you above it, its receipt below.
   if (mx && ended) {
     const receipt = unfinished ? null : receiptOf(events, { elapsed, tokens, runtime, started: turnStarted });
@@ -3538,6 +3550,7 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {reports}
+        {spins}
         {!unfinished && onAnswer && answerZone >= 0 && offerOf(events) ? (
           <div className="dask" data-k="review" data-wait=""><OfferCard offer={offerOf(events)!} onStart={onAnswer} /></div>
         ) : null}

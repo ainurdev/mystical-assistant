@@ -5,6 +5,7 @@
 import { rankProjects, startCall } from "./newsession.ts";
 import { JOBS_REL } from "./jobs.ts";
 import { SHARED_REL } from "./team.ts";
+import { OUTSIDE_REL } from "./outside.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -13,7 +14,7 @@ const ok = (cond: boolean, what: string) => {
 const same = (got: unknown, want: unknown, what: string) =>
   ok(JSON.stringify(got) === JSON.stringify(want), `${what} (got ${JSON.stringify(got)})`);
 
-const groups = [{ rel: "/a" }, { rel: "/b" }, { rel: "/c" }, { rel: JOBS_REL }, { rel: SHARED_REL }];
+const groups = [{ rel: "/a" }, { rel: "/b" }, { rel: "/c" }, { rel: JOBS_REL }, { rel: SHARED_REL }, { rel: OUTSIDE_REL }];
 const s = (project: string, created: number, origin = "dashboard") => ({ project, origin, created, updated: created });
 const sessions = [s("/a", 10), s("/b", 30), s("/c", 20), s("/a", 99, "rivendell:mahziyar"), s("/c", 50, "team:fd495085")];
 

@@ -36,6 +36,11 @@ conventions in CLAUDE.md apply as well.
 
 ## Everywhere
 
+- **Copy follows behaviour.** Text that tells the user what a skill or flow will do changes in
+  the same branch as it: the composer buttons' `title` (Composer.tsx), the prompt kinds' facts
+  line (`lib/kinds.ts` kindFacts), the AI features' `about` (`bridge/aifeatures.py`) and the
+  routing text (`bridge/paths.py`). Search for the feature's name, case-insensitive, not for the
+  skill's own wording.
 - **A known limit gets a comment**: `shortcut: <the limit>, <when to upgrade>`. Older
   ones say `ponytail:`. `/ponytail-debt` lists them.
 - **A guess keeps the session's permission mode.** A preset, default or guess that sends

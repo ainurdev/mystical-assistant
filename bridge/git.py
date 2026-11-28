@@ -9,7 +9,9 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from bridge import config
 
@@ -596,29 +598,49 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+_fetch_locks: dict[str, threading.Lock] = {}
+
+
+def _fetch_lock(cwd: str) -> threading.Lock:
+    """One per repo, not per checkout: its worktrees share the refs a fetch moves."""
+    rc, out, _ = _run(cwd, "rev-parse", "--git-common-dir")
+    repo = os.path.realpath(os.path.join(cwd, out.strip()) if rc == 0 else cwd)
+    return _fetch_locks.setdefault(repo, threading.Lock())
+
+
 def fetch(cwd: str, timeout: int = 20) -> tuple[bool, str]:
     """Refresh the remote-tracking refs, so status()'s behind count is current.
     The dashboard also runs it unasked (auto-fetch), so a remote that wants a
-    password fails at once instead of prompting on a hand-launched bridge's tty."""
-    rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout,
-                        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    password fails at once instead of prompting on a hand-launched bridge's tty.
+    One at a time per repo: two at once race to move the same refs and one fails
+    ("cannot lock ref")."""
+    with _fetch_lock(cwd):
+        rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
     return rc == 0, (out + err).strip()
 
 
 def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
     """Fast-forward only: never merges or rebases local work behind your back —
-    a diverged or dirty tree fails loudly with git's own message."""
-    rc, out, err = _run(cwd, "pull", "--ff-only", timeout=timeout)
+    a diverged or dirty tree fails loudly with git's own message. A fetch, then a
+    merge of the upstream's ref, never `git pull`: pull merges what FETCH_HEAD
+    lists, and a fetch running alongside (a session's, which no lock here sees)
+    lists the branch twice, so pull refused ("Cannot fast-forward to multiple
+    branches", 2026-11-26)."""
+    ok, out = fetch(cwd, timeout=timeout)
+    if not ok:
+        return False, out
+    rc, out, err = _run(cwd, "merge", "--ff-only", "@{u}", timeout=timeout)
     return rc == 0, (out + err).strip()
 
 
-def merge_check(cwd: str, ours: str = "HEAD", theirs: str = "@{u}") -> "list[str] | None":
+def merge_check(cwd: str, ours: str = "HEAD", theirs: str = "@{u}", run=None) -> "list[str] | None":
     """The files merging `theirs` (the upstream) into `ours` (HEAD) would clash in,
     from a dry run: `git merge-tree --write-tree` merges in memory and touches no
     file, index or ref (the merged objects it writes are left for gc). [] = merges
     cleanly; None = couldn't tell (git before 2.38, no upstream)."""
-    rc, out, _ = _run(cwd, "merge-tree", "-z", "--write-tree", "--name-only", "--no-messages",
-                      "--end-of-options", ours, theirs, timeout=20)
+    rc, out, _ = (run or _run)(cwd, "merge-tree", "-z", "--write-tree", "--name-only", "--no-messages",
+                                "--end-of-options", ours, theirs, timeout=20)
     return [p for p in out.split("\0")[1:] if p] if rc in (0, 1) else None
 
 
@@ -939,17 +961,48 @@ def merged_branches(cwd: str, base: str = "") -> list[str]:
     return [b for b in (x.strip() for x in out.splitlines()) if b and b != base and not b.startswith("(")]
 
 
-def _left_right(cwd: str, base: str, ref: str) -> "tuple[int, int] | None":
+DRY_RUNS = 12         # dry-run merges per branch_status read: the newest branches with work to land
+_answers: dict = {}   # (cwd, git args naming commits by id) -> git's answer
+
+
+def _settled(cwd: str, *args: str, timeout: int = 8) -> tuple[int, str, str]:
+    """_run, asked once: for a question commit ids alone decide (what two commits
+    have between them, their dry-run merge, whether one is in the other's history),
+    so the answer never changes. A failure or a timeout is no answer: asked again."""
+    hit = _answers.get((cwd, args))
+    if hit is None:
+        hit = _run(cwd, *args, timeout=timeout)
+        if hit[0] in (0, 1):
+            if len(_answers) >= 4096:   # shortcut: a crude bound, far above what a repo's branches ask
+                _answers.clear()
+            _answers[(cwd, args)] = hit
+    return hit
+
+
+def _left_right(cwd: str, base: str, ref: str, run=None) -> "tuple[int, int] | None":
     """(ahead, behind) of `ref` against `base`; None when git can't say."""
-    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{ref}")
+    rc, out, _ = (run or _run)(cwd, "rev-list", "--left-right", "--count", f"{base}...{ref}")
     parts = out.split() if rc == 0 else []
     return (int(parts[1]), int(parts[0])) if len(parts) == 2 else None
+
+
+def _reflogs(cwd: str) -> dict:
+    """Every branch's reflog in one git run: {branch: [(commit, what it says)]}, newest first."""
+    rc, out, _ = _run(cwd, "log", "-g", "--branches", "--format=%gD%x09%H%x09%gs")
+    logs: dict = {}
+    for ln in out.splitlines() if rc == 0 else []:
+        sel, sha, said = (ln.split("\t", 2) + ["", ""])[:3]
+        name, _, n = sel.rpartition("@{")
+        if name and n[:-1].isdigit():
+            logs.setdefault(name.removeprefix("refs/heads/"), []).append((int(n[:-1]), sha, said))
+    return {b: [(sha, said) for _, sha, said in sorted(rows)] for b, rows in logs.items()}
 
 
 _CREATED = re.compile(r"branch: Created from (.+)$")
 
 
-def _made_from(cwd: str, name: str, local: set, remote: set, base: str) -> tuple[str, bool]:
+def _made_from(cwd: str, name: str, local: set, remote: set, base: str,
+               logs: dict, tips: dict) -> tuple[str, bool]:
     """Where `name` was made from, read off its reflog's first entry ("branch:
     Created from origin/staging"), as a ref this repo has: the local branch, else
     origin's copy. A gone remote's name ("nr/release/x") falls back to origin's.
@@ -959,20 +1012,23 @@ def _made_from(cwd: str, name: str, local: set, remote: set, base: str) -> tuple
     says, or the reflog expired (90 days).
     Also whether the branch ever moved after it was made: a worktree opened a
     minute ago sits on its start commit and looks merged, but it holds no work
-    (True when the reflog can't say)."""
-    rc, out, _ = _run(cwd, "reflog", "show", "--format=%H%x09%gs", f"refs/heads/{name}", "--")
-    lines = [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else []
-    sha, _, said = (lines[-1].partition("\t") if lines else ("", "", ""))
+    (True when the reflog can't say).
+    `logs` is _reflogs' read and `tips` each ref's commit: ancestry is asked by
+    commit id, so git answers each question once (_settled)."""
+    lines = logs.get(name, [])
+    sha, said = lines[-1] if lines else ("", "")
     m = _CREATED.match(said.strip())
     src = m.group(1).strip() if m else ""
     for pre in ("refs/heads/", "refs/remotes/"):
         src = src[len(pre):] if src.startswith(pre) else src
     if src == "HEAD" and sha:
-        if base and _run(cwd, "merge-base", "--is-ancestor", sha, base)[0] == 0:
+        def within(ref: str) -> bool:
+            run, tip = (_settled, tips[ref]) if ref in tips else (_run, ref)
+            return run(cwd, "merge-base", "--is-ancestor", sha, tip)[0] == 0
+        if base and within(base):
             return ("" if base == name else base), len(lines) != 1
-        rc, held, _ = _run(cwd, "for-each-ref", "--contains", sha, "--format=%(refname:short)", "refs/heads")
-        for c in (held.split() if rc == 0 else []):
-            if c != name and sha in _run(cwd, "reflog", "show", "--format=%H", f"refs/heads/{c}", "--")[1].split():
+        for c in sorted(local):
+            if c != name and any(h == sha for h, _ in logs.get(c, ())) and within(c):
                 return c, len(lines) != 1
         return "", len(lines) != 1
     cands = [c for c in (src, src.split("/", 1)[1] if "/" in src else "") if c and c != "HEAD"]
@@ -1002,18 +1058,25 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     `main` (that checkout is the repo folder itself) and `dirty` (uncommitted
     files there, None without a checkout).
 
-    One `for-each-ref` for the names, dates and upstreams, then a rev-list and a
-    reflog read per branch, a status per checkout, and a dry-run merge per branch
-    with work to land. ponytail: a repo with hundreds of branches pays a few git
-    calls each; fold them into one `rev-list` if that bites."""
+    One `for-each-ref` for the names, dates and upstreams, one read of every
+    reflog, a status per checkout, and per branch a rev-list and, with work to
+    land, a dry-run merge. Those two are asked by commit id, so git answers once
+    per pair of commits (_settled): the tab asks every 30 s, and 24 unmoved
+    branches were 76 git runs and 0.76 s each time (Sentry MYSTICAL-T). A branch
+    that moved costs its own two runs again. A base that moved costs every
+    branch's (60 runs, 461 ms one at a time), so the statuses and each branch's
+    asks run eight side by side. shortcut: a repo with hundreds of branches still
+    pays two or three runs a branch when its base moves; fold them into one
+    `for-each-ref --format=%(ahead-behind:<tip>)` (git 2.41) if that bites."""
     if not is_repo(cwd):
         return {"base": "", "branches": []}
     base = default_branch(cwd)
     trees = worktrees(cwd)
     held = {w["branch"]: w for w in trees if w["branch"]}
     want = targets or {}
-    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
-    remote = {r.strip() for r in out.splitlines() if r.strip()} if rc == 0 else set()
+    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/remotes")
+    tips = dict(r.split(" ", 1) for r in out.splitlines() if " " in r) if rc == 0 else {}   # ref -> its commit
+    remote = set(tips)
 
     def dirty(path: str) -> int:   # porcelain v2: "#" lines are the branch header
         return sum(1 for ln in (_porcelain(path) or "").splitlines() if ln and not ln.startswith("#"))
@@ -1022,30 +1085,40 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
     fmt = ("%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
            "%09%(objectname)%09%(subject)")
     rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
-    lines = out.splitlines() if rc == 0 else []
-    local = {ln.split("\t", 1)[0] for ln in lines}
+    heads = [(ln.split("\t", 5) + [""] * 6)[:6] for ln in (out.splitlines() if rc == 0 else [])]
+    heads = [h for h in heads if h[0]]
+    local = {h[0] for h in heads}
+    tips.update((h[0], h[4]) for h in heads)       # a local branch wins over a remote ref of its name
+    logs = _reflogs(cwd)
 
     def known(t: str) -> str:      # a target as a ref git can read: local, else origin's copy
         return t if t in local else f"origin/{t}" if f"origin/{t}" in remote else t if t in remote else ""
 
-    rows: list[dict] = []
-    dry = 12   # dry-run merges per read: the newest branches with work to land
-    for line in lines:
-        name, at, up, track, sha, subject = (line.split("\t", 5) + [""] * 6)[:6]
-        if not name:
-            continue
-        gone = track.strip() == "gone"
-        m = re.search(r"ahead (\d+)", track)
-        start, worked = _made_from(cwd, name, local, remote, base)
+    def measure(h: list) -> tuple:   # what one branch asks of git, apart from every other branch
+        name, sha = h[0], h[4]
+        start, worked = _made_from(cwd, name, local, remote, base, logs, tips)
         target = "" if name == base else known(want[name]) if name in want else start or base
         if target == name:
             target = ""
-        lr = _left_right(cwd, target, name) if target else None
+        # by commit id where the target's is known: the answer is kept
+        run, tip = (_settled, tips[target]) if target in tips else (None, target)
+        lr = _left_right(cwd, tip, sha, run) if target else None
+        return target, worked, run, tip, lr
+
+    paths = [w["path"] for w in trees if w["detached"] or w["branch"] in local]
+    with ThreadPoolExecutor(8) as pool:
+        dirt, asked = pool.map(dirty, paths), list(pool.map(measure, heads))
+        # the dry runs: the newest branches with work to land on a target that moved on
+        due = [i for i, a in enumerate(asked) if a[4] and a[4][0] and a[4][1]][:DRY_RUNS]
+        clashes = dict(zip(due, pool.map(lambda i: merge_check(cwd, asked[i][3], heads[i][4], asked[i][2]), due)))
+        dirt = dict(zip(paths, dirt))
+    rows: list[dict] = []
+    for i, (name, at, up, track, sha, subject) in enumerate(heads):
+        target, worked, _, _, lr = asked[i]
+        gone = track.strip() == "gone"
+        m = re.search(r"ahead (\d+)", track)
         ahead, behind = lr or (0, 0)
-        clash = None
-        if lr and ahead:
-            clash = [] if not behind else merge_check(cwd, target, name) if dry > 0 else None
-            dry -= 1 if behind else 0
+        clash = None if not (lr and ahead) else clashes.get(i) if behind else []
         w = held.get(name)
         rows.append({
             "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
@@ -1054,19 +1127,20 @@ def branch_status(cwd: str, targets: "dict | None" = None) -> dict:
             "upstream": "" if gone else up,
             "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
             "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
-            "dirty": dirty(w["path"]) if w else None,
+            "dirty": dirt[w["path"]] if w else None,
         })
     for w in trees:
         if not w["detached"]:
             continue
-        ahead, behind = _left_right(cwd, base, w["head"]) or (0, 0)
-        rc, log, _ = _run(cwd, "log", "-1", "--format=%ct%x09%s", w["head"])
+        run, tip = (_settled, tips[base]) if base in tips else (None, base)
+        ahead, behind = _left_right(cwd, tip, w["head"], run) or (0, 0)
+        rc, log, _ = _settled(cwd, "log", "-1", "--format=%ct%x09%s", w["head"])
         at, subject = (log.strip().split("\t", 1) + [""])[:2] if rc == 0 else ("", "")
         rows.append({
             "name": "", "head": w["head"][:7], "at": int(at or 0), "subject": subject, "sha": w["head"],
             "target": base, "ahead": ahead, "behind": behind, "merged": False, "worked": True, "clash": None,
             "upstream": "", "unpushed": None,
-            "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]),
+            "worktree": w["path"], "main": w["is_main"], "dirty": dirt[w["path"]],
         })
     return {"base": base, "branches": rows}
 

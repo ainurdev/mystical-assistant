@@ -8,6 +8,10 @@ A bridge that runs coding agents on this machine and lets you drive them from th
 One ongoing conversation between you and an agent, tied to one project folder or worktree; a row in the sidebar.
 _Avoid_: chat, thread, conversation
 
+**Outside projects**:
+The one sidebar group for every **Session** started outside Mystical (the Claude app, a terminal, VS Code) in a folder outside your projects root that you haven't added as a project, your home folder included. It only lists them; each still runs in its own folder.
+_Avoid_: elsewhere, other folders, scratch group
+
 **Turn**:
 One prompt and everything the agent does in answer to it, until it stops.
 _Avoid_: run, job
@@ -88,6 +92,14 @@ _Avoid_: gateway, goals server, verify server, mystical-ux, bridge MCPs
 An agent a session starts to take one task inside that session; it reports back as a message and shows under that session, not as its own row in the sidebar. A session that another session starts is a normal **Session**, not a helper.
 _Avoid_: subagent, child session, worker
 
+**Spin-off**:
+A **Session** started by your tap on another session's card, to do one **Task** in that task's own project, which needn't be the project of the session it came from. It lists under its own project, not folded under the session it came from as a **Part** is, and the two sessions link to each other.
+_Avoid_: parent session, child session, sub-session, offshoot
+
+**Spin-off card**:
+The card a session leaves in its chat after a turn that turned up work it isn't doing: one row per item, or per cause when several share one, each with its project, **Flow** and brief, to START as **Spin-offs** or PARK on their projects' work lists. It is an offer that stays in the chat, not an **Ask**, and never part of **Needs you**.
+_Avoid_: fan-out card, triage card, offer
+
 **To-do**:
 Something only you can do, that no session can do for you: turn a setting on, add a file, give someone what their message asked for. A reply lists its to-dos in one box at its very top, and a reply with none has no box; a choice the session needs from you is an **Ask**, not a to-do.
 _Avoid_: action item, task, highlight, important part
@@ -115,6 +127,14 @@ _Avoid_: forward, clip, paste
 **Follow-up**:
 Something promised at a meeting, owed by you to a person or by them to you.
 _Avoid_: action item, task, to-do
+
+**Live row**:
+The running box at the foot of a **Session**'s chat while a **Turn** runs. Its moving border is the chat's one light; nothing else in the chat moves to say the agent is working.
+_Avoid_: live node, orbit, spinner
+
+**Working indicator**:
+Your pick of what the chat adds while a **Turn** runs: STATUS (one quiet line) or NYAN CAT. ORBIT was retired on 2026-11-28 because the **Live row** carries the light.
+_Avoid_: orbit, equalizer, loader
 
 ## Dashboard header
 
@@ -203,5 +223,39 @@ An error the bridge or the dashboard page did not handle, or a turn that ended C
 _Avoid_: issue, exception, failure
 
 **Slow spot**:
-A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start.
+A wait that ran past its limit: a start-up, a click or key, a frozen frame, a bridge call, or a turn's start. A bridge call counts the bridge's own time: its read of GitHub, Rivendell, the weather service or a login's meter is as slow as the network and is left out. A page an agent drives sends none.
 _Avoid_: performance issue, lag, jank
+
+## Design
+
+**Design pack**:
+The one set of design skills Mystical gives every session, whatever the repo or account: drafting **Directions** with their **Self-check**, the **Polish pass**, the **Screen audit**, and the outside skills they call on. Its commands start /mystical-design:.
+_Avoid_: design plugin, design kit, design skills
+
+**Direction**:
+One drafted answer to a design ask, lettered and named (A · TOKEN), offered as its own option on the approval card.
+_Avoid_: variant, option, concept, mockup
+
+**Design board**:
+The live set of pages a session puts up for a design, opened from PREVIEW DESIGN in the chat, where you point, draw and comment; each **Direction** is one page of it. The approval card still carries the pictures.
+_Avoid_: canvas, preview, design view, sheet
+
+**Off-system direction**:
+A **Direction** that steps outside the repo's own design system because a design skill argues it would work better. Outside a **Bold run**, a card offers at most one, labelled OFF-SYSTEM, after the in-system ones.
+_Avoid_: wild card, alternative, rebel direction
+
+**Bold run**:
+A design run whose three **Directions** all leave the repo's design system on purpose, each breaking a different convention (layout, type, colour or motion), and none of them in place. It runs when you light BOLD for the send, when your ask asks for it, or when Claude judges the screen a showpiece with nothing to fit; the card says which. The product's name, logo and real content stay, and the **Self-check** gates it as any other run.
+_Avoid_: creative mode, wild mode, open brief
+
+**Self-check**:
+The drafting session's own review of its **Directions**, from their screenshots, before you see them: it fixes what it finds, and each direction says what was checked and fixed. Not the **Council**, which reviews work about to be pushed.
+_Avoid_: critique, self-review, lint, QA
+
+**Polish pass**:
+The pass after a design is built that holds each built state against its approved **Direction** and fixes the drift in states, motion and accessibility; you see the approved mockup beside the build for each state.
+_Avoid_: QA, cleanup, final pass
+
+**Screen audit**:
+A review of one existing screen, asked for outside any **Flow**: a ranked list of what is wrong with it, each problem marked on a screenshot, after which you pick what gets fixed. Its problems are not **Findings**, which come from watches and retros.
+_Avoid_: design review, UI audit, critique

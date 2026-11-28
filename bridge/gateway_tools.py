@@ -222,7 +222,7 @@ CORE_ALL = (SHOW, DATA, DIFF, DESIGN, OFFER, CHECKS, DRIVE, OPEN_SITE)
 DESIGN_CONTEXT = _t("design_context", "What's already decided in this project: its DESIGN.md, CSS variables, components, "
                     "the references the user keeps and existing boards. Read it before designing, and reuse what's there.", {}, [])
 INSPECT = _t("inspect_ui", "Open a page and get measured facts: overflow, content cut off, contrast, tap targets, broken images, "
-             "fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
+             "axe's WCAG A and AA violations, fonts and sizes in use, hand-typed colours, plus full-length screenshots. Phone and desktop width unless you give "
              "widths, like [340] for a side panel. Use before saying a design is done, and with steps for states you can click to.",
              {"board": _S, "page": _S, "url": _S,
               "widths": {"type": "array", "items": {"type": "integer"}, "description": "Up to 4. Treated as mouse-driven unless touch is true."},
@@ -231,9 +231,12 @@ INSPECT = _t("inspect_ui", "Open a page and get measured facts: overflow, conten
               "touch": {"type": "boolean", "description": "With widths: emulate a phone and check tap targets."},
               "steps": {"type": "array", "items": {"type": "object"}, "description":
                         "Done before looking, as in drive_page: {click: 'text'}, {type}, {key}, {wait}, {scroll}, {eval}."}}, [])
-CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's page by a model that didn't make it: scores and "
-              "fixes. It takes a minute or two: if it says it's running, call again. Fix what's right, and tell the user what you skipped.",
-              {"board": _S, "page": _S, "fresh": {"type": "boolean", "description": "Ask again after your changes."}}, ["board"])
+CRITIQUE = _t("critique_design", "An independent, skeptical review of a board's page by a model that didn't make it: it lists its "
+              "problems against Nielsen's heuristics, ranked P0 (the job can't be done) to P3 (polish), each with a fix. It takes a "
+              "minute or two: if it says it's running, call again. It finds defects and isn't a judge: check each one, fix what's "
+              "right, and tell the user what you skipped.",
+              {"board": _S, "page": _S, "fresh": {"type": "boolean", "description": "Ask again after your changes."},
+               "bold": {"type": "boolean", "description": "The page leaves the house look on purpose: also flag the template look AI models fall into."}}, ["board"])
 GRAB_STYLE = _t("grab_style", "Read a public page's fonts, sizes, colours, radii and spacing, with a screenshot, as a direction "
                 "to work from when the user says \"like this\". Don't copy its code or content.",
                 {"url": _S, "note": _S}, ["url"])
@@ -474,7 +477,7 @@ def _critique_design(s: dict, job, a: dict) -> dict:
         return _text("Still reviewing. Call this again in a moment.")
     if got["state"] == "failed":
         return _text(got.get("error") or "The review failed.", error=True)
-    return _text(json.dumps({k: got.get(k) for k in ("scores", "verdict", "fixes")}, ensure_ascii=False, indent=1))
+    return _text(json.dumps({k: got.get(k) for k in ("verdict", "fixes")}, ensure_ascii=False, indent=1))
 
 
 def _grab_style(s: dict, job, a: dict) -> dict:

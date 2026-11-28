@@ -74,6 +74,17 @@ and sends the task's title and detail as the flow's first prompt.
   tests before and after merging and says what changed: the two things the run gave you that a
   task still needs.
 
+## Spin-offs: tasks another chat found
+
+A chat whose work turned up work it isn't doing (issues for other projects, a list of separate
+items) offers them with `spin_off`: a card under its reply, one row per item or cause, each placed
+on a project by its folder, remote or name (bridge/spinoffs.py; ADR 0007). START files each ticked
+row as a task on its own project's list and starts it there; PARK files it unstarted. The task
+carries `from` (the chat and the source keys), so its session links back, and a row's `after`
+becomes a blocker in another project's list: that one's end starts it (`then`, sync). A source
+already on a list is a repeat and links there. Telegram and the Mini App get one line with Start
+all, which never clones.
+
 ## Not built
 
 - Writing back to trackers on its own. An agent can, when you ask.

@@ -22,7 +22,7 @@ export interface Flow {
   path: string; skill?: string | null; by: FlowBy; why: string; auto: boolean; at: number;
   done: string[]; next: { station: string; turn_id: string; started?: boolean } | null;
   /** Switches set in this session over SETTINGS; a bridge older than the FLOW chip sends none. */
-  overrides?: Partial<Record<FlowOption, boolean>>;
+  overrides?: Partial<Record<FlowOption | "designpack", boolean>>;   // DESIGN PACK's: set by the API, not the chip
   /** Steps passed over with SKIP or JUMP TO (they're in `done` too). */
   skipped?: string[];
   /** The path's steps as the bridge runs them: ponytail's REVIEW and AUDIT only while
@@ -192,6 +192,6 @@ export function flowChip(flow: Flow | null, v: FlowView, ai: Partial<Record<Flow
     jumps: away ? [] : rest.slice(1).map((s) => ({ key: s.key, label: s.label })),
     opts: { nextstep: opt("nextstep", flow.auto), autopick: opt("autopick", own.autopick ?? !!ai.autopick),
             smartzone: opt("smartzone", own.smartzone ?? !!ai.smartzone) },
-    here: Object.keys(own).length,
+    here: (["nextstep", "autopick", "smartzone"] as const).filter((k) => k in own).length,
   };
 }

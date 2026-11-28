@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from bridge import accounts, git, selfupdate, store, usage, whatsnew
+from bridge import accounts, git, reports, selfupdate, store, usage, whatsnew
 from bridge.dashboard import server
 
 store.init()
@@ -245,6 +245,82 @@ def test_a_meter_past_stale_max_is_read_anew_not_shown(meters, monkeypatch):
         hit["ts"] -= usage.STALE_MAX + 1
     now[1] = _reading(70)
     assert _get("/local/accounts")["accounts"][0]["five_hour"]["percent"] == 70
+
+
+def test_a_meter_that_cannot_be_read_holds_only_its_first_ask(meters):
+    # Sentry MYSTICAL-A and -B on a teammate's install: a login with no readable meter
+    # was read again inside the poll at every retry, 1.3 to 2.6 s each, for hours.
+    now, spawns = meters
+
+    def retry_due():
+        for e in usage._cache.values():
+            e["next_try"] = e["next_try"] and time.time() - 1
+        spawns.clear()
+
+    now[2] = None                                           # signed out, or a login with no plan
+    _get("/local/accounts")
+    retry_due()
+    t0 = time.time()
+    got = {a["slot"]: a for a in _get("/local/accounts")["accounts"]}
+    assert time.time() - t0 < 0.1
+    assert got[2]["five_hour"] is None and got[1]["five_hour"]["percent"] == 20
+    assert _until(lambda: spawns == [2])                    # read again, behind
+    assert _until(lambda: not usage._behind)
+
+    now[1] = None                                           # login 1's reads fail from here on
+    _age(usage.STALE_MAX + 1)
+    _get("/local/accounts")                                 # past STALE_MAX: read anew, in the ask
+    retry_due()
+    t0 = time.time()
+    got = {a["slot"]: a for a in _get("/local/accounts")["accounts"]}
+    assert time.time() - t0 < 0.1
+    assert got[1]["five_hour"] is None                      # too old to show, and said so at once
+    assert _until(lambda: sorted(spawns) == [1, 2])
+
+
+def test_a_failed_read_shows_one_meter_waiting_and_retrying(meters):
+    # A login a turn reported on, whose reads then fail: the ask that finds the retry due
+    # shows what the asks between retries show, so the meter never flips from poll to poll.
+    now, spawns = meters
+    _get("/local/accounts")
+    path = accounts.credentials_path(1)
+    usage.note_event(path, {"rateLimitType": "five_hour", "utilization": 0.2, "status": "allowed"})
+    now[1] = None
+    _age(usage.STALE_MAX + 1)
+    usage._cache[path]["live_at"] -= usage.STALE_MAX + 1
+    waiting = _get("/local/accounts")["accounts"][0]["five_hour"]    # read anew in the ask: it fails
+    usage._cache[path]["next_try"] = time.time() - 1                 # the retry is due
+    assert _get("/local/accounts")["accounts"][0]["five_hour"] == waiting
+
+
+def test_a_meter_read_inside_the_ask_is_not_the_bridges_own_time(meters, monkeypatch):
+    # The first read of a login, and one past STALE_MAX, wait on `claude -p` by design
+    # (0.7 to 2.6 s): reports.outside takes that wait out of the request's time.
+    monkeypatch.setattr(usage, "CREDENTIALS_FILE", accounts.credentials_path(1))
+    reports.take_outside()
+    _get("/local/usage")                                    # login 1, read in the ask: the fake takes 0.3 s
+    assert reports.take_outside() >= 0.3
+    _get("/local/accounts")                                 # login 2, read on the pool's thread
+    assert reports.take_outside() >= 0.3
+    _get("/local/accounts")                                 # nothing left to read
+    assert reports.take_outside() < 0.1
+
+
+def test_the_accounts_asks_own_work_stays_in_its_time(meters, monkeypatch):
+    # The logins' rows are built side by side, and building one is the bridge's own work too:
+    # on a Mac has_token is a `security` read of the Keychain, 100 to 133 ms of every poll,
+    # with a 10 s ceiling. Only the read through the CLI is a wait outside the bridge.
+    def keychain(path):
+        time.sleep(0.4)
+        return True
+
+    _get("/local/accounts")
+    monkeypatch.setattr(usage, "has_token", keychain)
+    reports.take_outside()
+    _get("/local/accounts")                                 # nothing to read: 0.4 s, all its own
+    assert reports.take_outside() < 0.1
+    _get("/local/accounts", {"fresh": ["0"]})               # Check now: a 0.3 s read each, side by side
+    assert 0.3 <= reports.take_outside() < 0.6              # the longest read, not the 0.4 s beside it
 
 
 def test_picking_an_account_reads_an_expired_meter_anew(meters):

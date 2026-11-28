@@ -517,7 +517,7 @@ def test_session_brief_shape(monkeypatch):
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "missing", "created", "updated", "asked", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal", "job", "device", "team",
-                      "lifecycle", "disabled_tools",
+                      "spun_from", "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
                       "worktree", "model", "permission_mode",
                       "profile_id", "agent", "account", "effort", "style", "takes_style", "overrides", "slot"}
@@ -531,6 +531,7 @@ def test_session_brief_shape(monkeypatch):
     assert b["lifecycle"] is None         # a fresh session is active
     assert b["device"] is None            # not a teammate's device run
     assert b["team"] is None              # nor a session a teammate sent
+    assert b["spun_from"] is None         # nor a spin-off of another chat
 
 
 def test_store_list_sessions_all():

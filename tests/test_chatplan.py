@@ -223,3 +223,11 @@ def test_the_plan_line_waits_for_its_tool_to_finish(world):
     acp.after_tool = None
     cp.tool(world["s"], {"action": "update", "id": "s3", "status": "completed"}, acp)
     assert acp.events[0]["type"] == "plan", "an agent with no tool results to wait on gets it at once"
+
+
+def test_a_step_keeps_the_id_its_agent_gave_it(world):
+    cp.tool(world["s"], {"action": "set", "steps": [{"id": "triage", "title": "Triage"}, {"id": "resolve", "title": "Resolve"},
+                                                    {"id": "triage", "title": "Again"}, {"title": "Untitled id"}, {"id": "s3", "title": "Mine"}]})
+    assert [s["id"] for s in plan(world)["steps"]] == ["triage", "resolve", "s1", "s2", "s3"]
+    cp.tool(world["s"], {"action": "update", "id": "resolve", "status": "completed"})
+    assert plan(world)["steps"][1]["status"] == "completed"

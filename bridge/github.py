@@ -5,6 +5,9 @@ import json
 import pathlib
 import re
 import subprocess
+from contextlib import nullcontext
+
+from bridge import reports
 
 _SLUG_RE = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/(.+?)(?:\.git)?/?$",
@@ -24,8 +27,9 @@ def _parse_slug(url: str) -> str | None:
 
 def _run(*args: str, cwd: str | None = None, timeout: int = 15) -> tuple[int, str, str]:
     try:
-        p = subprocess.run(list(args), capture_output=True, text=True,
-                           timeout=timeout, cwd=cwd)
+        with reports.outside() if args[0] == "gh" else nullcontext():   # gh is the network
+            p = subprocess.run(list(args), capture_output=True, text=True,
+                               timeout=timeout, cwd=cwd)
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
         return 124, "", "timed out"

@@ -44,11 +44,13 @@ MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 MINIAPP_PERMISSION_MODES = {"auto", "plan", "acceptEdits", "bypassPermissions",
                             "dontAsk", "default"}
 
-# Sessions started from the desktop dashboard or the Mini App are created with
-# this permission mode, persisted on the session. A pick in either composer
-# changes the session's mode from then on, and every surface runs it — the bot
-# chat too, in place of the permission flag in EXTRA_CLAUDE_ARGS (its other
-# flags still apply). See the session-run-settings design.
+# The mode a dashboard or Mini App session is created with when no profile is
+# bound to it; a session with a profile follows the profile's mode, else
+# MINIAPP_PERMISSION_MODE. Either way a composer sends its device's last MODE pick
+# with a new session's first prompt, and that pick is saved on the session. The
+# saved mode runs on every surface, the bot chat too, in place of the permission
+# flag in EXTRA_CLAUDE_ARGS (its other flags still apply).
+# See docs/superpowers/specs/session-run-settings-design.md.
 NEW_SESSION_PERMISSION_MODE = os.environ.get("NEW_SESSION_PERMISSION_MODE", "bypassPermissions")
 
 # Appended to Claude's system prompt so it asks instead of guessing, and so what
@@ -224,6 +226,9 @@ TICKET_APPROVE = os.environ.get("TICKET_APPROVE", "0").lower() \
 MERGE_REVIEW = os.environ.get("MERGE_REVIEW", "1").lower() \
     not in ("0", "false", "no", "")
 GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
+    not in ("0", "false", "no", "")
+# DESIGN PACK (bridge/paths.py, design_pack): off until it wins the blind test.
+DESIGN_PACK_ENABLE = os.environ.get("DESIGN_PACK_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only

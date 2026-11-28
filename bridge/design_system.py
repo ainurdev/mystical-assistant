@@ -140,7 +140,7 @@ def discover(root: str, s: dict) -> dict:
     project = s.get("project") or ""
     claude = project_config.design_project(project, s.get("branch")) if project else None
     if claude:
-        systems.append({"kind": "claude", "name": "Claude Design", "path": "", "note": "Linked project, synced by /design-first"})
+        systems.append({"kind": "claude", "name": "Claude Design", "path": "", "note": "Linked project"})
     colors = []
     for k, v in tokens.items():
         if _HEX.match(v.strip()) and v.strip().lower() not in [c["value"].lower() for c in colors]:

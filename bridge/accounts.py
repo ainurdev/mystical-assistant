@@ -32,7 +32,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from bridge import credentials, usage
+from bridge import credentials, reports, usage
 
 ROOT = os.path.expanduser(os.environ.get("ACCOUNTS_DIR", "~/.mystical/accounts"))
 CLAUDE_HOME = os.path.expanduser("~/.claude")
@@ -747,8 +747,16 @@ def with_meters(max_age: float = usage.CACHE_TTL) -> list:
     accts = list_accounts()
     if not accts:
         return []
+
+    def row(a: dict) -> tuple:   # with what its thread waited on the CLI (usage.get_usage's outside())
+        return {**a, **meter(a["slot"], max_age)}, reports.take_outside()
+
     with ThreadPoolExecutor(max_workers=len(accts)) as pool:
-        return list(pool.map(lambda a: {**a, **meter(a["slot"], max_age)}, accts))
+        rows = list(pool.map(row, accts))
+    # This thread waited as long as the longest read. The rest of a row is the bridge's own
+    # work and stays in the request's time: on a Mac, a `security` read of the Keychain each.
+    reports.waited(max(secs for _, secs in rows))
+    return [r for r, _ in rows]
 
 
 def pick(exclude=(), auto_switch: bool = False,

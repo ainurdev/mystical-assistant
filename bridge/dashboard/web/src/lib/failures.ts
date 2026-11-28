@@ -40,8 +40,10 @@ export function failureKind(name: string, summary = "", detail?: string): string
 const EXIT = /^(?:Error: )?Exit code \d+\n?/;
 
 function errorText(d: Ev): string {
-  const raw = (d.output ?? "").trimEnd().replace(EXIT, "") || (d.stat ?? "");
-  const t = raw.trim();
+  const out = (d.output ?? "").trimEnd().replace(EXIT, "");
+  // A command's error is its last words (an && chain stops there), and the row shows three lines;
+  // a stat reads from its first line (an MCP refusal, then hints), so it stays whole.
+  const t = out ? out.split("\n").filter((l) => l.trim()).slice(-3).join("\n").trim() : (d.stat ?? "").trim();
   return t.length > 400 ? `${t.slice(0, 399)}…` : t;
 }
 

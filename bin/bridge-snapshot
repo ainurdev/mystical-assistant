@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""A probe's copy of the live bridge data: bridge.db plus the settings JSONs beside it.
+
+A bare copy of bridge.db is not the live bridge: config reads its settings (experimental.json
+and the rest) from the folder BRIDGE_DB sits in, so a DB-only copy runs on defaults. Apple's
+sqlite3 CLI also can't open the live DB from a session's shell; Python's sqlite3 can, so the
+copy is a read-only .backup() (consistent even mid-write, WAL included).
+
+Left out on purpose:
+  rivendell_instances.json  live Rivendell tokens
+  run-api.json              the live bridge's run-API token and port: a probe would drive it
+  sessions_list.json        the saved list the dashboard answers its first ask from
+
+usage: bin/bridge-snapshot DIR      source: $BRIDGE_DB, else ~/.bridge_state/bridge.db
+prints the BRIDGE_DB=DIR/bridge.db line to run a probe with"""
+import glob
+import os
+import shutil
+import sqlite3
+import sys
+
+SKIP = {"rivendell_instances.json", "run-api.json", "sessions_list.json"}
+
+if len(sys.argv) != 2:
+    sys.exit(__doc__.split("usage: ")[1])
+live = os.path.realpath(os.path.expanduser(os.environ.get("BRIDGE_DB", "~/.bridge_state/bridge.db")))
+state = os.path.dirname(live)
+out = os.path.realpath(sys.argv[1])
+if out == state:
+    sys.exit(f"bridge-snapshot: {out} is the live state folder")
+if not os.path.isfile(live):
+    sys.exit(f"bridge-snapshot: no database at {live}")
+
+if not os.path.isdir(out):
+    os.makedirs(out)
+    os.chmod(out, 0o700)  # chat contents and tokens live in here; a DIR you made keeps its mode
+dest = os.path.join(out, "bridge.db")
+for stale in (dest, dest + "-wal", dest + "-shm", dest + "-journal"):
+    if os.path.exists(stale):
+        os.remove(stale)
+src = sqlite3.connect(f"file:{live}?mode=ro", uri=True)
+dst = sqlite3.connect(dest)
+src.backup(dst)
+dst.close()
+src.close()
+for path in glob.glob(os.path.join(state, "*.json")):
+    if os.path.basename(path) not in SKIP:
+        shutil.copy2(path, out)  # keeps the mode: several are 0600
+print(f"BRIDGE_DB={dest}")

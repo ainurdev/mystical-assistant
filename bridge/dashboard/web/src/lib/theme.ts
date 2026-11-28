@@ -438,7 +438,7 @@ const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, leftOpen: true, rightTab: "files",
   rightOrder: [], rightHidden: [], rightW: 0, rightStart: "", railNames: true, railReadouts: true, railRules: true,
-  indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
+  indicator: "status", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,

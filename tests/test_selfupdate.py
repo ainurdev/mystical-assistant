@@ -2,9 +2,11 @@
 Run: python tests/test_selfupdate.py"""
 
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -75,6 +77,33 @@ def test_pull_refuses_to_clobber_diverged_history():
     g.fetch(clone)
     ok, out = g.pull(clone)
     assert ok is False and out                          # git's own message is surfaced
+
+
+def test_pull_lands_with_a_fetch_running_alongside_it():
+    origin, clone = _clone_with_upstream()
+    _commit(origin, "two\n", "feat: upstream")
+    other = f"git -C {shlex.quote(clone)} fetch -q --upload-pack=git-upload-pack origin"
+    # a whole second fetch, after pull's own emptied FETCH_HEAD and before it writes it
+    _run(clone, "config", "remote.origin.uploadpack", f"{other} >/dev/null 2>&1; git-upload-pack")
+    ok, out = g.pull(clone)
+    assert ok is True, out                              # was "Cannot fast-forward to multiple branches"
+    assert g.status(clone)["behind"] == 0
+
+
+def test_fetches_of_one_repo_take_turns():
+    origin, clone = _clone_with_upstream()
+    _commit(origin, "two\n", "feat: upstream")
+    busy, seen = (shlex.quote(os.path.join(clone, ".git", n)) for n in ("busy", "overlap"))
+    _run(clone, "config", "remote.origin.uploadpack",
+         f"mkdir {busy} 2>/dev/null || touch {seen}; sleep 0.3; rmdir {busy} 2>/dev/null; git-upload-pack")
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(g.fetch(clone))) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert [ok for ok, _ in results] == [True, True], results
+    assert not os.path.exists(os.path.join(clone, ".git", "overlap"))   # both at once: "cannot lock ref"
 
 
 def test_publish_commits_local_work_and_pushes_it():

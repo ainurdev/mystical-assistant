@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { code, main, queryClient, reread } from "../lib/queries";
-import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
+import { Blocks, Brain, Bug, ChevronDown, ChevronRight, ChevronsRight, DraftingCompass, Feather, Flame, Gauge, GitMerge, Hammer, Hand, Lock, Merge, MessageCircleQuestionMark, Paperclip, Pause, Pin, Play, RotateCcw, Route as RouteIcon, Scissors, Settings, ShieldHalf, SkipForward, SlidersHorizontal, Square, TriangleAlert, UserRound, Users, Zap, type LucideIcon } from "lucide-react";
 import { api, type AccountInfo, type FlowChange, type FlowSetting, type FlowSettings, type FlowStep, type EffortLevel, type GitStatus, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
-import { KINDS, KIND_ORDER, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
+import { KINDS, KIND_ORDER, boldShows, kindFacts, nextKind, presetFor, sendPlan, shownKind, type Fact, type KindId, type KindPick, type KindRun, type LastCheck } from "../lib/kinds";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelName, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
@@ -726,9 +726,9 @@ export function FlowsSettings({ models }: { models: DropOption<string>[] }) {
 
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, style = "", onStyle, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
-  draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
+  draft, onDraft, images, onImages, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact, autocompact, onAutocompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, onFlow, multi, git, lastCheck, designLinked, words,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, helper, onRouteFresh, flowQueued, smartZone, flowChip, runningFlow = null, designPack, onFlow, multi, git, lastCheck, words,
 }: {
   /** The chat's code-like words, newest first, for completing as you type (lib/completewords). */
   words?: string[];
@@ -740,6 +740,10 @@ export function Composer({
   // the text rather than carrying it into the next one.
   draft: string;
   onDraft: (text: string) => void;
+  // The tray's files (data URLs), the session's like the text. `onImages` names the
+  // session: a file is still being read when you may have switched to another one.
+  images: string[];
+  onImages: (session: string, next: (files: string[]) => string[]) => void;
   project?: string | null;
   // Both clusters are switched off from SETTINGS · SESSION: no handler, no GRAPH.
   onOpenMap?: () => void;
@@ -787,7 +791,7 @@ export function Composer({
   /** run: the kind's preset, sent with this prompt only (COMPACT's kinds, lib/kinds). flow: the
    *  flow the prompt starts and who picked it; the bridge puts its first step in front. */
   onSend: (text: string, images: string[], noPath?: boolean, run?: KindRun | null, typed?: string,
-           flow?: { id: KindId; by: "you" | "guess" }) => void;
+           flow?: { id: KindId; by: "you" | "guess"; bold?: boolean }) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -807,7 +811,7 @@ export function Composer({
   pills?: ReactNode;
   // Pointed at addFiles, so a file dropped on the fresh session screen lands
   // here the way one dropped on the box does.
-  fileSink?: { current: ((files: FileList | File[]) => void) | null };
+  fileSink?: { current: ((files: FileList | File[], session?: string) => void) | null };
   /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
   placeholder?: string;
   /** What the session waits on you for (AskDock), hung on the box's top edge in every layout. */
@@ -834,19 +838,19 @@ export function Composer({
   flowChip?: FlowChip | null;
   /** The flow the session is on until its last step is done (lib/flowview runningFlow): its glyph's dot. */
   runningFlow?: string | null;
+  /** The DESIGN PACK gate is open for this session (lib/useFlow): DESIGN offers BOLD. */
+  designPack?: boolean;
   /** The FLOW chip's switches, Reset and skips (lib/useFlow). */
   onFlow?: (act: FlowAct) => void;
-  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status, its newest
-   *  check, and whether its project is linked to Claude Design (null: not known yet). */
+  /** What the kinds' facts read (lib/kinds kindFacts): the session's git status and its newest check. */
   git?: GitStatus | null;
   lastCheck?: LastCheck | null;
-  designLinked?: boolean | null;
   /** The open session is a helper: its next turn runs on its own picks, so the kinds dim like an agent's. */
   helper?: boolean;
 }) {
   const text = draft;
   const setText = onDraft;
-  const [images, setImages] = useState<string[]>([]);
+  const setImages = (next: (files: string[]) => string[]) => { if (sessionId) onImages(sessionId, next); };
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "style" | "mode" | "pony" | "verbs" | "preset" | "plus" | "queued" | "fits" | "helpers" | "flow" | "flows" | "ctx">("");
@@ -1199,6 +1203,10 @@ export function Composer({
   const kindsOn = shelled && flowsOn && !onAgent && !helper && !ask?.send && !leadsSlash;
   const pick = kindPick && kindPick !== "plain" && flowsOff.includes(kindPick) ? null : kindPick;
   const { kind, how: kindHow } = kindsOn ? shownKind(pick, typed, { start: routeCtx?.first === true, design: !!plugins.design, off: flowsOff, hand: flowCfg?.guess === "hand" }) : { kind: null, how: "none" as const };
+  // BOLD (design-drafts/bold-toggle, B · FLAME): beside a lit DESIGN while the design pack is on; one send.
+  const [bold, setBold] = useState(false);
+  const boldOn = boldShows(kind, kindsOn, !!designPack);
+  useEffect(() => { setBold(false); }, [boldOn, sessionId]);   // one send, in the chat it was lit in
   const run = kind ? presetFor(kind, flowRuns(flowCfg?.flows), runEdits[sessionId ?? ""]?.[kind]) : null;
   // A kind you picked on an empty box shows its starter there (the placeholder; Tab writes it).
   const starter = kindHow === "picked" && blank && kind ? KINDS[kind].starter : null;
@@ -1383,15 +1391,16 @@ export function Composer({
     return uploadsRef.current > 0;
   }
 
-  function addFiles(files: FileList | File[] | null) {
-    if (!files) return;
-    const inline = chatImagesInline();
+  function addFiles(files: FileList | File[] | null, session = sessionRef.current) {
+    if (!files || !session) return;
+    // An image in the text goes in at the caret: only the open chat's box has one.
+    const inline = chatImagesInline() && session === sessionRef.current;
     Array.from(files).forEach((f) => {
       if (inline && isInlineImage(f.type)) { embedFile(f); return; }
       const r = new FileReader();
       // The name rides in the data URL, so a .csv reaches the upload dir as a
       // .csv instead of being guessed into a .png the model can't read.
-      r.onload = () => setImages((prev) => [...prev, withName(r.result as string, f.name)]);
+      r.onload = () => onImages(session, (prev) => [...prev, withName(r.result as string, f.name)]);
       r.readAsDataURL(f);
     });
   }
@@ -1414,17 +1423,20 @@ export function Composer({
     if (stillSaving()) return;
     const t = text.trim();
     if (ask?.send) {
-      // The ask clears the box itself: a stepper hands it the next page's note.
+      // The ask clears the box itself: a stepper hands it the next page's note. It reads
+      // the tray as it reads the text; what went with the answer leaves it (App.respond).
       if (t || (ask.ready && !ask.needsText)) ask.send(t);
       return;
     }
     if (!t || disabled) return;
     // The kind on show sends its preset with the prompt, and the flow when the prompt starts one.
     const plan = sendPlan({ kind, how: kindHow, text: t, running: runningFlow, flows: flowsOn,
-                            answering: !!ask?.send, agent: onAgent, run });
-    onSend(plan.text, images, noPath || undefined, plan.run, t, plan.flow && plan.by && { id: plan.flow, by: plan.by });
+                            answering: !!ask?.send, agent: onAgent, run, bold: boldOn && bold });
+    onSend(plan.text, images, noPath || undefined, plan.run, t,
+      plan.flow && plan.by && { id: plan.flow, by: plan.by, bold: plan.bold });
+    setBold(false);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   // Land the text — and anything in the attachment tray — in the turn that's
@@ -1435,7 +1447,7 @@ export function Composer({
     if (!t || !onSteer) return;
     onSteer(t, images);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   // A third destination for whatever is in the box, alongside submit() and
@@ -1448,7 +1460,7 @@ export function Composer({
     if (!t) return;
     onSend(`/design-first ${t}`, images);
     setText("");
-    setImages([]);
+    setImages(() => []);
   }
 
   const ctx = contextTokens ?? 0;
@@ -1732,7 +1744,7 @@ export function Composer({
   );
   const designBtn = plugins.design && !onAgent && (
     <button className="act-alt neutral caps" onClick={design} disabled={disabled || !text.trim()}
-      title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
+      title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, and waits for your approval before implementing.\n\nNeeds text in the box."}>
       Design <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
   );
   /* Exactly one primary. STOP and PAUSE are rare and modal and one of
@@ -2232,7 +2244,7 @@ export function Composer({
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}</span>
     : ask?.send ? ask.hint && <span data-tone="dim" className="kc-hover">{ask.hint}</span>
     : kind && <span>{[...(steps ? [{ text: steps } as Fact] : []), ...kindFacts(kind, { git: git ?? null, lastCheck: lastCheck ?? null,
-        designLinked: designLinked ?? null, mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
+        mapBuiltAt: graph?.exists ? graph.built_at : null, askPerm: run?.perm ?? "" })]
         .map((f, i) => <Fragment key={i}>{i > 0 && " · "}{f.lead}<span data-tone={f.tone}>{f.text}</span></Fragment>)}</span>;
   // PRESET's "Save as <Flow>'s preset": the flow's bridge default, so the sheet shows it at once.
   const saveFlowRun = async (fl: string, r: KindRun) => {
@@ -2269,7 +2281,8 @@ export function Composer({
           const off = !kindsOn || (id === "design" && !plugins.design);   // no Claude Design, no DESIGN kind
           // The editor keeps the focus (and the caret) through a tap.
           return (
-            <button key={id} type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined}
+            <Fragment key={id}>
+            <button type="button" className={lit ? "pb-kind" : "pb-kg"} data-how={lit ? kindHow : undefined} data-bold={lit && boldOn ? "" : undefined}
               data-run={id === runningFlow ? "" : undefined}
               disabled={off} aria-pressed={lit && kindHow === "picked"}
               title={lit ? `${KINDS[id].name} — ${blank ? "click to go back to guessing" : "click to send as typed"}` : KINDS[id].name}
@@ -2277,6 +2290,14 @@ export function Composer({
               <Icon size={lit ? 11 : 12} strokeWidth={2} aria-hidden />
               {lit && <><span>{KINDS[id].verb}</span>{kindHow === "auto" && <i>auto</i>}</>}
             </button>
+            {lit && boldOn && (
+              <button type="button" className="pb-bold" aria-pressed={bold} aria-label="Bold"
+                title={bold ? "BOLD — this send's design is a Bold run" : "BOLD"}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => setBold((b) => !b)}>
+                <Flame size={11} strokeWidth={2} aria-hidden />
+              </button>
+            )}
+            </Fragment>
           );
         })}
         {gear}

@@ -100,12 +100,12 @@ FEATURES = (
               "and nothing else, and the task only changes when you press Use this. Nothing "
               "runs unless you send a message. Part of the experimental chats."},
     {"key": "design_critic", "env": "DESIGN_CRITIC_ENABLE", "label": "DESIGN CRITIC",
-     "hint": "an independent review of a design, scored against your references",
+     "hint": "an independent review of a design that lists its problems, P0 to P3",
      "cost": "1 sonnet call per review",
      "tokens": "~50k tokens",
      "about": "Press Critique in the design view, or an agent asks for one. A separate "
               "model that can only read looks at the page at phone and desktop width and "
-              "scores it. Nothing runs unless asked. Part of the experimental chats."},
+              "lists its problems. Nothing runs unless asked. Part of the experimental chats."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",
@@ -152,6 +152,16 @@ FEATURES = (
               "default level. Off, the plugin is told `off` for every run — "
               "leaving it unset would mean its own default, full — and both "
               "controls are hidden."},
+    {"key": "designpack", "env": "DESIGN_PACK_ENABLE", "label": "DESIGN PACK",
+     "hint": "designs with Mystical's own design skills, bundled in Mystical",
+     "cost": "no extra call, its skills' descriptions per run",
+     "tokens": "~200 tokens a run",
+     "about": "Mystical's design skills ship bundled, loaded as /mystical-design:<name>, so "
+              "every account and machine designs the same way. On, a DESIGN flow's design "
+              "step runs /mystical-design:design-first, the routing text names it, and the / "
+              "list shows the pack. Rivendell and device runs never get it. Off, design "
+              "steps run /design-first from your own skills folder, as before. A session "
+              "may override this for itself."},
     {"key": "graph", "env": "GRAPH_ENABLE", "label": "PROJECT MAP",
      "hint": "a code graph of each repo, summarised into the system prompt",
      "cost": "no extra call, a prompt pack per session",

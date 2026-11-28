@@ -240,9 +240,6 @@
      left alone so gaps don't move when the base font does. */
   --text-xs: var(--t12);
   --text-sm: var(--t14);
-  /* the shared spinner and skeletons tick ~8 a second, like every indicator (tools/loops.mjs) */
-  --animate-spin: spin 1s steps(8) infinite;
-  --animate-pulse: pulse 2s steps(16) infinite;
 
   --radius-sm: 0px;
   --radius-md: 0px;
@@ -598,10 +595,15 @@ body {
 .fresh-row:hover { background: var(--ac-06) !important; }
 /* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting
    on you and already shouts with colour — a pulse there would be four things
-   blinking at once. This one says "churning, leave it alone". */
-.sessdot[data-work="true"] {
-  animation: workpulse 1.8s steps(14) infinite;
-}
+   blinking at once. This one says "churning, leave it alone". The ring ripples out on
+   its own layer (::before, scaled + faded: the compositor runs it, where a box-shadow
+   ring repaints every frame); ::after, a copy of the dot, keeps its middle covered. */
+.sessdot[data-work="true"] { position: relative; box-shadow: 0 0 8px var(--ok) !important; }
+.sessdot[data-work="true"]::before,
+.sessdot[data-work="true"]::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; }
+.sessdot[data-work="true"]::before { inset: -6px; background: color-mix(in srgb, var(--ok) 55%, transparent); opacity: 0;
+  animation: workpulse 1.8s ease-out infinite; }
+.sessdot[data-work="true"]::after { inset: 0; background: inherit; }
 /* an answered row's background tasks (SessionsPanel bgTag), in line 2's tag cell beside the picture tag */
 .sess-bg { display: inline-flex; align-items: center; gap: 4px; height: 15px; font-size: var(--t85); font-weight: 700; line-height: 1;
   color: var(--ok); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -684,7 +686,7 @@ body {
 
 @keyframes sweepmove { 0% { transform: translateY(-200px); } 100% { transform: translateY(100vh); } }
 /* The scenes pause when the page is still (lib/still.ts: 20 s without input, or the window not in
-   front). Indicators are stepped and keep ticking. A scene with an inline animation carries
+   front). Indicators keep running (tools/loops.mjs). A scene with an inline animation carries
    .still-scene; tools/loops.mjs checks every listed scene is named here. */
 :root[data-still] .sweep,
 :root[data-still] .home-emblem .ring,
@@ -694,8 +696,8 @@ body {
 @keyframes flicker { 0% { filter: brightness(0.35); } 9% { filter: brightness(2.2); } 13% { filter: brightness(0.6); } 22% { filter: brightness(1.5); } 100% { filter: none; } }
 @keyframes drawline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
-/* mpulse, but keeping the dot's own glow under the ring so it never reads as flat between beats, and themed off --ok rather than a baked-in green. */
-@keyframes workpulse { 0% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 8px var(--ok), 0 0 0 6px transparent; } 100% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 transparent; } }
+/* mpulse's ring on a layer (.sessdot[data-work]::before, -6px all round): from the dot's size out to 6px past it, fading by 70%. */
+@keyframes workpulse { from { transform: scale(.4); opacity: 1; } 70%, to { transform: none; opacity: 0; } }
 @keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
 /* the fresh screen lifting off as the first turn lands under it (Terminal FreshState) */
 @keyframes freshleave { to { opacity: 0; transform: translateY(-10px) scale(.985); } }
@@ -1018,7 +1020,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .kd-field *, .kd-scene, .kd-scene *, .kd-flash, .kd-gl, .boot-before, .boot-after, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
 }
-@keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 /* nyan.cat, plain: two parallax star layers scrolling past a static cat. */
 .nyan-sky {
   background-image:
@@ -1463,7 +1464,7 @@ input {
 .ctrl-meter { display: inline-flex; gap: 6px; }
 /* a login's meter a running turn is reporting (Composer chip, PROFILE menu): a breathing green dot */
 .meter-live { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s steps(16) infinite; }
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .meter-live { animation: none; } }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
@@ -1761,7 +1762,7 @@ input {
   transform: translateX(-100%);
 }
 .swapwrap[data-swapping] .swapline::after {
-  animation: swapsweep 1.05s steps(8) 0.14s infinite;
+  animation: swapsweep 1.05s cubic-bezier(0.5, 0, 0.5, 1) 0.14s infinite;
 }
 /* -100% clears the left edge; 360% carries a 28%-wide gleam past the right one. */
 @keyframes swapsweep {
@@ -1772,7 +1773,7 @@ input {
    motion — dropping it here would flicker the scrim on every switch. Only the
    fade and the sweep go. */
 @media (prefers-reduced-motion: reduce) {
-  .sessdot[data-work="true"] { animation: none; }
+  .sessdot[data-work="true"]::before { animation: none; }
   .hudgrid { transition: none; }
   [data-tabswap] > * { animation: none; }
   .swapscrim,
@@ -2284,7 +2285,7 @@ input {
   box-sizing: border-box; }
 .jobbar-orb::after { content: ""; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px;
   border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple);
-  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s steps(13) infinite; }
+  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s linear infinite; }
 @keyframes jobbar-orbit { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .jobbar-orb::after { animation: none; } }
 .jobbar-w1 { font-size: var(--t10); font-weight: 600; letter-spacing: .07em; color: var(--txh); white-space: nowrap; }
@@ -3051,32 +3052,12 @@ input {
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
 /* the turn's retries, kept quietly on its last plate once a try got through (WorkZone retried) */
 [data-style="dossier"] .dwork-retry { flex: none; letter-spacing: .3px; color: var(--warn); }
-/* live — the last zone of a running turn: the node is the instrument (a ring
-   ripples out of it while the model thinks, a comet orbits it while a tool
-   runs) and a third line says what it is doing (THE NOW LINE, below) */
+/* live — the last zone of a running turn: the node lights, and a third line
+   says what it is doing (THE NOW LINE, below) */
 [data-style="dossier"] .dwork[data-live] .dwork-node {
   color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
   box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px color-mix(in oklab, var(--acc) 60%, var(--line2, var(--d-hair)));
 }
-/* ORBIT's two effects live on the node's own ring track, inside the plate: the
-   turn row's paint containment (.vskip-card) clips anything drawn past it.
-   Thinking: a ring is born at the node's centre and dies as it reaches the
-   track. Working: a comet runs the track. */
-[data-style="dossier"] .dwork[data-ind="orbit"][data-live="think"] .dwork-node::before {
-  content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
-  animation: dwripple 2.2s steps(18) infinite;
-  box-sizing: border-box;
-}
-[data-style="dossier"] .dwork[data-ind="orbit"][data-live="work"] .dwork-node::after {
-  content: ""; position: absolute; inset: -4px; border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 50%, var(--acc) 100%);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--acc) 70%, transparent));
-  animation: dworbit 1.1s steps(9) infinite;
-}
-@keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
-@keyframes dworbit { to { transform: rotate(360deg); } }
 /* answered, background tasks still running (RunStream BgLine): one quiet line where the indicator sat */
 .dbgline { display: flex; align-items: center; gap: 8px; font-family: var(--ui-font, inherit); font-size: var(--t12); color: var(--txd); }
 .dbgline > [role="status"] { color: var(--ok); }
@@ -3087,9 +3068,6 @@ input {
 [data-style="dossier"] .dwork-ind { margin: 6px 2px 1px calc(var(--zn) + 12px); }
 [data-style="dossier"] .dwork[data-open] .dwork-ind { margin-top: 8px; }
 [data-style="dossier"] .dwork-ind > * { margin: 0 !important; }
-@media (prefers-reduced-motion: reduce) {
-  [data-style="dossier"] :is(.dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
-}
 /* min-height: a chip's tile, so a card that starts empty (RunStream, the turn
    just sent) doesn't grow when its first step lands */
 [data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; min-height: 20px; margin-top: 7px; }
@@ -3166,20 +3144,22 @@ input {
   content: ""; position: absolute; left: 50%; bottom: 100%; width: 1px; height: var(--now-reach, 23px); translate: -.5px 0;
   background: linear-gradient(transparent, var(--zline) 6px); z-index: -1;
 }
-/* the bead runs the spine's own length (a background in a box as tall as the
-   reach, so the keyframes need no var(), which WebKit resolves late) */
+/* the bead runs the spine's own length: a box as tall as the reach with the bead
+   at its top, moved down by its own height less the bead's (a % of itself, so the
+   keyframes need no var(), which WebKit resolves late). A transform, so the
+   compositor runs it. */
 [data-style="dossier"] .dwork-now[data-st="work"] > .now-ic::after {
   content: ""; position: absolute; left: 50%; bottom: 100%; width: 3px; height: var(--now-reach, 23px); translate: -1.5px 0; z-index: -1;
   background: linear-gradient(transparent, var(--mc)) 0 0 / 3px 7px no-repeat;
   filter: drop-shadow(0 0 3px var(--mc));
-  animation: nowbead 1.5s steps(12) infinite;
+  animation: nowbead 1.5s cubic-bezier(.5,0,.75,1) infinite;
 }
-@keyframes nowbead { 0% { background-position: 0 0%; opacity: 0; } 25%, 85% { opacity: 1; } 100% { background-position: 0 100%; opacity: 0; } }
+@keyframes nowbead { 0% { transform: none; opacity: 0; } 25%, 85% { opacity: 1; } 100% { transform: translateY(calc(100% - 7px)); opacity: 0; } }
 /* thinking: the thought node's ring, breathing out */
 [data-style="dossier"] .now-ring { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 1.6px solid currentColor; }
 [data-style="dossier"] .now-ring::after {
   content: ""; position: absolute; inset: -1.6px; border-radius: 50%; border: 1.4px solid currentColor;
-  animation: nowripple 2s steps(16) infinite;
+  animation: nowripple 2s ease-out infinite;
   box-sizing: border-box;
 }
 @keyframes nowripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.3); opacity: 0; } }
@@ -3432,7 +3412,7 @@ input {
   color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--zg));
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
     0 0 12px color-mix(in oklab, var(--d-you) 45%, transparent);
-  animation: agbpulse 1.4s steps(11) infinite;
+  animation: agbpulse 1.4s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg { animation: none; }
@@ -5076,6 +5056,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-kind > i { font-style: normal; font-size: var(--t7); letter-spacing: 1px; text-transform: uppercase; color: var(--txd); margin-left: 2px; }
 .pb-kinds[data-dim] > * { opacity: .45; cursor: default; }
 [data-fam]:not([data-fam="aurora"]) .pb-kind, [data-fam]:not([data-fam="aurora"]) .pb-kg { border-radius: 5px; }
+/* BOLD (Composer, design-drafts/bold-toggle B · FLAME): a flame at the lit DESIGN pill's end, its own
+   button laid over the room the pill keeps for it; lit, amber on an amber tint. */
+.pb-kind[data-bold] { padding-right: 24px; }
+.pb-bold { appearance: none; flex: none; position: relative; display: grid; place-items: center; width: 16px; height: 16px; margin-left: -21px; margin-right: 5px;
+           padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--txl); cursor: pointer; }
+.pb-bold:hover { color: color-mix(in oklab, var(--warn) 70%, var(--txb)); }
+.pb-bold[aria-pressed="true"] { color: var(--warn); background: color-mix(in oklab, var(--warn) 18%, transparent); }
 /* usage: the PROFILE chip, flat, its face the ring (Composer UsageRing) while its login has a
    reading. Without one it keeps its name (an expired login says so in it), which gives way to
    the spinner while the first reading lands. The menu is the PROFILE menu, unchanged. */
@@ -5347,16 +5334,25 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs .np-pr { background: var(--tone-bg, transparent) !important; }
 /* READY is a green fill under dark ink. In MIDDLE-EARTH and PEBBLE READY is a tint instead, green ink over a
    green wash with the ⇡ #n in --txh. The ink leans a fifth toward --txb: plain --ok over its own wash fell
-   under 4.5:1 (4.1 on MIDDLE-EARTH's daylight) */
+   under 4.5:1 (4.1 on MIDDLE-EARTH's daylight). The fill above is a background-color, so the tint clears it:
+   left on, the green ink sat on solid green (1.1:1) */
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] {
-  color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
+  color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-color: transparent !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
 :is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs) .np-pr[data-status="ready"] > span:first-child { color: var(--txh) !important; }
+/* The same lean, a tenth, where a label fell just under 4.5:1 on the island: RUNNING outside AURORA (4.34-4.49),
+   CHANGES in MIDDLE-EARTH (4.21 on shire-light), CLOSED in AURORA (4.46 on magenta). The ⇡ #n keeps its own colour */
+[data-fam]:not([data-fam="aurora"]) .pb-tabs .np-pr[data-status="running"] { color: color-mix(in srgb, var(--acc) 90%, var(--txb)) !important; }
+[data-fam="middle-earth"] .pb-tabs .np-pr[data-status="changes"] { color: color-mix(in srgb, var(--warn) 90%, var(--txb)) !important; }
+[data-fam="aurora"] .pb-tabs .np-pr[data-status="closed"] { color: color-mix(in srgb, var(--txl) 90%, var(--txb)) !important; }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
 .pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-left: 0 !important; }
 .pb-tabs .np-tile + .np-title-btn { padding-left: 6px !important; border-left: 0 !important; }
 /* COMPACT: a ticket's (or a helper's) way back in the chat header, its part count after the name */
 [data-layout="compact"] .isle .ma-crumb { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; font-size: var(--t12); font-weight: 700; }
 .ma-crumb-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* a spin-off's way back names the chat's project too, when it's another one */
+.ma-crumb-p { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; font-weight: 400; color: var(--txd); white-space: nowrap; }
+.ma-crumb-p .ptile { margin-right: 0; }
 .ma-crumb-n { flex: none; font-family: var(--mono, monospace); font-size: var(--t9); font-weight: 400; color: var(--txl); }
 /* the branch gives way only once the title has: a sliver of the shrink */
 .pb-tabs .np-branch { flex: 0 0.12 auto !important; }
@@ -5364,7 +5360,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the warning gives way first, down to its own ellipsis: the pill is the header */
 .pb-isles > .pb-dry { flex: 0 1000 auto; min-width: 200px; max-width: 46%; overflow: hidden; height: 30px; padding: 0 4px 0 11px; }
 .pb-isles > .pb-dry > button { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }   /* the swap stays; the sentence gives way */
-/* mid-turn what the turn is doing, and the circling light, are the chat's live row (LiveRow) */
+/* mid-turn what the turn is doing, and the breathing light, are the chat's live row (LiveRow) */
 .pb-tabs[data-live] > .pb-work:not([data-paused]):not([data-q]) { display: none !important; }
 .pb-tabs[data-live] > .pb-work:not([data-paused]) > :is(i, .pb-ww), .pb-tabs[data-live] .pb-wq > .pb-ww { display: none; }
 /* the working segment (Composer workTab): the turn in the accent, what waits behind it in the queue's
@@ -5742,14 +5738,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: linear-gradient(var(--panel2), var(--panel2)) padding-box,
     conic-gradient(from var(--st-a), color-mix(in oklab, var(--acc) 8%, transparent), var(--acc) 18%, color-mix(in oklab, var(--acc) 30%, white) 24%, color-mix(in oklab, var(--acc) 8%, transparent) 48%) border-box; }
 .st-spin { width: 13px; height: 13px; flex: none; border-radius: 50%; border: 2px solid color-mix(in oklab, var(--acc) 22%, transparent);
-  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s steps(6) infinite; }
+  border-top-color: var(--acc); border-right-color: var(--acc); animation: st-spin .75s linear infinite; }
 .prj .ps-riv.st-strip { position: relative; overflow: hidden; animation: st-fade .35s ease-out backwards; }
 .prj .ps-riv.st-strip[data-err] { border-color: color-mix(in oklab, var(--err) 40%, var(--l)); }
 .st-strip small b { display: inline; font: inherit; font-weight: 700; color: var(--txm); }
 .st-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in oklab, var(--acc) 12%, transparent); }
 .st-bar > i { display: block; height: 100%; border-radius: 0 3px 3px 0; transition: width .45s cubic-bezier(.2, .8, .2, 1);
   background: linear-gradient(90deg, var(--acc), color-mix(in oklab, var(--acc) 45%, white)); box-shadow: 0 0 10px var(--acc); }
-.st-bar-run > i { width: 30%; animation: st-run 1.2s steps(10) infinite; }
+.st-bar-run > i { width: 30%; animation: st-run 1.2s ease-in-out infinite; }
 .st-sum { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .st-sum span { display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; color: var(--acc);
   border: 1px solid color-mix(in oklab, var(--acc) 35%, var(--l)); background: color-mix(in oklab, var(--acc) 9%, var(--panel2)); }
@@ -5758,9 +5754,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-scan { position: sticky; top: 0; z-index: 2; display: block; height: 0; pointer-events: none; }
 .st-scan::after { content: ""; position: absolute; left: 6px; right: 6px; top: 0; height: 2px; border-radius: 2px; --h: 520px;
   background: linear-gradient(90deg, transparent, var(--acc) 30%, color-mix(in oklab, var(--acc) 40%, white) 50%, var(--acc) 70%, transparent);
-  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s steps(10) infinite; }
+  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--acc) 55%, transparent); animation: st-sweep 1.3s ease-in-out infinite; }
 .prj-row[data-st] .prj-end { display: none; }
-.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s steps(12) infinite; }
+.prj-row[data-st="wait"] .ptile { animation: st-breathe 1.5s ease-in-out infinite; }
 .prj-row[data-st="wait"] .prj-nm { color: var(--txl); }
 .prj-row[data-st="now"] { box-shadow: inset 2px 0 0 var(--acc);
   background: linear-gradient(90deg, color-mix(in oklab, var(--acc) 5%, transparent), color-mix(in oklab, var(--acc) 17%, transparent) 70%, color-mix(in oklab, var(--acc) 6%, transparent)); }
@@ -5795,7 +5791,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .st-why { margin: 0; font-style: italic; color: var(--tx); font-size: 14px; line-height: 1.5; min-height: 21px; }
 .st-why[data-typing]::after { content: ""; display: inline-block; width: 2px; height: 16px; margin-left: 3px; background: var(--acc); vertical-align: -3px; animation: st-caret 1s steps(1) infinite; }
 .st-sheet { display: flex; flex-wrap: wrap; gap: 5px; }
-.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s steps(12) infinite; }
+.st-sheet .ptile { width: 22px; height: 22px; margin: 0; animation: st-breathe 1.5s ease-in-out infinite; }
 .st-dec { display: flex; flex-wrap: wrap; gap: 6px; }
 .st-dec span { display: inline-flex; gap: 7px; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--l); font-size: 12px; color: var(--txd); }
 .st-dec span b { color: var(--txb); font-weight: 600; }
@@ -6439,7 +6435,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
 @keyframes gl-spin { to { transform: rotate(360deg); } }
 @keyframes gl-bar { from { transform: translateX(-100%); } to { transform: translateX(333.33%); } }
-.gl-spin { animation: gl-spin 1s steps(8) infinite; }
+.gl-spin { animation: gl-spin 1s linear infinite; }
 .gl-ic { position: relative; }
 .gl-pill { position: absolute; right: 3px; top: 1px; height: 15px; min-width: 15px; padding: 0 3px; border-radius: 999px; text-align: center;
   font: 600 var(--t7)/15px var(--ui-font); background: var(--acc); color: var(--acc-on); }
@@ -6469,7 +6465,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gl-step.now .d { color: var(--acc); }
 .gl-step.bad .d { color: var(--err); }
 .gl-step .bar { grid-column: 2 / 4; position: relative; height: 2px; margin-top: 8px; overflow: hidden; background: color-mix(in oklab, var(--acc) 16%, transparent); }
-.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s steps(11) infinite; }
+.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s ease-in-out infinite; }
 .gl-err { margin-top: 14px; padding: 9px 11px; border-radius: var(--f-rad-s, 0);
   border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 7%, transparent); }
 .gl-err .h { margin-bottom: 6px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--err); }
@@ -6584,7 +6580,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
 .gp-ib:disabled { opacity: .4; cursor: not-allowed; }
 .gp-ib.spin { color: var(--acc); }
-.gp-ib.spin svg { animation: gpspin 1s steps(8) infinite; }
+.gp-ib.spin svg { animation: gpspin 1s linear infinite; }
 /* under the GIT hero: the task line, a sync op's outcome, and (on a failed
    auto-fetch) git's words. The hero's one move is the panel's only solid button:
    agents commit, you push. */
@@ -6629,9 +6625,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .rtile[data-tone="ok"] .rtile-v { color: var(--ok); }
 .rtile[data-drag] { opacity: .85; cursor: grabbing; }
 
-/* something runs for the tab unasked (GIT's auto-fetch): an orbit, the working indicator's shape */
+/* something runs for the tab unasked (GIT's auto-fetch): an orbit */
 .rail-orbit { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s steps(19) infinite; pointer-events: none; }
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s linear infinite; pointer-events: none; }
 .rail-orbit::after { content: ""; position: absolute; left: 50%; top: -3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
   background: var(--acc); box-shadow: 0 0 6px var(--acc); }
 @media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
@@ -6662,7 +6658,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-pb:hover:not(:disabled) { filter: brightness(1.08); }
 .gp-pb:disabled { cursor: not-allowed; }
 .gp-pb.busy { background: color-mix(in srgb, var(--acc) 34%, var(--panel)); color: var(--txb); box-shadow: none; cursor: progress; }
-.gp-pb.busy svg { animation: gpspin 1s steps(8) infinite; }
+.gp-pb.busy svg { animation: gpspin 1s linear infinite; }
 .gp-pb.tint { border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 15%, transparent);
   color: var(--txb); letter-spacing: .05em; box-shadow: none; }
 .gp-pb.tint:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--acc) 24%, transparent); }
@@ -6840,7 +6836,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
 .tn-cnt { display: inline-grid; place-items: center; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px;
   border: 1px solid var(--l2); font: 700 var(--t105)/1 var(--f); color: var(--txm); }
-.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s steps(11) infinite; }
+.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
 @keyframes tnpulse { 50% { opacity: .35; } }
 /* the now bar: --c is the ask hue while the turn waits on you, the accent while it works */
 .tn-now { --c: var(--acc); display: flex; align-items: center; gap: 9px; flex: none; margin: 2px 12px 6px; padding: 9px 10px 9px 12px; border-radius: 11px;
@@ -7054,7 +7050,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-hi { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; color: var(--purple);
   background: color-mix(in srgb, var(--purple) 13%, transparent); }
 .ss-hi.run::after { content: ""; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
-  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s steps(11) infinite; }
+  box-shadow: 0 0 0 2px var(--tn-bg), 0 0 8px var(--purple); animation: tnpulse 1.4s ease-in-out infinite; }
 .ss-ht { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ss-h > small { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); }
 .ss-h > em { flex: none; width: 40px; text-align: right; font-style: normal; font-weight: 800; color: var(--txb); }
@@ -7070,7 +7066,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ss-t.on { box-shadow: inset 2px 0 0 var(--acc); }
 .ss-n { flex: none; width: 20px; text-align: right; font: normal 600 var(--t10)/1 var(--m); color: var(--txg); }
 .ss-t.on .ss-n { color: var(--acc); }
-.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s steps(11) infinite; }
+.ss-t.run .ss-n { color: var(--acc); font-weight: 800; animation: tnpulse 1.4s ease-in-out infinite; }
 .ss-t.ask .ss-n { color: var(--askc); font-weight: 800; }
 .ss-t.err .ss-n { color: var(--err); }
 .ss-t.err .ss-p { color: var(--txl); }
@@ -7123,7 +7119,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cn-pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
 .cn-pill.ask { color: var(--ask); background: color-mix(in srgb, var(--ask) 14%, transparent); }
 .cn-pill svg { flex: none; }
-.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s steps(13) infinite;
+.cn-pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: rhpulse 1.6s ease-in-out infinite;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-acc2) 20%, transparent), 0 0 8px currentColor; }
 /* the scoreboard: one height in every state, so nothing under it moves */
 .cn-sb { flex: none; height: 230px; box-sizing: border-box; margin: 2px 12px 0; padding: 12px 12px 10px; display: flex; flex-direction: column;
@@ -7186,7 +7182,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .cr-coin .cn-spin { width: 13px; height: 13px; }
 .cr-why { flex: none; height: 16px; margin: 6px 14px 0; font: 600 var(--t105)/16px var(--f); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-why b { color: var(--txm); }
-.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s steps(8) infinite;
+.cn-spin { flex: none; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; animation: gpspin 1s linear infinite;
   border: 2px solid color-mix(in srgb, var(--cn-acc2) 20%, transparent); border-top-color: var(--cn-acc2); }
 /* every agent wears Codex's neutral plate; Claude keeps the accent */
 .cn-mk { flex: none; width: 22px; height: 22px; border-radius: var(--f-rad-s, 7px); display: inline-flex; align-items: center; justify-content: center;
@@ -7852,7 +7848,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-more { font-size: var(--t11); color: var(--txl); }
 .ad-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t115); color: var(--txm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ad-beacon { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rc); }
-.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s steps(19) infinite; box-sizing: border-box; }
+.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s ease-out infinite; box-sizing: border-box; }
 @keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
 /* the fold (ask-dock-readable): one line, the ask itself, so the session above can be read; the body is hidden, not gone */
@@ -7869,7 +7865,18 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-ask .md, .ad-ask p { margin: 0; font: inherit; color: inherit; }
 .ad-ask b { font-weight: 800; }
 .ad-tail { margin: 3px 0 0; font-size: var(--t12); color: var(--txl); }
-.ad-ctx { margin: 0 0 8px; max-width: 72ch; font-size: var(--t14); line-height: 1.6; color: var(--txm); overflow-wrap: anywhere; white-space: pre-line; }
+/* the text around the ask (ask-dock-description-format, B · RAIL): a railed inset, lists one item a line */
+.ad-rail { margin: 0 0 10px; padding: 10px 14px; background: var(--panel2); border-left: 2px solid var(--rc);
+  border-radius: 0 max(3px, var(--rc-rs)) max(3px, var(--rc-rs)) 0; font-size: var(--t135); line-height: 1.55; color: var(--txb); overflow-wrap: anywhere; }
+.ad-ask ~ .ad-rail { margin: 10px 0 0; }
+.ad-rail p { margin: 0; white-space: pre-line; }
+.ad-rail ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 10px; align-items: baseline; }
+.ad-rail li { display: contents; }
+.ad-rail > * + * { margin-top: 8px; }
+.ad-dm { font: 600 var(--t12) var(--mono); color: var(--rc-ink); }
+.ad-code { font: var(--t12) var(--mono); color: var(--txh); background: var(--panel3, var(--panel)); border: 1px solid var(--rc-line); border-radius: 4px; padding: 0 5px; }
+.ad-cr { color: var(--txl); padding: 0 .25em; }
+.ad-gl { color: var(--txl); }
 .ad-hint, .ad-note { margin: 9px 0 0; font-size: var(--t115); color: var(--txl); }
 .ad-note { margin: 0; padding: 0 16px 12px; }
 .ad-err { margin: 9px 0 0; font-size: var(--t12); color: var(--err); }
@@ -8214,7 +8221,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 /* CLAUDE: calm. Round dots without glow, one thin arc turning slowly. */
 [data-fam="claude"] .wsring { --wsw: 1.5px; animation: wsturn 1.8s steps(14) infinite; }
-[data-fam="claude"] .wsdot[data-kind="ask"] { animation: wsbreathe 2.4s steps(19) infinite; }
+[data-fam="claude"] .wsdot[data-kind="ask"] { animation: wsbreathe 2.4s ease-in-out infinite; }
 /* FLINT: crisp. Diamonds, and two opposite arcs that turn briskly, no glow. */
 [data-fam="flint"] .wsdot { width: 7px; height: 7px; top: -2px; right: -2px; border-radius: 1px; transform: rotate(45deg); }
 [data-fam="flint"] .wsring {
@@ -8225,7 +8232,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    out instead of turning: a stone doesn't spin. */
 [data-fam="pebble"] .wsdot { width: 9px; height: 9px; top: -3px; right: -3px; box-shadow: 0 0 0 2.5px var(--pb-pop, var(--panel, #000)); }
 [data-fam="pebble"] .wsring {
-  --wsw: 2px; background: var(--wsarc); animation: wsbreathe 2s steps(16) infinite;
+  --wsw: 2px; background: var(--wsarc); animation: wsbreathe 2s ease-in-out infinite;
   box-shadow: 0 0 10px -2px var(--wsarc);
 }
 /* MIDDLE-EARTH: a lantern. The ask is a small star that twinkles; the ring is a
@@ -8233,7 +8240,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] .wsdot[data-kind="ask"] {
   width: 10px; height: 10px; top: -4px; right: -4px; border-radius: 0; transform: rotate(45deg);
   clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); box-shadow: none;
-  animation: wstwinkle 2.2s steps(18) infinite;
+  animation: wstwinkle 2.2s ease-in-out infinite;
 }
 [data-fam="middle-earth"] .wsring {
   animation: wsturn 3.2s steps(26) infinite; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--acc) 70%, transparent));
@@ -8317,7 +8324,7 @@ button.gl-c:hover > span { color: var(--txb); }
 .wr-dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t10); color: var(--txl); }
 .wr-k { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.2px; color: var(--txl); }
 .wr-k.live { color: var(--acc); }
-.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s steps(11) infinite; }
+.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s ease-in-out infinite; }
 .wr-pre { margin: 0; padding: 6px 0 7px; font: 500 var(--t10)/1.6 var(--mono); color: var(--txm); background: color-mix(in srgb, var(--txb) 5%, transparent); }
 .wr-pre span { display: block; padding: 0 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .wr-pre .ad { background: color-mix(in srgb, var(--ok) 11%, transparent); color: var(--txb); }
@@ -8377,24 +8384,28 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-k { font-size: var(--t9); font-weight: 800; letter-spacing: .14em; color: var(--acc2, var(--acc)); flex: none; }
 .tm-card .tm-nm { font-size: var(--t13); font-weight: 700; color: var(--txb); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 14ch; }   /* scoped: team.css's Agents-view .tm-nm (min-width: 0) loads later and cut the name to "St…" */
 .tm-div { width: 1px; height: 18px; background: var(--line2); flex: none; }
-.tm-dots { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.tm-dots { display: inline-flex; align-items: center; gap: 6px; flex: 0 6 auto; min-width: 0; flex-wrap: wrap; height: 15px; overflow: hidden; }   /* gives way like the facts, a whole wave at a time: groups that don't fit wrap onto a hidden 2nd line (a group is 15px tall) */
 .tm-wv { display: inline-flex; gap: 3px; padding: 3px 4px; border: 1px solid transparent; border-radius: var(--f-rad-s, 4px); }
 .tm-wv.now { border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
 .tm-wv i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--txl) 45%, transparent); }
-.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s steps(13) infinite; }
+.tm-wv i.on { box-shadow: 0 0 6px currentColor; animation: tmpulse 1.6s ease-in-out infinite; }
 .tm-wv i.m { border-radius: 1px; transform: rotate(45deg); background: none; box-shadow: inset 0 0 0 1.5px var(--txl); animation: none; }
 .tm-c { font-size: var(--t105); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 6 auto; }
-.tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 0 auto; max-width: 40%; color: var(--txd); }
-/* A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
+.tm-call { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 84px; flex: 0 1 40%; max-width: max-content; color: var(--txd); }
+/* .tm-call: a 40% basis capped at its own width keeps a short call whole while the rest gives way (the wider basis soaks up its share
+   of the shrink); only once the rest is at its floor does it shrink, so a long error ellipsizes instead of pushing the buttons off the card.
+   A narrow strip keeps what waits on you: the wave facts shrink first, then the facts and dots go, then the words on Open map. */
 @container (max-width: 800px) { .tm-row[data-call] > .tm-c, .tm-row[data-call] > .tm-c + .tm-div { display: none; } }
 @container (max-width: 900px) { .tm-row[data-auto] > .tm-c { display: none; } }   /* AUTO-START over the facts: Approve & build says it waits */
 @container (max-width: 640px) { .tm-row .tm-c, .tm-row .tm-c + .tm-div, .tm-row .tm-dots, .tm-row .tm-dots + .tm-c { display: none; } }
-@container (max-width: 520px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }
+@container (max-width: 700px) { .tm-row .tm-auto { display: none; } }   /* Approve & build over AUTO-START, which the FLOWS sheet also sets: with it a waiting set ran 110px over */
+@container (max-width: 560px) { .tm-row .tm-k, .tm-row .tm-open-w { display: none; } }   /* 520 left a call + its button 10px over in Nunito, 540 Approve & build's row 6px */
 .tm-auto { flex: none; margin-right: 6px; white-space: nowrap; text-transform: none; }   /* its .caps word carries the capitals */
 /* LIVE's bar has no container to ask: while a set waits its chips are every ticket, which its dots show. */
 .tl-bar[data-auto] > .tm-c, .tl-bar[data-auto] > .tl-chips { display: none; }
 .tm-call b { font-weight: 700; }
 .tm-call svg { flex: none; }
+.tm-call > span { overflow: hidden; text-overflow: ellipsis; }   /* a call's words sit in a span: an inline-flex box draws no ellipsis, so a cut call read "needs a f" */
 .tm-call.warn { color: var(--warn); } .tm-call.err { color: var(--err); }
 .tm-body-s { border-top: 1px solid var(--line); max-height: 221px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .tm-graph { display: block; width: 100%; height: auto; max-height: 220px; }
@@ -8409,7 +8420,7 @@ button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12p
 .tm-node:hover > circle:not(.tm-live), .tm-node:focus-visible > circle:not(.tm-live) { stroke: var(--txb); }
 .tm-lab { font-size: 11.5px; fill: var(--txd); }
 .tm-lab2 { font-size: 10.5px; fill: var(--txl); }
-.tm-live { animation: tmpulse 1.6s steps(13) infinite; }
+.tm-live { animation: tmpulse 1.6s ease-in-out infinite; }
 .tm-flow { animation: tmflow .9s steps(7) infinite; }
 @keyframes tmpulse { 50% { opacity: .35; } }
 @keyframes tmflow { to { stroke-dashoffset: -10; } }
@@ -8891,7 +8902,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .home-now, .home-away { height: 22px; cursor: default; }
 .home-now { font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--acc); }
 .home-now .mid::before { top: 50%; }
-.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s steps(13) infinite; }
+.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s ease-in-out infinite; }
 .home-away { font-size: var(--t105); font-style: italic; font-weight: 600; color: var(--txg); }
 .home-away .mid::before { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--txl) 70%, transparent) 0 3px, transparent 3px 6px); opacity: 1; }
 .home-none { margin-top: 14px; font-size: var(--t15); font-weight: 800; color: var(--txb); }
@@ -9044,7 +9055,7 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .upd-fix.ok { --k: var(--ok); } .upd-fix.warn { --k: var(--warn); } .upd-fix.bad { --k: var(--err); }
 .upd-fix .top { display: flex; align-items: center; gap: 8px; font: 700 var(--t85)/1.2 var(--ui-font); letter-spacing: .14em; color: var(--k); }
 .upd-fix .dot { flex: none; width: 7px; height: 7px; border-radius: 9px; background: var(--k); box-shadow: 0 0 8px var(--k); }
-.upd-fix .dot.pulse { animation: tnpulse 1.4s steps(11) infinite; }
+.upd-fix .dot.pulse { animation: tnpulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .upd-fix .dot.pulse { animation: none; } }
 .upd-fix .go { margin-left: auto; font: 500 var(--t95) var(--mono); letter-spacing: 0; }
 .upd-fix b { font: 600 var(--t125)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }

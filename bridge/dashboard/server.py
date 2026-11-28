@@ -13,6 +13,7 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
+import functools
 import getpass
 import hmac
 import json
@@ -153,16 +154,20 @@ def _sessions_payload(chat, project) -> dict:
     # tab exists to show must not be filtered into invisibility.
     # A real project that moved or was deleted keeps its sessions listed,
     # marked missing (browser.gone), for MOVE TO PROJECT.
+    # Home is no project, but one started there lists: the sidebar files it under
+    # Outside projects (web lib/outside), so it opens no phantom "~" group.
+    # Each project's folder is looked at once a build: per session it was half the build.
+    exists, gone = functools.cache(browser.project_exists), functools.cache(browser.gone)
     rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-            or browser.project_exists(r["project"]) or _rehome_moved(r)
-            or browser.gone(r["project"])]
+            or exists(r["project"]) or _rehome_moved(r)
+            or gone(r["project"]) or r["project"] == "~"]
     # Ticket and merge sessions name their super session; that one carries its set's count.
     from bridge import tickets
     of, counts = tickets.owners()
     dt = store.default_disabled_tools()
     return {"sessions": [{**b, **({"ticket_of": of[b["id"]]} if b["id"] in of else {}),
                           **({"tickets": counts[b["id"]]} if b["id"] in counts else {})}
-                         for b in (_session_brief(r, dt) for r in rows)]}
+                         for b in (_session_brief(r, dt, gone) for r in rows)]}
 
 
 # After a restart the first ask is answered from the last run's list, saved beside
@@ -409,13 +414,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silence default logging
         pass
 
-    # Every request timed from its first line read to its answer written; a slow
-    # one is a report on a team install (bridge/reports.py bridge_call).
+    # Every request timed from its first line read to its answer written, less its
+    # waits outside the bridge (reports.outside); a slow one is a report on a team
+    # install (bridge/reports.py bridge_call).
     def handle_one_request(self):
         self._t0 = self._status = None
         super().handle_one_request()
+        waited = reports.take_outside()
         if self._t0 is not None:
-            reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0)
+            reports.bridge_call(self.command, self.path, self._status, time.monotonic() - self._t0 - waited)
 
     def parse_request(self):
         t0 = time.monotonic()
@@ -741,7 +748,8 @@ class Handler(BaseHTTPRequestHandler):
             flow = paths.get(sid)
             if flow:
                 flow["stations"] = paths.stations(sid)   # the steps as they stand: FLOW draws these
-            return self._json({"flow": flow, "past": paths.past(sid), "set": tset})
+            # pack: the DESIGN PACK gate is open for it, so the prompt box offers BOLD beside DESIGN.
+            return self._json({"flow": flow, "past": paths.past(sid), "set": tset, "pack": paths.design_pack(sid)})
         if path == "/local/tickets":
             from bridge import tickets
             return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only
@@ -2776,7 +2784,8 @@ class Handler(BaseHTTPRequestHandler):
         # _save_images so a held prompt writes nothing.
         from bridge import paths as flows   # `paths` below is the image paths
         flow = body.get("flow") or None
-        if flow and (why := flows.flow_refusal(str(flow), str(body.get("by") or ""), prompt, agent)):
+        bold = body.get("bold") is True   # BOLD: this DESIGN send's design is a Bold run
+        if (flow or bold) and (why := flows.flow_refusal(str(flow or ""), str(body.get("by") or ""), prompt, agent, bold)):
             return self._json({"error": why}, 400)
         t = time.monotonic()
         held = relevance.gate(chat, project_path, session_id, prompt,
@@ -2801,7 +2810,7 @@ class Handler(BaseHTTPRequestHandler):
                                          session_id=session_id, profile_id=profile_id,
                                          origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
-                                         runtime=runtime, flow=flow,
+                                         runtime=runtime, flow=flow, bold=bold,
                                          flow_by=body.get("by") if flow else None, style=style)
         if job is None:
             runner._cleanup_uploads(job_id)
@@ -2852,9 +2861,21 @@ class Handler(BaseHTTPRequestHandler):
         # A deny can say what to do instead (the prompt box under the card);
         # `noted` tells the client the words reached the model with it.
         note = (body.get("message") or "").strip()[:4000] if behavior == "deny" else ""
-        if not job.respond(rid, behavior=behavior, answers=body.get("answers"), message=note or None):
+        # Files pasted in the box go with the answer, saved the way a steer's are.
+        images = body.get("images") or []
+        if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+            return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
+        shot_id = uuid.uuid4().hex
+        try:
+            paths = _save_images(shot_id, images) if images else []
+        except ValueError as e:
+            runner._cleanup_uploads(shot_id)
+            return self._json({"error": str(e)}, 413)
+        if not job.respond(rid, behavior=behavior, answers=body.get("answers"), message=note or None,
+                           images=paths or None):
+            runner._cleanup_uploads(shot_id)
             return self._json({"error": "no such pending request"}, 409)
-        self._json({**job.snapshot(_cursor(body)), "noted": bool(note) and job.takes_notes})
+        self._json({**job.snapshot(_cursor(body)), "noted": bool(note or paths) and job.takes_notes})
 
     def _interrupt(self, job_id, body):
         job = runner.get_job(job_id)
@@ -2894,9 +2915,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             from bridge import paths as flows   # `paths` below is the image paths
             flow = body.get("flow") or None
-            if flow and (why := flows.flow_refusal(
-                    str(flow), str(body.get("by") or ""), prompt,
-                    profiles.agent_for(store.get_session(sid)))):
+            bold = body.get("bold") is True
+            if (flow or bold) and (why := flows.flow_refusal(
+                    str(flow or ""), str(body.get("by") or ""), prompt,
+                    profiles.agent_for(store.get_session(sid)), bold)):
                 return self._json({"error": why}, 400)
             agent = (body.get("agent") or "").strip()
             try:
@@ -2920,7 +2942,7 @@ class Handler(BaseHTTPRequestHandler):
                 effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
-                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None, style=style)
+                agent=agent or None, flow=flow, flow_by=body.get("by") if flow else None, style=style, bold=bold)
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)

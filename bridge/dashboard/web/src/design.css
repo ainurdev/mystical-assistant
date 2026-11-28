@@ -58,13 +58,13 @@
 .dg-about { margin: 0 0 10px; color: var(--txb); overflow-wrap: anywhere; }
 .dg-tweaks h5 { margin: 14px 0 6px; font: inherit; color: var(--txd); }
 .dg-verdict { margin: 0 0 10px; line-height: 1.5; color: var(--txb); }
-.dg-score { display: grid; grid-template-columns: 76px 1fr 18px; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--txm); text-transform: capitalize; }
-.dg-score b { font-weight: 500; color: var(--txb); text-align: right; }
-.dg-track { display: block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 22%, transparent); overflow: hidden; }
-.dg-track i { display: block; height: 100%; background: var(--acc); }
 .dg-fixes { margin: 10px 0; padding-left: 18px; line-height: 1.45; color: var(--txm); }
 .dg-fixes li { margin-bottom: 6px; }
 .dg-fixes b { display: block; font-weight: 500; color: var(--txb); }
+.dg-sev { display: block; color: var(--txd); }
+.dg-sev i { font-style: normal; }
+.dg-sev[data-sev="P0"] { color: var(--err); }
+.dg-sev[data-sev="P1"] { color: var(--warn); }
 .dg-refs form { display: flex; gap: 5px; }
 .dg-refs form input { flex: 1; }
 .dg-file { position: relative; }
@@ -236,7 +236,7 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .wl-top b { font-weight: 600; color: var(--txb); overflow-wrap: anywhere; }
 .wl-top b span { font-weight: 400; color: var(--txd); }
 .wl-err { margin: 6px 12px !important; }
-.wl-think svg { animation: wl-spin 1.6s steps(13) infinite; }
+.wl-think svg { animation: wl-spin 1.6s linear infinite; }
 @keyframes wl-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .wl-think svg { animation: none !important; } }
 .wl-body { flex: 1; padding: 0 0 10px; }
@@ -391,6 +391,78 @@ li[data-unwritten] > .dc-page { color: var(--txd); }
 .wl-sub { min-height: 0; padding-top: 8px; padding-bottom: 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* The chat's plan changing, as a line in the transcript (components/PlanLine). */
+/* ── Spin-off card (components/SpinOffCard; .mystical/design-drafts/spin-offs, A · CARD): work a turn turned up
+   that this chat isn't doing, a row each, to start in its own project's session. An offer, not an ask: no amber
+   node, and rows that went fold to a ✓ line of chips above what's left. */
+.so { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 2px var(--rail, 0); font-family: var(--ui-font, inherit); }
+.so-card { position: relative; container-type: inline-size; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); }
+.so-h { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 14px; border-bottom: 1px solid var(--border); color: var(--acc); font-size: var(--t125); }
+.so-h b { color: var(--txb); font-weight: 700; }
+.so-h span { color: var(--txl); }
+.so-item { border-bottom: 1px solid var(--border); }
+.so-row { position: relative; display: flex; align-items: flex-start; gap: 12px; min-height: 56px; padding: 9px 14px; }
+.so .so-tick { all: unset; box-sizing: border-box; flex: none; display: grid; place-items: center; width: 17px; height: 17px; margin-top: 3px; border-radius: 5px; border: 1.5px solid var(--border-bright); color: var(--acc-on, #fff); cursor: pointer; }
+.so .so-tick[aria-checked="true"] { background: var(--acc); border-color: var(--acc); }
+.so .so-tick:disabled { opacity: .45; cursor: default; }
+.so-lead { flex: none; display: grid; place-items: center; width: 17px; margin-top: 3px; color: var(--txl); }
+.so-tx { flex: 1; min-width: 0; }
+.so .so-t1 { all: unset; box-sizing: border-box; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txh); font-size: var(--t13); font-weight: 600; cursor: pointer; }
+.so .so-t1[data-plain], .so-row[data-off] .so-t1 { color: var(--txm); }
+.so .so-t1[data-plain] { cursor: default; }
+.so-t2 { display: flex; align-items: center; gap: 6px; margin-top: 3px; overflow: hidden; white-space: nowrap; color: var(--txl); font-size: var(--t115); }
+.so-mono { overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: .95em; }
+.so-after { display: inline-flex; align-items: center; gap: 4px; color: var(--acc); }
+.so-wait { color: var(--ask); }
+.so-warn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--err); font-size: var(--t115); }
+.so-dim { color: var(--txd); }
+.so .so-link { all: unset; overflow: hidden; text-overflow: ellipsis; color: var(--acc); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--acc) 45%, transparent); cursor: pointer; }
+.so-chain { position: absolute; left: 22px; top: -14px; width: 0; height: 22px; border-left: 1.5px dashed color-mix(in srgb, var(--acc) 55%, transparent); }
+.so-ctl { flex: none; display: flex; align-items: center; gap: 6px; }
+.so-pkw { position: relative; }
+.so .so-pk { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; max-width: 230px; height: 26px; padding: 0 6px; border: 1px solid var(--border); border-radius: 7px; color: var(--txm); font-size: var(--t12); white-space: nowrap; cursor: pointer; }
+.so .so-pk:hover, .so .so-pk[aria-expanded="true"] { border-color: var(--border-bright); background: color-mix(in srgb, var(--txh) 4%, transparent); }
+.so-pn { overflow: hidden; text-overflow: ellipsis; }
+.so-cv { flex: none; color: var(--txl); }
+.so .ptile { margin-right: 0; }
+.so-pop { position: absolute; z-index: 30; right: 0; top: calc(100% + 4px); width: 280px; padding: 6px; border: 1px solid var(--border-bright); border-radius: 11px; background: var(--panel); box-shadow: 0 18px 40px var(--shadow-pop); }
+.so-find { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 5px; padding: 0 9px; border-radius: 7px; color: var(--txl); background: color-mix(in srgb, var(--txh) 4%, transparent); }
+.so-find input { flex: 1; min-width: 0; appearance: none; border: 0; outline: none; background: none; font: inherit; font-size: var(--t12); color: var(--txb); }
+.so .so-opt { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 0 9px; border-radius: 7px; color: var(--tx); font-size: var(--t12); cursor: pointer; }
+.so .so-opt:hover, .so .so-opt[aria-selected="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.so-tag { overflow: hidden; max-width: 130px; margin-left: auto; text-overflow: ellipsis; white-space: nowrap; color: var(--txl); font-size: var(--t11); }
+.so-ck { flex: none; margin-left: auto; color: var(--acc); }
+.so-tag + .so-ck { margin-left: 8px; }
+.so-more { padding: 6px 9px; color: var(--txd); font-size: var(--t115); }
+.so-sep { height: 1px; margin: 5px 4px; background: var(--border); }
+.so-brief { margin: -2px 14px 12px 43px; padding: 10px 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel3); color: var(--txm); font-size: var(--t125); line-height: 1.6; }
+.so-brief p { margin: 0; overflow-wrap: anywhere; }
+.so-md > :first-child { margin-top: 0; }
+.so-md > :last-child { margin-bottom: 0; }
+.so-src { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: var(--t115); }
+.so-src a { color: var(--acc); text-underline-offset: 3px; }
+.so-f { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+.so-sp { flex: 1; }
+.so .so-btn { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 9px; background: color-mix(in srgb, var(--txh) 6%, transparent); color: var(--txm); font-size: var(--t125); font-weight: 700; white-space: nowrap; cursor: pointer; }
+.so .so-btn[data-pri] { background: var(--acc); color: var(--acc-on, #fff); }
+.so .so-btn[data-pri] svg { fill: currentColor; }
+.so .so-btn:disabled { opacity: .45; cursor: default; }
+.so-fold { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.so-done { display: inline-flex; align-items: center; gap: 7px; margin-right: 2px; color: var(--ok); font-size: var(--t125); font-weight: 700; }
+.so .so-chip { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; max-width: 330px; height: 28px; padding: 0 10px 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel2); color: var(--txh); font-size: var(--t12); white-space: nowrap; }
+.so button.so-chip { cursor: pointer; }
+.so button.so-chip:hover { border-color: var(--border-bright); }
+.so .so-chip svg { flex: none; color: var(--txl); }
+.so .so-chip[data-state="waiting"], .so .so-chip[data-state="parked"] { color: var(--txm); }
+.so .so-chip .so-wait { color: var(--ask); }
+.so-ct { overflow: hidden; text-overflow: ellipsis; }
+.so-err { margin: 8px 0 0 var(--rail, 0); color: var(--err); font-size: var(--t115); }
+.so :is(.so-tick, .so-t1, .so-pk, .so-opt, .so-btn, .so-chip, .so-link):focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+/* A narrow column: the pickers go under the title, lined up with it. */
+@container (max-width: 560px) {
+  .so-row { flex-wrap: wrap; row-gap: 8px; }
+  .so-ctl { flex-basis: 100%; padding-left: 29px; }
+  .so-pop { right: auto; left: 0; }
+}
 .pl-line { margin: 4px 0; padding: 6px 10px 7px; margin-left: var(--rail, 0); border-left: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 6%, transparent); border-radius: 0 6px 6px 0; font-size: var(--t105, 12px); color: var(--txm); }
 .pl-line-h { display: flex; align-items: center; gap: 7px; color: var(--acc); }
 .pl-line-h b { flex: 1; min-width: 0; font-weight: 600; color: var(--txb); }

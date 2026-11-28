@@ -260,7 +260,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
   { tab: "appearance", sec: "CLOCK & WEATHER", terms: "clock time format 12h 24h am pm almanac calendar weather city location place celsius fahrenheit units temperature world clock time zone timezone header pin" },
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "HEADER", terms: "header island pill bar shape fade dissolve gradient glass frosted blur clear solid transparent hide scroll auto-hide last line search switch chat agents tickets" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
@@ -622,7 +622,7 @@ function Placeholder({ icon: Icon, spin, children }: {
       <Icon size={26} strokeWidth={1.3} aria-hidden
         style={{
           color: "var(--acc)", opacity: .4,
-          animation: spin ? "introspin 1.4s steps(11) infinite" : undefined,
+          animation: spin ? "introspin 1.4s linear infinite" : undefined,
         }} />
       <div style={{ fontSize: "var(--t10)", color: "var(--txl)", lineHeight: 1.75, maxWidth: 360 }}>
         {children}
@@ -2750,7 +2750,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     return (
       <MiniBtn disabled={!p.installed || (!!t && "busy" in t)} onClick={() => void test(acct)}
         title={p.installed ? "Start it once and list what it offers (up to two minutes)" : "Install it first"}>
-        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "TEST"}
+        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "TEST"}
       </MiniBtn>
     );
   };
@@ -2758,7 +2758,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
     const l = logins[acct];
     return live(l)
       ? <MiniBtn disabled={l!.state === "testing"} onClick={() => void cancelLogin(acct)} title="Stop this sign-in">
-          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
+          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
         </MiniBtn>
       : <MiniBtn disabled={!p.installed} onClick={() => void login(acct)}
           title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>
@@ -3214,7 +3214,7 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
             <div className="aim-f wide">
               {testing
                 ? <span style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s steps(11) infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
+                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
                   </span>
                 : <MiniBtn onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">TEST</MiniBtn>}
               {testErr && warn(preset?.can_login && /login/i.test(testErr)
@@ -5260,10 +5260,10 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. ORBIT is the WORK card itself: a comet on its node while a tool runs, a ripple while the model thinks. Every form lives in the WORK card while a turn runs.">
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. Every form lives in the WORK card while a turn runs.">
                       <div style={{ width: 360 }}>
                         <Segmented
-                          options={[{ label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }, { label: "ORBIT", value: "orbit" }]}
+                          options={[{ label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />

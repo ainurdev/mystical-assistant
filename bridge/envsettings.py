@@ -122,8 +122,11 @@ SETTINGS = (
               "project's default profile, else the CLI's own."},
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
-     "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",
-     "about": "Persisted on the session, so continuing it from any surface — the bot "
+     "group": "RUNS", "label": "NEW SESSION MODE", "hint": "mode a new session with no profile starts in",
+     "about": "A session with a profile follows the profile's mode, else FALLBACK MODE. "
+              "Either way, a composer sends its device's last MODE pick with a new "
+              "session's first message, and that pick is saved on the session. "
+              "Persisted on the session, so continuing it from any surface — the bot "
               "chat included — keeps the posture, until a pick in a composer changes "
               "the session's mode. 'bypassPermissions' is full autonomy: anything "
               "that can inject a prompt then runs commands as you. 'default' surfaces "

@@ -36,6 +36,7 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   preview: Play,
   learn: GraduationCap,
   ponytail: Scissors,
+  designpack: Palette,
   graph: Waypoints,
   commitmsg: GitCommitVertical,
   router: Route,

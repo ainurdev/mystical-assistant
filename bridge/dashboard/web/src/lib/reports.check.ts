@@ -2,7 +2,7 @@
 // The page's scrubber (lib/reports.ts): what a crash report may carry.
 import assert from "node:assert/strict";
 import type { Breadcrumb, ErrorEvent } from "@sentry/browser";
-import { controlOf, isMissingChunk, keepBreadcrumb, options, scrubReport, tagsFor } from "./reports.ts";
+import { controlOf, isMissingChunk, keepBreadcrumb, options, scrubReport, startReports, tagsFor } from "./reports.ts";
 
 const TOKEN = "s3cr3t-dash-token";
 const ORIGIN = "http://127.0.0.1:8790";
@@ -84,5 +84,34 @@ assert.equal(spot.exception, undefined);
 assert.equal(spot.message, "frame");
 const crashed = send({ exception: { values: [{ type: "TypeError", value: "x is undefined", stacktrace: { frames } }] } })!;
 assert.equal(crashed.exception?.values?.[0].stacktrace?.frames?.length, 1);
+
+// the engine's notice that a ResizeObserver resized what it observes is no crash: never sent.
+// It reaches window.onerror with no error object, so the report is all there is to read (Sentry MYSTICAL-1P).
+for (const m of ["ResizeObserver loop completed with undelivered notifications.", "ResizeObserver loop limit exceeded"]) {
+  assert.equal(opts.beforeSend!({ type: undefined, message: m, exception: { values: [{ type: "Error", value: m }] } } as ErrorEvent, {}), null, m);
+}
+assert.ok(send({ exception: { values: [{ type: "Error", value: "ResizeObserver is not defined" }] } }));
+
+// a page an agent drives (a screenshot kit, a driven check) is no one working: it never starts
+// reports, and doesn't ask. 60 of a teammate's 76 start-ups on 2026-11-26 were such loads.
+{
+  const realFetch = globalThis.fetch;
+  const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator")!;
+  const drive = (webdriver: boolean) => Object.defineProperty(globalThis, "navigator", { value: { webdriver, userAgent: "" }, configurable: true });
+  let asked = 0;
+  const settled: unknown[] = [];
+  globalThis.fetch = (async () => { asked++; return new Response('{"on":false}'); }) as typeof fetch;
+  try {
+    drive(true);
+    await startReports((s) => settled.push(s));
+    assert.deepEqual([asked, settled], [0, [null]]);
+    drive(false);
+    await startReports((s) => settled.push(s));
+    assert.deepEqual([asked, settled], [1, [null, null]]);
+  } finally {
+    globalThis.fetch = realFetch;
+    Object.defineProperty(globalThis, "navigator", realNav);
+  }
+}
 
 console.log("reports.check: ok");

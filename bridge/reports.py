@@ -23,6 +23,14 @@ traces: SDK 3's spans stream on their own pipeline, which before_send never
 sees, so they would skip the scrubber and the caps. An event grouped by its
 name lands in the same project and carries the time and the phases.
 
+A bridge call's time is the bridge's own. A read of GitHub through gh, of
+Rivendell, of the weather service or of a login's meter through the CLI is as
+slow as the network: what a poll can spare is spared by answering from cache
+and reading behind, and the first read of a branch or a forced one still waits
+by design. Those waits say so (outside()) and leave the request's time; about
+110 of the reports of 2026-11-25 and 26 were such reads. A route that is nothing
+but a wait (a long poll, an agent's tool call) is in UNTIMED instead.
+
 Sending never waits: capture_* only queues, the SDK's worker thread sends, its
 transport times out in _SEND_TIMEOUT, and a dead receiver changes nothing else.
 """
@@ -34,6 +42,7 @@ import sys
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 from bridge import config
@@ -75,9 +84,41 @@ UNTIMED = (
     "POST /local/acp/test", "POST /local/acp/login",                          # the network
     "GET /local/graph/explain", "POST /local/git/commit-message",             # a model call
     "POST /local/wait",                                                       # waits by design
+    "GET /local/runs/",                                                       # the run API's long poll
+    "POST /local/computer/app",                     # Mystical.app's long poll for orders (computer.PULL_WAIT)
+    "POST /local/gateway",                 # an agent's tool call: a page drive, a suite, a wait of its own
+    "POST /local/server",                                                     # waits for the dev server's URL
     "POST /local/rivendell/team/send",                                        # an upload
     "GET /local/storage",                                                     # a disk walk, on open
+    "POST /local/git/worktree",                         # a checkout made, or deleted with its scratch kept
 )
+
+_out = threading.local()   # .secs: this thread's waits outside the bridge since the last take
+
+
+@contextmanager
+def outside():
+    """Around a wait on something that is not the bridge (the module docstring
+    names them): its time leaves the request this thread is answering. Wrap the
+    wait itself, once: what runs beside it is the bridge's own work."""
+    t = time.monotonic()
+    try:
+        yield
+    finally:
+        waited(time.monotonic() - t)
+
+
+def waited(secs: float) -> None:
+    """`secs` of this thread's time went to a wait outside the bridge. outside() says so
+    for a wait on this thread; a thread that waited on others' says what they measured
+    (accounts.with_meters: the longest of its pool's reads)."""
+    _out.secs = getattr(_out, "secs", 0.0) + secs
+
+
+def take_outside() -> float:
+    """This thread's outside() time since the last take, cleared: a request's end takes it."""
+    secs, _out.secs = getattr(_out, "secs", 0.0), 0.0
+    return secs
 
 
 def _os() -> str:

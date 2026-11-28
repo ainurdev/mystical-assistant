@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/kinds.check.ts
-import { KINDS, KIND_ORDER, guessKind, kindFacts, lastCheckOf, nextKind, presetFor, sendPlan, shownKind } from "./kinds.ts";
+import { KINDS, KIND_ORDER, boldShows, guessKind, kindFacts, lastCheckOf, nextKind, presetFor, sendPlan, shownKind } from "./kinds.ts";
 import type { FactsCtx, LastCheck } from "./kinds.ts";
 import type { GitStatus } from "../api.ts";
 import type { Turn } from "../chat.ts";
@@ -113,6 +113,16 @@ console.assert(off.flow === undefined && off.run === run, "SKILL PATHS off: the 
 const esc = shownKind("plain", "add a digest", { start: true, design: true });
 console.assert(sendPlan({ ...o, kind: esc.kind, how: esc.how }).flow === undefined, "Esc on a lit flow sends no flow");
 
+// --- BOLD: beside DESIGN with the design pack on; it goes only with a DESIGN flow -------
+console.assert(boldShows("design", true, true), "BOLD shows beside DESIGN with the pack on");
+for (const [k, live, pack] of [["build", true, true], ["design", false, true], ["design", true, false], [null, true, true]] as const)
+  console.assert(!boldShows(k, live, pack), `no BOLD for ${k} live=${live} pack=${pack}`);
+console.assert(sendPlan({ ...o, kind: "design", bold: true }).bold === true, "a DESIGN send carries BOLD");
+console.assert(sendPlan({ ...o, kind: "design", how: "auto", bold: true }).bold === true, "a guessed DESIGN carries it too");
+console.assert(sendPlan({ ...o, kind: "design" }).bold === undefined, "unlit, no bold");
+console.assert(sendPlan({ ...o, kind: "build", bold: true }).bold === undefined, "never with another flow");
+console.assert(sendPlan({ ...o, kind: "design", how: "auto", running: "design", bold: true }).bold === undefined, "no flow started, no bold");
+
 // --- lastCheckOf -------------------------------------------------------------
 const chk = (ok: boolean, at?: number) => ({ type: "checks" as const, command: "t", ok, code: ok ? 0 : 1, ms: 1, passed: 3, failed: ok ? 0 : 1, skipped: 0, new: [], known: [], log: "", tail: "", at });
 const turn = (events: Turn["events"], started?: number) => ({ id: "t", prompt: "", events, started, status: "done", pending: [] }) as unknown as Turn;
@@ -124,7 +134,7 @@ console.assert(lastCheckOf([]) === null, "no turns, null");
 
 // --- kindFacts ---------------------------------------------------------------
 const git = (p: Partial<GitStatus>): GitStatus => ({ is_repo: true, branch: "b", upstream: "origin/x", ahead: 0, behind: 0, dirty: 0, files: [], ...p });
-const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, designLinked: null, mapBuiltAt: null, askPerm: "plan", ...p });
+const ctx = (p: Partial<FactsCtx> = {}): FactsCtx => ({ git: git({}), lastCheck: null, mapBuiltAt: null, askPerm: "plan", ...p });
 const text = (k: Parameters<typeof kindFacts>[0], c: FactsCtx) => kindFacts(k, c).map((f) => (f.lead ?? "") + f.text).join(" · ");
 console.assert(text("ship", ctx({ git: git({ ahead: 3 }) })) === "3 to push · 0 to pull", "ship push/pull");
 const dirty = kindFacts("ship", ctx({ git: git({ dirty: 2, ahead: 1 }) }));
@@ -138,9 +148,7 @@ const timed = ctx({ lastCheck: { ...bad, at: 1_700_000_000 } });
 console.assert(text("fix", timed) === `last check 1 failed · ${hhmm(1_700_000_000)}`, "fix copy with its time");
 console.assert(kindFacts("fix", timed)[0].lead === "last check " && kindFacts("fix", timed)[1].tone === undefined, "only the result is red: the words and the time stay plain");
 console.assert(text("fix", ctx()) === "no checks run in this session yet", "fix no checks");
-console.assert(same(kindFacts("design", ctx()), []), "design: link not known yet is no fact");
-console.assert(text("design", ctx({ designLinked: false })) === "no Claude Design project linked", "design unlinked");
-console.assert(text("design", ctx({ designLinked: true })) === "drafts → Claude Design", "design linked");
+console.assert(same(kindFacts("design", ctx()), []), "design: no facts, its drafts stay local");
 console.assert(same(kindFacts("ask", ctx()), [{ text: "read-only, changes nothing" }]), "ask, no map");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits", mapBuiltAt: Date.now() / 1000 })).map((f) => f.text), ["map built just now"]), "ask: no read-only claim once its mode edits");
 console.assert(same(kindFacts("ask", ctx({ askPerm: "acceptEdits" })), []), "ask: editing mode, no map, no facts");

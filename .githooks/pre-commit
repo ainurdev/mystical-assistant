@@ -5,6 +5,17 @@
 # Only in Claude Code's shells (CLAUDECODE=1): the bridge's own commits time out at 8 s
 # (bridge/git.py), and the dashboard's check takes about 10.
 [ "$CLAUDECODE" = 1 ] || exit 0
+# A new known-limit comment says shortcut: (CODING_STANDARDS.md). Old markers are counted against
+# the removed ones, so moving an old comment still commits.
+diff=$(git diff --cached -U0 -- '*.py' '*.ts' '*.tsx' '*.js' '*.mjs' '*.sh' '*.swift' '*.cs' \
+  | grep -v -e '^+++ ' -e '^--- ')
+added=$(printf '%s\n' "$diff" | grep -cE '^\+.*(#|//) ?ponytail:')
+removed=$(printf '%s\n' "$diff" | grep -cE '^-.*(#|//) ?ponytail:')
+if [ "$added" -gt "$removed" ]; then
+  printf '%s\n' "$diff" | grep -E '^\+.*(#|//) ?ponytail:'
+  echo "pre-commit: write a new known-limit comment as shortcut: <the limit>, <when to upgrade> (CODING_STANDARDS.md)"
+  exit 1
+fi
 apps=$(git diff --cached --name-only | sed -nE 's#^bridge/(dashboard|miniapp)/web/.*#\1#p' | sort -u)
 [ -n "$apps" ] || exit 0
 root=$(git rev-parse --show-toplevel)

@@ -8,6 +8,7 @@ Spec: docs/superpowers/specs/session-run-settings-design.md
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import tempfile
@@ -340,6 +341,90 @@ def test_a_run_with_its_own_ask_rule_keeps_its_cards_under_bypass():
     job.set_run_settings(permission_mode="bypassPermissions")
     _answer(job)
     assert [p["request_id"] for p in job.pending] == ["p1"]
+
+
+def _login_with_shared_projects(tmp_path, monkeypatch):
+    """Login 3's folder with projects/ a symlink into the first login's, as
+    bridge/accounts.py lays them out, and a checkout with a linked worktree.
+    Returns (login, checkout, worktree, the checkout's memory folder)."""
+    root = os.path.realpath(str(tmp_path))
+    shared, login = os.path.join(root, "claude", "projects"), os.path.join(root, "accounts", "3")
+    os.makedirs(shared)
+    os.makedirs(login)
+    os.symlink(shared, os.path.join(login, "projects"))
+    monkeypatch.setattr(runner.accounts, "profile_dir", lambda slot: login if slot == 3 else "/nowhere")
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *a, **k: None)
+    checkout = os.path.join(root, "Projects", "app")
+    os.makedirs(os.path.join(checkout, ".git", "worktrees", "wt"))
+    wt = os.path.join(checkout, ".worktrees", "wt")
+    os.makedirs(wt)
+    with open(os.path.join(wt, ".git"), "w") as f:
+        f.write(f"gitdir: {checkout}/.git/worktrees/wt\n")
+    mem = os.path.join(login, "projects", re.sub(r"[^A-Za-z0-9]", "-", checkout), "memory")
+    os.makedirs(mem)
+    return login, checkout, wt, mem
+
+
+def _write_ask(job, rid, path, tool="Write", **why):
+    """A can_use_tool request for a file write through the login's projects/
+    symlink, with the reason fields claude 2.1.329 sent for one (probed)."""
+    runner._handle_control_request(job, {"type": "control_request", "request_id": rid,
+        "request": {"subtype": "can_use_tool", "tool_name": tool, "tool_use_id": "t-" + rid,
+                    "input": {"file_path": path, "content": "note"},
+                    "decision_reason_type": "safetyCheck", "classifier_approvable": False,
+                    "suppress_always_allow_rule": True, "blocked_path": os.path.realpath(path),
+                    **why}})
+
+
+def test_claude_writing_its_own_memory_through_a_login_symlink_is_not_asked(tmp_path, monkeypatch):
+    """Plain Claude never asks before writing its own memory notes. Through a
+    login's projects/ symlink, claude 2.1.329's safety check asks in every mode
+    but Bypass, so each memory note raised an Allow Write card. The bridge says
+    yes to that ask, from the checkout or a worktree of it (memory is per repo)."""
+    _login, checkout, wt, mem = _login_with_shared_projects(tmp_path, monkeypatch)
+    for cwd in (checkout, wt):
+        job = _live_job("s-memory")
+        job.account_slot, job.cwd = 3, cwd
+        _write_ask(job, "note", os.path.join(mem, "note.md"))
+        _write_ask(job, "index", os.path.join(mem, "MEMORY.md"), tool="Edit")
+        assert [l["response"] for l in job.proc.stdin.lines] == [
+            {"subtype": "success", "request_id": rid, "response": {
+                "behavior": "allow", "updatedInput": {"file_path": os.path.join(mem, name),
+                                                      "content": "note"}}}
+            for rid, name in (("note", "note.md"), ("index", "MEMORY.md"))]
+        assert job.pending == []
+        assert not [e for e in job.events if e["type"] == "permission"]
+
+
+def test_other_writes_through_a_login_folder_still_ask(tmp_path, monkeypatch):
+    """Only this project's own memory folder: another project's notes, a path
+    that climbs out, a note that is a symlink elsewhere, the login's settings, a
+    .git file, an ask rule (alone, or matched beside the safety check: plain
+    Claude asks there too) and a shell command all keep their cards."""
+    login, checkout, _wt, mem = _login_with_shared_projects(tmp_path, monkeypatch)
+    other = os.path.join(login, "projects", "-elsewhere", "memory")
+    os.makedirs(other)
+    outside = os.path.join(str(tmp_path), "zshrc")
+    open(outside, "w").close()
+    os.symlink(outside, os.path.join(mem, "linked.md"))
+    job = _live_job("s-memory-not")
+    job.account_slot, job.cwd = 3, checkout
+    _write_ask(job, "other", os.path.join(other, "note.md"))
+    _write_ask(job, "climbs", os.path.join(mem, "..", "..", "note.md"))
+    _write_ask(job, "linked", os.path.join(mem, "linked.md"))
+    _write_ask(job, "settings", os.path.join(login, "settings.json"))
+    _write_ask(job, "git", os.path.join(checkout, ".git", "config"))
+    _write_ask(job, "rule", os.path.join(mem, "note.md"), decision_reason_type="rule")
+    # An ask rule for Write beside the symlink: 2.1.329 still names the safety check (probed).
+    _write_ask(job, "asked", os.path.join(mem, "note.md"),
+               matched_ask_rule={"source": "flagSettings", "tool_name": "Write"})
+    _write_ask(job, "shell", os.path.join(mem, "note.md"), tool="Bash")
+    first = _live_job("s-memory-first")          # the first login has no symlink to fold
+    first.account_slot, first.cwd = None, checkout
+    _write_ask(first, "first", os.path.join(mem, "note.md"))
+    assert job.proc.stdin.lines == [] and first.proc.stdin.lines == []
+    assert [p["request_id"] for p in job.pending + first.pending] == [
+        "other", "climbs", "linked", "settings", "git", "rule", "asked", "shell", "first"]
 
 
 def test_other_modes_leave_waiting_cards_alone():

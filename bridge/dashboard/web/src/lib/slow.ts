@@ -8,8 +8,9 @@
  * - Frame: Chromium's long animation frames, over 150 ms, with the scripts it
  *   names. WebKit has none, and a frame loop that never stops would keep the
  *   page from resting, so there frames are watched for one second after each
- *   input only. shortcut: a WebKit freeze with no input before it goes unseen,
- *   and its frames name no script; upgrade if WebKit ships long-animation-frame.
+ *   input only, and no longer once the window loses focus. shortcut: a WebKit
+ *   freeze with no input before it goes unseen, and its frames name no script;
+ *   upgrade if WebKit ships long-animation-frame.
  * - Start-up: `start-up: page`, once a load, from the startup: marks
  *   lib/reports.ts's markStartup leaves (main.tsx and App.tsx).
  *
@@ -115,6 +116,9 @@ export function watchSlowSpots(send: (s: Spot) => void): void {
       if (!running) requestAnimationFrame(tick);
     };
     for (const type of ["pointerdown", "click", "keydown"]) addEventListener(type, onInput, { capture: true, passive: true });
+    // A window that lost focus can stop drawing with no visibilitychange (a Linux window switched
+    // away by a key: the 3 to 48 s until it was back came in as one frame). The watch ends there.
+    addEventListener("blur", () => { last = 0; until = 0; });
   }
 
   // start-up: page, from the marks so far and each one after.
